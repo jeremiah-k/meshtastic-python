@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.admin_response import contract_for_admin_request
 from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2
 
 if TYPE_CHECKING:
@@ -77,6 +78,18 @@ class _NodeAdminTransportRuntime:
                 type(passkey).__name__,
             )
 
+        response_matcher = None
+        if on_response is not None and want_response:
+            local_node_num = getattr(self._node.iface.localNode, "nodeNum", None)
+            contract = contract_for_admin_request(
+                outbound_message,
+                destination=self._node.nodeNum,
+                local_node_num=(
+                    local_node_num if isinstance(local_node_num, int) else None
+                ),
+            )
+            response_matcher = contract.matches if contract is not None else None
+
         send_kwargs: dict[str, Any] = {
             "portNum": portnums_pb2.PortNum.ADMIN_APP,
             "wantAck": True,
@@ -85,7 +98,8 @@ class _NodeAdminTransportRuntime:
             "channelIndex": resolved_admin_index,
             "pkiEncrypted": True,
         }
-        if response_wait_attr is not None:
+        if response_wait_attr is not None or response_matcher is not None:
+            send_kwargs["responseMatcher"] = response_matcher
             send_kwargs["response_wait_attr"] = response_wait_attr
             return self._node.iface._send_data_with_wait(
                 outbound_message,

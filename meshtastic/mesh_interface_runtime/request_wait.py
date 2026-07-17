@@ -95,6 +95,7 @@ class _RequestWaitRuntime:
         self._get_timeout = get_timeout
         self._retired_wait_ttl_seconds = retired_wait_ttl_seconds
         self._ack_nak_handlers: dict[int, bool] = {}
+        self._response_matchers: dict[int, Callable[[dict[str, Any]], bool]] = {}
 
     def mark_ack_nak_handler(self, request_id: int, *, flag: bool = True) -> None:
         """Mark or unmark a request_id as an ACK/NAK handler."""
@@ -111,6 +112,7 @@ class _RequestWaitRuntime:
         *,
         ack_permitted: bool,
         is_ack_nak_handler: bool = False,
+        matcher: Callable[[dict[str, Any]], bool] | None = None,
     ) -> None:
         """Register a response callback for a request id."""
         with self._lock:
@@ -120,12 +122,15 @@ class _RequestWaitRuntime:
             )
             if is_ack_nak_handler:
                 self._ack_nak_handlers[request_id] = True
+            if matcher is not None:
+                self._response_matchers[request_id] = matcher
 
     def drop_response_handler(self, request_id: int) -> None:
         """Remove a response callback registration if present."""
         with self._lock:
             self._get_response_handlers().pop(request_id, None)
             self._ack_nak_handlers.pop(request_id, None)
+            self._response_matchers.pop(request_id, None)
 
     def clear_wait_error(
         self,
@@ -367,12 +372,16 @@ class _RequestWaitRuntime:
                             active_request_ids
                         )
                 response_handlers.pop(request_id, None)
+                self._ack_nak_handlers.pop(request_id, None)
+                self._response_matchers.pop(request_id, None)
                 wait_errors.pop((acknowledgment_attr, request_id), None)
                 wait_acks.discard((acknowledgment_attr, request_id))
             else:
                 if acknowledgment_attr in active_wait_request_ids:
                     for active_request_id in active_request_ids:
                         response_handlers.pop(active_request_id, None)
+                        self._ack_nak_handlers.pop(active_request_id, None)
+                        self._response_matchers.pop(active_request_id, None)
                         wait_errors.pop((acknowledgment_attr, active_request_id), None)
                         wait_acks.discard((acknowledgment_attr, active_request_id))
                     active_wait_request_ids.pop(acknowledgment_attr, None)
@@ -454,6 +463,7 @@ class _RequestWaitRuntime:
                 skip_response_callback_for_decode_failure=(
                     skip_response_callback_for_decode_failure
                 ),
+                packet_dict=packet_dict,
             )
         )
         if dropped_due_to_decode_failure:
@@ -473,6 +483,7 @@ class _RequestWaitRuntime:
         request_id: int,
         is_ack: bool,
         skip_response_callback_for_decode_failure: bool,
+        packet_dict: dict[str, Any],
     ) -> tuple[ResponseHandler | None, bool]:
         """Select/pop a response handler from shared state for one packet."""
         response_handler: ResponseHandler | None = None
@@ -481,6 +492,22 @@ class _RequestWaitRuntime:
             response_handlers = self._get_response_handlers()
             candidate = response_handlers.get(request_id, None)
             if candidate is not None:
+                matcher = self._response_matchers.get(request_id)
+                if not is_ack and matcher is not None:
+                    try:
+                        matches_contract = matcher(packet_dict)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        logger.exception(
+                            "Response matcher failed for requestId %s; ignoring packet",
+                            request_id,
+                        )
+                        return None, False
+                    if not matches_contract:
+                        logger.warning(
+                            "Ignoring response for requestId %s that did not match its contract",
+                            request_id,
+                        )
+                        return None, False
                 is_ack_nak_handler = (
                     self._ack_nak_handlers.get(request_id, False)
                     or not candidate.ackPermitted
@@ -488,10 +515,12 @@ class _RequestWaitRuntime:
                 if skip_response_callback_for_decode_failure and not is_ack_nak_handler:
                     response_handlers.pop(request_id, None)
                     self._ack_nak_handlers.pop(request_id, None)
+                    self._response_matchers.pop(request_id, None)
                     dropped_due_to_decode_failure = True
                 elif (not is_ack) or is_ack_nak_handler or candidate.ackPermitted:
                     response_handler = response_handlers.pop(request_id, None)
                     self._ack_nak_handlers.pop(request_id, None)
+                    self._response_matchers.pop(request_id, None)
         return response_handler, dropped_due_to_decode_failure
 
     def _apply_admin_decode_failure_wait_state(

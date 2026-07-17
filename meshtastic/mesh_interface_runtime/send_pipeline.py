@@ -312,6 +312,7 @@ class SendPipeline:
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         onResponseAckPermitted: bool = False,
+        responseMatcher: Callable[[dict[str, Any]], bool] | None = None,
         channelIndex: int = 0,
         hopLimit: int | None = None,
         pkiEncrypted: bool = False,
@@ -370,7 +371,10 @@ class SendPipeline:
         if onResponse is not None:
             logger.debug("Setting a response handler for requestId %s", meshPacket.id)
             self._add_response_handler(
-                meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted
+                meshPacket.id,
+                onResponse,
+                ackPermitted=onResponseAckPermitted,
+                matcher=responseMatcher,
             )
         try:
             return self._interface._send_packet(
@@ -618,12 +622,16 @@ class SendPipeline:
         requestId: int,
         callback: Callable[[dict[str, Any]], Any],
         ackPermitted: bool = False,
+        matcher: Callable[[dict[str, Any]], bool] | None = None,
     ) -> None:
         """Register a response callback for a specific request identifier."""
+        kwargs: dict[str, Any] = {"ack_permitted": ackPermitted}
+        if matcher is not None:
+            kwargs["matcher"] = matcher
         self._request_wait_runtime.add_response_handler(
             requestId,
             callback,
-            ack_permitted=ackPermitted,
+            **kwargs,
         )
 
     # pylint: disable=too-many-positional-arguments

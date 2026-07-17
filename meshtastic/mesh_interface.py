@@ -795,6 +795,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         onResponseAckPermitted: bool = False,
+        responseMatcher: Callable[[dict[str, Any]], bool] | None = None,
         channelIndex: int = 0,
         hopLimit: int | None = None,
         pkiEncrypted: bool = False,
@@ -812,6 +813,7 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse=wantResponse,
             onResponse=onResponse,
             onResponseAckPermitted=onResponseAckPermitted,
+            responseMatcher=responseMatcher,
             channelIndex=channelIndex,
             hopLimit=hopLimit,
             pkiEncrypted=pkiEncrypted,
@@ -826,12 +828,14 @@ class MeshInterface:  # pylint: disable=R0902
         requestId: int,
         callback: Callable[[dict[str, Any]], Any],
         ackPermitted: bool = False,
+        matcher: Callable[[dict[str, Any]], bool] | None = None,
     ) -> None:
         """Register a response callback for a specific request identifier."""
         self._send_pipeline._add_response_handler(
             requestId,
             callback,
             ackPermitted=ackPermitted,
+            matcher=matcher,
         )
 
     # pylint: disable=too-many-positional-arguments
