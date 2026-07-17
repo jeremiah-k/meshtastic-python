@@ -1,4 +1,4 @@
-.PHONY: all clean test ci ci-strict ci-base lint lint-tests docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd smoke1 smoke1-destructive slow install examples protobufs protobufs-update api-baseline api-baseline-master FORCE
+.PHONY: all clean test ci ci-strict ci-base lint lint-tests docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd simradio smoke1 smoke1-destructive slow install examples protobufs protobufs-update api-baseline api-baseline-master FORCE
 
 POETRY_RUN := poetry run
 API_BASELINE_FILE := meshtastic/tests/api_baselines/api_baseline.json
@@ -56,6 +56,10 @@ virt-smokevirt-meshtasticd:
 # run dual-daemon meshtasticd integration tests against host-network simulators
 virt-multinode-meshtasticd:
 	./bin/run-multinode-with-meshtasticd.sh
+
+# run process-managed native meshtasticd single/multi-node smoke tests
+simradio:
+	$(POETRY_RUN) pytest -m simradio -v --durations=20
 
 # run stable non-destructive smoke1 hardware checks
 smoke1:

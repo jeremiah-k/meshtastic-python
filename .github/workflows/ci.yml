@@ -36,6 +36,8 @@ jobs:
     steps:
       - &checkout_step
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - &setup_python_step
         name: Install Python 3
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -242,6 +244,84 @@ jobs:
         with:
           name: meshtasticd-multinode-logs
           path: ${{ env.MESHTASTICD_LOG_DIR }}
+          if-no-files-found: warn
+  simradio-firmware:
+    name: SimRadio Firmware (${{ matrix.channel }}, py3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: ${{ matrix.channel != 'beta' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        channel:
+          - beta
+          - alpha
+          - daily
+    env:
+      PYTHON_VERSION: "3.13"
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
+      MESHTASTICD_SIM_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/simradio/${{ matrix.channel }}
+      SIMRADIO_RESULT_DIR: ${{ github.workspace }}/.test-results/simradio/${{ matrix.channel }}
+      MESHTASTICD_CHANNEL: "${{ matrix.channel }}"
+      SIMRADIO_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step
+      - name: Install meshtasticd (${{ matrix.channel }}) from PPA
+        run: |
+          for attempt in 1 2 3; do
+            if sudo add-apt-repository -y "ppa:meshtastic/${MESHTASTICD_CHANNEL}" \
+              && sudo apt-get update \
+              && sudo apt-get install -y meshtasticd; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "meshtasticd PPA installation failed after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
+      - name: Record installed meshtasticd package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${SIMRADIO_RESULT_DIR}"
+          {
+            printf 'repository=%s\n' "${GITHUB_REPOSITORY}"
+            printf 'github_sha=%s\n' "${GITHUB_SHA}"
+            printf 'source_sha=%s\n' "${SIMRADIO_SOURCE_SHA}"
+            printf 'checkout_sha=%s\n' "$(git rev-parse HEAD)"
+            printf 'ref=%s\n' "${GITHUB_REF}"
+            printf 'head_ref=%s\n' "${GITHUB_HEAD_REF:-}"
+            printf 'base_ref=%s\n' "${GITHUB_BASE_REF:-}"
+            printf 'workflow=%s\n' "${GITHUB_WORKFLOW}"
+            printf 'run_id=%s\n' "${GITHUB_RUN_ID}"
+            printf 'run_attempt=%s\n' "${GITHUB_RUN_ATTEMPT}"
+            printf 'channel=%s\n' "${MESHTASTICD_CHANNEL}"
+          } | tee "${SIMRADIO_RESULT_DIR}/source-context.txt"
+          dpkg-query -W -f='${Package}\t${Version}\n' meshtasticd \
+            | tee "${SIMRADIO_RESULT_DIR}/firmware-package.txt"
+          timeout 5s meshtasticd --version 2>&1 \
+            | tee "${SIMRADIO_RESULT_DIR}/firmware-version.txt" || true
+      - name: Run process-managed simradio smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${SIMRADIO_RESULT_DIR}"
+          poetry run pytest -m simradio -vv --tb=long --durations=20 \
+            --junitxml="${SIMRADIO_RESULT_DIR}/junit.xml" 2>&1 \
+            | tee "${SIMRADIO_RESULT_DIR}/pytest.log"
+      - name: Upload simradio firmware logs and test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: simradio-${{ matrix.channel }}-logs
+          path: |
+            ${{ env.MESHTASTICD_SIM_LOG_DIR }}
+            ${{ env.SIMRADIO_RESULT_DIR }}
           if-no-files-found: warn
   # Fast install sanity check across Python versions.
   # Full tests run in the tests job above.
