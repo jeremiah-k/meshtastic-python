@@ -2804,45 +2804,51 @@ def onConnected(interface: MeshInterface) -> None:
                 ).strip().casefold()
                 if confirmation != "yes":
                     _cli_exit("Aborted.")
-            passphrase = b""
-            if lockdown_action != "lock-now":
-                if args.lockdown_passphrase_file:
-                    passphrase = read_lockdown_passphrase_file(
-                        args.lockdown_passphrase_file
-                    )
-                elif args.lockdown_passphrase is not None:
-                    if not args.insecure_lockdown_passphrase_on_command_line:
-                        _cli_exit(
-                            "--lockdown-passphrase requires "
-                            "--insecure-lockdown-passphrase-on-command-line; "
-                            "prefer an operator-only file or interactive entry."
+            try:
+                passphrase = b""
+                if lockdown_action != "lock-now":
+                    if args.lockdown_passphrase_file:
+                        passphrase = read_lockdown_passphrase_file(
+                            args.lockdown_passphrase_file
                         )
-                    passphrase = validate_lockdown_passphrase(
-                        args.lockdown_passphrase.encode("utf-8")
-                    )
-                else:
-                    entered = getpass.getpass("Lockdown passphrase: ")
-                    if lockdown_action == "provision":
-                        confirmed = getpass.getpass(
-                            "Lockdown passphrase (confirm): "
+                    elif args.lockdown_passphrase is not None:
+                        if not args.insecure_lockdown_passphrase_on_command_line:
+                            _cli_exit(
+                                "--lockdown-passphrase requires "
+                                "--insecure-lockdown-passphrase-on-command-line; "
+                                "prefer an operator-only file or interactive entry."
+                            )
+                        passphrase = validate_lockdown_passphrase(
+                            args.lockdown_passphrase.encode("utf-8")
                         )
-                        if entered != confirmed:
-                            _cli_exit("Lockdown passphrases do not match.")
-                    passphrase = validate_lockdown_passphrase(entered.encode("utf-8"))
-            auth = build_lockdown_auth(
-                passphrase,
-                boots_remaining=args.lockdown_boots,
-                valid_until_epoch=args.lockdown_valid_until,
-                max_session_seconds=args.lockdown_max_session_seconds,
-                lock_now=lockdown_action == "lock-now",
-                disable=lockdown_action == "disable",
-            )
-            status = send_lockdown_auth(
-                interface,
-                auth,
-                timeout=args.lockdown_wait,
-                allow_reboot_without_status=lockdown_action == "lock-now",
-            )
+                    else:
+                        entered = getpass.getpass("Lockdown passphrase: ")
+                        if lockdown_action == "provision":
+                            confirmed = getpass.getpass(
+                                "Lockdown passphrase (confirm): "
+                            )
+                            if entered != confirmed:
+                                _cli_exit("Lockdown passphrases do not match.")
+                        passphrase = validate_lockdown_passphrase(entered.encode("utf-8"))
+                auth = build_lockdown_auth(
+                    passphrase,
+                    boots_remaining=args.lockdown_boots,
+                    valid_until_epoch=args.lockdown_valid_until,
+                    max_session_seconds=args.lockdown_max_session_seconds,
+                    lock_now=lockdown_action == "lock-now",
+                    disable=lockdown_action == "disable",
+                )
+            except (OSError, ValueError) as exc:
+                _cli_exit(f"Invalid lockdown options: {exc}")
+            try:
+                status = send_lockdown_auth(
+                    interface,
+                    auth,
+                    timeout=args.lockdown_wait,
+                    allow_reboot_without_status=lockdown_action == "lock-now",
+                )
+            except (TimeoutError, ValueError, RuntimeError) as exc:
+                _cli_exit(f"Lockdown command failed: {exc}")
             if status is None:
                 print("Lockdown command accepted; device may already be rebooting.")
             else:

@@ -14,6 +14,7 @@ from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2
 from meshtastic.serial_interface import SerialInterface
 
 DEFAULT_LOCKDOWN_TIMEOUT_SECONDS = 20.0
+_HAS_POSIX_FILE_PERMISSIONS = os.name != "nt"
 
 
 def validate_lockdown_passphrase(passphrase: bytes) -> bytes:
@@ -28,11 +29,14 @@ def read_lockdown_passphrase_file(path: str | os.PathLike[str]) -> bytes:
     """Read an operator-only passphrase file, refusing group/world access."""
     target = Path(path)
     mode = stat.S_IMODE(target.stat().st_mode)
-    if os.name != "nt" and mode & 0o077:
+    if _HAS_POSIX_FILE_PERMISSIONS and mode & 0o077:
         raise PermissionError(
             f"{target} mode is {oct(mode)}; lockdown passphrase files must be operator-only (0600)"
         )
     value = target.read_bytes()
+    # Strip exactly one conventional text-file line ending. Passphrases are
+    # arbitrary bytes, so removing every trailing CR/LF would silently alter a
+    # passphrase that intentionally ends with one of those bytes.
     if value.endswith(b"\r\n"):
         value = value[:-2]
     elif value.endswith(b"\n"):
@@ -92,19 +96,19 @@ def send_lockdown_auth(
         raise RuntimeError("device did not provide my_info")
 
     event = threading.Event()
-    result: list[mesh_pb2.LockdownStatus] = []
+    result: mesh_pb2.LockdownStatus | None = None
 
     def _on_status(
         *, interface: object, status: mesh_pb2.LockdownStatus, **_kwargs: object
     ) -> None:
-        if interface is not target_interface:
+        nonlocal result
+        if interface is not serial_interface:
             return
         copied = mesh_pb2.LockdownStatus()
         copied.CopyFrom(status)
-        result.append(copied)
+        result = copied
         event.set()
 
-    target_interface = serial_interface
     pub.subscribe(_on_status, LOCKDOWN_STATUS_TOPIC)
     try:
         admin = admin_pb2.AdminMessage()
@@ -119,7 +123,7 @@ def send_lockdown_auth(
             priority=mesh_pb2.MeshPacket.Priority.RELIABLE,
         )
         if event.wait(timeout):
-            return result[-1]
+            return result
         if allow_reboot_without_status:
             return None
         raise TimeoutError("no LockdownStatus received before timeout")
