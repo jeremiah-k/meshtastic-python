@@ -19,6 +19,7 @@ from meshtastic import (
     protocols,
     publishingThread,
 )
+from meshtastic._topics import LOCKDOWN_STATUS_TOPIC
 from meshtastic.region_presets import decode_region_preset_map
 from meshtastic.protobuf import (
     channel_pb2,
@@ -355,11 +356,7 @@ def _handle_from_radio_region_presets(
         status.CopyFrom(context.message.lockdown_status)
         with self._node_db_lock:
             self._interface.lockdownStatus = status
-        return [
-            self._publication_intent(
-                "meshtastic.lockdown_status", status=status
-            )
-        ]
+        return [self._publication_intent(LOCKDOWN_STATUS_TOPIC, status=status)]
 
     def _handle_from_radio_node_info(
         self, context: _FromRadioContext

@@ -6,16 +6,13 @@ import os
 import stat
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pubsub import pub
 
+from meshtastic._topics import LOCKDOWN_STATUS_TOPIC
 from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2
+from meshtastic.serial_interface import SerialInterface
 
-if TYPE_CHECKING:
-    from meshtastic.serial_interface import SerialInterface
-
-LOCKDOWN_STATUS_TOPIC = "meshtastic.lockdown_status"
 DEFAULT_LOCKDOWN_TIMEOUT_SECONDS = 20.0
 
 
@@ -31,7 +28,7 @@ def read_lockdown_passphrase_file(path: str | os.PathLike[str]) -> bytes:
     """Read an operator-only passphrase file, refusing group/world access."""
     target = Path(path)
     mode = stat.S_IMODE(target.stat().st_mode)
-    if mode & 0o077:
+    if os.name != "nt" and mode & 0o077:
         raise PermissionError(
             f"{target} mode is {oct(mode)}; lockdown passphrase files must be operator-only (0600)"
         )
@@ -43,10 +40,8 @@ def read_lockdown_passphrase_file(path: str | os.PathLike[str]) -> bytes:
     return validate_lockdown_passphrase(value)
 
 
-def _require_usb_serial(interface: object) -> "SerialInterface":
+def _require_usb_serial(interface: object) -> SerialInterface:
     """Reject BLE/TCP transports because the passphrase is cleartext on wire."""
-    from meshtastic.serial_interface import SerialInterface
-
     if not isinstance(interface, SerialInterface):
         raise ValueError(
             "lockdown authentication is USB-serial only; refusing BLE/TCP transport"
@@ -99,7 +94,9 @@ def send_lockdown_auth(
     event = threading.Event()
     result: list[mesh_pb2.LockdownStatus] = []
 
-    def _on_status(*, interface: object, status: mesh_pb2.LockdownStatus) -> None:
+    def _on_status(
+        *, interface: object, status: mesh_pb2.LockdownStatus, **_kwargs: object
+    ) -> None:
         if interface is not target_interface:
             return
         copied = mesh_pb2.LockdownStatus()

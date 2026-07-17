@@ -2796,7 +2796,7 @@ def onConnected(interface: MeshInterface) -> None:
         )
         if lockdown_action is not None:
             closeNow = True
-            if args.dest != BROADCAST_ADDR:
+            if not _is_local_destination(interface, args.dest):
                 _cli_exit("Lockdown commands apply only to the directly connected local node.")
             if lockdown_action in {"provision", "lock-now", "disable"} and not args.lockdown_yes:
                 confirmation = input(

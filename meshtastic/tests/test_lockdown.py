@@ -1,5 +1,6 @@
 """Tests for USB-only firmware lockdown client helpers."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -35,9 +36,21 @@ def test_read_lockdown_passphrase_file_requires_operator_only_permissions(
     path.write_bytes(b"secret\n")
     path.chmod(0o600)
     assert read_lockdown_passphrase_file(path) == b"secret"
+    if os.name == "nt":
+        return
     path.chmod(0o640)
     with pytest.raises(PermissionError, match="operator-only"):
         read_lockdown_passphrase_file(path)
+
+
+@pytest.mark.unit
+def test_read_lockdown_passphrase_file_strips_only_one_line_ending(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "passphrase-multiline"
+    path.write_bytes(b"secret\n\n")
+    path.chmod(0o600)
+    assert read_lockdown_passphrase_file(path) == b"secret\n"
 
 
 @pytest.mark.unit
@@ -69,11 +82,44 @@ def test_send_lockdown_auth_is_serial_only_and_uses_plain_local_admin() -> None:
         pub.sendMessage(
             LOCKDOWN_STATUS_TOPIC,
             interface=serial,
-            status=mesh_pb2.LockdownStatus(
-                state=mesh_pb2.LockdownStatus.UNLOCKED
-            ),
+            status=mesh_pb2.LockdownStatus(state=mesh_pb2.LockdownStatus.UNLOCKED),
         )
         return mesh_pb2.MeshPacket(id=7)
+
+    serial.sendData.side_effect = _send
+    status = send_lockdown_auth(serial, build_lockdown_auth(b"secret"), timeout=0.5)
+    assert status is not None
+    assert status.state == mesh_pb2.LockdownStatus.UNLOCKED
+
+
+@pytest.mark.unit
+def test_send_lockdown_auth_status_listener_tolerates_extra_keywords(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    serial = MagicMock(spec=SerialInterface)
+    serial.myInfo = mesh_pb2.MyNodeInfo(my_node_num=123)
+    listeners: list[object] = []
+
+    def _subscribe(listener: object, topic: str) -> None:
+        assert topic == LOCKDOWN_STATUS_TOPIC
+        listeners.append(listener)
+
+    def _unsubscribe(listener: object, topic: str) -> None:
+        assert topic == LOCKDOWN_STATUS_TOPIC
+        assert listener in listeners
+
+    monkeypatch.setattr(pub, "subscribe", _subscribe)
+    monkeypatch.setattr(pub, "unsubscribe", _unsubscribe)
+
+    def _send(*_args: object, **_kwargs: object) -> mesh_pb2.MeshPacket:
+        listener = listeners[-1]
+        assert callable(listener)
+        listener(
+            interface=serial,
+            status=mesh_pb2.LockdownStatus(state=mesh_pb2.LockdownStatus.UNLOCKED),
+            source="future-publisher",
+        )
+        return mesh_pb2.MeshPacket(id=8)
 
     serial.sendData.side_effect = _send
     status = send_lockdown_auth(serial, build_lockdown_auth(b"secret"), timeout=0.5)
