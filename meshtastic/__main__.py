@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from types import ModuleType
-from typing import Any, NoReturn, Protocol
+from typing import Any, NoReturn, Protocol, cast
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -2740,6 +2740,41 @@ def onConnected(interface: MeshInterface) -> None:
             ringtone = interface.getNode(args.dest, **getNode_kwargs).get_ringtone()
             print(f"ringtone:{ringtone}")
 
+        if args.show_region_presets:
+            closeNow = True
+            if not _is_local_destination(interface, args.dest):
+                print("Region/preset capabilities are available only from the local node.")
+            elif not interface.regionPresets:
+                print(
+                    "This firmware did not provide usable region/preset compatibility metadata; "
+                    "preset choices remain unconstrained."
+                )
+            else:
+                for region, info in sorted(interface.regionPresets.items()):
+                    try:
+                        region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(cast(Any, region))
+                    except ValueError:
+                        region_name = f"REGION_{region}"
+                    preset_names = []
+                    for value in info.presets:
+                        try:
+                            preset_names.append(
+                                config_pb2.Config.LoRaConfig.ModemPreset.Name(cast(Any, value))
+                            )
+                        except ValueError:
+                            preset_names.append(f"PRESET_{value}")
+                    try:
+                        default_name = config_pb2.Config.LoRaConfig.ModemPreset.Name(
+                            cast(Any, info.default_preset)
+                        )
+                    except ValueError:
+                        default_name = f"PRESET_{info.default_preset}"
+                    license_note = " licensed-only" if info.licensed_only else ""
+                    print(
+                        f"{region_name}: default={default_name}{license_note}; "
+                        f"presets={','.join(preset_names)}"
+                    )
+
         if args.info:
             print("")
             # If we aren't trying to talk to our local node, don't show it
@@ -4063,6 +4098,12 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     group.add_argument(
         "--info",
         help="Read and display the radio config information",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--show-region-presets",
+        help="Show firmware-declared legal modem presets for each LoRa region",
         action="store_true",
     )
 

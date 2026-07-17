@@ -10,8 +10,8 @@ import sys
 import threading
 import time
 import traceback
-from types import TracebackType
-from typing import IO, Any, Callable, TypeAlias, cast
+from types import MappingProxyType, TracebackType
+from typing import IO, Any, Callable, Mapping, TypeAlias, cast
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -60,6 +60,7 @@ from meshtastic.protobuf import (
     module_config_pb2,
     portnums_pb2,
 )
+from meshtastic.region_presets import RegionPresetInfo
 from meshtastic.util import (
     Acknowledgment,
     Timeout,
@@ -299,6 +300,8 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: mesh_pb2.DeviceMetadata | None = (
             None  # We don't have device metadata yet
         )
+        self.regionPresetMap: mesh_pb2.LoRaRegionPresetMap | None = None
+        self.regionPresets: Mapping[int, RegionPresetInfo] = MappingProxyType({})
         # ------------------------------------------------------------------
         # Locking contract for MeshInterface shared state.
         #
@@ -395,6 +398,39 @@ class MeshInterface:  # pylint: disable=R0902
     def _set_queue_status(self, queue_status: mesh_pb2.QueueStatus | None) -> None:
         """Set the queueStatus attribute directly."""
         self.queueStatus = queue_status
+
+
+    def getRegionPresetInfo(
+        self, region: int | str | None
+    ) -> RegionPresetInfo | None:
+        """Return firmware-declared compatibility data for ``region``, if present.
+
+        ``region`` may be the protobuf enum integer, its stringified form, or
+        ``None``/a malformed value; anything non-convertible yields ``None``.
+        """
+        if region is None:
+            return None
+        try:
+            region_id = int(region)
+        except (TypeError, ValueError):
+            return None
+        with self._node_db_lock:
+            return self.regionPresets.get(region_id)
+
+    def get_region_preset_info(
+        self, region: int | str | None
+    ) -> RegionPresetInfo | None:
+        """Snake-case alias for :meth:`getRegionPresetInfo`."""
+        return self.getRegionPresetInfo(region)
+
+    def getAllowedModemPresets(self, region: int) -> tuple[int, ...] | None:
+        """Return legal modem presets or ``None`` when firmware supplied no constraint."""
+        info = self.getRegionPresetInfo(region)
+        return None if info is None else info.presets
+
+    def get_allowed_modem_presets(self, region: int) -> tuple[int, ...] | None:
+        """Snake-case alias for :meth:`getAllowedModemPresets`."""
+        return self.getAllowedModemPresets(region)
 
     @staticmethod
     def _print_log_line(line: str, interface: Any) -> None:
