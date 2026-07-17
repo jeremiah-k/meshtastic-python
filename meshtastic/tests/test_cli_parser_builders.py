@@ -1,6 +1,7 @@
 """Focused tests for CLI argument-group builders."""
 
 import argparse
+from collections.abc import Callable
 
 import pytest
 
@@ -36,7 +37,9 @@ def _parser() -> argparse.ArgumentParser:
         addRemoteAdminArgs,
     ],
 )
-def test_argument_builder_returns_same_parser(builder) -> None:
+def test_argument_builder_returns_same_parser(
+    builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser],
+) -> None:
     parser = _parser()
     assert builder(parser) is parser
 
@@ -44,8 +47,8 @@ def test_argument_builder_returns_same_parser(builder) -> None:
 @pytest.mark.unit
 def test_config_builder_parses_dynamic_modem_preset() -> None:
     parser = addConfigArgs(_parser())
-    args = parser.parse_args(["--set", "lora.modem_preset", "medium-turbo"])
-    assert args.set == [["lora.modem_preset", "medium-turbo"]]
+    args = parser.parse_args(["--ch-preset", "medium-turbo"])
+    assert args.ch_preset == "MEDIUM_TURBO"
 
 
 @pytest.mark.unit

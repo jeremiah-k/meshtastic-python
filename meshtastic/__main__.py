@@ -35,6 +35,7 @@ from meshtastic.cli.values import (
     parse_integer_literal as _parse_integer_literal,  # noqa: F401 - legacy __main__ compatibility export
     parse_modem_preset_name as _parse_modem_preset_name,  # noqa: F401 - legacy __main__ compatibility export
 )
+# COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 from meshtastic.cli.parser import (
     _MODEM_PRESET_SHORTHANDS,
     addChannelConfigArgs,  # noqa: F401 - legacy __main__ compatibility export
