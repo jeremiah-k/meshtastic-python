@@ -19,6 +19,7 @@ from meshtastic import (
     protocols,
     publishingThread,
 )
+from meshtastic.region_presets import decode_region_preset_map
 from meshtastic.protobuf import (
     channel_pb2,
     config_pb2,
@@ -40,6 +41,7 @@ _FROM_RADIO_BRANCHES: tuple[
 ] = (
     (lambda fr, _ctx: fr.HasField("my_info"), "my_info"),
     (lambda fr, _ctx: fr.HasField("metadata"), "metadata"),
+    (lambda fr, _ctx: fr.HasField("region_presets"), "region_presets"),
     (lambda fr, _ctx: fr.HasField("node_info"), "node_info"),
     (
         lambda fr, ctx: fr.config_complete_id != 0
@@ -281,6 +283,7 @@ class ReceivePipeline:
             self._from_radio_dispatch_map_cache = {
                 "my_info": self._handle_from_radio_my_info,
                 "metadata": self._handle_from_radio_metadata,
+                "region_presets": self._handle_from_radio_region_presets,
                 "node_info": self._handle_from_radio_node_info,
                 "config_complete_id": self._handle_from_radio_config_complete_id,
                 "channel": self._handle_from_radio_channel,
@@ -319,6 +322,28 @@ class ReceivePipeline:
             self._interface.metadata = metadata
         logger.debug("Received device metadata: %s", stripnl(from_radio.metadata))
         return []
+
+    def _handle_from_radio_region_presets(
+        self, context: _FromRadioContext
+    ) -> list[_PublicationIntent]:
+        """Store and publish firmware-declared LoRa compatibility metadata."""
+        raw_map = mesh_pb2.LoRaRegionPresetMap()
+        raw_map.CopyFrom(context.message.region_presets)
+        decoded = decode_region_preset_map(raw_map)
+        with self._node_db_lock:
+            self._interface.regionPresetMap = raw_map
+            self._interface.regionPresets = decoded
+        logger.debug(
+            "Received LoRa region preset compatibility map: %d region(s)",
+            len(decoded),
+        )
+        return [
+            self._publication_intent(
+                "meshtastic.region_presets",
+                region_presets=decoded,
+                raw=raw_map,
+            )
+        ]
 
     def _handle_from_radio_node_info(
         self, context: _FromRadioContext

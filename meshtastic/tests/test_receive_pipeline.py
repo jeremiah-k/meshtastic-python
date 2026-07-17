@@ -461,6 +461,44 @@ class TestHandleFromRadioMetadata:
         assert mock_interface.metadata.firmware_version == "2.0.0"
 
 
+class TestHandleFromRadioRegionPresets:
+    """Tests for firmware-declared LoRa compatibility metadata."""
+
+    @pytest.mark.unit
+    def test_handle_region_presets_stores_defensive_copy_and_publishes(
+        self, receive_pipeline: ReceivePipeline, mock_interface: MagicMock
+    ) -> None:
+        from_radio = mesh_pb2.FromRadio()
+        group = from_radio.region_presets.groups.add()
+        group.presets.extend(
+            [
+                config_pb2.Config.LoRaConfig.LONG_FAST,
+                config_pb2.Config.LoRaConfig.LONG_SLOW,
+            ]
+        )
+        group.default_preset = config_pb2.Config.LoRaConfig.LONG_FAST
+        region_group = from_radio.region_presets.region_groups.add()
+        region_group.region = config_pb2.Config.LoRaConfig.US
+        region_group.group_index = 0
+        context = _FromRadioContext(
+            message=from_radio,
+            message_dict=_LazyMessageDict(from_radio),
+            config_id=None,
+        )
+
+        result = receive_pipeline._handle_from_radio_region_presets(context)
+
+        assert mock_interface.regionPresetMap is not from_radio.region_presets
+        assert mock_interface.regionPresetMap == from_radio.region_presets
+        assert mock_interface.regionPresets[config_pb2.Config.LoRaConfig.US].presets == (
+            config_pb2.Config.LoRaConfig.LONG_FAST,
+            config_pb2.Config.LoRaConfig.LONG_SLOW,
+        )
+        assert len(result) == 1
+        assert result[0].topic == "meshtastic.region_presets"
+
+
+
 class TestHandleFromRadioNodeInfo:
     """Tests for _handle_from_radio_node_info method (lines 344-365)."""
 

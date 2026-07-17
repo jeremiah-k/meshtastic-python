@@ -183,6 +183,17 @@ def test_main_init_parser_accepts_firmware_2_8_preset_shorthands(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_init_parser_accepts_region_preset_capability_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["meshtastic", "--show-region-presets"])
+    initParser()
+    assert mt_config.args is not None
+    assert mt_config.args.show_region_presets is True
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("raw_value", "expected"),
     (
