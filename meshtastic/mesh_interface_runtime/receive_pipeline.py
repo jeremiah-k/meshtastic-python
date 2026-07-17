@@ -326,7 +326,7 @@ class ReceivePipeline:
         logger.debug("Received device metadata: %s", stripnl(from_radio.metadata))
         return []
 
-def _handle_from_radio_region_presets(
+    def _handle_from_radio_region_presets(
         self, context: _FromRadioContext
     ) -> list[_PublicationIntent]:
         """Store and publish firmware-declared LoRa compatibility metadata."""
@@ -347,6 +347,7 @@ def _handle_from_radio_region_presets(
                 raw=raw_map,
             )
         ]
+
 
     def _handle_from_radio_lockdown_status(
         self, context: _FromRadioContext

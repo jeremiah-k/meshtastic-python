@@ -179,7 +179,7 @@ def test_build_lockdown_auth_rejects_all_invalid_limits(
     kwargs: dict[str, int], message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        build_lockdown_auth(b"secret", **kwargs)
+        build_lockdown_auth(b"secret", **kwargs)  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
