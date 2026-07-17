@@ -93,9 +93,9 @@ def test_mesh_interface_region_preset_state_and_aliases() -> None:
         )
         assert (
             interface.getRegionPresetInfo(str(config_pb2.Config.LoRaConfig.US)) == info
-        )  # type: ignore[arg-type]
-        assert interface.getRegionPresetInfo(None) is None  # type: ignore[arg-type]
-        assert interface.getRegionPresetInfo("not-a-region") is None  # type: ignore[arg-type]
+        )
+        assert interface.getRegionPresetInfo(None) is None
+        assert interface.getRegionPresetInfo("not-a-region") is None
         with pytest.raises(TypeError):
             interface.regionPresets[config_pb2.Config.LoRaConfig.EU_868] = info  # type: ignore[index]
 

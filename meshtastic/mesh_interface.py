@@ -400,8 +400,16 @@ class MeshInterface:  # pylint: disable=R0902
         self.queueStatus = queue_status
 
 
-    def getRegionPresetInfo(self, region: int) -> RegionPresetInfo | None:
-        """Return firmware-declared compatibility data for ``region``, if present."""
+    def getRegionPresetInfo(
+        self, region: int | str | None
+    ) -> RegionPresetInfo | None:
+        """Return firmware-declared compatibility data for ``region``, if present.
+
+        ``region`` may be the protobuf enum integer, its stringified form, or
+        ``None``/a malformed value; anything non-convertible yields ``None``.
+        """
+        if region is None:
+            return None
         try:
             region_id = int(region)
         except (TypeError, ValueError):
@@ -409,7 +417,9 @@ class MeshInterface:  # pylint: disable=R0902
         with self._node_db_lock:
             return self.regionPresets.get(region_id)
 
-    def get_region_preset_info(self, region: int) -> RegionPresetInfo | None:
+    def get_region_preset_info(
+        self, region: int | str | None
+    ) -> RegionPresetInfo | None:
         """Snake-case alias for :meth:`getRegionPresetInfo`."""
         return self.getRegionPresetInfo(region)
 
