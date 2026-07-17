@@ -1,7 +1,11 @@
 name: Docker Build and Publish
 
+# Build and publish the mtjk Docker image to ghcr.io only on release.
+# Manual dispatch is intentionally disabled to avoid stray `dev-master-*`
+# tags. The job-level `if:` further skips any release whose target branch
+# is master, so this workflow does not fire on master updates.
+
 on:
-  workflow_dispatch: {}
   release:
     types: [published]
 
@@ -15,7 +19,7 @@ permissions:
 
 jobs:
   docker-build:
-    if: ${{ github.ref_name != 'master' && (github.event_name != 'release' || github.event.release.target_commitish != 'master') }}
+    if: ${{ github.event.release.target_commitish != 'master' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
