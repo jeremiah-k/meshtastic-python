@@ -35,6 +35,12 @@ from meshtastic.configure_verify import (
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.lockdown import (
+    build_lockdown_auth,
+    read_lockdown_passphrase_file,
+    send_lockdown_auth,
+    validate_lockdown_passphrase,
+)
 from meshtastic.protobuf import (
     admin_pb2,
     channel_pb2,
@@ -2775,6 +2781,87 @@ def onConnected(interface: MeshInterface) -> None:
                         f"presets={','.join(preset_names)}"
                     )
 
+        lockdown_action = next(
+            (
+                name
+                for name, enabled in (
+                    ("provision", args.lockdown_provision),
+                    ("unlock", args.lockdown_unlock),
+                    ("lock-now", args.lockdown_lock_now),
+                    ("disable", args.lockdown_disable),
+                )
+                if enabled
+            ),
+            None,
+        )
+        if lockdown_action is not None:
+            closeNow = True
+            if not _is_local_destination(interface, args.dest):
+                _cli_exit("Lockdown commands apply only to the directly connected local node.")
+            if lockdown_action in {"provision", "lock-now", "disable"} and not args.lockdown_yes:
+                confirmation = input(
+                    f"Type 'yes' to confirm lockdown {lockdown_action}: "
+                ).strip().casefold()
+                if confirmation != "yes":
+                    _cli_exit("Aborted.")
+            try:
+                passphrase = b""
+                if lockdown_action != "lock-now":
+                    if args.lockdown_passphrase_file:
+                        passphrase = read_lockdown_passphrase_file(
+                            args.lockdown_passphrase_file
+                        )
+                    elif args.lockdown_passphrase is not None:
+                        if not args.insecure_lockdown_passphrase_on_command_line:
+                            _cli_exit(
+                                "--lockdown-passphrase requires "
+                                "--insecure-lockdown-passphrase-on-command-line; "
+                                "prefer an operator-only file or interactive entry."
+                            )
+                        passphrase = validate_lockdown_passphrase(
+                            args.lockdown_passphrase.encode("utf-8")
+                        )
+                    else:
+                        entered = getpass.getpass("Lockdown passphrase: ")
+                        if lockdown_action == "provision":
+                            confirmed = getpass.getpass(
+                                "Lockdown passphrase (confirm): "
+                            )
+                            if entered != confirmed:
+                                _cli_exit("Lockdown passphrases do not match.")
+                        passphrase = validate_lockdown_passphrase(entered.encode("utf-8"))
+                auth = build_lockdown_auth(
+                    passphrase,
+                    boots_remaining=args.lockdown_boots,
+                    valid_until_epoch=args.lockdown_valid_until,
+                    max_session_seconds=args.lockdown_max_session_seconds,
+                    lock_now=lockdown_action == "lock-now",
+                    disable=lockdown_action == "disable",
+                )
+            except (OSError, ValueError) as exc:
+                _cli_exit(f"Invalid lockdown options: {exc}")
+            try:
+                status = send_lockdown_auth(
+                    interface,
+                    auth,
+                    timeout=args.lockdown_wait,
+                    allow_reboot_without_status=lockdown_action == "lock-now",
+                )
+            except (TimeoutError, ValueError, RuntimeError) as exc:
+                _cli_exit(f"Lockdown command failed: {exc}")
+            if status is None:
+                print("Lockdown command accepted; device may already be rebooting.")
+            else:
+                try:
+                    state_name = mesh_pb2.LockdownStatus.State.Name(status.state)
+                except ValueError:
+                    state_name = f"STATE_{status.state}"
+                print(f"Lockdown status: {state_name}")
+                if status.backoff_seconds:
+                    print(f"Retry backoff: {status.backoff_seconds}s")
+                if status.state == mesh_pb2.LockdownStatus.UNLOCK_FAILED:
+                    _cli_exit("Lockdown authentication failed.")
+
         if args.info:
             print("")
             # If we aren't trying to talk to our local node, don't show it
@@ -4099,6 +4186,67 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         "--info",
         help="Read and display the radio config information",
         action="store_true",
+    )
+
+    lockdown_actions = group.add_mutually_exclusive_group()
+    lockdown_actions.add_argument(
+        "--lockdown-provision",
+        action="store_true",
+        help="Provision or unlock a hardened device over USB serial",
+    )
+    lockdown_actions.add_argument(
+        "--lockdown-unlock",
+        action="store_true",
+        help="Authenticate this USB connection to a provisioned hardened device",
+    )
+    lockdown_actions.add_argument(
+        "--lockdown-lock-now",
+        action="store_true",
+        help="Revoke current lockdown sessions and reboot into the locked state",
+    )
+    lockdown_actions.add_argument(
+        "--lockdown-disable",
+        action="store_true",
+        help="Disable lockdown, revert encrypted storage to plaintext, and reboot",
+    )
+    group.add_argument(
+        "--lockdown-passphrase-file",
+        help="Read the passphrase from an operator-only (0600) file",
+    )
+    group.add_argument(
+        "--lockdown-passphrase",
+        help="INSECURE: passphrase on argv; requires explicit acknowledgement",
+    )
+    group.add_argument(
+        "--insecure-lockdown-passphrase-on-command-line",
+        action="store_true",
+        help="Acknowledge that an argv passphrase is exposed in shell history and ps",
+    )
+    group.add_argument(
+        "--lockdown-boots", type=int, default=0, help="Authorized boot-count limit"
+    )
+    group.add_argument(
+        "--lockdown-valid-until",
+        type=int,
+        default=0,
+        help="Authorization expiration as a Unix epoch (0 disables)",
+    )
+    group.add_argument(
+        "--lockdown-max-session-seconds",
+        type=int,
+        default=0,
+        help="Maximum unlocked session duration in seconds (0 uses firmware policy)",
+    )
+    group.add_argument(
+        "--lockdown-wait",
+        type=float,
+        default=20.0,
+        help="Seconds to wait for structured LockdownStatus",
+    )
+    group.add_argument(
+        "--lockdown-yes",
+        action="store_true",
+        help="Skip typed confirmation for destructive lockdown actions",
     )
 
     group.add_argument(

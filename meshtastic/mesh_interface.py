@@ -302,6 +302,7 @@ class MeshInterface:  # pylint: disable=R0902
         )
         self.regionPresetMap: mesh_pb2.LoRaRegionPresetMap | None = None
         self.regionPresets: Mapping[int, RegionPresetInfo] = MappingProxyType({})
+        self.lockdownStatus: mesh_pb2.LockdownStatus | None = None
         # ------------------------------------------------------------------
         # Locking contract for MeshInterface shared state.
         #
