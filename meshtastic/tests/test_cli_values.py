@@ -1,5 +1,6 @@
 """Focused tests for pure CLI value helpers."""
 
+import argparse
 from types import SimpleNamespace
 
 import pytest
@@ -49,15 +50,19 @@ def test_parse_modem_preset_name_normalizes_schema_name() -> None:
 
 @pytest.mark.unit
 def test_parse_modem_preset_name_lists_choices_on_error() -> None:
-    with pytest.raises(Exception, match="Available presets"):
+    with pytest.raises(argparse.ArgumentTypeError, match="Available presets"):
         parse_modem_preset_name("not-real")
 
 
 @pytest.mark.unit
 def test_parse_bitfield_value_accepts_numbers_and_names() -> None:
     enum = config_pb2.Config.DisplayConfig.OledType
+    # Numeric inputs
     assert parse_bitfield_value(enum, 3) == 3
     assert parse_bitfield_value(enum, "0x3") == 3
+    # Comma-separated flag names (exercises flagsFromList path)
+    # OLED_SSD1306=1, OLED_SH1106=2 → combined = 3
+    assert parse_bitfield_value(enum, "OLED_SSD1306,OLED_SH1106") == 3
 
 
 @pytest.mark.unit

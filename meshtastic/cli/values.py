@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
+from typing import Any, Protocol
 
 import meshtastic.util
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR
 from meshtastic.protobuf import config_pb2
+
+
+class HasNodeInfo(Protocol):
+    """Structural interface accepted by :func:`is_local_destination`.
+
+    Decouples node-identity lookups from the concrete ``MeshInterface`` so
+    that static type checking works without pulling in the full interface.
+    """
+
+    myInfo: Any
 
 
 def parse_modem_preset_name(value: str) -> str:
@@ -92,7 +102,7 @@ def _parse_destination_node_number(value: str) -> int | None:
         return None
 
 
-def is_local_destination(interface: Any, destination: str) -> bool:
+def is_local_destination(interface: HasNodeInfo, destination: str) -> bool:
     """Return whether a destination identifies the directly connected local node."""
     destination_value = str(destination).strip()
     if destination_value in (BROADCAST_ADDR, LOCAL_ADDR):
