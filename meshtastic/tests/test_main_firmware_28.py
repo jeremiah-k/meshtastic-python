@@ -4,13 +4,13 @@
 
 import sys
 from types import SimpleNamespace
-from typing import Any, Callable, cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
 
 import meshtastic.__main__ as main_module
-from meshtastic.region_presets import RegionPresetInfo
+from meshtastic.region_presets import RegionPresetInfo, decode_region_preset_map
 from meshtastic.__main__ import (
     initParser,
 )
@@ -36,39 +36,6 @@ def _get_config_field(config: Any, dotted_path: str) -> Any:
     return obj
 
 
-def _mock_sendText_helper(
-    text: str,
-    dest: Any,
-    wantAck: bool = False,
-    wantResponse: bool = False,
-    onResponse: Callable[..., Any] | None = None,
-    channelIndex: int = 0,
-    portNum: int = 0,
-) -> None:
-    """Shared helper for mocking sendText; prints parameters to stdout for test assertions.
-
-    Parameters
-    ----------
-    text : str
-        The text message content to send.
-    dest : Any
-        Destination node ID or address.
-    wantAck : bool
-        Whether to request acknowledgement. (Default value = False)
-    wantResponse : bool
-        Whether to request a response. (Default value = False)
-    onResponse : Callable[..., Any] | None
-        Optional response callback. (Default value = None)
-    channelIndex : int
-        Channel index to send on. (Default value = 0)
-    portNum : int
-        Port number for the message. (Default value = 0)
-    """
-    _ = onResponse  # Mark as intentionally unused
-    print("inside mocked sendText")
-    print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
-
-
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent external network calls during unit tests in this module.
@@ -83,7 +50,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
 def _run_region_preset_cli(
     monkeypatch: pytest.MonkeyPatch,
     *extra_args: str,
-    region_preset_map: object | None,
+    region_preset_map: mesh_pb2.LoRaRegionPresetMap | None = None,
     region_presets: dict[int, RegionPresetInfo] | None = None,
 ) -> MagicMock:
     cli_args = ["meshtastic", "--show-region-presets"]
@@ -96,7 +63,12 @@ def _run_region_preset_cli(
     interface.devPath = ""
     interface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
     interface.regionPresetMap = region_preset_map
-    interface.regionPresets = region_presets or {}
+    if region_presets is not None:
+        interface.regionPresets = region_presets
+    elif region_preset_map is None:
+        interface.regionPresets = {}
+    else:
+        interface.regionPresets = decode_region_preset_map(region_preset_map)
     main_module.onConnected(interface)
     return interface
 
@@ -172,19 +144,45 @@ def test_lockdown_cli_unlock_from_file(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_show_region_presets_reports_empty_or_malformed_metadata(
+def test_show_region_presets_reports_empty_metadata(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    empty_map = mesh_pb2.LoRaRegionPresetMap()
     interface = _run_region_preset_cli(
         monkeypatch,
-        region_preset_map=object(),
-        region_presets={},
+        region_preset_map=empty_map,
     )
 
     output = capsys.readouterr().out
     assert "did not provide usable region/preset compatibility metadata" in output
     assert "preset choices remain unconstrained" in output
+    assert interface.regionPresetMap is empty_map
+    assert dict(interface.regionPresets) == {}
+    interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_show_region_presets_reports_malformed_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    malformed_map = mesh_pb2.LoRaRegionPresetMap()
+    malformed_entry = malformed_map.region_groups.add()
+    malformed_entry.region = config_pb2.Config.LoRaConfig.US
+    malformed_entry.group_index = 1
+
+    interface = _run_region_preset_cli(
+        monkeypatch,
+        region_preset_map=malformed_map,
+    )
+
+    output = capsys.readouterr().out
+    assert "did not provide usable region/preset compatibility metadata" in output
+    assert "preset choices remain unconstrained" in output
+    assert interface.regionPresetMap is malformed_map
+    assert dict(interface.regionPresets) == {}
     interface.close.assert_called_once_with()
 
 @pytest.mark.unit
@@ -197,7 +195,7 @@ def test_show_region_presets_rejects_remote_destination(
         monkeypatch,
         "--dest",
         "!deadbeef",
-        region_preset_map=object(),
+        region_preset_map=mesh_pb2.LoRaRegionPresetMap(),
     )
 
     output = capsys.readouterr().out
@@ -225,7 +223,7 @@ def test_show_region_presets_formats_known_unknown_and_licensed_values(
         monkeypatch,
         "--dest",
         MAIN_LOCAL_ADDR,
-        region_preset_map=object(),
+        region_preset_map=mesh_pb2.LoRaRegionPresetMap(),
         region_presets={config_pb2.Config.LoRaConfig.US: known, 999: unknown},
     )
 
@@ -276,13 +274,28 @@ def test_lockdown_cli_rejects_remote_destination(
     interface = MagicMock()
     interface.devPath = ""
     interface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
-    with pytest.raises(SystemExit):
+    build = MagicMock()
+    send = MagicMock()
+    monkeypatch.setattr(main_module, "build_lockdown_auth", build)
+    monkeypatch.setattr(main_module, "send_lockdown_auth", send)
+
+    with pytest.raises(SystemExit) as exc_info:
         main_module.onConnected(interface)
+
+    assert exc_info.value.code == 1
+    assert (
+        "Lockdown commands apply only to the directly connected local node."
+        in capsys.readouterr().err
+    )
+    build.assert_not_called()
+    send.assert_not_called()
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_lockdown_cli_rejects_unacknowledged_command_line_secret(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(
         sys,
@@ -300,8 +313,26 @@ def test_lockdown_cli_rejects_unacknowledged_command_line_secret(
     interface = MagicMock()
     interface.devPath = ""
     interface.myInfo = SimpleNamespace(my_node_num=int("25d6e474", 16))
-    with pytest.raises(SystemExit):
+    validate = MagicMock()
+    build = MagicMock()
+    send = MagicMock()
+    monkeypatch.setattr(main_module, "validate_lockdown_passphrase", validate)
+    monkeypatch.setattr(main_module, "build_lockdown_auth", build)
+    monkeypatch.setattr(main_module, "send_lockdown_auth", send)
+
+    with pytest.raises(SystemExit) as exc_info:
         main_module.onConnected(interface)
+
+    assert exc_info.value.code == 1
+    assert (
+        "--lockdown-passphrase requires "
+        "--insecure-lockdown-passphrase-on-command-line"
+        in capsys.readouterr().err
+    )
+    validate.assert_not_called()
+    build.assert_not_called()
+    send.assert_not_called()
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -605,4 +636,3 @@ def test_lockdown_cli_without_action_does_not_call_lockdown_helpers(
     build.assert_not_called()
     send.assert_not_called()
     interface.close.assert_not_called()
-

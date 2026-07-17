@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Callable, cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,39 +37,6 @@ def _get_config_field(config: Any, dotted_path: str) -> Any:
     for part in dotted_path.split("."):
         obj = getattr(obj, part)
     return obj
-
-
-def _mock_sendText_helper(
-    text: str,
-    dest: Any,
-    wantAck: bool = False,
-    wantResponse: bool = False,
-    onResponse: Callable[..., Any] | None = None,
-    channelIndex: int = 0,
-    portNum: int = 0,
-) -> None:
-    """Shared helper for mocking sendText; prints parameters to stdout for test assertions.
-
-    Parameters
-    ----------
-    text : str
-        The text message content to send.
-    dest : Any
-        Destination node ID or address.
-    wantAck : bool
-        Whether to request acknowledgement. (Default value = False)
-    wantResponse : bool
-        Whether to request a response. (Default value = False)
-    onResponse : Callable[..., Any] | None
-        Optional response callback. (Default value = None)
-    channelIndex : int
-        Channel index to send on. (Default value = 0)
-    portNum : int
-        Port number for the message. (Default value = 0)
-    """
-    _ = onResponse  # Mark as intentionally unused
-    print("inside mocked sendText")
-    print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
 
 @pytest.fixture(autouse=True)
@@ -105,6 +72,8 @@ def test_main_factory_reset_local_accepts_ack_before_close(
     iface._acknowledgment = Acknowledgment()
     iface._acknowledgment.receivedAck = True  # stale state must be cleared
     iface._timeout.expireTimeout = 1.0
+    iface._wait_for_request_ack.return_value = True
+    iface._raise_wait_error_if_present.return_value = None
     reset_node = iface.getNode.return_value
     reset_node.iface = iface
 
@@ -121,6 +90,18 @@ def test_main_factory_reset_local_accepts_ack_before_close(
 
     out, err = capsys.readouterr()
     reset_node.factoryReset.assert_called_once_with(full=expected_full)
+    iface._wait_for_request_ack.assert_called_once()
+    wait_args, wait_kwargs = iface._wait_for_request_ack.call_args
+    assert wait_args[:2] == ("receivedNak", 123)
+    assert 0 < wait_kwargs["timeout_seconds"] <= (
+        main_module.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
+    )
+    iface._raise_wait_error_if_present.assert_called_once_with(
+        "receivedNak", request_id=123
+    )
+    iface._retire_wait_request.assert_called_once_with(
+        "receivedNak", request_id=123
+    )
     iface.waitForAckNak.assert_not_called()
     assert iface._acknowledgment.receivedImplAck is False
     assert "Waiting for factory reset acknowledgment or reboot disconnect" in out
@@ -392,6 +373,9 @@ def test_main_factory_reset_skips_ack_wait_when_send_is_disabled() -> None:
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
 
+    iface._wait_for_request_ack.assert_not_called()
+    iface._raise_wait_error_if_present.assert_not_called()
+    iface._retire_wait_request.assert_not_called()
     iface.waitForAckNak.assert_not_called()
 
 @pytest.mark.unit
@@ -404,4 +388,3 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
 
     iface.connect.assert_called_once()
     assert iface.close.call_count >= 2
-

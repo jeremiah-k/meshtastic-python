@@ -6,7 +6,7 @@ import base64
 import threading
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -39,39 +39,6 @@ def _get_config_field(config: Any, dotted_path: str) -> Any:
     for part in dotted_path.split("."):
         obj = getattr(obj, part)
     return obj
-
-
-def _mock_sendText_helper(
-    text: str,
-    dest: Any,
-    wantAck: bool = False,
-    wantResponse: bool = False,
-    onResponse: Callable[..., Any] | None = None,
-    channelIndex: int = 0,
-    portNum: int = 0,
-) -> None:
-    """Shared helper for mocking sendText; prints parameters to stdout for test assertions.
-
-    Parameters
-    ----------
-    text : str
-        The text message content to send.
-    dest : Any
-        Destination node ID or address.
-    wantAck : bool
-        Whether to request acknowledgement. (Default value = False)
-    wantResponse : bool
-        Whether to request a response. (Default value = False)
-    onResponse : Callable[..., Any] | None
-        Optional response callback. (Default value = None)
-    channelIndex : int
-        Channel index to send on. (Default value = 0)
-    portNum : int
-        Port number for the message. (Default value = 0)
-    """
-    _ = onResponse  # Mark as intentionally unused
-    print("inside mocked sendText")
-    print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
 
 @pytest.fixture(autouse=True)
@@ -402,6 +369,13 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
         waitForConfig=MagicMock(),
     )
     iface.connect = MagicMock(side_effect=event.set)
+    monotonic_value = [0.0]
+
+    def _monotonic() -> float:
+        monotonic_value[0] += 0.1
+        return monotonic_value[0]
+
+    monkeypatch.setattr(main_module.time, "monotonic", _monotonic)
     monkeypatch.setattr("time.sleep", lambda _: None)
 
     assert (
@@ -409,4 +383,3 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
     )
     iface.connect.assert_called()
     iface.waitForConfig.assert_called_once()
-
