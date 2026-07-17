@@ -13,6 +13,7 @@ import contextlib
 import logging
 import os
 import platform
+import re
 import shutil
 import signal
 import socket
@@ -20,6 +21,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from collections.abc import Collection, Mapping
 from pathlib import Path
 from types import MappingProxyType
@@ -47,6 +49,15 @@ TEXT_MESSAGE_MIN_INTERVAL_SECONDS = 2.25
 REBOOT_POLL_INTERVAL_SECONDS = 0.1
 MAX_LOG_TAIL_BYTES = 16_384
 CONTEXT_FILENAME = "simradio-context.txt"
+REBOOT_RECOVERY_FILENAME = "simradio-reboot-recovery.txt"
+FACTORY_RESET_REBOOT_MARKERS = (
+    "Factory config reset finished, rebooting soon",
+    "Reboot in ",
+)
+KNOWN_FACTORY_RESET_REBOOT_EXIT_CODES: frozenset[int] = frozenset(
+    {-signal.SIGSEGV}
+)
+KNOWN_FACTORY_RESET_REBOOT_VERSION_RE = re.compile(r"\bS:B:\d+,2\.7\.\d+,")
 
 CHAIN_TOPOLOGY: Mapping[int, frozenset[int]] = MappingProxyType(
     {
@@ -124,6 +135,15 @@ def _inject_simulator_packet(
     sender(to_radio)
 
 
+@dataclass(frozen=True)
+class RebootCheckpoint:
+    """Identify one running process and the log position before a reboot command."""
+
+    boot_count: int
+    log_size: int
+    process_pid: int
+
+
 class SimNode:
     """Own one meshtasticd process, filesystem, logs, and TCP interface."""
 
@@ -147,6 +167,9 @@ class SimNode:
         self.iface: TCPInterface | None = None
         self._temporary_directory: tempfile.TemporaryDirectory[str] | None = None
         self._log_files: list[BinaryIO] = []
+        self._binary: str | None = None
+        self._restart_count = 0
+        self._last_reboot_exit_status: int | None = None
 
     @property
     def node_num(self) -> int:
@@ -160,21 +183,37 @@ class SimNode:
         """Launch a freshly erased meshtasticd simulator process."""
         if self.process is not None or self._temporary_directory is not None:
             raise RuntimeError(f"simradio node {self.node_id} is already started")
-        _ensure_port_available(self.port)
         try:
             self._temporary_directory = tempfile.TemporaryDirectory(
                 prefix=f"meshtasticd-simradio-{self.node_id}-"
             )
             self.workdir = Path(self._temporary_directory.name)
-            vfs_directory = self.workdir / "vfs"
-            vfs_directory.mkdir()
-            stdout_path = self.workdir / "meshtasticd.log"
-            stderr_path = self.workdir / "meshtasticd.err"
-            stdout_file = stdout_path.open("wb", buffering=0)
-            self._log_files.append(stdout_file)
-            stderr_file = stderr_path.open("wb", buffering=0)
-            self._log_files.append(stderr_file)
-            self.process = subprocess.Popen(  # pylint: disable=consider-using-with
+            (self.workdir / "vfs").mkdir()
+            self._binary = binary
+            self._restart_count = 0
+            self._last_reboot_exit_status = None
+            self._launch_process(binary, append_logs=False)
+        except Exception as exc:
+            diagnostics = self.diagnostics()
+            self.close(send_exit=False)
+            raise RuntimeError(
+                f"meshtasticd node {self.node_id} failed to start on port "
+                f"{self.port}: {exc}\n{diagnostics}"
+            ) from exc
+
+    def _launch_process(self, binary: str, *, append_logs: bool) -> None:
+        """Launch against the current VFS, optionally appending to existing logs."""
+        workdir = self.workdir
+        if workdir is None:
+            raise RuntimeError(f"simradio node {self.node_id} has no work directory")
+        if self.process is not None:
+            raise RuntimeError(f"simradio node {self.node_id} already owns a process")
+        _ensure_port_available(self.port)
+        mode = "ab" if append_logs else "wb"
+        stdout_file = (workdir / "meshtasticd.log").open(mode, buffering=0)
+        stderr_file = (workdir / "meshtasticd.err").open(mode, buffering=0)
+        try:
+            process = subprocess.Popen(  # pylint: disable=consider-using-with
                 [
                     binary,
                     "-s",
@@ -183,26 +222,25 @@ class SimNode:
                     "-p",
                     str(self.port),
                     "-d",
-                    str(vfs_directory),
+                    str(workdir / "vfs"),
                     "-e",
                 ],
                 stdout=stdout_file,
                 stderr=stderr_file,
                 start_new_session=True,
             )
-            if self.process.poll() is not None:
-                raise RuntimeError(
-                    f"meshtasticd node {self.node_id} exited with "
-                    f"status {self.process.returncode} during startup"
-                )
-            self._write_context(binary)
-        except Exception as exc:
-            diagnostics = self.diagnostics()
-            self.close(send_exit=False)
+        except Exception:
+            stdout_file.close()
+            stderr_file.close()
+            raise
+        self._log_files.extend((stdout_file, stderr_file))
+        self.process = process
+        if process.poll() is not None:
             raise RuntimeError(
-                f"meshtasticd node {self.node_id} failed to start on port "
-                f"{self.port}: {exc}\n{diagnostics}"
-            ) from exc
+                f"meshtasticd node {self.node_id} exited with "
+                f"status {process.returncode} during startup"
+            )
+        self._write_context(binary)
 
     def _write_context(self, binary: str) -> None:
         """Persist source, workflow, and fixture identity beside daemon logs."""
@@ -225,6 +263,13 @@ class SimNode:
             ("github_run_id", os.environ.get("GITHUB_RUN_ID", "")),
             ("github_run_attempt", os.environ.get("GITHUB_RUN_ATTEMPT", "")),
             ("meshtasticd_channel", os.environ.get("MESHTASTICD_CHANNEL", "")),
+            ("restart_count", str(self._restart_count)),
+            (
+                "last_reboot_exit_status",
+                ""
+                if self._last_reboot_exit_status is None
+                else str(self._last_reboot_exit_status),
+            ),
         )
         content = "".join(f"{key}={value}\n" for key, value in values)
         try:
@@ -276,6 +321,169 @@ class SimNode:
             return 0
         return output.count(f"Using config file {self.port}")
 
+    def reboot_checkpoint(self) -> RebootCheckpoint:
+        """Capture the owned process and log position before a rebooting command."""
+        process = self.process
+        workdir = self.workdir
+        if process is None or workdir is None:
+            raise RuntimeError(f"simradio node {self.node_id} is not started")
+        if process.poll() is not None:
+            raise RuntimeError(
+                f"meshtasticd node {self.node_id} already exited with status "
+                f"{process.returncode}"
+            )
+        try:
+            log_size = (workdir / "meshtasticd.log").stat().st_size
+        except OSError as exc:
+            raise RuntimeError(
+                f"cannot capture reboot log checkpoint for node {self.node_id}: {exc}"
+            ) from exc
+        return RebootCheckpoint(
+            boot_count=self.boot_count(),
+            log_size=log_size,
+            process_pid=process.pid,
+        )
+
+    def _log_since(self, offset: int) -> str:
+        """Read daemon output appended after a previously captured byte offset."""
+        workdir = self.workdir
+        if workdir is None:
+            return ""
+        try:
+            with (workdir / "meshtasticd.log").open("rb") as log_file:
+                log_file.seek(max(0, offset))
+                return log_file.read().decode("utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    def wait_for_factory_reset_reboot(
+        self,
+        checkpoint: RebootCheckpoint,
+        *,
+        timeout: float = BOOT_TIMEOUT_SECONDS,
+    ) -> int | None:
+        """Wait for reset reboot, recovering only the known 2.7 Portduino crash.
+
+        Firmware 2.7 can persist a completed factory reset and then terminate with
+        ``SIGSEGV`` when its delayed Portduino reboot fires.  Recovery is allowed
+        only when the exact post-checkpoint reset and reboot markers are present.
+        The same VFS is relaunched and a new boot marker is still required.
+        """
+        if checkpoint.boot_count < 0 or checkpoint.log_size < 0:
+            raise ValueError("invalid reboot checkpoint")
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        process = self.process
+        if process is None:
+            raise RuntimeError(f"simradio node {self.node_id} is not started")
+        if process.pid != checkpoint.process_pid:
+            raise RuntimeError(
+                f"simradio node {self.node_id} process changed before reboot wait"
+            )
+
+        deadline = time.monotonic() + timeout
+        recovered_exit_status: int | None = None
+        while time.monotonic() < deadline:
+            status = process.poll()
+            if status is not None:
+                if recovered_exit_status is not None:
+                    raise RuntimeError(
+                        f"replacement meshtasticd node {self.node_id} exited with "
+                        f"status {status} while waiting for reboot\n{self.diagnostics()}"
+                    )
+                evidence = self._log_since(checkpoint.log_size)
+                full_log = self._log_since(0)
+                missing_markers = [
+                    marker
+                    for marker in FACTORY_RESET_REBOOT_MARKERS
+                    if marker not in evidence
+                ]
+                if not KNOWN_FACTORY_RESET_REBOOT_VERSION_RE.search(full_log):
+                    missing_markers.append("firmware 2.7 boot banner")
+                if (
+                    status not in KNOWN_FACTORY_RESET_REBOOT_EXIT_CODES
+                    or missing_markers
+                ):
+                    marker_detail = ", ".join(repr(marker) for marker in missing_markers)
+                    raise RuntimeError(
+                        f"meshtasticd node {self.node_id} exited with unexpected "
+                        f"status {status} while waiting for factory-reset reboot; "
+                        f"missing markers: {marker_detail or 'none'}\n"
+                        f"{self.diagnostics()}"
+                    )
+                recovered_exit_status = status
+                self._restart_after_expected_reboot_exit(
+                    checkpoint=checkpoint,
+                    exit_status=status,
+                    evidence=evidence,
+                )
+                process = self.process
+                if process is None:
+                    raise RuntimeError(
+                        f"simradio node {self.node_id} recovery did not launch a process"
+                    )
+                continue
+            if self.boot_count() > checkpoint.boot_count:
+                return recovered_exit_status
+            time.sleep(REBOOT_POLL_INTERVAL_SECONDS)
+        raise RuntimeError(
+            f"meshtasticd node {self.node_id} did not complete factory-reset reboot "
+            f"within {timeout:.1f}s; boot count remained {self.boot_count()}\n"
+            f"{self.diagnostics()}"
+        )
+
+    def _restart_after_expected_reboot_exit(
+        self,
+        *,
+        checkpoint: RebootCheckpoint,
+        exit_status: int,
+        evidence: str,
+    ) -> None:
+        """Relaunch the same VFS after a narrowly validated reboot-time exit."""
+        process = self.process
+        binary = self._binary
+        workdir = self.workdir
+        if process is None or binary is None or workdir is None:
+            raise RuntimeError(f"simradio node {self.node_id} cannot be recovered")
+        if process.pid != checkpoint.process_pid or process.poll() != exit_status:
+            raise RuntimeError(
+                f"simradio node {self.node_id} recovery process no longer matches "
+                "the reboot checkpoint"
+            )
+        old_pid = process.pid
+        self.disconnect()
+        self.process = None
+        self._close_log_files()
+        time.sleep(PORT_RELEASE_SETTLE_SECONDS)
+        self._restart_count += 1
+        self._last_reboot_exit_status = exit_status
+        self._launch_process(binary, append_logs=True)
+        replacement = self.process
+        if replacement is None:
+            raise RuntimeError(f"simradio node {self.node_id} recovery launch failed")
+        signal_name = ""
+        if exit_status < 0:
+            with contextlib.suppress(ValueError):
+                signal_name = signal.Signals(-exit_status).name
+        recovery_record = (
+            "event=factory-reset-reboot-process-recovery\n"
+            f"old_pid={old_pid}\n"
+            f"new_pid={replacement.pid}\n"
+            f"exit_status={exit_status}\n"
+            f"exit_signal={signal_name}\n"
+            f"checkpoint_boot_count={checkpoint.boot_count}\n"
+            f"evidence_bytes={len(evidence.encode('utf-8'))}\n"
+        )
+        try:
+            with (workdir / REBOOT_RECOVERY_FILENAME).open(
+                "a", encoding="utf-8"
+            ) as recovery_file:
+                recovery_file.write(recovery_record)
+        except OSError:
+            logger.exception(
+                "Failed to write reboot recovery record for node %d", self.node_id
+            )
+
     def wait_for_reboot(
         self,
         previous_boot_count: int,
@@ -317,7 +525,10 @@ class SimNode:
         if workdir is None:
             return "simradio diagnostics unavailable: no work directory"
         sections: list[str] = []
-        for filename in ("meshtasticd.log", "meshtasticd.err", CONTEXT_FILENAME):
+        filenames = ["meshtasticd.log", "meshtasticd.err", CONTEXT_FILENAME]
+        if (workdir / REBOOT_RECOVERY_FILENAME).exists():
+            filenames.append(REBOOT_RECOVERY_FILENAME)
+        for filename in filenames:
             path = workdir / filename
             try:
                 raw = path.read_bytes()[-MAX_LOG_TAIL_BYTES:]
@@ -328,6 +539,13 @@ class SimNode:
                 f"[{filename} tail]\n{raw.decode('utf-8', errors='replace')}"
             )
         return "\n".join(sections)
+
+    def _close_log_files(self) -> None:
+        """Close every parent-owned daemon log handle."""
+        for log_file in self._log_files:
+            with contextlib.suppress(Exception):
+                log_file.close()
+        self._log_files.clear()
 
     def close(self, *, send_exit: bool = True) -> None:
         """Close the interface, terminate the process group, and archive logs."""
@@ -353,14 +571,14 @@ class SimNode:
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=PROCESS_EXIT_TIMEOUT_SECONDS)
 
-        for log_file in self._log_files:
-            with contextlib.suppress(Exception):
-                log_file.close()
-        self._log_files.clear()
+        self._close_log_files()
         self._archive_logs()
         temporary_directory = self._temporary_directory
         self._temporary_directory = None
         self.workdir = None
+        self._binary = None
+        self._restart_count = 0
+        self._last_reboot_exit_status = None
         if temporary_directory is not None:
             try:
                 temporary_directory.cleanup()
@@ -379,7 +597,12 @@ class SimNode:
         destination = self.log_root / f"node-{self.node_id}" / self.workdir.name
         try:
             destination.mkdir(parents=True, exist_ok=True)
-            for filename in ("meshtasticd.log", "meshtasticd.err", CONTEXT_FILENAME):
+            for filename in (
+                "meshtasticd.log",
+                "meshtasticd.err",
+                CONTEXT_FILENAME,
+                REBOOT_RECOVERY_FILENAME,
+            ):
                 source = self.workdir / filename
                 if source.exists():
                     shutil.copy2(source, destination / filename)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import signal
 import subprocess
 from collections.abc import Callable
 import threading
@@ -20,6 +21,8 @@ from . import conftest as simradio_conftest
 from . import simradio_harness, simradio_helpers
 from .simradio_harness import (
     CHAIN_TOPOLOGY,
+    RebootCheckpoint,
+    REBOOT_RECOVERY_FILENAME,
     SimMesh,
     SimNode,
     _build_mesh_packet,
@@ -102,6 +105,163 @@ def test_simradio_node_waits_for_next_boot_marker(
     node.wait_for_reboot(node.boot_count(), timeout=1.0)
 
     assert node.boot_count() == 2
+
+
+@pytest.mark.unit
+def test_factory_reset_reboot_recovers_known_portduino_sigsegv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Known 2.7 reboot crash is recoverable only after exact reset evidence."""
+    node = SimNode(0, base_port=44_404)
+    node.workdir = tmp_path
+    marker = f"Using config file {node.port}\n"
+    version = "INFO S:B:37,2.7.26,native-tft,unknown\n"
+    reset_evidence = (
+        "Factory config reset finished, rebooting soon\n"
+        "Reboot in 7 seconds\n"
+    )
+    log_path = tmp_path / "meshtasticd.log"
+    prefix = marker + version
+    log_path.write_text(prefix + reset_evidence, encoding="utf-8")
+    checkpoint = RebootCheckpoint(1, len(prefix.encode()), 123)
+    old_process = MagicMock(pid=123, returncode=-signal.SIGSEGV)
+    old_process.poll.return_value = -signal.SIGSEGV
+    node.process = old_process
+
+    def _restart(**kwargs: object) -> None:
+        assert kwargs["checkpoint"] == checkpoint
+        assert kwargs["exit_status"] == -signal.SIGSEGV
+        assert reset_evidence in str(kwargs["evidence"])
+        replacement = MagicMock(pid=456, returncode=None)
+        replacement.poll.return_value = None
+        node.process = replacement
+        with log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(marker)
+
+    monkeypatch.setattr(node, "_restart_after_expected_reboot_exit", _restart)
+
+    assert node.wait_for_factory_reset_reboot(checkpoint, timeout=1.0) == (
+        -signal.SIGSEGV
+    )
+    assert node.boot_count() == 2
+
+
+@pytest.mark.unit
+def test_factory_reset_reboot_rejects_crash_without_reset_evidence(
+    tmp_path: Path,
+) -> None:
+    """An arbitrary SIGSEGV must never be normalized into a successful reboot."""
+    node = SimNode(0, base_port=44_404)
+    node.workdir = tmp_path
+    marker = f"Using config file {node.port}\n"
+    version = "INFO S:B:37,2.7.26,native-tft,unknown\n"
+    prefix = marker + version
+    (tmp_path / "meshtasticd.log").write_text(prefix, encoding="utf-8")
+    checkpoint = RebootCheckpoint(1, len(prefix.encode()), 123)
+    process = MagicMock(pid=123, returncode=-signal.SIGSEGV)
+    process.poll.return_value = -signal.SIGSEGV
+    node.process = process
+
+    with pytest.raises(RuntimeError, match="missing markers"):
+        node.wait_for_factory_reset_reboot(checkpoint, timeout=1.0)
+
+
+@pytest.mark.unit
+def test_factory_reset_reboot_rejects_unexpected_exit_status(
+    tmp_path: Path,
+) -> None:
+    """Even complete reset logs do not authorize recovery from another exit."""
+    node = SimNode(0, base_port=44_404)
+    node.workdir = tmp_path
+    marker = f"Using config file {node.port}\n"
+    version = "INFO S:B:37,2.7.26,native-tft,unknown\n"
+    evidence = (
+        "Factory config reset finished, rebooting soon\n"
+        "Reboot in 7 seconds\n"
+    )
+    prefix = marker + version
+    log_path = tmp_path / "meshtasticd.log"
+    log_path.write_text(prefix + evidence, encoding="utf-8")
+    checkpoint = RebootCheckpoint(1, len(prefix.encode()), 123)
+    process = MagicMock(pid=123, returncode=-signal.SIGKILL)
+    process.poll.return_value = -signal.SIGKILL
+    node.process = process
+
+    with pytest.raises(RuntimeError, match="unexpected status -9"):
+        node.wait_for_factory_reset_reboot(checkpoint, timeout=1.0)
+
+
+@pytest.mark.unit
+def test_factory_reset_reboot_rejects_same_crash_on_non_27_firmware(
+    tmp_path: Path,
+) -> None:
+    """The compatibility recovery must not hide a future 2.8+ reboot crash."""
+    node = SimNode(0, base_port=44_404)
+    node.workdir = tmp_path
+    marker = f"Using config file {node.port}\n"
+    version = "INFO S:B:37,2.8.0,native-tft,unknown\n"
+    evidence = (
+        "Factory config reset finished, rebooting soon\n"
+        "Reboot in 7 seconds\n"
+    )
+    prefix = marker + version
+    (tmp_path / "meshtasticd.log").write_text(
+        prefix + evidence, encoding="utf-8"
+    )
+    checkpoint = RebootCheckpoint(1, len(prefix.encode()), 123)
+    process = MagicMock(pid=123, returncode=-signal.SIGSEGV)
+    process.poll.return_value = -signal.SIGSEGV
+    node.process = process
+
+    with pytest.raises(RuntimeError, match="firmware 2.7 boot banner"):
+        node.wait_for_factory_reset_reboot(checkpoint, timeout=1.0)
+
+
+@pytest.mark.unit
+def test_expected_reboot_exit_relaunches_same_vfs_and_records_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recovery must preserve VFS state, append logs, and remain auditable."""
+    node = SimNode(0, base_port=44_404)
+    node.workdir = tmp_path
+    (tmp_path / "vfs").mkdir()
+    stdout_path = tmp_path / "meshtasticd.log"
+    stderr_path = tmp_path / "meshtasticd.err"
+    stdout_path.write_text("existing stdout\n", encoding="utf-8")
+    stderr_path.write_text("existing stderr\n", encoding="utf-8")
+    node._binary = "/usr/bin/meshtasticd"
+    old_process = MagicMock(pid=123, returncode=-signal.SIGSEGV)
+    old_process.poll.return_value = -signal.SIGSEGV
+    node.process = old_process
+    checkpoint = RebootCheckpoint(1, 0, 123)
+    replacement = MagicMock(pid=456, returncode=None)
+    replacement.poll.return_value = None
+    popen = MagicMock(return_value=replacement)
+    monkeypatch.setattr(simradio_harness, "_ensure_port_available", lambda _port: None)
+    monkeypatch.setattr(simradio_harness.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(subprocess, "Popen", popen)
+
+    node._restart_after_expected_reboot_exit(
+        checkpoint=checkpoint,
+        exit_status=-signal.SIGSEGV,
+        evidence="Factory config reset finished, rebooting soon\nReboot in 7 seconds",
+    )
+
+    command = popen.call_args.args[0]
+    assert command[command.index("-d") + 1] == str(tmp_path / "vfs")
+    assert stdout_path.read_text(encoding="utf-8").startswith("existing stdout")
+    assert stderr_path.read_text(encoding="utf-8").startswith("existing stderr")
+    recovery = (tmp_path / REBOOT_RECOVERY_FILENAME).read_text(encoding="utf-8")
+    assert "old_pid=123" in recovery
+    assert "new_pid=456" in recovery
+    assert "exit_status=-11" in recovery
+    assert "exit_signal=SIGSEGV" in recovery
+    context = (tmp_path / simradio_harness.CONTEXT_FILENAME).read_text(
+        encoding="utf-8"
+    )
+    assert "restart_count=1" in context
+    assert "last_reboot_exit_status=-11" in context
+    node._close_log_files()
 
 
 @pytest.mark.unit

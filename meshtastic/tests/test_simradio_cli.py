@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import re
+import warnings
 from functools import partial
 from pathlib import Path
 
@@ -486,7 +487,7 @@ def test_simradio_cli_factory_reset_config_isolated(firmware_node: SimNode) -> N
     # Run the real factory reset with zero automatic retries.  Record the
     # current Portduino boot marker so verification cannot accidentally attach
     # before the delayed reboot has happened.
-    previous_boot_count = firmware_node.boot_count()
+    reboot_checkpoint = firmware_node.reboot_checkpoint()
     reset_result = run_cli(
         firmware_node.port,
         "--factory-reset",
@@ -497,7 +498,17 @@ def test_simradio_cli_factory_reset_config_isolated(firmware_node: SimNode) -> N
     # The output must not follow the unknown-setting "Choices" path.
     assert "Choices are" not in reset_result.output
 
-    firmware_node.wait_for_reboot(previous_boot_count)
+    recovered_exit_status = firmware_node.wait_for_factory_reset_reboot(
+        reboot_checkpoint
+    )
+    if recovered_exit_status is not None:
+        warnings.warn(
+            "meshtasticd recovered from the known firmware 2.7 Portduino "
+            f"factory-reset reboot crash (status {recovered_exit_status}); "
+            "post-restart state verification remains required",
+            RuntimeWarning,
+            stacklevel=1,
+        )
 
     def _assert_default_config(iface: TCPInterface) -> None:
         assert iface.localNode.localConfig.position.fixed_position is False

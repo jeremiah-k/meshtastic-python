@@ -43,7 +43,11 @@ Every fixture:
    drain, and verifies the persisted value through bounded fresh-connection
    polling without replaying the mutation;
 3. waits for an actual Portduino boot marker after commands that really schedule
-   a reboot, rather than treating TCP availability as reboot completion;
+   a reboot, rather than treating TCP availability as reboot completion. For the
+   documented firmware 2.7 factory-reset-only Portduino `SIGSEGV`, the harness
+   accepts recovery only after exact reset-complete and delayed-reboot log evidence,
+   relaunches the same VFS, records the crash in the artifact, and still requires
+   the next boot marker and post-reset state assertions;
 4. tears down subscriptions, interfaces, process groups, and files even after
    partial startup failure.
 
@@ -67,7 +71,13 @@ an ACK
 that arrived before the wait began. Commands that really reboot, such as factory
 reset, still wait for Portduino's next stable `Using config file <port>` startup
 marker. A successful TCP reconnect by itself is insufficient during a delayed
-pre-reboot window. The bridge also preserves optional decoded packet metadata
+pre-reboot window. Arbitrary daemon exits remain failures. The only process-exit
+recovery is the observed firmware 2.7 Portduino factory-reset crash: it must be
+`SIGSEGV`, come from a firmware 2.7 boot banner, occur after the current test's
+reset-complete and reboot-scheduled markers, and successfully boot again from
+the same VFS. The recovery is emitted
+as a pytest warning and archived in `simradio-reboot-recovery.txt`; the reset
+configuration is then verified normally. The bridge also preserves optional decoded packet metadata
 such as `bitfield`; firmware 2.8 requires that presence marker to accept modern
 zero-hop packets.
 
@@ -85,7 +95,10 @@ package version, a bounded `meshtasticd --version` probe, and a
 `source-context.txt` file containing the exact repository SHA, workflow run ID,
 run attempt, ref, and firmware channel. Every archived daemon directory also
 contains `simradio-context.txt` with its node ID, TCP port, process ID, checked-out
-and pull-request source SHAs, channel, and fixture setup identity. This keeps a failed beta, alpha, or
+and pull-request source SHAs, channel, and fixture setup identity. A narrowly
+recovered 2.7 factory-reset reboot crash also adds
+`simradio-reboot-recovery.txt` with both process IDs, exit status, signal, and
+checkpoint metadata. This keeps a failed beta, alpha, or
 daily run diagnosable without relying on the Actions log retention UI and makes
 stale job links immediately distinguishable from the current branch head.
 
