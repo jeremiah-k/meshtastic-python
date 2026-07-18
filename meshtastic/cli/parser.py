@@ -3,8 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import platform
+import sys
+from collections.abc import Sequence
+from typing import Protocol
 
 from meshtastic.cli.values import parse_modem_preset_name as _parse_modem_preset_name
+
+
+class _ArgcompleteModule(Protocol):
+    """Structural type for the optional argcomplete dependency."""
+
+    def autocomplete(self, parser: argparse.ArgumentParser) -> object:
+        """Enable shell completion for ``parser``."""
+
 
 _MODEM_PRESET_SHORTHANDS: tuple[tuple[tuple[str, ...], str, str, str], ...] = (
     (
@@ -820,3 +832,248 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
 
     return parser
+
+def parse_cli_args(
+    parser: argparse.ArgumentParser,
+    *,
+    version: str,
+    argcomplete_module: _ArgcompleteModule | None = None,
+    argv: Sequence[str] | None = None,
+) -> argparse.Namespace:
+    """Register all Meshtastic argument groups and parse the command line.
+
+    Registers help, connection, selection, import/export, configuration,
+    position, channel, local action, remote action, remote admin, and
+    miscellaneous argument groups on ``parser``, optionally enables shell
+    autocompletion via ``argcomplete_module``, and parses arguments.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        The parser to configure with Meshtastic-specific argument groups.
+    version : str
+        Version string reported when ``--version`` is requested.
+    argcomplete_module : _ArgcompleteModule | None
+        Optional module exposing an ``autocomplete(parser)`` callable (the
+        ``argcomplete`` package). When provided, autocompletion is enabled.
+    argv : Sequence[str] | None
+        Argument vector to parse. When ``None`` (the default), ``sys.argv[1:]``
+        is used. Pass an explicit sequence to make parsing deterministic in
+        tests and embedded callers.
+
+    Returns
+    -------
+    argparse.Namespace
+        The parsed arguments.
+    """
+    # The "Help" group includes the help option and other informational stuff about the CLI itself
+    outerHelpGroup = parser.add_argument_group("Help")
+    helpGroup = outerHelpGroup.add_mutually_exclusive_group()
+    helpGroup.add_argument(
+        "-h", "--help", action="help", help="show this help message and exit"
+    )
+
+    helpGroup.add_argument("--version", action="version", version=version)
+
+    helpGroup.add_argument(
+        "--support",
+        action="store_true",
+        help="Show support info (useful when troubleshooting an issue)",
+    )
+
+    # Connection arguments to indicate a device to connect to
+    parser = addConnectionArgs(parser)
+
+    # Selection arguments to denote nodes and channels to use
+    parser = addSelectionArgs(parser)
+
+    # Arguments concerning viewing and setting configuration
+    parser = addImportExportArgs(parser)
+    parser = addConfigArgs(parser)
+    parser = addPositionConfigArgs(parser)
+    parser = addChannelConfigArgs(parser)
+
+    # Arguments for sending or requesting things from the local device
+    parser = addLocalActionArgs(parser)
+
+    # Arguments for sending or requesting things from the mesh
+    parser = addRemoteActionArgs(parser)
+    parser = addRemoteAdminArgs(parser)
+
+    # All the rest of the arguments
+    group = parser.add_argument_group("Miscellaneous arguments")
+
+    group.add_argument(
+        "--seriallog",
+        help="Log device serial output to either 'none' or a filename to append to.  Defaults to '%(const)s' if no filename specified.",
+        nargs="?",
+        const="stdout",
+        default=None,
+        metavar="LOG_DESTINATION",
+    )
+
+    group.add_argument(
+        "--ack",
+        help="Use in combination with compatible actions (e.g. --sendtext) to wait for an acknowledgment.",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--timeout",
+        help="How long to wait for replies. Default %(default)ss.",
+        default=300.0,
+        type=float,
+        metavar="SECONDS",
+    )
+
+    group.add_argument(
+        "--no-nodes",
+        help="Request that the node not send node info to the client. "
+        "Will break things that depend on the nodedb, but will speed up startup. Requires 2.3.11+ firmware.",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--debug",
+        help="Show detailed debug log messages (connection diagnostics, config streaming, retries)",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--debuglib",
+        help="Show debug log messages for the meshtastic library only (not dependencies)",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--quiet",
+        help="Suppress non-essential output; show only warnings and errors",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--test",
+        help="Run stress test against all connected Meshtastic devices",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--wait-to-disconnect",
+        help="How many seconds to wait before disconnecting from the device.",
+        const="5",
+        nargs="?",
+        action="store",
+        metavar="SECONDS",
+    )
+
+    group.add_argument(
+        "--noproto",
+        help="Don't start the API, just function as a dumb serial terminal.",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--listen",
+        help="Just stay open and listen to the protobuf stream. Enables debug logging.",
+        action="store_true",
+    )
+
+    group.add_argument(
+        "--no-time",
+        help="Deprecated. Retained for backwards compatibility in scripts, but is a no-op.",
+        action="store_true",
+    )
+
+    power_group = parser.add_argument_group(
+        "Power Testing", "Options for power testing/logging."
+    )
+
+    power_supply_group = power_group.add_mutually_exclusive_group()
+
+    power_supply_group.add_argument(
+        "--power-riden",
+        help="Talk to a Riden power-supply. You must specify the device path, i.e. /dev/ttyUSBxxx",
+    )
+
+    power_supply_group.add_argument(
+        "--power-ppk2-meter",
+        help="Talk to a Nordic Power Profiler Kit 2 (in meter mode)",
+        action="store_true",
+    )
+
+    power_supply_group.add_argument(
+        "--power-ppk2-supply",
+        help="Talk to a Nordic Power Profiler Kit 2 (in supply mode)",
+        action="store_true",
+    )
+
+    power_supply_group.add_argument(
+        "--power-sim",
+        help="Use a simulated power meter (for development)",
+        action="store_true",
+    )
+
+    power_group.add_argument(
+        "--power-voltage",
+        help="Set the specified voltage on the power-supply. Be VERY careful, you can burn things up.",
+    )
+
+    power_group.add_argument(
+        "--power-stress",
+        help="Perform power monitor stress testing, to capture a power consumption profile for the device (also requires --power-mon)",
+        action="store_true",
+    )
+
+    power_group.add_argument(
+        "--power-wait",
+        help="Prompt the user to wait for device reset before looking for device serial ports (some boards kill power to USB serial port)",
+        action="store_true",
+    )
+
+    power_group.add_argument(
+        "--slog",
+        help="Store structured-logs (slogs) for this run, optionally you can specify a destination directory",
+        nargs="?",
+        default=None,
+        const="default",
+    )
+
+    remoteHardwareArgs = parser.add_argument_group(
+        "Remote Hardware", "Arguments related to the Remote Hardware module"
+    )
+
+    remoteHardwareArgs.add_argument(
+        "--gpio-wrb", nargs=2, help="Set a particular GPIO # to 1 or 0", action="append"
+    )
+
+    remoteHardwareArgs.add_argument(
+        "--gpio-rd", help="Read from a GPIO mask (ex: '0x10')"
+    )
+
+    remoteHardwareArgs.add_argument(
+        "--gpio-watch", help="Start watching a GPIO mask for changes (ex: '0x10')"
+    )
+
+    have_tunnel = platform.system() == "Linux"
+    if have_tunnel:
+        tunnelArgs = parser.add_argument_group(
+            "Tunnel", "Arguments related to establishing a tunnel device over the mesh."
+        )
+        tunnelArgs.add_argument(
+            "--tunnel",
+            action="store_true",
+            help="Create a TUN tunnel device for forwarding IP packets over the mesh",
+        )
+        tunnelArgs.add_argument(
+            "--subnet",
+            dest="tunnel_net",
+            help="Sets the local-end subnet address for the TUN IP bridge. (ex: 10.115' which is the default)",
+            default=None,
+        )
+
+    parser.set_defaults(deprecated=None)
+
+    if argcomplete_module is not None:
+        autocomplete = argcomplete_module.autocomplete
+        autocomplete(parser)
+    return parser.parse_args(argv if argv is not None else sys.argv[1:])
