@@ -13,21 +13,22 @@ import pytest
 import yaml
 
 import meshtastic.__main__ as main_module
-
-# from ..ble_interface import BLEInterface
-
-# from ..radioconfig_pb2 import UserPreferences
-# import meshtastic.config_pb2
-from ..protobuf import config_pb2, localonly_pb2
-
-# from ..remote_hardware import onGPIOreceive
-# from ..config_pb2 import Config
-
 from meshtastic.tests.test_main import (
     _build_configure_interface,
     _patch_fast_monotonic,
     _run_main_configure_file,
 )
+
+# from ..radioconfig_pb2 import UserPreferences
+# import meshtastic.config_pb2
+from ..protobuf import config_pb2, localonly_pb2
+
+# from ..ble_interface import BLEInterface
+
+
+# from ..remote_hardware import onGPIOreceive
+# from ..config_pb2 import Config
+
 
 SDS_DISABLED_SENTINEL: int = 4_294_967_295
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
@@ -51,6 +52,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
         Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -82,6 +84,7 @@ def test_main_configure_phase3_verified_with_matching_config_values(
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
     assert "All settings verified" in out
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -126,6 +129,7 @@ def test_main_configure_phase1_direct_write_order(
     ]
     assert relevant == expected
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_channel_url_is_terminal_phase1_write(
@@ -159,6 +163,7 @@ def test_main_configure_channel_url_is_terminal_phase1_write(
         "setOwner",
     ):
         assert method not in after_seturl
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -196,6 +201,7 @@ def test_main_configure_seturl_unstable_aborts_before_phase2(
     _, err = capsys.readouterr()
     assert "transport did not stabilize" in err
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_seturl_stable_proceeds_to_phase2(
@@ -229,6 +235,7 @@ def test_main_configure_seturl_stable_proceeds_to_phase2(
     target_node.beginSettingsTransaction.assert_called_once()
     target_node.commitSettingsTransaction.assert_called_once()
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_phase3_no_reconnect_needed(
@@ -245,6 +252,7 @@ def test_main_configure_phase3_no_reconnect_needed(
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
     assert "no reboot expected" in out
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -269,6 +277,7 @@ def test_main_configure_channel_url_only_reports_possible_reconnect(
     assert "Configuration applied (no reboot expected)." not in out
     target_node.setURL.assert_called_once()
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_channel_url_skip_when_already_matching(
@@ -291,6 +300,7 @@ def test_main_configure_channel_url_skip_when_already_matching(
     assert "Channel url already matches device state; skipping apply." in out
     assert "Configuration applied (no reboot expected)." in out
     target_node.setURL.assert_not_called()
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -358,6 +368,7 @@ def test_main_configure_phase3_channel_url_verified(
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
     assert "Could not fully verify" in out
+
 
 @pytest.mark.unit
 def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(

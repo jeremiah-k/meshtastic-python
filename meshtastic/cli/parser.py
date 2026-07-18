@@ -81,6 +81,7 @@ _MODEM_PRESET_SHORTHANDS: tuple[tuple[tuple[str, ...], str, str, str], ...] = (
     ),
 )
 
+
 def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Register connection-related command-line arguments (serial, TCP, and BLE) on the given parser.
 
@@ -148,6 +149,7 @@ def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
 
     return parser
 
+
 def addSelectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add destination and channel selection arguments to the provided ArgumentParser.
 
@@ -186,6 +188,7 @@ def addSelectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
     return parser
 
+
 def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Register CLI options for importing a YAML configuration file and exporting device configuration as YAML.
 
@@ -217,6 +220,7 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
         help="Export device config as YAML (to stdout if no file given)",
     )
     return parser
+
 
 def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add configuration-related CLI arguments to the given ArgumentParser.
@@ -361,6 +365,7 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     return parser
 
+
 def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add channel-related CLI options to the provided argument parser.
 
@@ -470,6 +475,7 @@ def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
 
     return parser
 
+
 def addPositionConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add command-line arguments for configuring fixed position and which position fields to send.
 
@@ -525,6 +531,7 @@ def addPositionConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentP
         action="store",
     )
     return parser
+
 
 def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Register CLI arguments for local-only actions that query or display information from the local node.
@@ -635,6 +642,7 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 
     return parser
 
+
 def addRemoteActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Register remote-action CLI flags on the provided ArgumentParser.
 
@@ -703,6 +711,7 @@ def addRemoteActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
     )
 
     return parser
+
 
 def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add command-line options for remote administrative actions that require admin privileges.
@@ -832,6 +841,7 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
 
     return parser
+
 
 def parse_cli_args(
     parser: argparse.ArgumentParser,

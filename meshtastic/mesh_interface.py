@@ -400,10 +400,7 @@ class MeshInterface:  # pylint: disable=R0902
         """Set the queueStatus attribute directly."""
         self.queueStatus = queue_status
 
-
-    def getRegionPresetInfo(
-        self, region: int | str | None
-    ) -> RegionPresetInfo | None:
+    def getRegionPresetInfo(self, region: int | str | None) -> RegionPresetInfo | None:
         """Return firmware-declared compatibility data for ``region``, if present.
 
         ``region`` may be the protobuf enum integer, its stringified form, or

@@ -17,12 +17,13 @@ from meshtastic.__main__ import (
     main,
 )
 
-# from ..ble_interface import BLEInterface
-
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
 from ..serial_interface import SerialInterface
 from ..util import Acknowledgment
+
+# from ..ble_interface import BLEInterface
+
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
@@ -49,6 +50,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
         Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -93,19 +95,20 @@ def test_main_factory_reset_local_accepts_ack_before_close(
     iface._wait_for_request_ack.assert_called_once()
     wait_args, wait_kwargs = iface._wait_for_request_ack.call_args
     assert wait_args[:2] == ("receivedNak", 123)
-    assert 0 < wait_kwargs["timeout_seconds"] <= (
-        main_module.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
+    assert (
+        0
+        < wait_kwargs["timeout_seconds"]
+        <= (main_module.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS)
     )
     iface._raise_wait_error_if_present.assert_called_once_with(
         "receivedNak", request_id=123
     )
-    iface._retire_wait_request.assert_called_once_with(
-        "receivedNak", request_id=123
-    )
+    iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=123)
     iface.waitForAckNak.assert_not_called()
     assert iface._acknowledgment.receivedImplAck is False
     assert "Waiting for factory reset acknowledgment or reboot disconnect" in out
     assert err == ""
+
 
 @pytest.mark.unit
 def test_local_factory_reset_accepts_transient_reboot_disconnect() -> None:
@@ -147,6 +150,7 @@ def test_local_factory_reset_accepts_transient_reboot_disconnect() -> None:
     assert request.id == 456
     iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=456)
 
+
 @pytest.mark.unit
 def test_local_factory_reset_accepts_implicit_ack_with_legacy_completion_flag() -> None:
     """A valid implicit ACK must win over the legacy receivedNak completion latch."""
@@ -181,6 +185,7 @@ def test_local_factory_reset_accepts_implicit_ack_with_legacy_completion_flag() 
     assert request is not None
     assert request.id == 457
     iface._raise_wait_error_if_present.assert_called()
+
 
 @pytest.mark.unit
 def test_local_factory_reset_accepts_tcp_socket_generation_change() -> None:
@@ -224,6 +229,7 @@ def test_local_factory_reset_accepts_tcp_socket_generation_change() -> None:
     # firmware-defined seven-second reboot window.
     assert iface._timeout.expireTimeout == 0.01
 
+
 @pytest.mark.unit
 def test_local_factory_reset_ignores_socket_change_before_send_returns() -> None:
     """A transport change before a concrete request returns is not acceptance."""
@@ -257,6 +263,7 @@ def test_local_factory_reset_ignores_socket_change_before_send_returns() -> None
             full=False,
             timeout=0.01,
         )
+
 
 @pytest.mark.unit
 def test_local_factory_reset_ignores_pre_send_disconnect_event() -> None:
@@ -293,6 +300,7 @@ def test_local_factory_reset_ignores_pre_send_disconnect_event() -> None:
 
     iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=654)
 
+
 @pytest.mark.unit
 def test_local_factory_reset_times_out_without_ack_or_disconnect() -> None:
     """A queued reset without ACK, NAK, or reboot remains a hard failure."""
@@ -321,6 +329,7 @@ def test_local_factory_reset_times_out_without_ack_or_disconnect() -> None:
         )
 
     iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=789)
+
 
 @pytest.mark.unit
 def test_local_factory_reset_nak_remains_failure() -> None:
@@ -357,6 +366,7 @@ def test_local_factory_reset_nak_remains_failure() -> None:
     )
     iface._retire_wait_request.assert_called_once_with("receivedNak", request_id=987)
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_factory_reset_skips_ack_wait_when_send_is_disabled() -> None:
@@ -377,6 +387,7 @@ def test_main_factory_reset_skips_ack_wait_when_send_is_disabled() -> None:
     iface._raise_wait_error_if_present.assert_not_called()
     iface._retire_wait_request.assert_not_called()
     iface.waitForAckNak.assert_not_called()
+
 
 @pytest.mark.unit
 def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:

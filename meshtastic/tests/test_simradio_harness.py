@@ -6,8 +6,8 @@ import errno
 import logging
 import signal
 import subprocess
-from collections.abc import Callable
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -22,8 +22,8 @@ from . import conftest as simradio_conftest
 from . import simradio_harness, simradio_helpers
 from .simradio_harness import (
     CHAIN_TOPOLOGY,
-    RebootCheckpoint,
     REBOOT_RECOVERY_FILENAME,
+    RebootCheckpoint,
     SimMesh,
     SimNode,
     _build_mesh_packet,
@@ -33,11 +33,11 @@ from .simradio_harness import (
     find_meshtasticd,
 )
 from .simradio_helpers import (
-    PacketCollector,
-    _classify_cli_operation,
     _DEFAULT_RETRIES,
     _DESTRUCTIVE_ARGUMENTS,
     _READ_ONLY_ARGUMENTS,
+    PacketCollector,
+    _classify_cli_operation,
     _redact_cli_diagnostics,
     cli_then_verify,
     connect_iface,
@@ -118,8 +118,7 @@ def test_factory_reset_reboot_recovers_known_portduino_sigsegv(
     marker = f"Using config file {node.port}\n"
     version = "INFO S:B:37,2.7.26,native-tft,unknown\n"
     reset_evidence = (
-        "Factory config reset finished, rebooting soon\n"
-        "Reboot in 7 seconds\n"
+        "Factory config reset finished, rebooting soon\n" "Reboot in 7 seconds\n"
     )
     log_path = tmp_path / "meshtasticd.log"
     prefix = marker + version
@@ -176,10 +175,7 @@ def test_factory_reset_reboot_rejects_unexpected_exit_status(
     node.workdir = tmp_path
     marker = f"Using config file {node.port}\n"
     version = "INFO S:B:37,2.7.26,native-tft,unknown\n"
-    evidence = (
-        "Factory config reset finished, rebooting soon\n"
-        "Reboot in 7 seconds\n"
-    )
+    evidence = "Factory config reset finished, rebooting soon\n" "Reboot in 7 seconds\n"
     prefix = marker + version
     log_path = tmp_path / "meshtasticd.log"
     log_path.write_text(prefix + evidence, encoding="utf-8")
@@ -201,14 +197,9 @@ def test_factory_reset_reboot_rejects_same_crash_on_non_27_firmware(
     node.workdir = tmp_path
     marker = f"Using config file {node.port}\n"
     version = "INFO S:B:37,2.8.0,native-tft,unknown\n"
-    evidence = (
-        "Factory config reset finished, rebooting soon\n"
-        "Reboot in 7 seconds\n"
-    )
+    evidence = "Factory config reset finished, rebooting soon\n" "Reboot in 7 seconds\n"
     prefix = marker + version
-    (tmp_path / "meshtasticd.log").write_text(
-        prefix + evidence, encoding="utf-8"
-    )
+    (tmp_path / "meshtasticd.log").write_text(prefix + evidence, encoding="utf-8")
     checkpoint = RebootCheckpoint(1, len(prefix.encode()), 123)
     process = MagicMock(pid=123, returncode=-signal.SIGSEGV)
     process.poll.return_value = -signal.SIGSEGV
@@ -257,9 +248,7 @@ def test_expected_reboot_exit_relaunches_same_vfs_and_records_recovery(
     assert "new_pid=456" in recovery
     assert "exit_status=-11" in recovery
     assert "exit_signal=SIGSEGV" in recovery
-    context = (tmp_path / simradio_harness.CONTEXT_FILENAME).read_text(
-        encoding="utf-8"
-    )
+    context = (tmp_path / simradio_harness.CONTEXT_FILENAME).read_text(encoding="utf-8")
     assert "restart_count=1" in context
     assert "last_reboot_exit_status=-11" in context
     node._close_log_files()
@@ -292,9 +281,7 @@ def test_set_region_drains_local_write_and_verifies_persisted_state(
         verifier(iface)
 
     monkeypatch.setattr(simradio_helpers, "run_cli", _run_cli)
-    monkeypatch.setattr(
-        simradio_helpers, "verify_state_eventually", _verify_state
-    )
+    monkeypatch.setattr(simradio_helpers, "verify_state_eventually", _verify_state)
 
     simradio_helpers.set_region(44_404, "US")
 
@@ -341,9 +328,7 @@ def test_set_region_rejects_unpersisted_firmware_state(
         iface.localNode.localConfig.lora.region = 0
         verifier(iface)
 
-    monkeypatch.setattr(
-        simradio_helpers, "verify_state_eventually", _verify_state
-    )
+    monkeypatch.setattr(simradio_helpers, "verify_state_eventually", _verify_state)
 
     with pytest.raises(AssertionError, match="expected US, got UNSET"):
         simradio_helpers.set_region(44_404, "US")
@@ -498,9 +483,7 @@ def test_simradio_bridge_drops_oversized_payload() -> None:
 
     mesh._on_sim_packet(
         packet={
-            "decoded": {
-                "payload": b"x" * (mesh_pb2.Constants.DATA_PAYLOAD_LEN + 1)
-            }
+            "decoded": {"payload": b"x" * (mesh_pb2.Constants.DATA_PAYLOAD_LEN + 1)}
         },
         interface=transmitter,
     )
@@ -642,6 +625,7 @@ def test_simradio_port_preflight_allows_non_listening_kernel_state(
     probe.connect_ex.assert_called_once_with(("127.0.0.1", 44_404))
     probe.bind.assert_not_called()
 
+
 @pytest.mark.unit
 def test_simradio_port_preflight_rejects_ambiguous_probe_result(
     monkeypatch: pytest.MonkeyPatch,
@@ -704,6 +688,7 @@ def test_simradio_node_cleans_resources_when_process_launch_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A Popen failure should close logs and remove the temporary VFS."""
+
     def _fail_launch(*_args: object, **_kwargs: object) -> None:
         raise OSError("simulated launch failure")
 
@@ -1006,10 +991,7 @@ def test_classify_cli_operation_maps_arguments_to_kind(
 @pytest.mark.unit
 def test_classify_destructive_wins_over_read_only() -> None:
     """A mixed argument list is classified conservatively."""
-    assert (
-        _classify_cli_operation(["--ch-del", "--info"])
-        == "non_idempotent"
-    )
+    assert _classify_cli_operation(["--ch-del", "--info"]) == "non_idempotent"
 
 
 @pytest.mark.unit

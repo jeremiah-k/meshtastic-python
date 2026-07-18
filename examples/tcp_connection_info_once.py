@@ -10,6 +10,7 @@ Cleanup/error handling: explicit connect failure message and clean close on call
 import argparse
 
 from pubsub import pub
+
 import meshtastic.tcp_interface
 
 
@@ -21,7 +22,9 @@ def on_connection(interface, topic=pub.AUTO_TOPIC):  # pylint: disable=unused-ar
 
 def main() -> int:
     """Parse args, connect, and wait for established callback."""
-    parser = argparse.ArgumentParser(description="Print radio info on TCP connect and exit")
+    parser = argparse.ArgumentParser(
+        description="Print radio info on TCP connect and exit"
+    )
     parser.add_argument("host", help="TCP hostname or IP of the Meshtastic node")
     args = parser.parse_args()
 

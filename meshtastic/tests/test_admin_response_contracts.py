@@ -147,7 +147,9 @@ def test_contract_maps_named_config_and_module_enum_values() -> None:
 
 
 @pytest.mark.unit
-def test_matcher_exception_does_not_consume_handler(caplog: pytest.LogCaptureFixture) -> None:
+def test_matcher_exception_does_not_consume_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     iface = MeshInterface(noProto=True)
     callback = MagicMock()
 

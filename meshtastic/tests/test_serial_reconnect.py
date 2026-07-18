@@ -161,6 +161,7 @@ def test_poll_reconnect_waits_for_dead_reader_thread() -> None:
     client.connect.return_value = None
     # After connect, mark as connected
     client.connect.side_effect = lambda: client.isConnected.set()
+
     # Simulate thread dying after join
     def _simulate_join_exit(**kw: object) -> None:
         client._rxThread.is_alive.return_value = False
@@ -403,7 +404,9 @@ def test_transport_dead_when_rx_thread_missing() -> None:
 def test_poll_reconnect_sleeps_when_connect_returns_not_live() -> None:
     """If connect() returns but interface isn't live, sleep before returning."""
 
-    client = _make_serial_mock(is_connected=False, stream_open=False, reader_alive=False)
+    client = _make_serial_mock(
+        is_connected=False, stream_open=False, reader_alive=False
+    )
     _simulate_reader_exit(client)
     # connect() succeeds (no exception) but doesn't set isConnected or transport
     client.connect.return_value = None

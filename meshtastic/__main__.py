@@ -29,27 +29,32 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
-from meshtastic.cli.values import (
-    is_local_destination as _is_local_destination,
-    looks_like_integer_literal as _looks_like_integer_literal,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    parse_bitfield_value as _parse_bitfield_value,
-    parse_integer_literal as _parse_integer_literal,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    parse_modem_preset_name as _parse_modem_preset_name,  # noqa: F401,W0611 - legacy __main__ compatibility export
-)
+
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
-from meshtastic.cli.parser import (
+from meshtastic.cli.parser import (  # noqa: F401,W0611 - legacy __main__ compatibility export
     _MODEM_PRESET_SHORTHANDS,
-    addChannelConfigArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addConfigArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addConnectionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addImportExportArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addLocalActionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addPositionConfigArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addRemoteActionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addRemoteAdminArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
-    addSelectionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addChannelConfigArgs,
+    addConfigArgs,
+    addConnectionArgs,
+    addImportExportArgs,
+    addLocalActionArgs,
+    addPositionConfigArgs,
+    addRemoteActionArgs,
+    addRemoteAdminArgs,
+    addSelectionArgs,
     parse_cli_args,
+)
+from meshtastic.cli.values import is_local_destination as _is_local_destination
+from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
+    looks_like_integer_literal as _looks_like_integer_literal,
+)
+from meshtastic.cli.values import parse_bitfield_value as _parse_bitfield_value
+from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
+    parse_integer_literal as _parse_integer_literal,
+)
+from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
+    parse_modem_preset_name as _parse_modem_preset_name,
 )
 from meshtastic.configure_verify import (
     _verify_channel_url_against_state,
@@ -57,13 +62,13 @@ from meshtastic.configure_verify import (
 )
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
-from meshtastic.mesh_interface import MeshInterface
 from meshtastic.lockdown import (
     build_lockdown_auth,
     read_lockdown_passphrase_file,
     send_lockdown_auth,
     validate_lockdown_passphrase,
 )
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
     admin_pb2,
     channel_pb2,
@@ -168,14 +173,6 @@ BITFIELD_ENUMS = {
 # the historical behavior when callers supply more than one shorthand: later
 # options win. ``--ch-preset`` below is the scalable path for every enum value
 # present in the active protobuf schema, including future additions.
-
-
-
-
-
-
-
-
 
 
 # ==============================================================================
@@ -556,8 +553,6 @@ def _post_seturl_stability_check(
     return False
 
 
-
-
 def _send_local_factory_reset_and_wait(
     reset_node: Any,
     *,
@@ -635,7 +630,11 @@ def _send_local_factory_reset_and_wait(
             if remaining <= 0:
                 break
 
-            if scoped_wait_available and callable(wait_for_request_ack) and callable(raise_wait_error):
+            if (
+                scoped_wait_available
+                and callable(wait_for_request_ack)
+                and callable(raise_wait_error)
+            ):
                 completed = wait_for_request_ack(
                     "receivedNak",
                     request_id,
@@ -2535,7 +2534,7 @@ def onConnected(interface: MeshInterface) -> None:
                 )
 
         if preset_val is not None:
-            _set_simple_config(preset_val)  # type: ignore[arg-type]
+            _set_simple_config(preset_val)
 
         if args.ch_set or args.ch_enable or args.ch_disable:
             closeNow = True
@@ -2639,7 +2638,9 @@ def onConnected(interface: MeshInterface) -> None:
         if args.show_region_presets:
             closeNow = True
             if not _is_local_destination(interface, args.dest):
-                print("Region/preset capabilities are available only from the local node.")
+                print(
+                    "Region/preset capabilities are available only from the local node."
+                )
             elif not interface.regionPresets:
                 print(
                     "This firmware did not provide usable region/preset compatibility metadata; "
@@ -2648,14 +2649,18 @@ def onConnected(interface: MeshInterface) -> None:
             else:
                 for region, info in sorted(interface.regionPresets.items()):
                     try:
-                        region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(cast(Any, region))
+                        region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(
+                            cast(Any, region)
+                        )
                     except ValueError:
                         region_name = f"REGION_{region}"
                     preset_names = []
                     for value in info.presets:
                         try:
                             preset_names.append(
-                                config_pb2.Config.LoRaConfig.ModemPreset.Name(cast(Any, value))
+                                config_pb2.Config.LoRaConfig.ModemPreset.Name(
+                                    cast(Any, value)
+                                )
                             )
                         except ValueError:
                             preset_names.append(f"PRESET_{value}")
@@ -2687,11 +2692,18 @@ def onConnected(interface: MeshInterface) -> None:
         if lockdown_action is not None:
             closeNow = True
             if not _is_local_destination(interface, args.dest):
-                _cli_exit("Lockdown commands apply only to the directly connected local node.")
-            if lockdown_action in {"provision", "lock-now", "disable"} and not args.lockdown_yes:
-                confirmation = input(
-                    f"Type 'yes' to confirm lockdown {lockdown_action}: "
-                ).strip().casefold()
+                _cli_exit(
+                    "Lockdown commands apply only to the directly connected local node."
+                )
+            if (
+                lockdown_action in {"provision", "lock-now", "disable"}
+                and not args.lockdown_yes
+            ):
+                confirmation = (
+                    input(f"Type 'yes' to confirm lockdown {lockdown_action}: ")
+                    .strip()
+                    .casefold()
+                )
                 if confirmation != "yes":
                     _cli_exit("Aborted.")
             try:
@@ -2719,7 +2731,9 @@ def onConnected(interface: MeshInterface) -> None:
                             )
                             if entered != confirmed:
                                 _cli_exit("Lockdown passphrases do not match.")
-                        passphrase = validate_lockdown_passphrase(entered.encode("utf-8"))
+                        passphrase = validate_lockdown_passphrase(
+                            entered.encode("utf-8")
+                        )
                 auth = build_lockdown_auth(
                     passphrase,
                     boots_remaining=args.lockdown_boots,
@@ -3600,34 +3614,6 @@ def common() -> None:
         # sys.exit(0)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # End of reconnect helpers
 # ---------------------------------------------------------------------------
@@ -3646,7 +3632,6 @@ def initParser() -> None:
         argcomplete_module=argcomplete,
     )
     mt_config.parser = parser
-
 
 
 def main() -> None:

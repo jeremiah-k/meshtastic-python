@@ -22,8 +22,8 @@ import subprocess
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
 from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, BinaryIO, Literal
@@ -56,9 +56,7 @@ FACTORY_RESET_REBOOT_MARKERS = (
     "Factory config reset finished, rebooting soon",
     "Reboot in ",
 )
-KNOWN_FACTORY_RESET_REBOOT_EXIT_CODES: frozenset[int] = frozenset(
-    {-signal.SIGSEGV}
-)
+KNOWN_FACTORY_RESET_REBOOT_EXIT_CODES: frozenset[int] = frozenset({-signal.SIGSEGV})
 KNOWN_FACTORY_RESET_REBOOT_VERSION_RE = re.compile(r"\bS:B:\d+,2\.7\.\d+,")
 
 CHAIN_TOPOLOGY: Mapping[int, frozenset[int]] = MappingProxyType(
@@ -121,7 +119,9 @@ def _copy_channel_topology(
             raise ValueError(f"Topology transmitter index out of range: {transmitter}")
         normalized_receivers = frozenset(receivers)
         if transmitter in normalized_receivers:
-            raise ValueError(f"Topology node {transmitter} cannot receive its own packet")
+            raise ValueError(
+                f"Topology node {transmitter} cannot receive its own packet"
+            )
         invalid = sorted(
             receiver
             for receiver in normalized_receivers
@@ -282,9 +282,11 @@ class SimNode:
             ("restart_count", str(self._restart_count)),
             (
                 "last_reboot_exit_status",
-                ""
-                if self._last_reboot_exit_status is None
-                else str(self._last_reboot_exit_status),
+                (
+                    ""
+                    if self._last_reboot_exit_status is None
+                    else str(self._last_reboot_exit_status)
+                ),
             ),
         )
         content = "".join(f"{key}={value}\n" for key, value in values)
@@ -420,7 +422,9 @@ class SimNode:
                     status not in KNOWN_FACTORY_RESET_REBOOT_EXIT_CODES
                     or missing_markers
                 ):
-                    marker_detail = ", ".join(repr(marker) for marker in missing_markers)
+                    marker_detail = ", ".join(
+                        repr(marker) for marker in missing_markers
+                    )
                     raise RuntimeError(
                         f"meshtasticd node {self.node_id} exited with unexpected "
                         f"status {status} while waiting for factory-reset reboot; "
@@ -776,9 +780,11 @@ class SimMesh:
     def node_db_counts(self) -> list[int]:
         """Return current node-database sizes for diagnostics."""
         return [
-            len(node.iface.nodes)
-            if node.iface is not None and node.iface.nodes is not None
-            else 0
+            (
+                len(node.iface.nodes)
+                if node.iface is not None and node.iface.nodes is not None
+                else 0
+            )
             for node in self.nodes
         ]
 
@@ -835,7 +841,9 @@ class SimMesh:
                 logger.warning("Dropping simulator packet with non-bytes payload")
                 return
         if len(payload) > mesh_pb2.Constants.DATA_PAYLOAD_LEN:
-            logger.warning("Dropping oversized simulator payload: %d bytes", len(payload))
+            logger.warning(
+                "Dropping oversized simulator payload: %d bytes", len(payload)
+            )
             return
         try:
             base_packet = _build_mesh_packet(packet, payload)

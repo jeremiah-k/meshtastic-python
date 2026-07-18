@@ -5,8 +5,8 @@
 
 import argparse
 import copy
-import itertools
 import importlib
+import itertools
 import math
 import os
 import shutil
@@ -51,9 +51,7 @@ def _skip_simradio_if_unavailable() -> None:
     if not is_compatible_host():
         pytest.skip("native meshtasticd simulator tests require Linux")
     if find_meshtasticd() is None:
-        pytest.skip(
-            "meshtasticd not found; set MESHTASTICD_BIN or install it on PATH"
-        )
+        pytest.skip("meshtasticd not found; set MESHTASTICD_BIN or install it on PATH")
 
 
 def _simradio_base_port() -> int:

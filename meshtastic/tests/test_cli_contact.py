@@ -69,9 +69,7 @@ def test_add_contact_url_with_dest_uses_remote(monkeypatch: pytest.MonkeyPatch) 
         "https://meshtastic.org/v/#CKqkvZgIElEKCSE4MzBmNTIyYRIQUm9hZHJ1bm5lciBSaWRnZRoE"
         "UktTTiIGAAAAAAAAKAk4AkIgRxo_Fw_ergQIhRqBbrHasLYy3gU-Ay8hrhu4OVnIPQc="
     )
-    monkeypatch.setattr(
-        sys, "argv", ["", "--add-contact", url, "--dest", "!12345678"]
-    )
+    monkeypatch.setattr(sys, "argv", ["", "--add-contact", url, "--dest", "!12345678"])
     iface, local_node, remote_node = _make_cli_mocks()
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()

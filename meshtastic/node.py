@@ -938,9 +938,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
         # Reject reserved node numbers so generation/import invariants match
         if node_num == 0 or node_num >= 0xFFFFFFFF:
-            self._raise_interface_error(
-                f"Invalid node number for contact: {node_num}"
-            )
+            self._raise_interface_error(f"Invalid node number for contact: {node_num}")
 
         def _read_user_snapshot() -> dict[str, Any] | None:
             nodes_by_num = self.iface.nodesByNum

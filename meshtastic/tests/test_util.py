@@ -2097,7 +2097,10 @@ def test_flagsFromList_roundtrip(flags: int) -> None:
 
     for flag_type in (_EXCLUDED_MODULES, _POSITION_FLAGS):
         names = [
-            n for n in flags_to_list(flag_type, flags)  # pyright: ignore[reportArgumentType]
+            n
+            for n in flags_to_list(
+                flag_type, flags
+            )  # pyright: ignore[reportArgumentType]
             if not n.startswith("UNKNOWN_ADDITIONAL_FLAGS(")
         ]
         if names:

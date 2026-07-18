@@ -17,9 +17,7 @@ _REQUEST_TO_RESPONSE: dict[str, str] = {
     "get_device_metadata_request": "get_device_metadata_response",
     "get_ringtone_request": "get_ringtone_response",
     "get_device_connection_status_request": "get_device_connection_status_response",
-    "get_node_remote_hardware_pins_request": (
-        "get_node_remote_hardware_pins_response"
-    ),
+    "get_node_remote_hardware_pins_request": ("get_node_remote_hardware_pins_response"),
     "get_ui_config_request": "get_ui_config_response",
 }
 
@@ -85,7 +83,7 @@ class AdminResponseContract:
             return False
         if self.response_subtype is None:
             return True
-        response = getattr(raw, self.response_variant)
+        response: admin_pb2.AdminMessage = getattr(raw, self.response_variant)
         return response.WhichOneof("payload_variant") == self.response_subtype
 
 

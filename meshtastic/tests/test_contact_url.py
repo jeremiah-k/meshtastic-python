@@ -200,7 +200,9 @@ def test_contact_url_roundtrip(
 
 
 @st.composite
-def contact_url_roundtrip_params(draw: st.DrawFn) -> tuple[int, dict[str, Any], bool, bool]:
+def contact_url_roundtrip_params(
+    draw: st.DrawFn,
+) -> tuple[int, dict[str, Any], bool, bool]:
     """Hypothesis strategy: generate a full node config and roundtrip flags."""
     should_ignore = draw(st.booleans())
     manually_verified = draw(st.booleans())
@@ -265,7 +267,9 @@ def contact_url_roundtrip_params(draw: st.DrawFn) -> tuple[int, dict[str, Any], 
 @pytest.mark.unitslow
 @settings(deadline=None)
 @given(contact_url_roundtrip_params())
-def test_contact_url_roundtrip_hypothesis(params: tuple[int, dict[str, Any], bool, bool]) -> None:
+def test_contact_url_roundtrip_hypothesis(
+    params: tuple[int, dict[str, Any], bool, bool],
+) -> None:
     """Property: roundtrip preserves data across random field configurations."""
     node_num, node_data, should_ignore, manually_verified = params
 
@@ -363,9 +367,7 @@ def test_addContactURL_raises_for_oversized_payload() -> None:
 
     # Craft a fragment whose encoded length exceeds the pre-decode guard
     huge_fragment = "A" * 6000
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="fragment too large"
-    ):
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="fragment too large"):
         anode.addContactURL(f"https://meshtastic.org/v/#{huge_fragment}")
 
 
@@ -385,9 +387,7 @@ def test_addContactURL_rejects_broadcast_node_num() -> None:
     contact.user.id = "!ffffffff"
     data = contact.SerializeToString()
     encoded = b64mod.urlsafe_b64encode(data).decode("ascii").rstrip("=")
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Invalid node number"
-    ):
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="Invalid node number"):
         anode.addContactURL(f"https://meshtastic.org/v/#{encoded}")
 
 
@@ -406,9 +406,7 @@ def test_addContactURL_rejects_zero_node_num() -> None:
     contact.user.id = "!00000000"
     data = contact.SerializeToString()
     encoded = b64mod.urlsafe_b64encode(data).decode("ascii").rstrip("=")
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Invalid node number"
-    ):
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="Invalid node number"):
         anode.addContactURL(f"https://meshtastic.org/v/#{encoded}")
 
 

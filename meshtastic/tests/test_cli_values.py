@@ -73,7 +73,9 @@ def test_parse_bitfield_value_rejects_invalid_values(value: object) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("destination", [BROADCAST_ADDR, LOCAL_ADDR, "!25d6e474", "0x25D6E474", "634840180"])
+@pytest.mark.parametrize(
+    "destination", [BROADCAST_ADDR, LOCAL_ADDR, "!25d6e474", "0x25D6E474", "634840180"]
+)
 def test_is_local_destination_accepts_supported_forms(destination: str) -> None:
     interface = SimpleNamespace(myInfo=SimpleNamespace(my_node_num=int("25d6e474", 16)))
     assert is_local_destination(interface, destination)

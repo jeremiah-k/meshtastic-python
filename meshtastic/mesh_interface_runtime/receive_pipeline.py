@@ -20,7 +20,6 @@ from meshtastic import (
     publishingThread,
 )
 from meshtastic._topics import LOCKDOWN_STATUS_TOPIC
-from meshtastic.region_presets import decode_region_preset_map
 from meshtastic.protobuf import (
     channel_pb2,
     config_pb2,
@@ -28,6 +27,7 @@ from meshtastic.protobuf import (
     module_config_pb2,
     portnums_pb2,
 )
+from meshtastic.region_presets import decode_region_preset_map
 from meshtastic.util import stripnl
 
 if TYPE_CHECKING:
@@ -347,7 +347,6 @@ class ReceivePipeline:
                 raw=raw_map,
             )
         ]
-
 
     def _handle_from_radio_lockdown_status(
         self, context: _FromRadioContext

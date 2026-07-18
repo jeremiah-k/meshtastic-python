@@ -19,7 +19,9 @@ def _mesh_client(**attributes: object) -> MeshInterface:
 @pytest.mark.unit
 def test_main_runtime_compatibility_exports_reference_runtime_module() -> None:
     """Legacy ``__main__`` imports remain aliases, not duplicate runtime state."""
-    assert main_module.MAIN_LOOP_IDLE_SLEEP_SECONDS == runtime.MAIN_LOOP_IDLE_SLEEP_SECONDS
+    assert (
+        main_module.MAIN_LOOP_IDLE_SLEEP_SECONDS == runtime.MAIN_LOOP_IDLE_SLEEP_SECONDS
+    )
     assert (
         main_module.SERIAL_RECONNECT_RETRY_SECONDS
         == runtime.SERIAL_RECONNECT_RETRY_SECONDS
@@ -32,7 +34,9 @@ def test_main_runtime_compatibility_exports_reference_runtime_module() -> None:
         main_module.SERIAL_RX_THREAD_JOIN_TIMEOUT_SECONDS
         == runtime.SERIAL_RX_THREAD_JOIN_TIMEOUT_SECONDS
     )
-    assert main_module._is_serial_reconnect_client is runtime._is_serial_reconnect_client
+    assert (
+        main_module._is_serial_reconnect_client is runtime._is_serial_reconnect_client
+    )
     assert main_module._serial_transport_is_live is runtime._serial_transport_is_live
     assert main_module._serial_should_reconnect is runtime._serial_should_reconnect
     assert main_module._poll_serial_reconnect is runtime._poll_serial_reconnect

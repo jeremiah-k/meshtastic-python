@@ -10,16 +10,17 @@ from unittest.mock import MagicMock
 import pytest
 
 import meshtastic.__main__ as main_module
-from meshtastic.region_presets import RegionPresetInfo, decode_region_preset_map
 from meshtastic.__main__ import (
     initParser,
 )
-
-# from ..ble_interface import BLEInterface
+from meshtastic.region_presets import RegionPresetInfo, decode_region_preset_map
 
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
 from ..protobuf import config_pb2, mesh_pb2
+
+# from ..ble_interface import BLEInterface
+
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
@@ -47,6 +48,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
 
+
 def _run_region_preset_cli(
     monkeypatch: pytest.MonkeyPatch,
     *extra_args: str,
@@ -72,12 +74,14 @@ def _run_region_preset_cli(
     main_module.onConnected(interface)
     return interface
 
+
 def _init_lockdown_cli(monkeypatch: pytest.MonkeyPatch, *cli_args: str) -> None:
     effective_args = list(cli_args)
     if "--dest" not in effective_args:
         effective_args.extend(("--dest", MAIN_LOCAL_ADDR))
     monkeypatch.setattr(sys, "argv", ["meshtastic", *effective_args])
     initParser()
+
 
 def _run_lockdown_cli(
     monkeypatch: pytest.MonkeyPatch,
@@ -95,6 +99,7 @@ def _run_lockdown_cli(
     main_module.onConnected(interface)
     return interface, build, send
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_show_region_presets_reports_absent_metadata_and_closes(
@@ -109,6 +114,7 @@ def test_show_region_presets_reports_absent_metadata_and_closes(
     output = capsys.readouterr().out
     assert "did not provide usable region/preset compatibility metadata" in output
     interface.close.assert_called_once_with()
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -141,6 +147,7 @@ def test_lockdown_cli_unlock_from_file(
         interface, build.return_value, timeout=20.0, allow_reboot_without_status=False
     )
     assert "Lockdown status: UNLOCKED" in capsys.readouterr().out
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -185,6 +192,7 @@ def test_show_region_presets_reports_malformed_metadata(
     assert dict(interface.regionPresets) == {}
     interface.close.assert_called_once_with()
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_show_region_presets_rejects_remote_destination(
@@ -201,6 +209,7 @@ def test_show_region_presets_rejects_remote_destination(
     output = capsys.readouterr().out
     assert "available only from the local node" in output
     interface.close.assert_called_once_with()
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -232,6 +241,7 @@ def test_show_region_presets_formats_known_unknown_and_licensed_values(
     assert "REGION_999: default=PRESET_997; presets=PRESET_998" in output
     interface.close.assert_called_once_with()
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_region_preset_cli_without_flag_does_not_read_capability_state(
@@ -251,6 +261,7 @@ def test_region_preset_cli_without_flag_does_not_read_capability_state(
     main_module.onConnected(interface)
 
     assert "region/preset" not in capsys.readouterr().out
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -326,8 +337,7 @@ def test_lockdown_cli_rejects_unacknowledged_command_line_secret(
     assert exc_info.value.code == 1
     assert (
         "--lockdown-passphrase requires "
-        "--insecure-lockdown-passphrase-on-command-line"
-        in capsys.readouterr().err
+        "--insecure-lockdown-passphrase-on-command-line" in capsys.readouterr().err
     )
     validate.assert_not_called()
     build.assert_not_called()
@@ -359,6 +369,7 @@ def test_lockdown_cli_command_line_secret_formats_unknown_state_and_backoff(
     assert "Lockdown status: STATE_999" in output
     assert "Retry backoff: 7s" in output
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_lockdown_cli_provision_confirmation_abort(
@@ -375,6 +386,7 @@ def test_lockdown_cli_provision_confirmation_abort(
         main_module.onConnected(interface)
 
     assert "Aborted." in capsys.readouterr().err
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -394,6 +406,7 @@ def test_lockdown_cli_provision_rejects_mismatched_interactive_passphrases(
         main_module.onConnected(interface)
 
     assert "Lockdown passphrases do not match." in capsys.readouterr().err
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -426,6 +439,7 @@ def test_lockdown_cli_provision_reports_auth_failure(
     assert "Lockdown status: UNLOCK_FAILED" in captured.out
     assert "Lockdown authentication failed." in captured.err
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_lockdown_cli_lock_now_allows_reboot_without_status(
@@ -441,6 +455,7 @@ def test_lockdown_cli_lock_now_allows_reboot_without_status(
     assert build.call_args.kwargs["lock_now"] is True
     assert send.call_args.kwargs["allow_reboot_without_status"] is True
     assert "device may already be rebooting" in capsys.readouterr().out
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -461,6 +476,7 @@ def test_lockdown_cli_disable_sets_disable_flag(
     )
     assert build.call_args.kwargs["disable"] is True
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_lockdown_cli_accepts_explicit_local_destination(
@@ -477,6 +493,7 @@ def test_lockdown_cli_accepts_explicit_local_destination(
     )
     send.assert_called_once()
     interface.close.assert_called_once_with()
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -532,6 +549,7 @@ def test_lockdown_cli_maps_passphrase_errors_to_user_facing_exit(
 
     assert expected in capsys.readouterr().err
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_lockdown_cli_maps_invalid_limits_to_user_facing_exit(
@@ -559,6 +577,7 @@ def test_lockdown_cli_maps_invalid_limits_to_user_facing_exit(
     output = capsys.readouterr().err
     assert "Invalid lockdown options" in output
     assert "boots_remaining must be between 0 and 255" in output
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -596,6 +615,7 @@ def test_lockdown_cli_maps_send_failures_to_user_facing_exit(
     assert "Lockdown command failed" in output
     assert str(error) in output
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_lockdown_cli_interactive_unlock_uses_single_prompt(
@@ -616,6 +636,7 @@ def test_lockdown_cli_interactive_unlock_uses_single_prompt(
     getpass_mock.assert_called_once_with("Lockdown passphrase: ")
     validate_mock.assert_called_once_with(b"secret")
     assert build.call_args.args == (b"secret",)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")

@@ -460,9 +460,7 @@ def cli_then_verify(
     """Run a CLI action, assert its result, then verify state independently."""
     result = run_cli(port, *arguments, timeout=cli_timeout)
     if expected_returncode is not None and result.returncode != expected_returncode:
-        option_names = [
-            argument for argument in arguments if argument.startswith("--")
-        ]
+        option_names = [argument for argument in arguments if argument.startswith("--")]
         raise AssertionError(
             f"CLI returned {result.returncode}; expected {expected_returncode}.\n"
             f"Command options: {option_names!r}\n"
