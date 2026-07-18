@@ -1443,6 +1443,10 @@ class _FirmwareEditionEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Firmw
     """
     Hamvention, the Dayton amateur radio convention
     """
+    FAB: _FirmwareEdition.ValueType  # 20
+    """
+    FAB, the international Fab Lab digital fabrication conference
+    """
     DIY_EDITION: _FirmwareEdition.ValueType  # 127
     """
     Placeholder for DIY and unofficial events
@@ -1477,6 +1481,10 @@ Burning Man, the yearly hippie gathering in the desert
 HAMVENTION: FirmwareEdition.ValueType  # 19
 """
 Hamvention, the Dayton amateur radio convention
+"""
+FAB: FirmwareEdition.ValueType  # 20
+"""
+FAB, the international Fab Lab digital fabrication conference
 """
 DIY_EDITION: FirmwareEdition.ValueType  # 127
 """
