@@ -490,7 +490,9 @@ class TestHandleFromRadioRegionPresets:
 
         assert mock_interface.regionPresetMap is not from_radio.region_presets
         assert mock_interface.regionPresetMap == from_radio.region_presets
-        assert mock_interface.regionPresets[config_pb2.Config.LoRaConfig.US].presets == (
+        assert mock_interface.regionPresets[
+            config_pb2.Config.LoRaConfig.US
+        ].presets == (
             config_pb2.Config.LoRaConfig.LONG_FAST,
             config_pb2.Config.LoRaConfig.LONG_SLOW,
         )
@@ -520,7 +522,6 @@ class TestHandleFromRadioLockdownStatus:
         assert mock_interface.lockdownStatus.state == mesh_pb2.LockdownStatus.LOCKED
         assert result[0].topic == "meshtastic.lockdown_status"
         assert result[0].payload["status"].backoff_seconds == 12
-
 
 
 class TestHandleFromRadioNodeInfo:

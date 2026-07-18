@@ -33,7 +33,9 @@ def test_simradio_mesh_broadcast_crosses_relay(firmware_mesh: SimMesh) -> None:
     ):
         firmware_mesh.send_text(0, text, wantAck=False)
         assert collector_b.wait_for_text(text), "B did not receive A's broadcast"
-        assert collector_c.wait_for_text(text), "C did not receive A's relayed broadcast"
+        assert collector_c.wait_for_text(
+            text
+        ), "C did not receive A's relayed broadcast"
 
 
 def test_simradio_mesh_direct_message_stops_at_destination(

@@ -326,9 +326,7 @@ def test_simradio_cli_channel_lifecycle(firmware_node: SimNode) -> None:
     cli_then_verify(
         firmware_node.port,
         ("--ch-disable", "--ch-index", "1"),
-        lambda iface: _assert_channel_role(
-            iface, 1, channel_pb2.Channel.Role.DISABLED
-        ),
+        lambda iface: _assert_channel_role(iface, 1, channel_pb2.Channel.Role.DISABLED),
     )
     cli_then_verify(
         firmware_node.port,
@@ -340,9 +338,7 @@ def test_simradio_cli_channel_lifecycle(firmware_node: SimNode) -> None:
     cli_then_verify(
         firmware_node.port,
         ("--ch-del", "--ch-index", "1"),
-        lambda iface: _assert_channel_role(
-            iface, 1, channel_pb2.Channel.Role.DISABLED
-        ),
+        lambda iface: _assert_channel_role(iface, 1, channel_pb2.Channel.Role.DISABLED),
     )
 
 
@@ -364,8 +360,7 @@ def test_simradio_cli_channel_url_paths(firmware_node: SimNode) -> None:
     )
 
     invalid_url = (
-        "https://www.meshtastic.org/c/#"
-        "GAMiENTxuzogKQdZ8Lz_q89Oab8qB0RlZmF1bHQ="
+        "https://www.meshtastic.org/c/#" "GAMiENTxuzogKQdZ8Lz_q89Oab8qB0RlZmF1bHQ="
     )
     invalid = run_cli(firmware_node.port, "--seturl", invalid_url)
     assert invalid.returncode != 0, invalid.output
@@ -475,6 +470,7 @@ def test_simradio_cli_schema_get_set_paths(firmware_node: SimNode) -> None:
 
 def test_simradio_cli_factory_reset_config_isolated(firmware_node: SimNode) -> None:
     """--factory-reset should restore configuration, not owner identity."""
+
     def _assert_fixed_position(iface: TCPInterface) -> None:
         assert iface.localNode.localConfig.position.fixed_position is True
 

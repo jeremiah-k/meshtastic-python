@@ -5779,12 +5779,6 @@ def test_printConfig_skips_non_message_sections(
     assert err == ""
 
 
-
-
-
-
-
-
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_owner_values_use_normalized_strings(
@@ -5808,12 +5802,6 @@ def test_main_configure_owner_values_use_normalized_strings(
         call(long_name="Normalized Owner"),
         call(long_name=None, short_name="NO"),
     ]
-
-
-
-
-
-
 
 
 @pytest.mark.unit
@@ -5870,36 +5858,6 @@ def test_main_configure_rejects_owner_short_aliases(
     assert "ownerShort" in err
     target_node.beginSettingsTransaction.assert_not_called()
     target_node.setOwner.assert_not_called()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @pytest.mark.unit

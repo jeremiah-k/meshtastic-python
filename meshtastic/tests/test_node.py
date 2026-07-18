@@ -1360,9 +1360,7 @@ def test_deleteChannel_writes_only_changed_complete_cache_slots(
         for call in anode._send_admin.call_args_list
     )
     assert anode.channels is not None
-    assert [channel.index for channel in anode.channels] == list(
-        range(CHANNEL_LIMIT)
-    )
+    assert [channel.index for channel in anode.channels] == list(range(CHANNEL_LIMIT))
 
 
 @pytest.mark.unit
