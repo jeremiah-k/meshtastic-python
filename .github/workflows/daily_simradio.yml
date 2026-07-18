@@ -2,7 +2,7 @@ name: Daily SimRadio Firmware
 
 on:
   schedule:
-    - cron: "0 6 * * *"
+    - cron: 0 6 * * *
   workflow_dispatch: {}
 
 permissions:
@@ -14,7 +14,7 @@ env:
   POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
   MESHTASTICD_SIM_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/simradio/daily
   SIMRADIO_RESULT_DIR: ${{ github.workspace }}/.test-results/simradio/daily
-  MESHTASTICD_CHANNEL: "daily"
+  MESHTASTICD_CHANNEL: daily
   SIMRADIO_SOURCE_SHA: ${{ github.sha }}
 
 concurrency:

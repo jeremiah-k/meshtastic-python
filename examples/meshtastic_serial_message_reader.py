@@ -14,12 +14,15 @@ from datetime import datetime
 from typing import Any, Optional
 
 from pubsub import pub
+
 import meshtastic.serial_interface
 
 _TZ_NAME = time.tzname[time.localtime().tm_isdst > 0]
 
 
-def on_receive(packet: dict[str, Any], interface: Any) -> None:  # pylint: disable=unused-argument
+def on_receive(  # pylint: disable=unused-argument
+    packet: dict[str, Any], interface: Any
+) -> None:
     """Print a compact line for each received text packet."""
     decoded = packet.get("decoded", {})
     if decoded.get("portnum") != "TEXT_MESSAGE_APP":
@@ -37,8 +40,12 @@ def on_receive(packet: dict[str, Any], interface: Any) -> None:  # pylint: disab
 
 def main() -> int:
     """Connect over serial and print inbound text messages."""
-    parser = argparse.ArgumentParser(description="Read incoming Meshtastic text over serial")
-    parser.add_argument("--port", default=None, help="Serial port path (default: auto-detect)")
+    parser = argparse.ArgumentParser(
+        description="Read incoming Meshtastic text over serial"
+    )
+    parser.add_argument(
+        "--port", default=None, help="Serial port path (default: auto-detect)"
+    )
     args = parser.parse_args()
 
     pub.subscribe(on_receive, "meshtastic.receive")
