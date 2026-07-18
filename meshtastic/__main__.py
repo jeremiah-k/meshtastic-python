@@ -31,23 +31,24 @@ import meshtastic.util
 from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
 from meshtastic.cli.values import (
     is_local_destination as _is_local_destination,
-    looks_like_integer_literal as _looks_like_integer_literal,  # noqa: F401 - legacy __main__ compatibility export
+    looks_like_integer_literal as _looks_like_integer_literal,  # noqa: F401,W0611 - legacy __main__ compatibility export
     parse_bitfield_value as _parse_bitfield_value,
-    parse_integer_literal as _parse_integer_literal,  # noqa: F401 - legacy __main__ compatibility export
-    parse_modem_preset_name as _parse_modem_preset_name,  # noqa: F401 - legacy __main__ compatibility export
+    parse_integer_literal as _parse_integer_literal,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    parse_modem_preset_name as _parse_modem_preset_name,  # noqa: F401,W0611 - legacy __main__ compatibility export
 )
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
+# pylint: disable=unused-import
 from meshtastic.cli.parser import (
     _MODEM_PRESET_SHORTHANDS,
-    addChannelConfigArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addConfigArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addConnectionArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addImportExportArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addLocalActionArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addPositionConfigArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addRemoteActionArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addRemoteAdminArgs,  # noqa: F401 - legacy __main__ compatibility export
-    addSelectionArgs,  # noqa: F401 - legacy __main__ compatibility export
+    addChannelConfigArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addConfigArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addConnectionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addImportExportArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addLocalActionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addPositionConfigArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addRemoteActionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addRemoteAdminArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
+    addSelectionArgs,  # noqa: F401,W0611 - legacy __main__ compatibility export
     parse_cli_args,
 )
 from meshtastic.configure_verify import (

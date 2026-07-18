@@ -9,7 +9,10 @@ from meshtastic.cli.parser import parse_cli_args
 
 
 @pytest.mark.unit
-def test_parse_cli_args_registers_version_and_returns_namespace() -> None:
+def test_parse_cli_args_registers_version_and_returns_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.argv", ["meshtastic"])
     parser = argparse.ArgumentParser(add_help=False)
     args = parse_cli_args(parser, version="9.9.9", argcomplete_module=None)
     assert isinstance(args, argparse.Namespace)

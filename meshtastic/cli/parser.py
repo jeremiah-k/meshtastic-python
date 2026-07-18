@@ -1058,4 +1058,3 @@ def parse_cli_args(
         autocomplete = argcomplete_module.autocomplete
         autocomplete(parser)
     return parser.parse_args()
-    return parser
