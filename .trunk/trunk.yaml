@@ -18,6 +18,10 @@ lint:
     - pylint
     - pyright
     - renovate
+    # actionlint's --fix mangles pinned action `uses:` references (concatenates
+    # the resolved version onto the existing line, breaking the YAML). Disable
+    # until upstream fixes the autofix; pinact already covers action currency.
+    - actionlint
   ignore:
     - linters: [ALL]
       paths:
@@ -87,7 +91,6 @@ lint:
   enabled:
     - pinact@4.0.0
     - grype@0.110.0
-    - actionlint@1.7.12
     - black@26.5.1
     - checkov@3.3.8
     - git-diff-check
