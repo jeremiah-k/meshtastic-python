@@ -23,6 +23,7 @@ import yaml
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
+import meshtastic.cli.runtime as cli_runtime
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
@@ -47,13 +48,6 @@ from meshtastic.cli.parser import (
     addRemoteActionArgs,  # noqa: F401 - legacy __main__ compatibility export
     addRemoteAdminArgs,  # noqa: F401 - legacy __main__ compatibility export
     addSelectionArgs,  # noqa: F401 - legacy __main__ compatibility export
-)
-from meshtastic.cli.runtime import (
-    _is_serial_reconnect_client,  # noqa: F401 - legacy __main__ compatibility export
-    _listen_loop_poll_once,
-    _poll_serial_reconnect,  # noqa: F401 - legacy __main__ compatibility export
-    _serial_should_reconnect,  # noqa: F401 - legacy __main__ compatibility export
-    _serial_transport_is_live,  # noqa: F401 - legacy __main__ compatibility export
 )
 from meshtastic.configure_verify import (
     _verify_channel_url_against_state,
@@ -81,6 +75,21 @@ from meshtastic.version import (
     PROJECT_DISPLAY_NAME,
     get_active_version,
 )
+
+# COMPAT_STABLE_SHIM: Preserve legacy private imports while runtime owns behavior.
+MAIN_LOOP_IDLE_SLEEP_SECONDS = cli_runtime.MAIN_LOOP_IDLE_SLEEP_SECONDS
+SERIAL_RECONNECT_RETRY_SECONDS = cli_runtime.SERIAL_RECONNECT_RETRY_SECONDS
+SERIAL_LISTEN_CONNECTED_SLEEP_SECONDS = (
+    cli_runtime.SERIAL_LISTEN_CONNECTED_SLEEP_SECONDS
+)
+SERIAL_RX_THREAD_JOIN_TIMEOUT_SECONDS = (
+    cli_runtime.SERIAL_RX_THREAD_JOIN_TIMEOUT_SECONDS
+)
+_is_serial_reconnect_client = cli_runtime._is_serial_reconnect_client
+_serial_transport_is_live = cli_runtime._serial_transport_is_live
+_serial_should_reconnect = cli_runtime._serial_should_reconnect
+_poll_serial_reconnect = cli_runtime._poll_serial_reconnect
+_listen_loop_poll_once = cli_runtime._listen_loop_poll_once
 
 argcomplete: ModuleType | None = None
 try:
@@ -3580,7 +3589,7 @@ def common() -> None:
                 ):  # loop until someone presses ctrlc
                     try:
                         while True:
-                            if _listen_loop_poll_once(client):
+                            if cli_runtime._listen_loop_poll_once(client):
                                 continue
                     except KeyboardInterrupt:
                         logger.info("Exiting due to keyboard interrupt")

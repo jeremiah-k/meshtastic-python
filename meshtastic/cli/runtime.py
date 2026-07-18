@@ -10,13 +10,18 @@ from meshtastic.mesh_interface import MeshInterface
 
 logger = logging.getLogger(__name__)
 
+# Sleep interval for persistent non-serial listen sessions.
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
 
+# Delay before retrying a failed serial reconnect attempt.
 SERIAL_RECONNECT_RETRY_SECONDS = 0.5
 
+# Polling interval while a serial listen session remains healthy.
 SERIAL_LISTEN_CONNECTED_SLEEP_SECONDS = 2.0
 
+# Maximum wait for an old serial reader thread to stop.
 SERIAL_RX_THREAD_JOIN_TIMEOUT_SECONDS = 5.0
+
 
 def _is_serial_reconnect_client(client: MeshInterface) -> bool:
     """Return True if *client* is a real SerialInterface that supports reconnect.
@@ -28,6 +33,7 @@ def _is_serial_reconnect_client(client: MeshInterface) -> bool:
     """
     serial_cls = getattr(meshtastic.serial_interface, "SerialInterface", None)
     return isinstance(serial_cls, type) and isinstance(client, serial_cls)
+
 
 def _serial_transport_is_live(client: MeshInterface) -> bool:
     """Check if a serial interface has a live transport (stream open, reader alive).
@@ -44,6 +50,7 @@ def _serial_transport_is_live(client: MeshInterface) -> bool:
         return False
     return True
 
+
 def _serial_should_reconnect(client: MeshInterface) -> bool:
     """Return True if a serial client needs reconnect attention.
 
@@ -55,6 +62,7 @@ def _serial_should_reconnect(client: MeshInterface) -> bool:
     if getattr(client, "noProto", False):
         return not _serial_transport_is_live(client)
     return not client.isConnected.is_set()
+
 
 def _poll_serial_reconnect(client: MeshInterface) -> None:
     """Attempt one round of serial reconnection, sleeping on failure.
@@ -101,6 +109,7 @@ def _poll_serial_reconnect(client: MeshInterface) -> None:
             time.sleep(SERIAL_RECONNECT_RETRY_SECONDS)
         else:
             raise
+
 
 def _listen_loop_poll_once(client: MeshInterface) -> bool:
     """Execute one iteration of the persistent listen loop.
