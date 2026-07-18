@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import platform
+import sys
+from collections.abc import Sequence
 from typing import Protocol
 
 from meshtastic.cli.values import parse_modem_preset_name as _parse_modem_preset_name
@@ -836,16 +838,33 @@ def parse_cli_args(
     *,
     version: str,
     argcomplete_module: _ArgcompleteModule | None = None,
+    argv: Sequence[str] | None = None,
 ) -> argparse.Namespace:
-    """Configure the global CLI ArgumentParser by registering all Meshtastic command.
+    """Register all Meshtastic argument groups and parse the command line.
 
-    groups, enable shell autocompletion if available, parse command-line
-    arguments, and store the parser and parsed arguments on mt_config.
+    Registers help, connection, selection, import/export, configuration,
+    position, channel, local action, remote action, remote admin, and
+    miscellaneous argument groups on ``parser``, optionally enables shell
+    autocompletion via ``argcomplete_module``, and parses arguments.
 
-    Raises
-    ------
-    RuntimeError
-        if mt_config.parser is not initialized before calling.
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        The parser to configure with Meshtastic-specific argument groups.
+    version : str
+        Version string reported when ``--version`` is requested.
+    argcomplete_module : _ArgcompleteModule | None
+        Optional module exposing an ``autocomplete(parser)`` callable (the
+        ``argcomplete`` package). When provided, autocompletion is enabled.
+    argv : Sequence[str] | None
+        Argument vector to parse. When ``None`` (the default), ``sys.argv[1:]``
+        is used. Pass an explicit sequence to make parsing deterministic in
+        tests and embedded callers.
+
+    Returns
+    -------
+    argparse.Namespace
+        The parsed arguments.
     """
     # The "Help" group includes the help option and other informational stuff about the CLI itself
     outerHelpGroup = parser.add_argument_group("Help")
@@ -1057,4 +1076,4 @@ def parse_cli_args(
     if argcomplete_module is not None:
         autocomplete = argcomplete_module.autocomplete
         autocomplete(parser)
-    return parser.parse_args()
+    return parser.parse_args(argv if argv is not None else sys.argv[1:])

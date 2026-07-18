@@ -19,7 +19,9 @@ def test_parse_cli_args_registers_version_and_returns_namespace(
 
 
 @pytest.mark.unit
-def test_parse_cli_args_calls_optional_argcomplete(monkeypatch) -> None:
+def test_parse_cli_args_calls_optional_argcomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     parser = argparse.ArgumentParser(add_help=False)
     autocomplete = MagicMock()
     module = MagicMock(autocomplete=autocomplete)
@@ -29,7 +31,9 @@ def test_parse_cli_args_calls_optional_argcomplete(monkeypatch) -> None:
 
 
 @pytest.mark.unit
-def test_parse_cli_args_version_action_uses_supplied_version(monkeypatch, capsys) -> None:
+def test_parse_cli_args_version_action_uses_supplied_version(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     parser = argparse.ArgumentParser(add_help=False)
     monkeypatch.setattr("sys.argv", ["meshtastic", "--version"])
     with pytest.raises(SystemExit) as excinfo:
