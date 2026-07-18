@@ -1,20 +1,20 @@
 """Unit tests for serial disconnect/reconnect and noProto propagation."""
 
 import threading
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ..__main__ import (
+from ..cli.runtime import (
+    MAIN_LOOP_IDLE_SLEEP_SECONDS,
     SERIAL_LISTEN_CONNECTED_SLEEP_SECONDS,
+    SERIAL_RECONNECT_RETRY_SECONDS,
     SERIAL_RX_THREAD_JOIN_TIMEOUT_SECONDS,
     _is_serial_reconnect_client,
     _listen_loop_poll_once,
+    _poll_serial_reconnect,
     _serial_should_reconnect,
     _serial_transport_is_live,
-    _poll_serial_reconnect,
-    SERIAL_RECONNECT_RETRY_SECONDS,
 )
 from ..mesh_interface import MeshInterface
 
@@ -167,7 +167,7 @@ def test_poll_reconnect_waits_for_dead_reader_thread() -> None:
 
     client._rxThread.join.side_effect = _simulate_join_exit
 
-    with patch("meshtastic.__main__.time"):
+    with patch("meshtastic.cli.runtime.time"):
         _poll_serial_reconnect(client)
 
     client._rxThread.join.assert_called_once_with(
@@ -183,7 +183,7 @@ def test_poll_reconnect_returns_if_reader_still_alive() -> None:
     client = _make_serial_mock(is_connected=False)
     client._rxThread.is_alive.return_value = True  # stays alive
 
-    with patch("meshtastic.__main__.time") as mock_time:
+    with patch("meshtastic.cli.runtime.time") as mock_time:
         _poll_serial_reconnect(client)
 
     client._rxThread.join.assert_called_once_with(
@@ -201,7 +201,7 @@ def test_poll_reconnect_swallows_oserror() -> None:
     client.connect.side_effect = OSError("device gone")
     _simulate_reader_exit(client)
 
-    with patch("meshtastic.__main__.time") as mock_time:
+    with patch("meshtastic.cli.runtime.time") as mock_time:
         _poll_serial_reconnect(client)
 
     mock_time.sleep.assert_called_once_with(SERIAL_RECONNECT_RETRY_SECONDS)
@@ -216,7 +216,7 @@ def test_poll_reconnect_swallows_retryable_mesh_error() -> None:
     client.connect.side_effect = MeshInterface.MeshInterfaceError("device not found")
     _simulate_reader_exit(client)
 
-    with patch("meshtastic.__main__.time") as mock_time:
+    with patch("meshtastic.cli.runtime.time") as mock_time:
         _poll_serial_reconnect(client)
 
     mock_time.sleep.assert_called_once_with(SERIAL_RECONNECT_RETRY_SECONDS)
@@ -408,7 +408,7 @@ def test_poll_reconnect_sleeps_when_connect_returns_not_live() -> None:
     # connect() succeeds (no exception) but doesn't set isConnected or transport
     client.connect.return_value = None
 
-    with patch("meshtastic.__main__.time") as mock_time:
+    with patch("meshtastic.cli.runtime.time") as mock_time:
         _poll_serial_reconnect(client)
 
     client.connect.assert_called_once()
@@ -431,12 +431,12 @@ def test_listen_loop_serial_connected_sleeps_connected_interval(
     def fake_sleep(secs: float) -> None:
         sleep_calls.append(secs)
 
-    monkeypatch.setattr(time, "sleep", fake_sleep)
+    monkeypatch.setattr("meshtastic.cli.runtime.time.sleep", fake_sleep)
     monkeypatch.setattr(
-        "meshtastic.__main__._is_serial_reconnect_client", lambda c: True
+        "meshtastic.cli.runtime._is_serial_reconnect_client", lambda c: True
     )
     monkeypatch.setattr(
-        "meshtastic.__main__._serial_should_reconnect", lambda c: False
+        "meshtastic.cli.runtime._serial_should_reconnect", lambda c: False
     )
 
     client = MagicMock()
@@ -453,12 +453,12 @@ def test_listen_loop_serial_needs_reconnect_returns_true(
     """When serial client needs reconnect, poll returns True (skip main sleep)."""
 
     monkeypatch.setattr(
-        "meshtastic.__main__._is_serial_reconnect_client", lambda c: True
+        "meshtastic.cli.runtime._is_serial_reconnect_client", lambda c: True
     )
     monkeypatch.setattr(
-        "meshtastic.__main__._serial_should_reconnect", lambda c: True
+        "meshtastic.cli.runtime._serial_should_reconnect", lambda c: True
     )
-    monkeypatch.setattr("meshtastic.__main__._poll_serial_reconnect", lambda c: None)
+    monkeypatch.setattr("meshtastic.cli.runtime._poll_serial_reconnect", lambda c: None)
 
     client = MagicMock()
     result = _listen_loop_poll_once(client)
@@ -472,16 +472,14 @@ def test_listen_loop_non_serial_sleeps_idle_interval(
 ) -> None:
     """Non-serial clients sleep MAIN_LOOP_IDLE_SLEEP_SECONDS."""
 
-    from ..__main__ import MAIN_LOOP_IDLE_SLEEP_SECONDS
-
     sleep_calls: list[float] = []
 
     def fake_sleep(secs: float) -> None:
         sleep_calls.append(secs)
 
-    monkeypatch.setattr(time, "sleep", fake_sleep)
+    monkeypatch.setattr("meshtastic.cli.runtime.time.sleep", fake_sleep)
     monkeypatch.setattr(
-        "meshtastic.__main__._is_serial_reconnect_client", lambda c: False
+        "meshtastic.cli.runtime._is_serial_reconnect_client", lambda c: False
     )
 
     client = MagicMock()
