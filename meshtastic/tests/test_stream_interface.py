@@ -669,3 +669,28 @@ def test_resolve_stable_path_finds_first_matching_alias() -> None:
         assert result == "/dev/serial/by-id/usb-bar-device"
     finally:
         iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_uses_temporary_wait_timeout_override() -> None:
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface.noProto = False
+        iface._connect_wait_timeout_seconds = 1.25
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with (
+            patch.object(iface, "_start_config"),
+            patch.object(iface, "_wait_connected") as wait_connected,
+            patch.object(iface, "_resolve_stable_path", return_value=None),
+        ):
+            iface.connect()
+
+        wait_connected.assert_called_once_with(timeout=1.25)
+    finally:
+        iface.noProto = True
+        iface.close()

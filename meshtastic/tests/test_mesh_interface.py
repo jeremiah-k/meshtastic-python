@@ -4833,3 +4833,23 @@ def test_queue_wait_abort_reason_allows_connected_interface() -> None:
     with MeshInterface(noProto=True) as iface:
         iface.isConnected.set()
         assert iface._queue_wait_abort_reason() is None
+
+
+@pytest.mark.unit
+def test_connection_probe_overrides_are_normalized() -> None:
+    iface = MeshInterface(noProto=True)
+    iface.__dict__["_probe_timeout"] = -2.5
+    assert iface._connection_timeout_override("_probe_timeout") == 0.0
+    iface.__dict__["_probe_timeout"] = True
+    assert iface._connection_timeout_override("_probe_timeout", 3.0) == 3.0
+    iface.__dict__["_probe_timeout"] = "invalid"
+    assert iface._connection_timeout_override("_probe_timeout") is None
+
+
+
+@pytest.mark.unit
+def test_connect_failure_log_level_respects_quiet_probe_mode() -> None:
+    iface = MeshInterface(noProto=True)
+    assert iface._connect_failure_log_level() == logging.ERROR
+    iface._suppress_connect_failure_logging = True
+    assert iface._connect_failure_log_level() == logging.DEBUG

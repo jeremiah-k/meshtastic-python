@@ -65,6 +65,8 @@ SERIAL_PORT_PATH_EMPTY_ERROR = (
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
+    _connect_retry_budget_seconds: float
+
     devPath: str | None
     stream: serial.Serial | BinaryIO | None
 
@@ -261,7 +263,11 @@ class SerialInterface(StreamInterface):
     def connect(self) -> None:
         """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
         connect_start = time.monotonic()
-        retry_deadline = time.monotonic() + SERIAL_CONNECT_RETRY_BUDGET_SECONDS
+        retry_budget = self._connection_timeout_override(
+            "_connect_retry_budget_seconds", SERIAL_CONNECT_RETRY_BUDGET_SECONDS
+        )
+        assert retry_budget is not None
+        retry_deadline = time.monotonic() + retry_budget
         for attempt in range(1, SERIAL_CONNECT_MAX_ATTEMPTS + 1):
             attempt_start = time.monotonic()
             stream = self.stream
@@ -297,7 +303,8 @@ class SerialInterface(StreamInterface):
                 return
             except Exception as exc:
                 if not self._is_retryable_connect_error(exc):
-                    logger.error(
+                    logger.log(
+                        self._connect_failure_log_level(),
                         "Serial connect attempt %d failed with non-retryable error after %.2fs: %s",
                         attempt,
                         time.monotonic() - connect_start,
@@ -306,7 +313,8 @@ class SerialInterface(StreamInterface):
                     raise
                 remaining = retry_deadline - time.monotonic()
                 if attempt >= SERIAL_CONNECT_MAX_ATTEMPTS or remaining <= 0:
-                    logger.error(
+                    logger.log(
+                        self._connect_failure_log_level(),
                         "Serial connect retry budget exhausted after %.2fs (attempt %d/%d). Last error: %s",
                         time.monotonic() - connect_start,
                         attempt,

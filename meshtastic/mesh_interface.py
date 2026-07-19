@@ -259,6 +259,10 @@ class MeshInterface:  # pylint: disable=R0902
     _queue_wait_timeout_seconds: ClassVar[float] = QUEUE_WAIT_TIMEOUT_SECONDS
     _last_disconnect_source: str | None
 
+    # Optional instance-only overrides used by bounded reconnect probes.
+    _connect_wait_timeout_seconds: float
+    _suppress_connect_failure_logging: bool
+
     class MeshInterfaceError(Exception):
         """An exception class for general mesh interface errors."""
 
@@ -1427,6 +1431,21 @@ class MeshInterface:  # pylint: disable=R0902
         """
         return self._node_view.getRingtone()
 
+    def _connection_timeout_override(
+        self, attribute_name: str, default: float | None = None
+    ) -> float | None:
+        """Return a non-negative numeric connection timeout override, if configured."""
+        value = getattr(self, attribute_name, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return default
+        return max(0.0, float(value))
+
+    def _connect_failure_log_level(self) -> int:
+        """Return the log level for expected versus ordinary connection failures."""
+        if getattr(self, "_suppress_connect_failure_logging", False):
+            return logging.DEBUG
+        return logging.ERROR
+
     def _wait_connected(self, timeout: float = 30.0) -> None:
         """Wait until the interface is marked connected or the timeout elapses.
 
@@ -1479,7 +1498,8 @@ class MeshInterface:  # pylint: disable=R0902
                             getattr(self, "_last_disconnect_source", "unknown"),
                         )
                         raise MeshInterface.MeshInterfaceError(abort_reason_str)
-                logger.error(
+                logger.log(
+                    self._connect_failure_log_level(),
                     "Timed out waiting for connection completion (isConnected=%s, failure=%r, last_disconnect_source=%s)",
                     self.isConnected.is_set(),
                     self.failure,

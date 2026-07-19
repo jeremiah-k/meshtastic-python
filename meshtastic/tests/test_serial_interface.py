@@ -440,3 +440,31 @@ def test_port_existence_check_raises_for_missing_device(
     iface.devPath = "/dev/ttyUSB0"
     with pytest.raises(MeshInterface.MeshInterfaceError, match="does not exist"):
         iface._open_serial_stream()
+
+
+@pytest.mark.unit
+def test_serial_connect_logs_quietly_when_probe_retry_budget_is_exhausted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    iface._dev_path_auto_detected = False
+    iface._connect_retry_budget_seconds = 0.0
+    iface._suppress_connect_failure_logging = True
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    iface._connect_lock = threading.Lock()
+    transient_error = MeshInterface.MeshInterfaceError(
+        "Connection lost while waiting for connection completion (stream.closed)"
+    )
+
+    with (
+        caplog.at_level(logging.DEBUG),
+        patch.object(StreamInterface, "connect", side_effect=transient_error),
+    ):
+        with pytest.raises(MeshInterface.MeshInterfaceError):
+            iface.connect()
+
+    assert "Serial connect retry budget exhausted" in caplog.text
+    assert not any(record.levelno >= logging.ERROR for record in caplog.records)
