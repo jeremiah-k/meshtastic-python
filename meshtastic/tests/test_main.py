@@ -6451,3 +6451,33 @@ def test_apply_configure_channel_url_redacts_and_applies(
     output = capsys.readouterr().out
     assert "<redacted>" in output
     assert channel_url not in output
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_preflights_before_phase1_mutations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject invalid transaction values before applying direct settings."""
+    config_path = tmp_path / "invalid_after_owner.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "owner": "Must Not Be Applied",
+                "config": {"bluetooth": {"mode": "NOT_A_MODE"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    assert excinfo.value.code == 1
+    target_node.setOwner.assert_not_called()
+    target_node.beginSettingsTransaction.assert_not_called()
+    target_node.writeConfig.assert_not_called()
+    target_node.commitSettingsTransaction.assert_not_called()
+

@@ -10,6 +10,7 @@ import contextlib
 import enum
 import getpass
 import importlib
+import io
 import logging
 import os
 import platform
@@ -822,6 +823,47 @@ def _validate_non_empty_mapping_sections(
     return validated_sections
 
 
+def _print_configure_preflight_error(output: str) -> None:
+    """Print validation diagnostics without replaying successful setting values."""
+    for line in output.splitlines():
+        if not line.startswith("Set "):
+            print(line)
+
+
+def _preflight_configure_sections(
+    target_node: Any,
+    *,
+    config_sections: dict[str, dict[str, Any]],
+    module_config_sections: dict[str, dict[str, Any]],
+) -> None:
+    """Validate configuration values on protobuf copies before device mutation."""
+    roots = (
+        ("config", target_node.localConfig, config_sections),
+        ("module_config", target_node.moduleConfig, module_config_sections),
+    )
+    for top_level_key, source_message, sections in roots:
+        if not sections:
+            continue
+        candidate = type(source_message)()
+        candidate.CopyFrom(source_message)
+        for section, section_values in sections.items():
+            captured_output = io.StringIO()
+            previous_logger_disabled = logger.disabled
+            logger.disabled = True
+            try:
+                with contextlib.redirect_stdout(captured_output):
+                    applied = traverseConfig(section, section_values, candidate)
+            finally:
+                logger.disabled = previous_logger_disabled
+            if applied:
+                continue
+            _print_configure_preflight_error(captured_output.getvalue())
+            _cli_exit(
+                f"Failed to apply {top_level_key} section {section!r} "
+                "due to structural errors."
+            )
+
+
 def _refresh_no_disconnect_verify_state(
     target_node: Any,
     *,
@@ -1350,7 +1392,7 @@ def traverseConfig(
                     continue
                 try:
                     ok = setPref(icfg, pref_name, cfg[pref])
-                except (ValueError, binascii.Error):
+                except (ValueError, TypeError, OverflowError, binascii.Error):
                     if failed_fields is not None:
                         failed_fields.append(pref_name)
                     return False
@@ -1726,6 +1768,14 @@ def _handle_configure_command(
         validated_module_config_sections = _validate_non_empty_mapping_sections(
             top_level_key="module_config",
             section_mapping=_mcfg_val,
+        )
+
+    if validated_config_sections or validated_module_config_sections:
+        preflight_node = interface.getNode(args.dest, **getNode_kwargs)
+        _preflight_configure_sections(
+            preflight_node,
+            config_sections=validated_config_sections,
+            module_config_sections=validated_module_config_sections,
         )
 
     phase1_started = False
