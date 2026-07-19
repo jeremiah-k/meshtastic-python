@@ -22,6 +22,7 @@ from types import ModuleType
 from typing import Any, NoReturn, Protocol, cast
 
 import yaml
+from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
@@ -3137,6 +3138,51 @@ def _set_missing_flags_false(
             d[path[-1]] = False
 
 
+def _prefix_base64_bytes_fields(message: Any, values: dict[str, Any]) -> None:
+    """Mark every protobuf bytes field in a MessageToDict mapping as base64.
+
+    ``MessageToDict`` emits bytes as unmarked base64 strings.  ``setPref`` only
+    decodes strings with the explicit ``base64:`` prefix, so exported nested
+    bytes fields must be marked generically rather than special-casing security
+    keys.  This also covers repeated bytes and future protobuf additions.
+    """
+
+    def _walk(descriptor: Any, mapping: dict[str, Any]) -> None:
+        normalized_key_map = {
+            meshtastic.util.camel_to_snake(key): key
+            for key in mapping
+            if isinstance(key, str)
+        }
+        for field in descriptor.fields:
+            key = normalized_key_map.get(field.name)
+            if key is None:
+                continue
+            value = mapping.get(key)
+            if field.type == FieldDescriptor.TYPE_BYTES:
+                if isinstance(value, str):
+                    if not value.startswith("base64:"):
+                        mapping[key] = f"base64:{value}"
+                elif isinstance(value, list):
+                    mapping[key] = [
+                        f"base64:{item}"
+                        if isinstance(item, str)
+                        and not item.startswith("base64:")
+                        else item
+                        for item in value
+                    ]
+                continue
+            if field.type != FieldDescriptor.TYPE_MESSAGE:
+                continue
+            if isinstance(value, dict):
+                _walk(field.message_type, value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        _walk(field.message_type, item)
+
+    _walk(message.DESCRIPTOR, values)
+
+
 def _prefix_base64_key(
     security: dict[str, Any], normalized_key_map: dict[str, str], camel_name: str
 ) -> None:
@@ -3245,6 +3291,7 @@ def exportConfig(interface: MeshInterface) -> str:
 
     config = MessageToDict(interface.localNode.localConfig)
     if config:
+        _prefix_base64_bytes_fields(interface.localNode.localConfig, config)
         # Ensure explicit false values are present before key conversion.
         _set_missing_flags_false(config, CONFIG_TRUE_DEFAULTS)
 
@@ -3257,26 +3304,11 @@ def exportConfig(interface: MeshInterface) -> str:
                 else meshtastic.util.camel_to_snake(pref)
             )
             prefs[pref_key] = value
-            # mark base64 encoded fields as such
-            if pref == "security" and isinstance(prefs[pref_key], dict):
-                security = prefs[pref_key]
-                # Normalize keys to canonical camelCase for reliable lookup,
-                # since MessageToDict may produce inconsistent casing
-                normalized_key_map = {
-                    meshtastic.util.snake_to_camel(
-                        meshtastic.util.camel_to_snake(key)
-                    ): key
-                    for key in security
-                    if isinstance(key, str)
-                }
-
-                _prefix_base64_key(security, normalized_key_map, "privateKey")
-                _prefix_base64_key(security, normalized_key_map, "publicKey")
-                _prefix_base64_key(security, normalized_key_map, "adminKey")
         configObj["config"] = prefs
 
     module_config = MessageToDict(interface.localNode.moduleConfig)
     if module_config:
+        _prefix_base64_bytes_fields(interface.localNode.moduleConfig, module_config)
         # Ensure explicit false values are present before key conversion.
         _set_missing_flags_false(module_config, MODULE_TRUE_DEFAULTS)
 
