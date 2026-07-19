@@ -11,7 +11,7 @@ import threading
 import time
 import traceback
 from types import MappingProxyType, TracebackType
-from typing import IO, Any, Callable, Mapping, TypeAlias, cast
+from typing import IO, Any, Callable, ClassVar, Mapping, TypeAlias, cast
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -32,7 +32,11 @@ from meshtastic.mesh_interface_runtime.flows import (
     TelemetryType,
 )
 from meshtastic.mesh_interface_runtime.node_view import NodeView
-from meshtastic.mesh_interface_runtime.queue_send import _QueueSendRuntime
+from meshtastic.mesh_interface_runtime.queue_send import (
+    QUEUE_WAIT_TIMEOUT_SECONDS,
+    QueueWaitError,
+    _QueueSendRuntime,
+)
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
     ReceivePipeline,
     _FromRadioContext,
@@ -252,6 +256,9 @@ class MeshInterface:  # pylint: disable=R0902
     debugOut
     """
 
+    _queue_wait_timeout_seconds: ClassVar[float] = QUEUE_WAIT_TIMEOUT_SECONDS
+    _last_disconnect_source: str | None
+
     class MeshInterfaceError(Exception):
         """An exception class for general mesh interface errors."""
 
@@ -382,6 +389,8 @@ class MeshInterface:  # pylint: disable=R0902
             get_queue_status=lambda: self.queueStatus,
             set_queue_status=self._set_queue_status,
             queue_wait_delay_seconds=QUEUE_WAIT_DELAY_SECONDS,
+            queue_wait_timeout_seconds=self._queue_wait_timeout_seconds,
+            abort_wait=self._queue_wait_abort_reason,
         )
         self._from_radio_dispatch_map_cache: (
             dict[str, Callable[[_FromRadioContext], list[_PublicationIntent]]] | None
@@ -395,6 +404,17 @@ class MeshInterface:  # pylint: disable=R0902
         # for any external consumers of the library.
         if debugOut:
             pub.subscribe(MeshInterface._print_log_line, "meshtastic.log.line")
+
+    def _queue_wait_abort_reason(self) -> str | None:
+        """Return why a blocked TX-queue wait can no longer make progress."""
+        if self.failure is not None:
+            return f"interface failure: {self.failure}"
+        if self._closing:
+            return "interface is closing"
+        disconnect_source = getattr(self, "_last_disconnect_source", None)
+        if disconnect_source and not self.isConnected.is_set():
+            return f"interface disconnected ({disconnect_source})"
+        return None
 
     def _set_queue_status(self, queue_status: mesh_pb2.QueueStatus | None) -> None:
         """Set the queueStatus attribute directly."""
@@ -1685,11 +1705,14 @@ class MeshInterface:  # pylint: disable=R0902
             )
             return
 
-        self._queue_send_runtime._send_to_radio(
-            toRadio,
-            send_impl=self._send_to_radio_impl,
-            sleep_fn=time.sleep,
-        )
+        try:
+            self._queue_send_runtime._send_to_radio(
+                toRadio,
+                send_impl=self._send_to_radio_impl,
+                sleep_fn=time.sleep,
+            )
+        except QueueWaitError as exc:
+            raise MeshInterface.MeshInterfaceError(str(exc)) from exc
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Transport hook that delivers a ToRadio protobuf to the radio device.

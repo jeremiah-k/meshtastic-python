@@ -16,7 +16,12 @@ from meshtastic.protobuf import mesh_pb2
 logger = logging.getLogger(__name__)
 
 QUEUE_WAIT_DELAY_SECONDS: float = 0.5
+QUEUE_WAIT_TIMEOUT_SECONDS: float = 30.0
 AWAITING_QUEUE_STATUS_TTL_SECONDS: float = 300.0
+
+
+class QueueWaitError(TimeoutError):
+    """Raised when a packet cannot make progress through the firmware TX queue."""
 
 
 class _QueueSendRuntime:
@@ -30,12 +35,16 @@ class _QueueSendRuntime:
         get_queue_status: Callable[[], mesh_pb2.QueueStatus | None],
         set_queue_status: Callable[[mesh_pb2.QueueStatus], None],
         queue_wait_delay_seconds: float,
+        queue_wait_timeout_seconds: float = QUEUE_WAIT_TIMEOUT_SECONDS,
+        abort_wait: Callable[[], str | None] | None = None,
     ) -> None:
         self._lock = lock
         self._get_queue = get_queue
         self._get_queue_status = get_queue_status
         self._set_queue_status = set_queue_status
         self._queue_wait_delay_seconds = queue_wait_delay_seconds
+        self._queue_wait_timeout_seconds = max(0.0, queue_wait_timeout_seconds)
+        self._abort_wait = abort_wait
         self._awaiting_queue_status_ids: dict[int, float] = {}
         self._queue_status_seen = False
 
@@ -104,6 +113,12 @@ class _QueueSendRuntime:
 
         resent_queue: OrderedDict[int, mesh_pb2.ToRadio | bool] = OrderedDict()
         sent_packet_ids: set[int] = set()
+        wait_deadline: float | None = None
+
+        def _drop_unsent_incoming() -> None:
+            with self._lock:
+                self._get_queue().pop(to_radio.packet.id, None)
+
         try:
             while True:
                 to_resend = self._pop_for_send()
@@ -112,9 +127,29 @@ class _QueueSendRuntime:
                         queue_has_items = bool(self._get_queue())
                     if not queue_has_items:
                         break
+
+                    abort_reason = self._abort_wait() if self._abort_wait else None
+                    if abort_reason:
+                        _drop_unsent_incoming()
+                        raise QueueWaitError(
+                            f"Stopped waiting for free space in TX queue: {abort_reason}"
+                        )
+
+                    now = time.monotonic()
+                    if wait_deadline is None:
+                        wait_deadline = now + self._queue_wait_timeout_seconds
+                    if now >= wait_deadline:
+                        _drop_unsent_incoming()
+                        raise QueueWaitError(
+                            "Timed out waiting for free space in TX queue "
+                            f"after {self._queue_wait_timeout_seconds:.1f}s"
+                        )
+
                     logger.debug("Waiting for free space in TX Queue")
                     sleep_fn(self._queue_wait_delay_seconds)
                     continue
+
+                wait_deadline = None
 
                 packet_id, packet = to_resend
                 resent_queue[packet_id] = packet
