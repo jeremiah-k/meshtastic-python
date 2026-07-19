@@ -2209,6 +2209,74 @@ def test_main_configure_skips_unknown_config_field(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_configure_paces_between_section_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pace a write burst without delaying after the final section."""
+    config_path = tmp_path / "paced_config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "config": {
+                    "bluetooth": {"enabled": True},
+                    "display": {"screen_on_secs": 30},
+                },
+                "module_config": {
+                    "ambient_lighting": {"current": 5},
+                    "mqtt": {"enabled": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    events: list[tuple[str, object]] = []
+    original_write = target_node.writeConfig.side_effect
+
+    def _write_config(section: str) -> None:
+        events.append(("write", section))
+        original_write(section)
+
+    target_node.writeConfig.side_effect = _write_config
+    monkeypatch.setattr(
+        main_module,
+        "_pace_configure_write",
+        lambda remaining: events.append(("pace", remaining)) if remaining else None,
+    )
+    args = SimpleNamespace(
+        configure=[str(config_path)],
+        dest="!12345678",
+    )
+
+    main_module._handle_configure_command(iface, args, {})
+
+    assert events == [
+        ("write", "bluetooth"),
+        ("pace", 3),
+        ("write", "display"),
+        ("pace", 2),
+        ("write", "ambient_lighting"),
+        ("pace", 1),
+        ("write", "mqtt"),
+    ]
+    target_node.commitSettingsTransaction.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_configure_write_pacer_uses_short_dedicated_delay() -> None:
+    sleep = MagicMock()
+
+    main_module._pace_configure_write(1, sleep_fn=sleep)
+    main_module._pace_configure_write(0, sleep_fn=sleep)
+
+    sleep.assert_called_once()
+    delay = sleep.call_args.args[0]
+    assert 0 < delay < main_module.CONFIG_APPLY_DELAY_SECONDS
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_rejects_invalid_enum_value(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
