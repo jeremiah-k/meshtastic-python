@@ -6376,20 +6376,18 @@ def test_apply_configure_channel_url_rejects_invalid_values(
     message: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    interface = MagicMock()
+    target_node = MagicMock()
 
     with pytest.raises(SystemExit) as excinfo:
         main_module._apply_configure_channel_url(
-            interface,
+            target_node,
             value,
             config_key="channel_url",
-            node_dest=None,
-            get_node_kwargs={},
         )
 
     assert excinfo.value.code == 1
     assert message in capsys.readouterr().err
-    interface.getNode.assert_not_called()
+    target_node.setURL.assert_not_called()
 
 
 
@@ -6398,8 +6396,7 @@ def test_apply_configure_channel_url_skips_matching_state(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    interface = MagicMock()
-    target_node = interface.getNode.return_value
+    target_node = MagicMock()
     monkeypatch.setattr(
         main_module,
         "_channel_url_matches_current_device_state",
@@ -6407,15 +6404,12 @@ def test_apply_configure_channel_url_skips_matching_state(
     )
 
     applied = main_module._apply_configure_channel_url(
-        interface,
+        target_node,
         " https://meshtastic.org/e/#CgYSAQABAA ",
         config_key="channelUrl",
-        node_dest=123,
-        get_node_kwargs={"wantResponse": True},
     )
 
     assert applied is False
-    interface.getNode.assert_called_once_with(123, wantResponse=True)
     target_node.setURL.assert_not_called()
     assert "already matches" in capsys.readouterr().out
 
@@ -6426,8 +6420,7 @@ def test_apply_configure_channel_url_redacts_and_applies(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    interface = MagicMock()
-    target_node = interface.getNode.return_value
+    target_node = MagicMock()
     sleep = MagicMock()
     monkeypatch.setattr(
         main_module,
@@ -6438,11 +6431,9 @@ def test_apply_configure_channel_url_redacts_and_applies(
     channel_url = "https://meshtastic.org/e/#sensitive"
 
     applied = main_module._apply_configure_channel_url(
-        interface,
+        target_node,
         channel_url,
         config_key="channel_url",
-        node_dest=None,
-        get_node_kwargs={},
     )
 
     assert applied is True
@@ -6481,3 +6472,67 @@ def test_main_configure_preflights_before_phase1_mutations(
     target_node.writeConfig.assert_not_called()
     target_node.commitSettingsTransaction.assert_not_called()
 
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_preflight_reuses_target_node_and_preserves_logger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "valid_preflight.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"bluetooth": {"enabled": True}}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    monkeypatch.setattr(main_module.time, "sleep", lambda _seconds: None)
+    args = SimpleNamespace(configure=[str(config_path)], dest=None)
+
+    main_module._handle_configure_command(iface, args, {})
+
+    iface.getNode.assert_called_once_with(None, False)
+    assert target_node.writeConfig.call_args_list == [call("bluetooth")]
+    target_node.commitSettingsTransaction.assert_called_once_with()
+    assert main_module.logger.disabled is False
+
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_preflight_reports_structured_invalid_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "bad_pin.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"bluetooth": {"fixed_pin": "not-an-int"}}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit):
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    out, err = capsys.readouterr()
+    assert "Set bluetooth.fixed_pin" not in out
+    assert "Invalid field: bluetooth.fixed_pin" in err
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_set_pref_repeated_field_progress_outside_preflight(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Normal repeated-field updates should retain their progress messages."""
+    config = localonly_pb2.LocalConfig()
+
+    assert setPref(config, "lora.ignore_incoming", "123") is True
+    assert setPref(config, "lora.ignore_incoming", "0") is True
+
+    out, err = capsys.readouterr()
+    assert "Adding '123' to the ignore_incoming list" in out
+    assert "Clearing ignore_incoming list" in out
+    assert list(config.lora.ignore_incoming) == []
+    assert err == ""
