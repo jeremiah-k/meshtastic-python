@@ -2150,6 +2150,49 @@ class Config(_message.Message):
     class SecurityConfig(_message.Message):
         DESCRIPTOR: _descriptor.Descriptor
 
+        class _PacketSignaturePolicy:
+            ValueType = _typing.NewType("ValueType", _builtins.int)
+            V: _TypeAlias = ValueType  # noqa: Y015
+
+        class _PacketSignaturePolicyEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[Config.SecurityConfig._PacketSignaturePolicy.ValueType], _builtins.type):
+            DESCRIPTOR: _descriptor.EnumDescriptor
+            PACKET_SIGNATURE_POLICY_COMPATIBLE: Config.SecurityConfig._PacketSignaturePolicy.ValueType  # 0
+            """
+            Accept unsigned packets for maximum compatibility while still rejecting malformed or invalid signatures.
+            This is the default to avoid legacy nodes dropping signed packets during rebroadcast.
+            """
+            PACKET_SIGNATURE_POLICY_BALANCED: Config.SecurityConfig._PacketSignaturePolicy.ValueType  # 1
+            """
+            Prefer authenticated packets while retaining compatibility with unsigned packets from nodes not known to sign.
+            Rejects unsigned, signable broadcasts from nodes that have previously signed.
+            """
+            PACKET_SIGNATURE_POLICY_STRICT: Config.SecurityConfig._PacketSignaturePolicy.ValueType  # 2
+            """
+            Accept only packets authenticated by a verified XEdDSA signature or successful PKI decryption.
+            Unsigned, malformed, invalid, or unverifiable packets are ignored.
+            """
+
+        class PacketSignaturePolicy(_PacketSignaturePolicy, metaclass=_PacketSignaturePolicyEnumTypeWrapper):
+            """
+            Controls how the device authenticates remotely received mesh packets.
+            """
+
+        PACKET_SIGNATURE_POLICY_COMPATIBLE: Config.SecurityConfig.PacketSignaturePolicy.ValueType  # 0
+        """
+        Accept unsigned packets for maximum compatibility while still rejecting malformed or invalid signatures.
+        This is the default to avoid legacy nodes dropping signed packets during rebroadcast.
+        """
+        PACKET_SIGNATURE_POLICY_BALANCED: Config.SecurityConfig.PacketSignaturePolicy.ValueType  # 1
+        """
+        Prefer authenticated packets while retaining compatibility with unsigned packets from nodes not known to sign.
+        Rejects unsigned, signable broadcasts from nodes that have previously signed.
+        """
+        PACKET_SIGNATURE_POLICY_STRICT: Config.SecurityConfig.PacketSignaturePolicy.ValueType  # 2
+        """
+        Accept only packets authenticated by a verified XEdDSA signature or successful PKI decryption.
+        Unsigned, malformed, invalid, or unverifiable packets are ignored.
+        """
+
         PUBLIC_KEY_FIELD_NUMBER: _builtins.int
         PRIVATE_KEY_FIELD_NUMBER: _builtins.int
         ADMIN_KEY_FIELD_NUMBER: _builtins.int
@@ -2157,6 +2200,7 @@ class Config(_message.Message):
         SERIAL_ENABLED_FIELD_NUMBER: _builtins.int
         DEBUG_LOG_API_ENABLED_FIELD_NUMBER: _builtins.int
         ADMIN_CHANNEL_ENABLED_FIELD_NUMBER: _builtins.int
+        PACKET_SIGNATURE_POLICY_FIELD_NUMBER: _builtins.int
         public_key: _builtins.bytes
         """
         The public key of the user's device.
@@ -2185,6 +2229,10 @@ class Config(_message.Message):
         """
         Allow incoming device control over the insecure legacy admin channel.
         """
+        packet_signature_policy: Global___Config.SecurityConfig.PacketSignaturePolicy.ValueType
+        """
+        Determines the packet signature policy applied to remotely received mesh packets.
+        """
         @_builtins.property
         def admin_key(self) -> _containers.RepeatedScalarFieldContainer[_builtins.bytes]:
             """
@@ -2201,10 +2249,11 @@ class Config(_message.Message):
             serial_enabled: _builtins.bool = ...,
             debug_log_api_enabled: _builtins.bool = ...,
             admin_channel_enabled: _builtins.bool = ...,
+            packet_signature_policy: Global___Config.SecurityConfig.PacketSignaturePolicy.ValueType = ...,
         ) -> None: ...
         _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
         def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-        _ClearFieldArgType: _TypeAlias = _typing.Literal["admin_channel_enabled", b"admin_channel_enabled", "admin_key", b"admin_key", "debug_log_api_enabled", b"debug_log_api_enabled", "is_managed", b"is_managed", "private_key", b"private_key", "public_key", b"public_key", "serial_enabled", b"serial_enabled"]  # noqa: Y015
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["admin_channel_enabled", b"admin_channel_enabled", "admin_key", b"admin_key", "debug_log_api_enabled", b"debug_log_api_enabled", "is_managed", b"is_managed", "packet_signature_policy", b"packet_signature_policy", "private_key", b"private_key", "public_key", b"public_key", "serial_enabled", b"serial_enabled"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
         def WhichOneof(self, oneof_group: _Never) -> None: ...
 
