@@ -1065,13 +1065,8 @@ def _display_pref_name(comp_name: str) -> str:
     )
 
 
-_SECRET_PREF_NAMES: frozenset[str] = frozenset(
+_SECRET_PREF_FIELDS: frozenset[str] = frozenset(
     {
-        "wifi_ssid",
-        "wifi_psk",
-        "username",
-        "password",
-        "fixed_pin",
         "psk",
         "channel_psk",
         "private_key",
@@ -1083,6 +1078,16 @@ _SECRET_PREF_NAMES: frozenset[str] = frozenset(
         "auth_token",
     }
 )
+_SECRET_PREF_PATHS: frozenset[str] = frozenset(
+    {
+        "network.wifi_ssid",
+        "network.wifi_psk",
+        "mqtt.username",
+        "mqtt.password",
+        "bluetooth.fixed_pin",
+        "security.session_passkey",
+    }
+)
 
 
 class _NamedConfigType(Protocol):
@@ -1092,8 +1097,12 @@ class _NamedConfigType(Protocol):
 
 
 def _redact_pref_value(name: str, value: str) -> str:
-    """Return a redacted placeholder for secret-bearing pref names."""
-    return "<redacted>" if name in _SECRET_PREF_NAMES else value
+    """Return a redacted placeholder for secret-bearing preference paths."""
+    normalized = _normalize_pref_name(name)
+    field_name = normalized.rsplit(".", maxsplit=1)[-1]
+    if normalized in _SECRET_PREF_PATHS or field_name in _SECRET_PREF_FIELDS:
+        return "<redacted>"
+    return value
 
 
 def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
@@ -1226,7 +1235,7 @@ def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
                 uni_name,
                 pref_value,
                 repeated=repeated,
-                secret_name=snake_name,
+                secret_name=f"{config_type.name}.{snake_name}",
             )
         else:
             for field in config_values.ListFields():
@@ -1236,7 +1245,7 @@ def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
                     field[0].name,
                     field[1],
                     repeated=repeated,
-                    secret_name=field[0].name,
+                    secret_name=f"{config_type.name}.{field[0].name}",
                 )
     else:
         # Always show whole field for remote node
@@ -1431,7 +1440,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         val = meshtastic.util.fromStr(raw_val)
     else:
         val = raw_val
-    logger.debug("val:%s", _redact_pref_value(snake_name, meshtastic.util.toStr(val)))
+    logger.debug("val:%s", _redact_pref_value(comp_name, meshtastic.util.toStr(val)))
 
     if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
         print("Warning: network.wifi_psk must be 8 or more characters.")
@@ -1480,7 +1489,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             del getattr(config_values, pref.name)[:]
         else:
             display_value = _redact_pref_value(
-                snake_name, meshtastic.util.toStr(raw_val)
+                comp_name, meshtastic.util.toStr(raw_val)
             )
             _cli_print(f"Adding '{display_value}' to the {pref.name} list")
             cur_vals = [
@@ -1492,7 +1501,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         return True
 
     prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    display_value = _redact_pref_value(snake_name, meshtastic.util.toStr(raw_val))
+    display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
     _cli_print(f"Set {prefix}{uni_name} to {display_value}")
 
     return True
@@ -1599,6 +1608,33 @@ def _pace_configure_write(
     """Yield briefly between section writes while keeping transactions short."""
     if remaining_writes > 0:
         sleep_fn(CONFIG_WRITE_PACE_SECONDS)
+
+
+def _apply_configure_channel_url(
+    interface: MeshInterface,
+    raw_channel_url: Any,
+    *,
+    config_key: str,
+    node_dest: Any,
+    get_node_kwargs: dict[str, Any],
+) -> bool:
+    """Validate and apply one configured channel URL without exposing it."""
+    if not isinstance(raw_channel_url, str):
+        _cli_exit(f"ERROR: {config_key} must be a string.")
+    requested_channel_url = raw_channel_url.strip()
+    if not requested_channel_url:
+        _cli_exit(f"ERROR: {config_key} must not be blank.")
+
+    target_node = interface.getNode(node_dest, **get_node_kwargs)
+    if _channel_url_matches_current_device_state(target_node, requested_channel_url):
+        _cli_print("Channel url already matches device state; skipping apply.")
+        logger.info("Skipping setURL apply because channel URL already matches.")
+        return False
+
+    _cli_print("Setting channel url to <redacted>")
+    target_node.setURL(requested_channel_url)
+    time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+    return True
 
 
 def _handle_configure_command(
@@ -1774,51 +1810,21 @@ def _handle_configure_command(
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "channel_url" in configuration:
+    channel_url_key = (
+        "channel_url" if "channel_url" in configuration else "channelUrl"
+    )
+    if channel_url_key in configuration:
         if not phase1_started:
             _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        raw_channel_url = configuration["channel_url"]
-        if not isinstance(raw_channel_url, str):
-            _cli_exit("ERROR: channel_url must be a string.")
-        requested_channel_url = raw_channel_url.strip()
-        if not requested_channel_url:
-            _cli_exit("ERROR: channel_url must not be blank.")
-        target_node = interface.getNode(args.dest, **getNode_kwargs)
-        if _channel_url_matches_current_device_state(
-            target_node, requested_channel_url
-        ):
-            _cli_print("Channel url already matches device state; skipping apply.")
-            logger.info("Skipping setURL apply because channel URL already matches.")
-        else:
-            phase1_may_reconnect = True
-            seturl_executed = True
-            _cli_print("Setting channel url to <redacted>")
-            target_node.setURL(requested_channel_url)
-            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
-
-    if "channelUrl" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        raw_channel_url = configuration["channelUrl"]
-        if not isinstance(raw_channel_url, str):
-            _cli_exit("ERROR: channelUrl must be a string.")
-        requested_channel_url = raw_channel_url.strip()
-        if not requested_channel_url:
-            _cli_exit("ERROR: channelUrl must not be blank.")
-        target_node = interface.getNode(args.dest, **getNode_kwargs)
-        if _channel_url_matches_current_device_state(
-            target_node, requested_channel_url
-        ):
-            _cli_print("Channel url already matches device state; skipping apply.")
-            logger.info("Skipping setURL apply because channel URL already matches.")
-        else:
-            phase1_may_reconnect = True
-            seturl_executed = True
-            _cli_print("Setting channel url to <redacted>")
-            target_node.setURL(requested_channel_url)
-            time.sleep(CONFIG_SETURL_DELAY_SECONDS)
+        seturl_executed = _apply_configure_channel_url(
+            interface,
+            configuration[channel_url_key],
+            config_key=channel_url_key,
+            node_dest=args.dest,
+            get_node_kwargs=getNode_kwargs,
+        )
+        phase1_may_reconnect = seturl_executed
 
     if phase1_started:
         _cli_print("Phase 1 complete.")
