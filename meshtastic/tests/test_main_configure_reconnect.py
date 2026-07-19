@@ -394,3 +394,31 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
     )
     iface.connect.assert_called()
     iface.waitForConfig.assert_called_once()
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_redacts_channel_url_progress_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Channel URLs contain channel keys and must not be echoed while applying YAML."""
+    secret_url = "https://meshtastic.org/e/#distinctive-channel-key"
+    config_path = tmp_path / "channel.yaml"
+    config_path.write_text(yaml.safe_dump({"channel_url": secret_url}), encoding="utf-8")
+    target_node = MagicMock()
+    target_node.getURL.return_value = "https://meshtastic.org/e/#old-key"
+    iface = MagicMock()
+    iface.getNode.return_value = target_node
+    iface.localNode = target_node
+    args = SimpleNamespace(configure=[str(config_path)], dest=main_module.LOCAL_ADDR)
+    monkeypatch.setattr(main_module.time, "sleep", lambda _seconds: None)
+
+    main_module._handle_configure_command(iface, args, {})
+
+    out, err = capsys.readouterr()
+    target_node.setURL.assert_called_once_with(secret_url)
+    assert "Setting channel url to <redacted>" in out
+    assert secret_url not in out
+    assert "distinctive-channel-key" not in out
+    assert err == ""

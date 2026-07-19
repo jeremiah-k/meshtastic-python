@@ -1735,7 +1735,7 @@ def test_main_set_valid(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            assert re.search(r"Set network.wifi_ssid to foo", out, re.MULTILINE)
+            assert re.search(r"Set network.wifi_ssid to <redacted>", out, re.MULTILINE)
             assert err == ""
             mo.assert_called()
 
@@ -2024,7 +2024,7 @@ def test_main_set_valid_camel_case(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            assert re.search(r"Set network.wifiSsid to foo", out, re.MULTILINE)
+            assert re.search(r"Set network.wifiSsid to <redacted>", out, re.MULTILINE)
             assert err == ""
             mo.assert_called()
 
@@ -6323,3 +6323,131 @@ def test_resolve_pref_accepts_nested_message_field() -> None:
         config,
         "meshBeacon.broadcastOfferChannel.psk",
     )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_set_pref_redacts_network_mqtt_and_pin_credentials(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Configure progress output must not disclose local network or broker credentials."""
+    local_config = localonly_pb2.LocalConfig()
+    module_config = localonly_pb2.LocalModuleConfig()
+
+    assert setPref(local_config, "network.wifi_ssid", "Private LAN") is True
+    assert setPref(local_config, "network.wifi_psk", "distinctive-passphrase") is True
+    assert setPref(local_config, "bluetooth.fixed_pin", "123456") is True
+    assert setPref(module_config, "mqtt.username", "private-user") is True
+    assert setPref(module_config, "mqtt.password", "private-password") is True
+
+    out, err = capsys.readouterr()
+    assert out.count("<redacted>") == 5
+    for secret in (
+        "Private LAN",
+        "distinctive-passphrase",
+        "123456",
+        "private-user",
+        "private-password",
+    ):
+        assert secret not in out
+    assert local_config.network.wifi_ssid == "Private LAN"
+    assert local_config.network.wifi_psk == "distinctive-passphrase"
+    assert local_config.bluetooth.fixed_pin == 123456
+    assert module_config.mqtt.username == "private-user"
+    assert module_config.mqtt.password == "private-password"
+    assert err == ""
+
+
+@pytest.mark.unit
+def test_secret_redaction_is_scoped_to_sensitive_preference_paths() -> None:
+    assert main_module._redact_pref_value("mqtt.username", "alice") == "<redacted>"
+    assert main_module._redact_pref_value("unrelated.username", "alice") == "alice"
+    assert main_module._redact_pref_value("unrelated.password", "visible") == "visible"
+
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [(123, "must be a string"), ("   ", "must not be blank")],
+)
+def test_apply_configure_channel_url_rejects_invalid_values(
+    value: object,
+    message: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    interface = MagicMock()
+
+    with pytest.raises(SystemExit) as excinfo:
+        main_module._apply_configure_channel_url(
+            interface,
+            value,
+            config_key="channel_url",
+            node_dest=None,
+            get_node_kwargs={},
+        )
+
+    assert excinfo.value.code == 1
+    assert message in capsys.readouterr().err
+    interface.getNode.assert_not_called()
+
+
+
+@pytest.mark.unit
+def test_apply_configure_channel_url_skips_matching_state(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    interface = MagicMock()
+    target_node = interface.getNode.return_value
+    monkeypatch.setattr(
+        main_module,
+        "_channel_url_matches_current_device_state",
+        lambda _node, _url: True,
+    )
+
+    applied = main_module._apply_configure_channel_url(
+        interface,
+        " https://meshtastic.org/e/#CgYSAQABAA ",
+        config_key="channelUrl",
+        node_dest=123,
+        get_node_kwargs={"wantResponse": True},
+    )
+
+    assert applied is False
+    interface.getNode.assert_called_once_with(123, wantResponse=True)
+    target_node.setURL.assert_not_called()
+    assert "already matches" in capsys.readouterr().out
+
+
+
+@pytest.mark.unit
+def test_apply_configure_channel_url_redacts_and_applies(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    interface = MagicMock()
+    target_node = interface.getNode.return_value
+    sleep = MagicMock()
+    monkeypatch.setattr(
+        main_module,
+        "_channel_url_matches_current_device_state",
+        lambda _node, _url: False,
+    )
+    monkeypatch.setattr(main_module.time, "sleep", sleep)
+    channel_url = "https://meshtastic.org/e/#sensitive"
+
+    applied = main_module._apply_configure_channel_url(
+        interface,
+        channel_url,
+        config_key="channel_url",
+        node_dest=None,
+        get_node_kwargs={},
+    )
+
+    assert applied is True
+    target_node.setURL.assert_called_once_with(channel_url)
+    sleep.assert_called_once_with(main_module.CONFIG_SETURL_DELAY_SECONDS)
+    output = capsys.readouterr().out
+    assert "<redacted>" in output
+    assert channel_url not in output
