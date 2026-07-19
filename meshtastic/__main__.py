@@ -16,6 +16,7 @@ import platform
 import sys
 import threading
 import time
+from collections.abc import Callable
 from types import ModuleType
 from typing import Any, NoReturn, Protocol, cast
 
@@ -181,6 +182,8 @@ BITFIELD_ENUMS = {
 
 # Delay after applying configuration changes (owner, channel, etc.)
 CONFIG_APPLY_DELAY_SECONDS = 0.5
+CONFIG_WRITE_PACE_SECONDS = 0.1
+"""Short inter-write cadence that drains transport queues without stretching transactions."""
 
 # Delay after setURL operations, which write up to 8 channel snapshots
 # plus LoRa config; the device needs extra time to commit all changes
@@ -1571,6 +1574,16 @@ def _handle_set_command(
         printConfig(node.moduleConfig)
 
 
+def _pace_configure_write(
+    remaining_writes: int,
+    *,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> None:
+    """Yield briefly between section writes while keeping transactions short."""
+    if remaining_writes > 0:
+        sleep_fn(CONFIG_WRITE_PACE_SECONDS)
+
+
 def _handle_configure_command(
     interface: MeshInterface,
     args: Any,
@@ -1819,6 +1832,10 @@ def _handle_configure_command(
         interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
         settings_transaction_started = True
 
+    remaining_config_writes = len(validated_config_sections) + len(
+        validated_module_config_sections
+    )
+
     if validated_config_sections:
         localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
         for section, section_values in validated_config_sections.items():
@@ -1843,7 +1860,8 @@ def _handle_configure_command(
             interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                 meshtastic.util.camel_to_snake(section)
             )
-            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+            remaining_config_writes -= 1
+            _pace_configure_write(remaining_config_writes)
 
     if validated_module_config_sections:
         moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
@@ -1869,7 +1887,8 @@ def _handle_configure_command(
             interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                 meshtastic.util.camel_to_snake(section)
             )
-            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+            remaining_config_writes -= 1
+            _pace_configure_write(remaining_config_writes)
 
     if settings_transaction_started:
         interface.getNode(

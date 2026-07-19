@@ -2209,11 +2209,11 @@ def test_main_configure_skips_unknown_config_field(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_configure_paces_each_local_config_write(
+def test_configure_paces_between_section_writes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Avoid filling the firmware TX queue with a burst of section writes."""
+    """Pace a write burst without delaying after the final section."""
     config_path = tmp_path / "paced_config.yaml"
     config_path.write_text(
         yaml.safe_dump(
@@ -2240,27 +2240,39 @@ def test_configure_paces_each_local_config_write(
 
     target_node.writeConfig.side_effect = _write_config
     monkeypatch.setattr(
-        "time.sleep", lambda seconds: events.append(("sleep", seconds))
+        main_module,
+        "_pace_configure_write",
+        lambda remaining: events.append(("pace", remaining)) if remaining else None,
     )
-    monkeypatch.setattr(
-        "meshtastic.__main__._post_configure_reconnect_and_verify",
-        lambda *_args, **_kwargs: main_module._ConfigureReconnectResult.VERIFIED,
+    args = SimpleNamespace(
+        configure=[str(config_path)],
+        dest="!12345678",
     )
-    sys.argv = ["", "--configure", str(config_path)]
-    mt_config.args = cast(Any, sys.argv)
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        main()
+    main_module._handle_configure_command(iface, args, {})
 
-    write_indices = [index for index, event in enumerate(events) if event[0] == "write"]
-    assert [events[index][1] for index in write_indices] == [
-        "bluetooth",
-        "display",
-        "ambient_lighting",
-        "mqtt",
+    assert events == [
+        ("write", "bluetooth"),
+        ("pace", 3),
+        ("write", "display"),
+        ("pace", 2),
+        ("write", "ambient_lighting"),
+        ("pace", 1),
+        ("write", "mqtt"),
     ]
-    for index in write_indices:
-        assert events[index + 1] == ("sleep", main_module.CONFIG_APPLY_DELAY_SECONDS)
+    target_node.commitSettingsTransaction.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_configure_write_pacer_uses_short_dedicated_delay() -> None:
+    sleep = MagicMock()
+
+    main_module._pace_configure_write(1, sleep_fn=sleep)
+    main_module._pace_configure_write(0, sleep_fn=sleep)
+
+    sleep.assert_called_once()
+    delay = sleep.call_args.args[0]
+    assert 0 < delay < main_module.CONFIG_APPLY_DELAY_SECONDS
 
 
 @pytest.mark.unit
