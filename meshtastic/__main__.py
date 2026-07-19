@@ -17,11 +17,13 @@ import platform
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
 from typing import Any, NoReturn, Protocol, cast
 
 import yaml
+from google.protobuf.descriptor import FieldDescriptor
+from google.protobuf.message import Message
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
@@ -1162,6 +1164,14 @@ _SECRET_PREF_PATHS: frozenset[str] = frozenset(
         "security.session_passkey",
     }
 )
+
+
+class _DescriptorLike(Protocol):
+    """Structural descriptor type shared by pure-Python and upb protobuf runtimes."""
+
+    @property
+    def fields(self) -> Sequence[FieldDescriptor]:
+        """Return fields declared by this message descriptor."""
 
 
 class _NamedConfigType(Protocol):
@@ -3137,6 +3147,92 @@ def _set_missing_flags_false(
             d[path[-1]] = False
 
 
+def _prefix_base64_bytes_fields(
+    message: Message, values: dict[str, Any]
+) -> None:
+    """Mark every protobuf bytes field in a ``MessageToDict`` mapping as base64."""
+
+    def _field_key(
+        field: FieldDescriptor, mapping: dict[str, Any]
+    ) -> str | None:
+        json_name = getattr(field, "json_name", field.name)
+        for candidate in (json_name, field.name):
+            if candidate in mapping:
+                return candidate
+        return None
+
+    def _prefix_bytes(value: Any, *, field_path: str) -> Any:
+        if isinstance(value, str):
+            return value if value.startswith("base64:") else f"base64:{value}"
+        if isinstance(value, list):
+            if not all(isinstance(item, str) for item in value):
+                raise TypeError(
+                    f"Expected base64 strings for repeated bytes field {field_path}"
+                )
+            return [
+                item if item.startswith("base64:") else f"base64:{item}"
+                for item in value
+            ]
+        raise TypeError(f"Expected base64 string for bytes field {field_path}")
+
+    def _walk(
+        descriptor: _DescriptorLike, mapping: dict[str, Any], *, path: str = ""
+    ) -> None:
+        for field in descriptor.fields:
+            key = _field_key(field, mapping)
+            if key is None:
+                continue
+            value = mapping[key]
+            field_path = f"{path}.{field.name}" if path else field.name
+            if field.type == FieldDescriptor.TYPE_BYTES:
+                mapping[key] = _prefix_bytes(value, field_path=field_path)
+                continue
+            if field.type != FieldDescriptor.TYPE_MESSAGE:
+                continue
+
+            message_type = field.message_type
+            if message_type.GetOptions().map_entry:
+                value_field = message_type.fields_by_name["value"]
+                if not isinstance(value, dict):
+                    raise TypeError(f"Expected mapping for protobuf map field {field_path}")
+                if value_field.type == FieldDescriptor.TYPE_BYTES:
+                    for map_key, map_value in value.items():
+                        value[map_key] = _prefix_bytes(
+                            map_value, field_path=f"{field_path}[{map_key!r}]"
+                        )
+                elif value_field.type == FieldDescriptor.TYPE_MESSAGE:
+                    for map_key, map_value in value.items():
+                        if not isinstance(map_value, dict):
+                            raise TypeError(
+                                "Expected mapping for protobuf message map value "
+                                f"{field_path}[{map_key!r}]"
+                            )
+                        _walk(
+                            value_field.message_type,
+                            map_value,
+                            path=f"{field_path}[{map_key!r}]",
+                        )
+                continue
+
+            if _is_repeated_field(field):
+                if not isinstance(value, list):
+                    raise TypeError(
+                        f"Expected list for repeated message field {field_path}"
+                    )
+                for index, item in enumerate(value):
+                    if not isinstance(item, dict):
+                        raise TypeError(
+                            f"Expected mapping for {field_path}[{index}]"
+                        )
+                    _walk(message_type, item, path=f"{field_path}[{index}]")
+            else:
+                if not isinstance(value, dict):
+                    raise TypeError(f"Expected mapping for message field {field_path}")
+                _walk(message_type, value, path=field_path)
+
+    _walk(message.DESCRIPTOR, values)
+
+
 def _prefix_base64_key(
     security: dict[str, Any], normalized_key_map: dict[str, str], camel_name: str
 ) -> None:
@@ -3245,6 +3341,7 @@ def exportConfig(interface: MeshInterface) -> str:
 
     config = MessageToDict(interface.localNode.localConfig)
     if config:
+        _prefix_base64_bytes_fields(interface.localNode.localConfig, config)
         # Ensure explicit false values are present before key conversion.
         _set_missing_flags_false(config, CONFIG_TRUE_DEFAULTS)
 
@@ -3257,26 +3354,11 @@ def exportConfig(interface: MeshInterface) -> str:
                 else meshtastic.util.camel_to_snake(pref)
             )
             prefs[pref_key] = value
-            # mark base64 encoded fields as such
-            if pref == "security" and isinstance(prefs[pref_key], dict):
-                security = prefs[pref_key]
-                # Normalize keys to canonical camelCase for reliable lookup,
-                # since MessageToDict may produce inconsistent casing
-                normalized_key_map = {
-                    meshtastic.util.snake_to_camel(
-                        meshtastic.util.camel_to_snake(key)
-                    ): key
-                    for key in security
-                    if isinstance(key, str)
-                }
-
-                _prefix_base64_key(security, normalized_key_map, "privateKey")
-                _prefix_base64_key(security, normalized_key_map, "publicKey")
-                _prefix_base64_key(security, normalized_key_map, "adminKey")
         configObj["config"] = prefs
 
     module_config = MessageToDict(interface.localNode.moduleConfig)
     if module_config:
+        _prefix_base64_bytes_fields(interface.localNode.moduleConfig, module_config)
         # Ensure explicit false values are present before key conversion.
         _set_missing_flags_false(module_config, MODULE_TRUE_DEFAULTS)
 

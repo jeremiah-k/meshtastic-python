@@ -16,6 +16,8 @@ from unittest.mock import MagicMock, call, mock_open, patch
 
 import pytest
 import yaml
+from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
+from google.protobuf.json_format import MessageToDict
 
 import meshtastic.__main__ as main_module
 from meshtastic import mt_config
@@ -23,6 +25,7 @@ from meshtastic.__main__ import (
     _create_power_meter,
     _normalize_pref_name,
     _parse_host_port,
+    _prefix_base64_bytes_fields,
     _prefix_base64_key,
     _set_missing_flags_false,
     export_config,
@@ -6536,3 +6539,197 @@ def test_set_pref_repeated_field_progress_outside_preflight(
     assert "Clearing ignore_incoming list" in out
     assert list(config.lora.ignore_incoming) == []
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_export_config_round_trips_nested_module_bytes_fields() -> None:
+    """Firmware 2.8 Mesh Beacon channel PSKs must remain bytes after restore."""
+    source_local = localonly_pb2.LocalConfig()
+    source_module = localonly_pb2.LocalModuleConfig()
+    source_module.mesh_beacon.broadcast_interval_secs = 60
+    source_module.mesh_beacon.broadcast_offer_channel.psk = b"\x01\x02\x03\x04"
+    source_module.mesh_beacon.broadcast_on_channel.psk = b"\xaa\xbb\xcc\xdd"
+
+    exported_yaml = export_config(_build_export_interface(source_local, source_module))
+    exported = yaml.safe_load(exported_yaml)
+    mesh_beacon = exported["module_config"]["mesh_beacon"]
+    assert mesh_beacon["broadcastOfferChannel"]["psk"].startswith("base64:")
+    assert mesh_beacon["broadcastOnChannel"]["psk"].startswith("base64:")
+
+    restored = localonly_pb2.LocalModuleConfig()
+    assert traverseConfig("mesh_beacon", mesh_beacon, restored) is True
+    assert restored.mesh_beacon.broadcast_offer_channel.psk == b"\x01\x02\x03\x04"
+    assert restored.mesh_beacon.broadcast_on_channel.psk == b"\xaa\xbb\xcc\xdd"
+
+
+@pytest.mark.unit
+def test_prefix_base64_bytes_fields_handles_bytes_map_values() -> None:
+    file_proto = descriptor_pb2.FileDescriptorProto(
+        name="bytes_map_test.proto", package="mtjk.tests", syntax="proto3"
+    )
+    container = file_proto.message_type.add(name="BytesMap")
+    entry = container.nested_type.add(name="ValuesEntry")
+    entry.options.map_entry = True
+    entry.field.add(
+        name="key",
+        number=1,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_STRING,
+    )
+    entry.field.add(
+        name="value",
+        number=2,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_BYTES,
+    )
+    container.field.add(
+        name="values",
+        number=1,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
+        type_name=".mtjk.tests.BytesMap.ValuesEntry",
+    )
+    pool = descriptor_pool.DescriptorPool()
+    pool.Add(file_proto)
+    message_class = message_factory.GetMessageClass(
+        pool.FindMessageTypeByName("mtjk.tests.BytesMap")
+    )
+    message = cast(Any, message_class())
+    message.values["primary"] = b"\x01\x02"
+    values = MessageToDict(message)
+
+    _prefix_base64_bytes_fields(message, values)
+
+    assert values == {"values": {"primary": "base64:AQI="}}
+
+
+
+@pytest.mark.unit
+def test_prefix_base64_bytes_fields_rejects_invalid_repeated_values() -> None:
+    message = localonly_pb2.LocalConfig()
+    values: dict[str, Any] = {"security": {"adminKey": ["AQI=", 7]}}
+
+    with pytest.raises(TypeError, match="repeated bytes field security.admin_key"):
+        _prefix_base64_bytes_fields(message, values)
+
+
+
+def _build_nested_bytes_test_message() -> Any:
+    file_proto = descriptor_pb2.FileDescriptorProto(
+        name="nested_bytes_test.proto",
+        package="mtjk.tests.nested",
+        syntax="proto3",
+    )
+    child = file_proto.message_type.add(name="Child")
+    child.field.add(
+        name="payload",
+        number=1,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_BYTES,
+    )
+    container = file_proto.message_type.add(name="Container")
+
+    child_map_entry = container.nested_type.add(name="ChildMapEntry")
+    child_map_entry.options.map_entry = True
+    child_map_entry.field.add(
+        name="key",
+        number=1,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_STRING,
+    )
+    child_map_entry.field.add(
+        name="value",
+        number=2,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
+        type_name=".mtjk.tests.nested.Child",
+    )
+    container.field.add(
+        name="child_map",
+        number=1,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
+        type_name=".mtjk.tests.nested.Container.ChildMapEntry",
+    )
+    container.field.add(
+        name="children",
+        number=2,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
+        type_name=".mtjk.tests.nested.Child",
+    )
+    container.field.add(
+        name="child",
+        number=3,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
+        type_name=".mtjk.tests.nested.Child",
+    )
+    container.field.add(
+        name="blobs",
+        number=4,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_BYTES,
+    )
+    container.field.add(
+        name="scalar_blob",
+        number=5,
+        label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        type=descriptor_pb2.FieldDescriptorProto.TYPE_BYTES,
+    )
+
+    pool = descriptor_pool.DescriptorPool()
+    pool.Add(file_proto)
+    message_class = message_factory.GetMessageClass(
+        pool.FindMessageTypeByName("mtjk.tests.nested.Container")
+    )
+    return message_class()
+
+
+
+@pytest.mark.unit
+def test_prefix_base64_bytes_fields_walks_nested_message_shapes() -> None:
+    message = _build_nested_bytes_test_message()
+    message.child_map["primary"].payload = b"\x01"
+    message.children.add().payload = b"\x02"
+    message.child.payload = b"\x03"
+    message.blobs.extend([b"\x04", b"\x05"])
+    message.scalar_blob = b"\x06"
+    values = MessageToDict(message)
+
+    _prefix_base64_bytes_fields(message, values)
+
+    assert values == {
+        "childMap": {"primary": {"payload": "base64:AQ=="}},
+        "children": [{"payload": "base64:Ag=="}],
+        "child": {"payload": "base64:Aw=="},
+        "blobs": ["base64:BA==", "base64:BQ=="],
+        "scalarBlob": "base64:Bg==",
+    }
+
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"scalarBlob": 7}, "bytes field scalar_blob"),
+        ({"childMap": []}, "protobuf map field child_map"),
+        (
+            {"childMap": {"primary": "not-a-mapping"}},
+            "protobuf message map value child_map",
+        ),
+        ({"children": {}}, "repeated message field children"),
+        ({"children": ["not-a-mapping"]}, "children\\[0\\]"),
+        ({"child": []}, "message field child"),
+    ],
+)
+def test_prefix_base64_bytes_fields_rejects_invalid_message_shapes(
+    values: dict[str, Any],
+    message: str,
+) -> None:
+    proto = _build_nested_bytes_test_message()
+
+    with pytest.raises(TypeError, match=message):
+        _prefix_base64_bytes_fields(proto, values)
