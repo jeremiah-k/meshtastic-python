@@ -2209,6 +2209,62 @@ def test_main_configure_skips_unknown_config_field(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_configure_paces_each_local_config_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Avoid filling the firmware TX queue with a burst of section writes."""
+    config_path = tmp_path / "paced_config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "config": {
+                    "bluetooth": {"enabled": True},
+                    "display": {"screen_on_secs": 30},
+                },
+                "module_config": {
+                    "ambient_lighting": {"current": 5},
+                    "mqtt": {"enabled": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    events: list[tuple[str, object]] = []
+    original_write = target_node.writeConfig.side_effect
+
+    def _write_config(section: str) -> None:
+        events.append(("write", section))
+        original_write(section)
+
+    target_node.writeConfig.side_effect = _write_config
+    monkeypatch.setattr(
+        "time.sleep", lambda seconds: events.append(("sleep", seconds))
+    )
+    monkeypatch.setattr(
+        "meshtastic.__main__._post_configure_reconnect_and_verify",
+        lambda *_args, **_kwargs: main_module._ConfigureReconnectResult.VERIFIED,
+    )
+    sys.argv = ["", "--configure", str(config_path)]
+    mt_config.args = cast(Any, sys.argv)
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+
+    write_indices = [index for index, event in enumerate(events) if event[0] == "write"]
+    assert [events[index][1] for index in write_indices] == [
+        "bluetooth",
+        "display",
+        "ambient_lighting",
+        "mqtt",
+    ]
+    for index in write_indices:
+        assert events[index + 1] == ("sleep", main_module.CONFIG_APPLY_DELAY_SECONDS)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_configure_rejects_invalid_enum_value(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -1843,7 +1843,7 @@ def _handle_configure_command(
             interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                 meshtastic.util.camel_to_snake(section)
             )
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if validated_module_config_sections:
         moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
@@ -1869,7 +1869,7 @@ def _handle_configure_command(
             interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                 meshtastic.util.camel_to_snake(section)
             )
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if settings_transaction_started:
         interface.getNode(
