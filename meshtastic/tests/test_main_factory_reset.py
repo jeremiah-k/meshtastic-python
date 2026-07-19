@@ -2,9 +2,9 @@
 
 # pylint: disable=C0302,W0613,R0917
 
+import logging
 import sys
 import threading
-import logging
 import time
 from types import SimpleNamespace
 from typing import Any, cast
@@ -55,6 +55,8 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("reset_flag", "expected_full"),
     [("--factory-reset", False), ("--factory-reset-device", True)],
@@ -430,3 +432,63 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     assert not hasattr(iface, "_connect_retry_budget_seconds")
     assert not hasattr(iface, "_suppress_connect_failure_logging")
     assert iface.close.call_count >= 2
+
+@pytest.mark.unit
+def test_temporary_instance_attributes_restores_existing_and_missing_values() -> None:
+    instance = SimpleNamespace(existing="before")
+
+    with main_module._temporary_instance_attributes(
+        instance, {"existing": "during", "temporary": 42}
+    ):
+        assert instance.existing == "during"
+        assert instance.temporary == 42
+
+    assert instance.existing == "before"
+    assert not hasattr(instance, "temporary")
+
+
+@pytest.mark.unit
+def test_temporary_instance_attributes_does_not_shadow_inherited_values() -> None:
+    class WithInheritedValue:
+        inherited = "class-value"
+
+    instance = WithInheritedValue()
+
+    with main_module._temporary_instance_attributes(
+        instance, {"inherited": "temporary"}
+    ):
+        assert instance.inherited == "temporary"
+        assert vars(instance)["inherited"] == "temporary"
+
+    assert instance.inherited == "class-value"
+    assert "inherited" not in vars(instance)
+
+
+@pytest.mark.unit
+def test_post_factory_reset_ready_probe_restores_existing_overrides() -> None:
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface.close = MagicMock()
+    iface.connect = MagicMock()
+    iface._connect_wait_timeout_seconds = 11.0
+    iface._connect_retry_budget_seconds = 12.0
+    iface._suppress_connect_failure_logging = False
+
+    main_module._post_factory_reset_ready_probe(cast(Any, iface))
+
+    assert iface._connect_wait_timeout_seconds == 11.0
+    assert iface._connect_retry_budget_seconds == 12.0
+    assert iface._suppress_connect_failure_logging is False
+
+
+@pytest.mark.unit
+def test_post_factory_reset_ready_probe_logs_final_close_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface.connect = MagicMock()
+    iface.close = MagicMock(side_effect=[None, RuntimeError("close failed")])
+
+    with caplog.at_level(logging.DEBUG):
+        main_module._post_factory_reset_ready_probe(cast(Any, iface))
+
+    assert "Factory reset: final serial close failed" in caplog.text

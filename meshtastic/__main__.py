@@ -16,7 +16,7 @@ import platform
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from types import ModuleType
 from typing import Any, NoReturn, Protocol, cast
 
@@ -731,6 +731,29 @@ def _send_local_factory_reset_and_wait(
     return None
 
 
+@contextlib.contextmanager
+def _temporary_instance_attributes(
+    instance: Any, overrides: dict[str, Any]
+) -> Iterator[None]:
+    """Temporarily override instance attributes and restore their exact prior state."""
+    missing = object()
+    instance_values = vars(instance)
+    previous_values = {
+        name: instance_values.get(name, missing) for name in overrides
+    }
+    try:
+        for name, value in overrides.items():
+            setattr(instance, name, value)
+        yield
+    finally:
+        for name, previous in previous_values.items():
+            if previous is missing:
+                with contextlib.suppress(AttributeError):
+                    delattr(instance, name)
+            else:
+                setattr(instance, name, previous)
+
+
 def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
     """Close, briefly probe serial readiness, then release the port for the next command."""
     if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
@@ -754,43 +777,28 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
         "_connect_retry_budget_seconds": FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
         "_suppress_connect_failure_logging": True,
     }
-    missing = object()
-    previous_values = {
-        name: getattr(interface, name, missing) for name in probe_overrides
-    }
-    for name, value in probe_overrides.items():
-        setattr(interface, name, value)
-
     probe_start = time.monotonic()
-    try:
-        interface.connect()
-        logger.debug(
-            "Factory reset: reconnect probe succeeded in %.2fs.",
-            time.monotonic() - probe_start,
-        )
-    except Exception as exc:
-        logger.info(
-            "Factory reset accepted; device is still rebooting after %.1fs "
-            "and the next command will reconnect normally (%s).",
-            time.monotonic() - probe_start,
-            exc,
-        )
-    finally:
-        for name, previous in previous_values.items():
-            if previous is missing:
-                try:
-                    delattr(interface, name)
-                except AttributeError:
-                    pass
-            else:
-                setattr(interface, name, previous)
+    with _temporary_instance_attributes(interface, probe_overrides):
         try:
-            interface.close()
-        except Exception:
+            interface.connect()
             logger.debug(
-                "Factory reset: final serial close failed.",
-                exc_info=True,
+                "Factory reset: reconnect probe succeeded in %.2fs.",
+                time.monotonic() - probe_start,
             )
+        except Exception as exc:
+            logger.info(
+                "Factory reset accepted; device is still rebooting after %.1fs "
+                "and the next command will reconnect normally (%s).",
+                time.monotonic() - probe_start,
+                exc,
+            )
+    try:
+        interface.close()
+    except Exception:
+        logger.debug(
+            "Factory reset: final serial close failed.",
+            exc_info=True,
+        )
 
 
 def _validate_non_empty_mapping_sections(

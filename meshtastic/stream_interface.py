@@ -262,13 +262,13 @@ class StreamInterface(MeshInterface):
         try:
             self._start_config()
             if not self.noProto:  # Wait for the db download if using the protocol
-                connect_wait_timeout = getattr(
-                    self, "_connect_wait_timeout_seconds", None
+                connect_wait_timeout = self._connection_timeout_override(
+                    "_connect_wait_timeout_seconds"
                 )
-                if isinstance(connect_wait_timeout, (int, float)):
-                    self._wait_connected(timeout=max(0.0, float(connect_wait_timeout)))
-                else:
+                if connect_wait_timeout is None:
                     self._wait_connected()
+                else:
+                    self._wait_connected(timeout=connect_wait_timeout)
                 self._stable_path = self._resolve_stable_path()
         except Exception:
             # If protocol startup fails after reader launch, tear down to avoid
