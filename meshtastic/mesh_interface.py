@@ -1479,7 +1479,12 @@ class MeshInterface:  # pylint: disable=R0902
                             getattr(self, "_last_disconnect_source", "unknown"),
                         )
                         raise MeshInterface.MeshInterfaceError(abort_reason_str)
-                logger.error(
+                log_timeout = (
+                    logger.debug
+                    if getattr(self, "_suppress_connect_failure_logging", False)
+                    else logger.error
+                )
+                log_timeout(
                     "Timed out waiting for connection completion (isConnected=%s, failure=%r, last_disconnect_source=%s)",
                     self.isConnected.is_set(),
                     self.failure,

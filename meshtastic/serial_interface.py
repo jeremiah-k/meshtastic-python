@@ -261,7 +261,13 @@ class SerialInterface(StreamInterface):
     def connect(self) -> None:
         """Reconnect by reopening serial stream when needed, then run StreamInterface connect."""
         connect_start = time.monotonic()
-        retry_deadline = time.monotonic() + SERIAL_CONNECT_RETRY_BUDGET_SECONDS
+        retry_budget = getattr(
+            self, "_connect_retry_budget_seconds", SERIAL_CONNECT_RETRY_BUDGET_SECONDS
+        )
+        retry_deadline = time.monotonic() + max(0.0, float(retry_budget))
+        suppress_failure_logging = bool(
+            getattr(self, "_suppress_connect_failure_logging", False)
+        )
         for attempt in range(1, SERIAL_CONNECT_MAX_ATTEMPTS + 1):
             attempt_start = time.monotonic()
             stream = self.stream
@@ -297,7 +303,10 @@ class SerialInterface(StreamInterface):
                 return
             except Exception as exc:
                 if not self._is_retryable_connect_error(exc):
-                    logger.error(
+                    log_failure = (
+                        logger.debug if suppress_failure_logging else logger.error
+                    )
+                    log_failure(
                         "Serial connect attempt %d failed with non-retryable error after %.2fs: %s",
                         attempt,
                         time.monotonic() - connect_start,
@@ -306,7 +315,10 @@ class SerialInterface(StreamInterface):
                     raise
                 remaining = retry_deadline - time.monotonic()
                 if attempt >= SERIAL_CONNECT_MAX_ATTEMPTS or remaining <= 0:
-                    logger.error(
+                    log_failure = (
+                        logger.debug if suppress_failure_logging else logger.error
+                    )
+                    log_failure(
                         "Serial connect retry budget exhausted after %.2fs (attempt %d/%d). Last error: %s",
                         time.monotonic() - connect_start,
                         attempt,

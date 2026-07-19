@@ -4,6 +4,7 @@
 
 import sys
 import threading
+import logging
 import time
 from types import SimpleNamespace
 from typing import Any, cast
@@ -398,4 +399,34 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
     main_module._post_factory_reset_ready_probe(cast(Any, iface))
 
     iface.connect.assert_called_once()
+    assert iface.close.call_count >= 2
+
+@pytest.mark.unit
+def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A still-rebooting device should produce one concise info line, not a traceback."""
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface.close = MagicMock()
+
+    def _connect() -> None:
+        assert iface._connect_wait_timeout_seconds == (
+            main_module.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
+        )
+        assert iface._connect_retry_budget_seconds == (
+            main_module.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
+        )
+        assert iface._suppress_connect_failure_logging is True
+        raise RuntimeError("device still rebooting")
+
+    iface.connect = MagicMock(side_effect=_connect)
+
+    with caplog.at_level(logging.DEBUG):
+        main_module._post_factory_reset_ready_probe(cast(Any, iface))
+
+    assert "device is still rebooting" in caplog.text
+    assert "Traceback" not in caplog.text
+    assert not hasattr(iface, "_connect_wait_timeout_seconds")
+    assert not hasattr(iface, "_connect_retry_budget_seconds")
+    assert not hasattr(iface, "_suppress_connect_failure_logging")
     assert iface.close.call_count >= 2
