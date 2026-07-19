@@ -1331,15 +1331,25 @@ def _walk_config_path(
     config: Any, name_parts: list[str]
 ) -> tuple[Any, Any | None]:
     """Return the parent message and descriptor for a dotted config path."""
+    if not name_parts:
+        return config, None
+
+    normalized_parts = [
+        meshtastic.util.camel_to_snake(name_part) for name_part in name_parts
+    ]
     config_part = config
-    config_type = config.DESCRIPTOR.fields_by_name.get(name_parts[0])
-    for name_part in name_parts[1:-1]:
+    config_type = config.DESCRIPTOR.fields_by_name.get(normalized_parts[0])
+    for name_part in normalized_parts[1:-1]:
         if config_type is None or config_type.message_type is None:
             return config_part, None
         config_part = getattr(config_part, config_type.name)
-        config_type = config_type.message_type.fields_by_name.get(
-            meshtastic.util.camel_to_snake(name_part)
-        )
+        config_type = config_type.message_type.fields_by_name.get(name_part)
+    if (
+        len(normalized_parts) > 2
+        and config_type is not None
+        and config_type.message_type is None
+    ):
+        return config_part, None
     return config_part, config_type
 
 
