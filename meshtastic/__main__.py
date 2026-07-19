@@ -3678,8 +3678,13 @@ def main() -> None:
         "and if none is found, then attempt a TCP connection to localhost.",
     )
     mt_config.parser = parser
-    initParser()
-    common()
+    try:
+        initParser()
+        common()
+    except KeyboardInterrupt:
+        _cli_exit("Interrupted.", 130)
+    except MeshInterface.MeshInterfaceError as exc:
+        _cli_exit(f"ERROR: {exc}", 1)
 
 
 def tunnelMain() -> None:

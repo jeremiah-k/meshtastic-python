@@ -32,6 +32,7 @@ from meshtastic.__main__ import (
     initParser,
     main,
 )
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import channel_pb2
 from meshtastic.serial_interface import SerialInterface
 
@@ -907,3 +908,49 @@ def test_main_ch_set_unknown_pref_prints_module_settings_subfields(
         assert "module_settings:" in out
         assert "module_settings.position_precision" in out
         assert "module_settings.is_muted" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_keyboard_interrupt_exits_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Convert Ctrl-C during an operation into a conventional quiet CLI exit."""
+    monkeypatch.setattr(main_module, "initParser", lambda: None)
+
+    def _interrupt() -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(main_module, "common", _interrupt)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    _out, err = capsys.readouterr()
+    assert excinfo.value.code == 130
+    assert err == "Interrupted.\n"
+    assert "Traceback" not in err
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_mesh_interface_error_exits_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Render expected transport failures as concise CLI errors."""
+    monkeypatch.setattr(main_module, "initParser", lambda: None)
+
+    def _fail() -> None:
+        raise MeshInterface.MeshInterfaceError("queue wait timed out")
+
+    monkeypatch.setattr(main_module, "common", _fail)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    _out, err = capsys.readouterr()
+    assert excinfo.value.code == 1
+    assert err == "ERROR: queue wait timed out\n"
+    assert "Traceback" not in err
