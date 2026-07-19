@@ -3,6 +3,7 @@ from __future__ import annotations
 import collections
 import threading
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -477,3 +478,87 @@ def test_send_to_radio_aborts_queue_wait_when_transport_is_gone() -> None:
         )
 
     assert 902 not in harness.queue
+
+
+@pytest.mark.unit
+def test_queue_wait_timeout_zero_fails_without_sleep() -> None:
+    harness = _QueueHarness()
+    harness.queue_status = mesh_pb2.QueueStatus(free=0, maxlen=16)
+    runtime = _QueueSendRuntime(
+        lock=harness.lock,
+        get_queue=lambda: harness.queue,
+        get_queue_status=lambda: harness.queue_status,
+        set_queue_status=harness.set_queue_status,
+        queue_wait_delay_seconds=1.0,
+        queue_wait_timeout_seconds=0.0,
+    )
+    packet = mesh_pb2.ToRadio()
+    packet.packet.id = 904
+    sleep = MagicMock()
+
+    with pytest.raises(queue_send_module.QueueWaitError, match="after 0.0s"):
+        runtime._send_to_radio(packet, send_impl=MagicMock(), sleep_fn=sleep)
+
+    sleep.assert_not_called()
+    assert 904 not in harness.queue
+
+
+@pytest.mark.unit
+def test_queue_wait_failure_drops_equivalent_packet_instance_by_id() -> None:
+    harness = _QueueHarness()
+    harness.queue_status = mesh_pb2.QueueStatus(free=0, maxlen=16)
+    packet = mesh_pb2.ToRadio()
+    packet.packet.id = 905
+
+    def replace_then_abort() -> str:
+        replacement = mesh_pb2.ToRadio()
+        replacement.CopyFrom(packet)
+        harness.queue[packet.packet.id] = replacement
+        return "closed"
+
+    runtime = _QueueSendRuntime(
+        lock=harness.lock,
+        get_queue=lambda: harness.queue,
+        get_queue_status=lambda: harness.queue_status,
+        set_queue_status=harness.set_queue_status,
+        queue_wait_delay_seconds=0.0,
+        abort_wait=replace_then_abort,
+    )
+
+    with pytest.raises(queue_send_module.QueueWaitError, match="closed"):
+        runtime._send_to_radio(
+            packet,
+            send_impl=MagicMock(),
+            sleep_fn=MagicMock(),
+        )
+
+    assert 905 not in harness.queue
+
+
+@pytest.mark.unit
+def test_queue_wait_resumes_when_firmware_reports_space() -> None:
+    harness = _QueueHarness()
+    harness.queue_status = mesh_pb2.QueueStatus(free=0, maxlen=16)
+    runtime = _QueueSendRuntime(
+        lock=harness.lock,
+        get_queue=lambda: harness.queue,
+        get_queue_status=lambda: harness.queue_status,
+        set_queue_status=harness.set_queue_status,
+        queue_wait_delay_seconds=0.0,
+        queue_wait_timeout_seconds=1.0,
+    )
+    packet = mesh_pb2.ToRadio()
+    packet.packet.id = 906
+    sent: list[int] = []
+
+    def release_queue(_seconds: float) -> None:
+        assert harness.queue_status is not None
+        harness.queue_status.free = 1
+
+    runtime._send_to_radio(
+        packet,
+        send_impl=lambda message: sent.append(message.packet.id),
+        sleep_fn=release_queue,
+    )
+
+    assert sent == [906]

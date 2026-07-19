@@ -497,6 +497,8 @@ def test_getNode_not_local(caplog: pytest.LogCaptureFixture) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize("request_channel_attempts", [None, 2])
 def test_getNode_not_local_timeout(
     caplog: pytest.LogCaptureFixture,
@@ -633,6 +635,8 @@ def test_close_waits_for_inflight_heartbeat_send(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     "disconnect_error",
     [
@@ -1229,6 +1233,8 @@ def test_sendPacket_uses_numeric_num_from_node_record(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("destination_id", "expected_num"),
     [
@@ -1252,6 +1258,8 @@ def test_sendPacket_parses_supported_hex_node_id_forms(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize("destination_id", ["nothexid", "nothexid1"])
 def test_sendPacket_with_non_hex_long_destination_falls_back_to_db_lookup(
     iface_with_nodes: MeshInterface,
@@ -2788,6 +2796,8 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("handler_name", "waiter_name", "port_name", "error_prefix"),
     [
@@ -4795,3 +4805,31 @@ def test_send_to_radio_reports_disconnected_queue_wait_as_interface_error() -> N
             iface._send_to_radio(packet)
 
         assert 903 not in iface.queue
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_queue_wait_abort_reason_reports_failure_and_closing() -> None:
+    with MeshInterface(noProto=True) as iface:
+        iface.failure = RuntimeError("serial failed")
+        assert iface._queue_wait_abort_reason() == "interface failure: serial failed"
+        iface.failure = None
+        iface._closing = True
+        assert iface._queue_wait_abort_reason() == "interface is closing"
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_queue_wait_timeout_can_be_overridden_by_transport_subclass() -> None:
+    class FastFailInterface(MeshInterface):
+        _queue_wait_timeout_seconds = 1.25
+
+    with FastFailInterface(noProto=True) as iface:
+        assert iface._queue_send_runtime._queue_wait_timeout_seconds == 1.25
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_queue_wait_abort_reason_allows_connected_interface() -> None:
+    with MeshInterface(noProto=True) as iface:
+        iface.isConnected.set()
+        assert iface._queue_wait_abort_reason() is None

@@ -11,7 +11,7 @@ import threading
 import time
 import traceback
 from types import MappingProxyType, TracebackType
-from typing import IO, Any, Callable, Mapping, TypeAlias, cast
+from typing import IO, Any, Callable, ClassVar, Mapping, TypeAlias, cast
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -33,6 +33,7 @@ from meshtastic.mesh_interface_runtime.flows import (
 )
 from meshtastic.mesh_interface_runtime.node_view import NodeView
 from meshtastic.mesh_interface_runtime.queue_send import (
+    QUEUE_WAIT_TIMEOUT_SECONDS,
     QueueWaitError,
     _QueueSendRuntime,
 )
@@ -255,6 +256,9 @@ class MeshInterface:  # pylint: disable=R0902
     debugOut
     """
 
+    _queue_wait_timeout_seconds: ClassVar[float] = QUEUE_WAIT_TIMEOUT_SECONDS
+    _last_disconnect_source: str | None
+
     class MeshInterfaceError(Exception):
         """An exception class for general mesh interface errors."""
 
@@ -385,6 +389,7 @@ class MeshInterface:  # pylint: disable=R0902
             get_queue_status=lambda: self.queueStatus,
             set_queue_status=self._set_queue_status,
             queue_wait_delay_seconds=QUEUE_WAIT_DELAY_SECONDS,
+            queue_wait_timeout_seconds=self._queue_wait_timeout_seconds,
             abort_wait=self._queue_wait_abort_reason,
         )
         self._from_radio_dispatch_map_cache: (

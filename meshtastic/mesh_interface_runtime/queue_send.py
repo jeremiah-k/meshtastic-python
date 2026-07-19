@@ -113,13 +113,11 @@ class _QueueSendRuntime:
 
         resent_queue: OrderedDict[int, mesh_pb2.ToRadio | bool] = OrderedDict()
         sent_packet_ids: set[int] = set()
-        wait_started: float | None = None
+        wait_deadline: float | None = None
 
         def _drop_unsent_incoming() -> None:
             with self._lock:
-                queue = self._get_queue()
-                if queue.get(to_radio.packet.id) is to_radio:
-                    queue.pop(to_radio.packet.id, None)
+                self._get_queue().pop(to_radio.packet.id, None)
 
         try:
             while True:
@@ -138,9 +136,9 @@ class _QueueSendRuntime:
                         )
 
                     now = time.monotonic()
-                    if wait_started is None:
-                        wait_started = now
-                    elif now - wait_started >= self._queue_wait_timeout_seconds:
+                    if wait_deadline is None:
+                        wait_deadline = now + self._queue_wait_timeout_seconds
+                    if now >= wait_deadline:
                         _drop_unsent_incoming()
                         raise QueueWaitError(
                             "Timed out waiting for free space in TX queue "
@@ -151,7 +149,7 @@ class _QueueSendRuntime:
                     sleep_fn(self._queue_wait_delay_seconds)
                     continue
 
-                wait_started = None
+                wait_deadline = None
 
                 packet_id, packet = to_resend
                 resent_queue[packet_id] = packet
