@@ -6323,3 +6323,37 @@ def test_resolve_pref_accepts_nested_message_field() -> None:
         config,
         "meshBeacon.broadcastOfferChannel.psk",
     )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_set_pref_redacts_network_mqtt_and_pin_credentials(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Configure progress output must not disclose local network or broker credentials."""
+    local_config = localonly_pb2.LocalConfig()
+    module_config = localonly_pb2.LocalModuleConfig()
+
+    assert setPref(local_config, "network.wifi_ssid", "Private LAN") is True
+    assert setPref(local_config, "network.wifi_psk", "distinctive-passphrase") is True
+    assert setPref(local_config, "bluetooth.fixed_pin", "123456") is True
+    assert setPref(module_config, "mqtt.username", "private-user") is True
+    assert setPref(module_config, "mqtt.password", "private-password") is True
+
+    out, err = capsys.readouterr()
+    assert out.count("<redacted>") == 5
+    for secret in (
+        "Private LAN",
+        "distinctive-passphrase",
+        "123456",
+        "private-user",
+        "private-password",
+    ):
+        assert secret not in out
+    assert local_config.network.wifi_ssid == "Private LAN"
+    assert local_config.network.wifi_psk == "distinctive-passphrase"
+    assert local_config.bluetooth.fixed_pin == 123456
+    assert module_config.mqtt.username == "private-user"
+    assert module_config.mqtt.password == "private-password"
+    assert err == ""
+

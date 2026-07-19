@@ -1067,12 +1067,17 @@ def _display_pref_name(comp_name: str) -> str:
 
 _SECRET_PREF_NAMES: frozenset[str] = frozenset(
     {
+        "wifi_ssid",
         "wifi_psk",
+        "username",
+        "password",
+        "fixed_pin",
         "psk",
         "channel_psk",
         "private_key",
         "public_key",
         "admin_key",
+        "session_passkey",
         "secret",
         "api_key",
         "auth_token",
@@ -1788,7 +1793,7 @@ def _handle_configure_command(
         else:
             phase1_may_reconnect = True
             seturl_executed = True
-            _cli_print(f"Setting channel url to {requested_channel_url}")
+            _cli_print("Setting channel url to <redacted>")
             target_node.setURL(requested_channel_url)
             time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
@@ -1811,7 +1816,7 @@ def _handle_configure_command(
         else:
             phase1_may_reconnect = True
             seturl_executed = True
-            _cli_print(f"Setting channel url to {requested_channel_url}")
+            _cli_print("Setting channel url to <redacted>")
             target_node.setURL(requested_channel_url)
             time.sleep(CONFIG_SETURL_DELAY_SECONDS)
 
