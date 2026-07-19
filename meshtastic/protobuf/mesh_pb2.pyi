@@ -4521,6 +4521,7 @@ class DeviceMetadata(_message.Message):
     HASREMOTEHARDWARE_FIELD_NUMBER: _builtins.int
     HASPKC_FIELD_NUMBER: _builtins.int
     EXCLUDED_MODULES_FIELD_NUMBER: _builtins.int
+    HAS_XEDDSA_FIELD_NUMBER: _builtins.int
     firmware_version: _builtins.str
     """
     Device firmware version string
@@ -4570,6 +4571,11 @@ class DeviceMetadata(_message.Message):
     Bit field of boolean for excluded modules
     (bitwise OR of ExcludedModules)
     """
+    has_xeddsa: _builtins.bool
+    """
+    Indicates whether this firmware build includes XEdDSA packet signature verification.
+    This is a read-only capability and must be false when XEdDSA is not compiled in.
+    """
     def __init__(
         self,
         *,
@@ -4585,10 +4591,11 @@ class DeviceMetadata(_message.Message):
         hasRemoteHardware: _builtins.bool = ...,
         hasPKC: _builtins.bool = ...,
         excluded_modules: _builtins.int = ...,
+        has_xeddsa: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["canShutdown", b"canShutdown", "device_state_version", b"device_state_version", "excluded_modules", b"excluded_modules", "firmware_version", b"firmware_version", "hasBluetooth", b"hasBluetooth", "hasEthernet", b"hasEthernet", "hasPKC", b"hasPKC", "hasRemoteHardware", b"hasRemoteHardware", "hasWifi", b"hasWifi", "hw_model", b"hw_model", "position_flags", b"position_flags", "role", b"role"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["canShutdown", b"canShutdown", "device_state_version", b"device_state_version", "excluded_modules", b"excluded_modules", "firmware_version", b"firmware_version", "hasBluetooth", b"hasBluetooth", "hasEthernet", b"hasEthernet", "hasPKC", b"hasPKC", "hasRemoteHardware", b"hasRemoteHardware", "hasWifi", b"hasWifi", "has_xeddsa", b"has_xeddsa", "hw_model", b"hw_model", "position_flags", b"position_flags", "role", b"role"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
