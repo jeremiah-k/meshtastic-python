@@ -6137,3 +6137,38 @@ def test_main_ota_update_file_not_found(
     # Verify no transport was constructed before the file check fired
     tcp_cls.assert_not_called()
     serial_cls.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_setpref_updates_deeply_nested_mesh_beacon_channel_settings() -> None:
+    """Apply valid 2.8 fields nested more than one protobuf message deep."""
+    module_config = localonly_pb2.LocalModuleConfig()
+
+    assert setPref(
+        module_config,
+        "mesh_beacon.broadcast_offer_channel.module_settings.position_precision",
+        12,
+    )
+
+    assert (
+        module_config.mesh_beacon.broadcast_offer_channel.module_settings.position_precision
+        == 12
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_traverse_config_skips_unknown_deep_intermediate_field(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Treat an unknown nested object as a skipped field instead of crashing."""
+    module_config = localonly_pb2.LocalModuleConfig()
+
+    assert traverseConfig(
+        "mesh_beacon",
+        {"broadcast_offer_channel": {"unknown_group": {"value": 1}}},
+        module_config,
+    )
+
+    assert "unknown_group.value" in caplog.text

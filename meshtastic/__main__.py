@@ -1327,21 +1327,30 @@ def traverseConfig(
     return success
 
 
+def _walk_config_path(
+    config: Any, name_parts: list[str]
+) -> tuple[Any, Any | None]:
+    """Return the parent message and descriptor for a dotted config path."""
+    config_part = config
+    config_type = config.DESCRIPTOR.fields_by_name.get(name_parts[0])
+    for name_part in name_parts[1:-1]:
+        if config_type is None or config_type.message_type is None:
+            return config_part, None
+        config_part = getattr(config_part, config_type.name)
+        config_type = config_type.message_type.fields_by_name.get(
+            meshtastic.util.camel_to_snake(name_part)
+        )
+    return config_part, config_type
+
+
 def _resolve_pref(config: Any, comp_name: str) -> bool:
     """Check whether a dotted field path resolves to a valid protobuf field."""
     comp_name = _normalize_pref_name(comp_name)
     name = splitCompoundName(comp_name)
     snake_name = meshtastic.util.camel_to_snake(name[-1])
-    objDesc = config.DESCRIPTOR
-    config_type = objDesc.fields_by_name.get(name[0])
+    _config_part, config_type = _walk_config_path(config, name)
     if config_type and config_type.message_type is not None:
-        config_part = config
-        for name_part in name[1:-1]:
-            part_snake_name = meshtastic.util.camel_to_snake(name_part)
-            config_part = getattr(config_part, config_type.name)
-            config_type = config_type.message_type.fields_by_name.get(part_snake_name)
-        if config_type and config_type.message_type is not None:
-            return config_type.message_type.fields_by_name.get(snake_name) is not None
+        return config_type.message_type.fields_by_name.get(snake_name) is not None
     return config_type is not None
 
 
@@ -1377,14 +1386,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     logger.debug("snake_name:%s", snake_name)
     logger.debug("camel_name:%s", camel_name)
 
-    objDesc = config.DESCRIPTOR
-    config_part = config
-    config_type = objDesc.fields_by_name.get(name[0])
-    if config_type and config_type.message_type is not None:
-        for name_part in name[1:-1]:
-            part_snake_name = meshtastic.util.camel_to_snake((name_part))
-            config_part = getattr(config, config_type.name)
-            config_type = config_type.message_type.fields_by_name.get(part_snake_name)
+    config_part, config_type = _walk_config_path(config, name)
     pref = None
     if config_type and config_type.message_type is not None:
         pref = config_type.message_type.fields_by_name.get(snake_name)
