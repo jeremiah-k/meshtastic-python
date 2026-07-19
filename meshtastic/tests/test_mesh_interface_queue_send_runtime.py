@@ -413,3 +413,67 @@ def test_send_to_radio_uses_runtime_pop_method(
     )
 
     assert sent == [123, 456]
+
+@pytest.mark.unit
+def test_send_to_radio_times_out_when_queue_status_never_recovers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _QueueHarness()
+    status = mesh_pb2.QueueStatus(free=0, maxlen=16)
+    harness.queue_status = status
+    runtime = _QueueSendRuntime(
+        lock=harness.lock,
+        get_queue=lambda: harness.queue,
+        get_queue_status=lambda: harness.queue_status,
+        set_queue_status=harness.set_queue_status,
+        queue_wait_delay_seconds=0.0,
+        queue_wait_timeout_seconds=1.0,
+    )
+    packet = mesh_pb2.ToRadio()
+    packet.packet.id = 901
+    monotonic_values = iter((10.0, 11.1))
+    monkeypatch.setattr(
+        queue_send_module.time,
+        "monotonic",
+        lambda: next(monotonic_values),
+    )
+
+    with pytest.raises(
+        queue_send_module.QueueWaitError,
+        match="Timed out waiting for free space in TX queue after 1.0s",
+    ):
+        runtime._send_to_radio(
+            packet,
+            send_impl=lambda _message: None,
+            sleep_fn=lambda _seconds: None,
+        )
+
+    assert 901 not in harness.queue
+
+
+@pytest.mark.unit
+def test_send_to_radio_aborts_queue_wait_when_transport_is_gone() -> None:
+    harness = _QueueHarness()
+    harness.queue_status = mesh_pb2.QueueStatus(free=0, maxlen=16)
+    runtime = _QueueSendRuntime(
+        lock=harness.lock,
+        get_queue=lambda: harness.queue,
+        get_queue_status=lambda: harness.queue_status,
+        set_queue_status=harness.set_queue_status,
+        queue_wait_delay_seconds=0.0,
+        abort_wait=lambda: "interface disconnected (stream.closed)",
+    )
+    packet = mesh_pb2.ToRadio()
+    packet.packet.id = 902
+
+    with pytest.raises(
+        queue_send_module.QueueWaitError,
+        match=r"Stopped waiting.*interface disconnected \(stream.closed\)",
+    ):
+        runtime._send_to_radio(
+            packet,
+            send_impl=lambda _message: None,
+            sleep_fn=lambda _seconds: None,
+        )
+
+    assert 902 not in harness.queue

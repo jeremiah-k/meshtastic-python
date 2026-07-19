@@ -4776,3 +4776,22 @@ def test_mesh_interface_mqtt_proxy_delegates_to_send_pipeline() -> None:
             {},
         )
     ]
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_to_radio_reports_disconnected_queue_wait_as_interface_error() -> None:
+    """A stale full queue after disconnect must fail rather than sleep forever."""
+    with MeshInterface(noProto=True) as iface:
+        iface.noProto = False
+        iface.queueStatus = mesh_pb2.QueueStatus(free=0, maxlen=16)
+        iface._last_disconnect_source = "stream.closed"
+        packet = mesh_pb2.ToRadio()
+        packet.packet.id = 903
+
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match=r"interface disconnected \(stream.closed\)",
+        ):
+            iface._send_to_radio(packet)
+
+        assert 903 not in iface.queue
