@@ -167,6 +167,8 @@ def test_main_init_parser_help_mentions_list_fields(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("flag", "destination"),
     (
@@ -1238,6 +1240,8 @@ def test_main_reboot_ota(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("args", "method_name", "marker"),
     [
@@ -2145,6 +2149,8 @@ def test_main_configure_with_camel_case_keys(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("owner_key", "expected_error"),
     [
@@ -2445,6 +2451,8 @@ def test_main_configure_applies_power_snake_case_keys(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     "alias_key",
     ["use_12_hour", "use12Hour", "use12hClock", "use12HClock"],
@@ -2554,6 +2562,8 @@ def test_main_configure_rejects_non_dict_module_config(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("top_key", "section_name", "section_value"),
     [
@@ -2986,6 +2996,8 @@ def test_main_ch_longfast_on_non_primary_channel(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     ("cli_args", "expected_preset"),
     (
@@ -4942,6 +4954,8 @@ def test_main_ch_set_psk_with_ch_index(capsys: pytest.CaptureFixture[str]) -> No
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     "psk_value",
     [
@@ -5102,6 +5116,8 @@ def test_tunnel_subnet_arg_with_no_devices(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="on windows is no fcntl module")
+
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("platform.system")
@@ -6092,6 +6108,8 @@ def test_flatten_leaf_paths_empty_nested_dict() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize(
     "field,value,expected,expected_output_substring",
     [
@@ -6161,6 +6179,8 @@ def test_main_setPref_bitfield_invalid_name(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+
+
 @pytest.mark.parametrize("value", ["0xZZ", "0o10"], ids=["invalid_hex", "octal"])
 def test_main_setPref_bitfield_invalid_numeric_string(
     value: str,
@@ -6205,3 +6225,101 @@ def test_main_ota_update_file_not_found(
     # Verify no transport was constructed before the file check fired
     tcp_cls.assert_not_called()
     serial_cls.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_setpref_updates_deeply_nested_mesh_beacon_channel_settings() -> None:
+    """Apply valid 2.8 fields nested more than one protobuf message deep."""
+    module_config = localonly_pb2.LocalModuleConfig()
+
+    assert setPref(
+        module_config,
+        "mesh_beacon.broadcast_offer_channel.module_settings.position_precision",
+        12,
+    )
+
+    assert (
+        module_config.mesh_beacon.broadcast_offer_channel.module_settings.position_precision
+        == 12
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_traverse_config_skips_unknown_deep_intermediate_field(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Treat an unknown nested object as a skipped field instead of crashing."""
+    module_config = localonly_pb2.LocalModuleConfig()
+
+    assert traverseConfig(
+        "mesh_beacon",
+        {"broadcast_offer_channel": {"unknown_group": {"value": 1}}},
+        module_config,
+    )
+
+    assert "unknown_group.value" in caplog.text
+
+@pytest.mark.unit
+def test_walk_config_path_handles_empty_path() -> None:
+    config = localonly_pb2.LocalModuleConfig()
+
+    parent, descriptor = main_module._walk_config_path(config, [])
+
+    assert parent is config
+    assert descriptor is None
+
+
+@pytest.mark.unit
+def test_walk_config_path_normalizes_first_component() -> None:
+    config = localonly_pb2.LocalModuleConfig()
+
+    parent, descriptor = main_module._walk_config_path(
+        config, ["meshBeacon", "broadcastOfferChannel", "psk"]
+    )
+
+    assert parent is config.mesh_beacon
+    assert descriptor is not None
+    assert descriptor.name == "broadcast_offer_channel"
+
+
+@pytest.mark.unit
+def test_walk_config_path_stops_at_scalar_intermediate() -> None:
+    config = localonly_pb2.LocalModuleConfig()
+
+    parent, descriptor = main_module._walk_config_path(
+        config, ["mqtt", "enabled", "value"]
+    )
+
+    assert parent is config.mqtt
+    assert descriptor is None
+
+
+@pytest.mark.unit
+def test_walk_config_path_stops_after_unknown_intermediate() -> None:
+    config = localonly_pb2.LocalModuleConfig()
+
+    parent, descriptor = main_module._walk_config_path(
+        config,
+        [
+            "mesh_beacon",
+            "broadcast_offer_channel",
+            "unknown_group",
+            "child",
+            "value",
+        ],
+    )
+
+    assert parent is config.mesh_beacon.broadcast_offer_channel
+    assert descriptor is None
+
+
+@pytest.mark.unit
+def test_resolve_pref_accepts_nested_message_field() -> None:
+    config = localonly_pb2.LocalModuleConfig()
+
+    assert main_module._resolve_pref(
+        config,
+        "meshBeacon.broadcastOfferChannel.psk",
+    )
