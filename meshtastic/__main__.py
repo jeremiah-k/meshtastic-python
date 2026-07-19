@@ -10,6 +10,7 @@ import contextlib
 import enum
 import getpass
 import importlib
+import contextvars
 import logging
 import os
 import platform
@@ -160,6 +161,10 @@ except (ImportError, AttributeError) as exc:
     logging.getLogger(__name__).debug("powermon/slog not available: %s", exc)
 
 logger = logging.getLogger(__name__)
+
+_CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "configure_preflight_mode", default=False
+)
 
 # Map dotted preference paths to the protobuf enum that defines their flags.
 # These fields are stored as uint32 bitmasks in the protobuf but have an
@@ -822,6 +827,45 @@ def _validate_non_empty_mapping_sections(
     return validated_sections
 
 
+def _preflight_configure_sections(
+    target_node: Any,
+    *,
+    config_sections: dict[str, dict[str, Any]],
+    module_config_sections: dict[str, dict[str, Any]],
+) -> None:
+    """Validate configuration values on protobuf copies before device mutation."""
+    roots = (
+        ("config", target_node.localConfig, config_sections),
+        ("module_config", target_node.moduleConfig, module_config_sections),
+    )
+    token = _CONFIGURE_PREFLIGHT_MODE.set(True)
+    try:
+        for top_level_key, source_message, sections in roots:
+            if not sections:
+                continue
+            candidate = type(source_message)()
+            candidate.CopyFrom(source_message)
+            for section, section_values in sections.items():
+                failed_fields: list[str] = []
+                applied = traverseConfig(
+                    section,
+                    section_values,
+                    candidate,
+                    failed_fields=failed_fields,
+                )
+                if applied:
+                    continue
+                field_suffix = (
+                    f" Invalid field: {failed_fields[0]}." if failed_fields else ""
+                )
+                _cli_exit(
+                    f"Failed to apply {top_level_key} section {section!r} "
+                    f"due to structural errors.{field_suffix}"
+                )
+    finally:
+        _CONFIGURE_PREFLIGHT_MODE.reset(token)
+
+
 def _refresh_no_disconnect_verify_state(
     target_node: Any,
     *,
@@ -1350,7 +1394,7 @@ def traverseConfig(
                     continue
                 try:
                     ok = setPref(icfg, pref_name, cfg[pref])
-                except (ValueError, binascii.Error):
+                except (ValueError, TypeError, OverflowError, binascii.Error):
                     if failed_fields is not None:
                         failed_fields.append(pref_name)
                     return False
@@ -1362,14 +1406,15 @@ def traverseConfig(
 
     success = _traverse(config_root, config, interface_config)
 
-    for section, fields in skipped_by_section.items():
-        field_list = ", ".join(fields)
-        logger.warning(
-            "Skipping %d unknown field(s) from %s: %s",
-            len(fields),
-            section,
-            field_list,
-        )
+    if not _CONFIGURE_PREFLIGHT_MODE.get():
+        for section, fields in skipped_by_section.items():
+            field_list = ", ".join(fields)
+            logger.warning(
+                "Skipping %d unknown field(s) from %s: %s",
+                len(fields),
+                section,
+                field_list,
+            )
 
     return success
 
@@ -1515,13 +1560,15 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         config_values = getattr(config, config_type.name)
         if val == 0:
             # clear values
-            _cli_print(f"Clearing {pref.name} list")
+            if not _CONFIGURE_PREFLIGHT_MODE.get():
+                _cli_print(f"Clearing {pref.name} list")
             del getattr(config_values, pref.name)[:]
         else:
             display_value = _redact_pref_value(
                 comp_name, meshtastic.util.toStr(raw_val)
             )
-            _cli_print(f"Adding '{display_value}' to the {pref.name} list")
+            if not _CONFIGURE_PREFLIGHT_MODE.get():
+                _cli_print(f"Adding '{display_value}' to the {pref.name} list")
             cur_vals = [
                 x for x in getattr(config_values, pref.name) if x not in [0, "", b""]
             ]
@@ -1532,7 +1579,8 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
 
     prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
     display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
-    _cli_print(f"Set {prefix}{uni_name} to {display_value}")
+    if not _CONFIGURE_PREFLIGHT_MODE.get():
+        _cli_print(f"Set {prefix}{uni_name} to {display_value}")
 
     return True
 
@@ -1641,12 +1689,10 @@ def _pace_configure_write(
 
 
 def _apply_configure_channel_url(
-    interface: MeshInterface,
+    target_node: Any,
     raw_channel_url: Any,
     *,
     config_key: str,
-    node_dest: Any,
-    get_node_kwargs: dict[str, Any],
 ) -> bool:
     """Validate and apply one configured channel URL without exposing it."""
     if not isinstance(raw_channel_url, str):
@@ -1655,7 +1701,6 @@ def _apply_configure_channel_url(
     if not requested_channel_url:
         _cli_exit(f"ERROR: {config_key} must not be blank.")
 
-    target_node = interface.getNode(node_dest, **get_node_kwargs)
     if _channel_url_matches_current_device_state(target_node, requested_channel_url):
         _cli_print("Channel url already matches device state; skipping apply.")
         logger.info("Skipping setURL apply because channel URL already matches.")
@@ -1728,6 +1773,14 @@ def _handle_configure_command(
             section_mapping=_mcfg_val,
         )
 
+    target_node = interface.getNode(args.dest, False, **getNode_kwargs)
+    if validated_config_sections or validated_module_config_sections:
+        _preflight_configure_sections(
+            target_node,
+            config_sections=validated_config_sections,
+            module_config_sections=validated_module_config_sections,
+        )
+
     phase1_started = False
     phase1_may_reconnect = False
     seturl_executed = False
@@ -1742,9 +1795,7 @@ def _handle_configure_command(
                 "ERROR: Long Name cannot be empty or contain only whitespace characters"
             )
         _cli_print(f"Setting device owner to {owner_name}")
-        interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-            long_name=owner_name
-        )
+        target_node.setOwner(long_name=owner_name)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if "owner_short" in configuration:
@@ -1757,9 +1808,7 @@ def _handle_configure_command(
                 "ERROR: Short Name cannot be empty or contain only whitespace characters"
             )
         _cli_print(f"Setting device owner short to {owner_short_name}")
-        interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-            long_name=None, short_name=owner_short_name
-        )
+        target_node.setOwner(long_name=None, short_name=owner_short_name)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if "ownerShort" in configuration:
@@ -1772,9 +1821,7 @@ def _handle_configure_command(
                 "ERROR: Short Name cannot be empty or contain only whitespace characters"
             )
         _cli_print(f"Setting device owner short to {owner_short_name}")
-        interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-            long_name=None, short_name=owner_short_name
-        )
+        target_node.setOwner(long_name=None, short_name=owner_short_name)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if "location" in configuration:
@@ -1813,9 +1860,7 @@ def _handle_configure_command(
         _cli_print(f"Fixing latitude at {lat} degrees")
         _cli_print(f"Fixing longitude at {lon} degrees")
         _cli_print("Setting device position")
-        interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
-            lat, lon, alt
-        )
+        target_node.setFixedPosition(lat, lon, alt)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if "canned_messages" in configuration:
@@ -1825,9 +1870,7 @@ def _handle_configure_command(
         _cli_print(
             f"Setting canned message messages to {configuration['canned_messages']}",
         )
-        interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
-            configuration["canned_messages"]
-        )
+        target_node.set_canned_message(configuration["canned_messages"])
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if "ringtone" in configuration:
@@ -1835,9 +1878,7 @@ def _handle_configure_command(
             _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         _cli_print(f"Setting ringtone to {configuration['ringtone']}")
-        interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
-            configuration["ringtone"]
-        )
+        target_node.set_ringtone(configuration["ringtone"])
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     channel_url_key = (
@@ -1848,11 +1889,9 @@ def _handle_configure_command(
             _cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
         seturl_executed = _apply_configure_channel_url(
-            interface,
+            target_node,
             configuration[channel_url_key],
             config_key=channel_url_key,
-            node_dest=args.dest,
-            get_node_kwargs=getNode_kwargs,
         )
         phase1_may_reconnect = seturl_executed
 
@@ -1882,7 +1921,7 @@ def _handle_configure_command(
         _cli_print(
             "Phase 2: Applying configuration transaction (may trigger device reboot)..."
         )
-        interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
+        target_node.beginSettingsTransaction()
         settings_transaction_started = True
 
     remaining_config_writes = len(validated_config_sections) + len(
@@ -1890,7 +1929,7 @@ def _handle_configure_command(
     )
 
     if validated_config_sections:
-        localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
+        localConfig = target_node.localConfig
         for section, section_values in validated_config_sections.items():
             failed_config_fields: list[str] = []
             applied = traverseConfig(
@@ -1910,14 +1949,12 @@ def _handle_configure_command(
                 _cli_exit(
                     f"Failed to apply config section {section!r} due to structural errors."
                 )
-            interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                meshtastic.util.camel_to_snake(section)
-            )
+            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
             remaining_config_writes -= 1
             _pace_configure_write(remaining_config_writes)
 
     if validated_module_config_sections:
-        moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
+        moduleConfig = target_node.moduleConfig
         for section, section_values in validated_module_config_sections.items():
             failed_module_fields: list[str] = []
             applied = traverseConfig(
@@ -1937,16 +1974,12 @@ def _handle_configure_command(
                 _cli_exit(
                     f"Failed to apply module_config section {section!r} due to structural errors."
                 )
-            interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                meshtastic.util.camel_to_snake(section)
-            )
+            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
             remaining_config_writes -= 1
             _pace_configure_write(remaining_config_writes)
 
     if settings_transaction_started:
-        interface.getNode(
-            args.dest, False, **getNode_kwargs
-        ).commitSettingsTransaction()
+        target_node.commitSettingsTransaction()
         time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
         _cli_print(
             "Configuration transaction committed. Device may reboot to apply changes."
