@@ -90,7 +90,7 @@ lint:
           stdin: false
   enabled:
     - pinact@4.0.0
-    - grype@0.110.0
+    - grype@0.116.0
     - black@26.5.1
     - checkov@3.3.8
     - git-diff-check
