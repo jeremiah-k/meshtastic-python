@@ -347,7 +347,7 @@ def sendTraceroute(
     )
 
 
-def requestTraceroute(
+def _request_traceroute(
     interface: "MeshInterface",
     dest: int | str,
     hopLimit: int,

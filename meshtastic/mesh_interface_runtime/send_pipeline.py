@@ -16,8 +16,8 @@ from meshtastic.mesh_interface_runtime.flows import (
     _on_response_telemetry,
     _on_response_traceroute,
     _on_response_waypoint,
+    _request_traceroute,
     deleteWaypoint,
-    requestTraceroute,
     sendPosition,
     sendTelemetry,
     sendTraceroute,
@@ -543,7 +543,7 @@ class SendPipeline:
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
     ) -> TraceRouteResult:
         """Initiate a traceroute request and return its structured response."""
-        return requestTraceroute(
+        return _request_traceroute(
             self._interface, dest, hopLimit, channelIndex=channelIndex
         )
 

@@ -787,7 +787,7 @@ class TestSendTraceRoute:
     ) -> None:
         """Test structured traceroute requests delegate to the flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.requestTraceroute"
+            "meshtastic.mesh_interface_runtime.send_pipeline._request_traceroute"
         ) as mock_flow:
             result = send_pipeline.requestTraceRoute(
                 "!1234abcd", hopLimit=3, channelIndex=1
