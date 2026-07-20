@@ -781,6 +781,23 @@ class TestSendTraceRoute:
             send_pipeline._interface, "!1234abcd", 3, channelIndex=0
         )
 
+    @pytest.mark.unit
+    def test_request_traceroute_delegates(
+        self, send_pipeline: SendPipeline
+    ) -> None:
+        """Test structured traceroute requests delegate to the flow function."""
+        with patch(
+            "meshtastic.mesh_interface_runtime.send_pipeline.requestTraceroute"
+        ) as mock_flow:
+            result = send_pipeline.requestTraceRoute(
+                "!1234abcd", hopLimit=3, channelIndex=1
+            )
+
+        assert result is mock_flow.return_value
+        mock_flow.assert_called_once_with(
+            send_pipeline._interface, "!1234abcd", 3, channelIndex=1
+        )
+
 
 class TestSendTelemetry:
     """Tests for sendTelemetry method (lines 513-529)."""

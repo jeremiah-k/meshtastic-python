@@ -2502,6 +2502,97 @@ def test_send_traceroute_and_response_rendering(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_request_traceroute_returns_structured_routes(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Library traceroutes should return typed paths without CLI-oriented logging."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            "!0000000b": {"num": 11},
+            "!0000000c": {"num": 12},
+            "!00000014": {"num": 20},
+            "!00000015": {"num": 21},
+        }
+        response = mesh_pb2.RouteDiscovery()
+        response.route.extend([11])
+        response.snr_towards.extend([8, 12])
+        response.route_back.extend([12])
+        response.snr_back.extend([16, 20])
+        sent_packet = mesh_pb2.MeshPacket(id=88)
+        response_callback: Callable[[dict[str, Any]], None] | None = None
+
+        def _send_data_with_response(
+            _payload: object, **kwargs: Any
+        ) -> mesh_pb2.MeshPacket:
+            nonlocal response_callback
+            response_callback = cast(
+                Callable[[dict[str, Any]], None], kwargs["onResponse"]
+            )
+            return sent_packet
+
+        def _wait_for_response(
+            wait_factor: float, request_id: int | None = None
+        ) -> None:
+            assert wait_factor == 3
+            assert request_id == 88
+            assert response_callback is not None
+            response_callback(
+                {
+                    "decoded": {
+                        "payload": response.SerializeToString(),
+                        "requestId": 88,
+                    },
+                    "to": 20,
+                    "from": 21,
+                    "hopStart": 1,
+                }
+            )
+
+        monkeypatch.setattr(iface, "_send_data_with_wait", _send_data_with_response)
+        monkeypatch.setattr(iface, "waitForTraceRoute", _wait_for_response)
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
+            result = iface.requestTraceRoute(dest=21, hopLimit=3, channelIndex=1)
+
+    assert result.request_id == 88
+    assert [hop.node_num for hop in result.route_towards] == [20, 11, 21]
+    assert [hop.snr_db for hop in result.route_towards] == [None, 2.0, 3.0]
+    assert result.route_back is not None
+    assert [hop.node_num for hop in result.route_back] == [21, 12, 20]
+    assert [hop.snr_db for hop in result.route_back] == [None, 4.0, 5.0]
+    assert result.source.node_num == 20
+    assert result.destination.node_num == 21
+    assert "Route traced" not in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_traceroute_preserves_unknown_link_snr() -> None:
+    """Incomplete firmware SNR arrays should produce unknown links, not bad indexing."""
+    with MeshInterface(noProto=True) as iface:
+        response = mesh_pb2.RouteDiscovery()
+        response.route.extend([11])
+        response.snr_towards.extend([8])
+        result = flows_module._on_response_traceroute(  # pylint: disable=protected-access
+            iface,
+            {
+                "decoded": {
+                    "payload": response.SerializeToString(),
+                    "requestId": 89,
+                },
+                "to": 20,
+                "from": 21,
+            },
+            emit_summary=False,
+        )
+
+    assert result is not None
+    assert [hop.snr_db for hop in result.route_towards] == [None, None, None]
+    assert result.route_back is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_on_response_traceroute_routing_no_response_raises() -> None:
     """Traceroute routing NO_RESPONSE replies should be surfaced by waitForTraceRoute()."""
     with MeshInterface(noProto=True) as iface:

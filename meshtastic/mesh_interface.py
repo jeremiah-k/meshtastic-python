@@ -65,6 +65,7 @@ from meshtastic.protobuf import (
     portnums_pb2,
 )
 from meshtastic.region_presets import RegionPresetInfo
+from meshtastic.traceroute import TraceRouteResult
 from meshtastic.util import (
     Acknowledgment,
     Timeout,
@@ -1116,6 +1117,34 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting for traceroute responses times out or the operation fails.
         """
         self._send_pipeline.sendTraceRoute(dest, hopLimit, channelIndex=channelIndex)
+
+    def requestTraceRoute(
+        self, dest: int | str, hopLimit: int, channelIndex: int = 0
+    ) -> TraceRouteResult:
+        """Run a traceroute and return a structured result without CLI output.
+
+        Parameters
+        ----------
+        dest : int | str
+            Destination node (numeric node number or node ID string).
+        hopLimit : int
+            Maximum number of hops to probe.
+        channelIndex : int
+            Channel index to use for transmission. (Default value = 0)
+
+        Returns
+        -------
+        TraceRouteResult
+            Ordered outbound and, when available, return routes with per-link SNR.
+
+        Raises
+        ------
+        MeshInterfaceError
+            If the request fails, times out, or returns an invalid payload.
+        """
+        return self._send_pipeline.requestTraceRoute(
+            dest, hopLimit, channelIndex=channelIndex
+        )
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload.
