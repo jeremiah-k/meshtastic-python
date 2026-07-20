@@ -36,6 +36,8 @@ implementation details that are NOT part of the public stable API.
 1. **Public Stable API** - Guaranteed stable, use for production code:
    - `meshtastic.Node` → from `meshtastic.node`
    - `meshtastic.MeshInterface` → from `meshtastic.mesh_interface`
+   - `MeshInterface.requestTraceRoute()` → structured traceroute results
+   - `meshtastic.traceroute.TraceRouteHop`, `TraceRouteResult`
    - `meshtastic.BROADCAST_ADDR`, `meshtastic.LOCAL_ADDR`
 
 2. **Runtime Modules** - Internal implementation, NOT guaranteed stable:
@@ -76,6 +78,7 @@ If you need to mock or patch Meshtastic internals in your tests:
 ```markdown
 meshtastic.Node STABLE (public API)
 meshtastic.mesh_interface.MeshInterface STABLE (public API)
+meshtastic.traceroute.TraceRouteResult STABLE (public API)
 meshtastic.node_runtime.settings_runtime.toNodeNum COMPAT (testing)
 meshtastic.node_runtime.settings_runtime.\_NodeSettingsRuntime INTERNAL (may change)
 meshtastic.mesh_interface_runtime.\_RequestWaitRuntime INTERNAL (may change)

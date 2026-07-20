@@ -16,6 +16,7 @@ from meshtastic.mesh_interface_runtime.flows import (
     _on_response_telemetry,
     _on_response_traceroute,
     _on_response_waypoint,
+    _request_traceroute,
     deleteWaypoint,
     sendPosition,
     sendTelemetry,
@@ -32,6 +33,7 @@ from meshtastic.mesh_interface_runtime.request_wait import (
     _RequestWaitRuntime,
 )
 from meshtastic.protobuf import mesh_pb2, portnums_pb2
+from meshtastic.traceroute import TraceRouteResult
 from meshtastic.util import Acknowledgment, Timeout, stripnl
 
 if TYPE_CHECKING:
@@ -534,6 +536,14 @@ class SendPipeline:
     ) -> None:
         """Initiate a traceroute request toward a destination node and wait for responses."""
         return sendTraceroute(
+            self._interface, dest, hopLimit, channelIndex=channelIndex
+        )
+
+    def requestTraceRoute(
+        self, dest: int | str, hopLimit: int, channelIndex: int = 0
+    ) -> TraceRouteResult:
+        """Initiate a traceroute request and return its structured response."""
+        return _request_traceroute(
             self._interface, dest, hopLimit, channelIndex=channelIndex
         )
 

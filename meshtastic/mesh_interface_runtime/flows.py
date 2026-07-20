@@ -20,6 +20,7 @@ from meshtastic.mesh_interface_runtime.request_wait import (
     WAIT_ATTR_WAYPOINT,
 )
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
+from meshtastic.traceroute import TraceRouteHop, TraceRouteResult
 
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
@@ -53,15 +54,6 @@ def _emit_response_summary(message: str) -> None:
 def _node_label(interface: "MeshInterface", node_num: int) -> str:
     """Return a human-readable identifier for a numeric node."""
     return interface._node_num_to_id(node_num, False) or f"{node_num:08x}"
-
-
-def _format_snr(snr_value: int | None) -> str:
-    """Format an SNR value encoded in quarter-dB units into a human-readable string."""
-    return (
-        str(snr_value / 4)
-        if snr_value is not None and snr_value != UNKNOWN_SNR_QUARTER_DB
-        else "?"
-    )
 
 
 def _on_response_position(interface: "MeshInterface", p: dict[str, Any]) -> None:
@@ -170,69 +162,173 @@ def sendPosition(
     return d
 
 
-def _on_response_traceroute(interface: "MeshInterface", p: dict[str, Any]) -> None:
-    """Emit human-readable traceroute results from a RouteDiscovery payload."""
+def _snr_db(snr_value: int | None) -> float | None:
+    """Convert firmware quarter-dB SNR values to dB when known."""
+    if snr_value is None or snr_value == UNKNOWN_SNR_QUARTER_DB:
+        return None
+    return snr_value / 4
+
+
+def _build_trace_route_hops(
+    interface: "MeshInterface",
+    start_node: int,
+    intermediate_nodes: list[int],
+    end_node: int,
+    snr_values: list[int],
+) -> tuple[TraceRouteHop, ...]:
+    """Build a full route while preserving incomplete firmware SNR data."""
+    snr_values_valid = len(snr_values) == len(intermediate_nodes) + 1
+    hops = [
+        TraceRouteHop(
+            node_num=start_node,
+            node_id=_node_label(interface, start_node),
+        )
+    ]
+    for index, node_num in enumerate((*intermediate_nodes, end_node)):
+        snr_db = _snr_db(snr_values[index]) if snr_values_valid else None
+        hops.append(
+            TraceRouteHop(
+                node_num=node_num,
+                node_id=_node_label(interface, node_num),
+                snr_db=snr_db,
+            )
+        )
+    return tuple(hops)
+
+
+def _format_trace_route(hops: tuple[TraceRouteHop, ...]) -> str:
+    """Format a structured route using the historical CLI representation."""
+    route_text = hops[0].node_id
+    for hop in hops[1:]:
+        snr_text = "?" if hop.snr_db is None else str(hop.snr_db)
+        route_text = f"{route_text} --> {hop.node_id} ({snr_text}dB)"
+    return route_text
+
+
+def _on_response_traceroute(
+    interface: "MeshInterface",
+    p: dict[str, Any],
+    *,
+    emit_summary: bool = True,
+    on_result: Callable[[TraceRouteResult], None] | None = None,
+) -> TraceRouteResult | None:
+    """Parse a traceroute response and publish its result before waking waiters."""
     decoded = p["decoded"]
     request_id = interface._extract_request_id_from_packet(p)
     if decoded.get("portnum") == portnums_pb2.PortNum.Name(
         portnums_pb2.PortNum.ROUTING_APP
     ):
         error_reason = decoded.get("routing", {}).get("errorReason")
-        # Only treat as error if errorReason exists and is not NONE
         if error_reason is not None and error_reason != "NONE":
             interface._record_routing_wait_error(
                 acknowledgment_attr=WAIT_ATTR_TRACEROUTE,
                 routing_error_reason=error_reason,
                 request_id=request_id,
             )
-            return
-        # Otherwise, this is a successful routing ACK, continue to parse payload
+            return None
 
-    routeDiscovery = mesh_pb2.RouteDiscovery()
+    route_discovery = mesh_pb2.RouteDiscovery()
     try:
-        routeDiscovery.ParseFromString(decoded["payload"])
-        asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
-    except (protobuf_message.DecodeError, KeyError, TypeError) as exc:
+        route_discovery.ParseFromString(decoded["payload"])
+        source_node = int(p["to"])
+        destination_node = int(p["from"])
+        route_towards = _build_trace_route_hops(
+            interface,
+            source_node,
+            list(route_discovery.route),
+            destination_node,
+            list(route_discovery.snr_towards),
+        )
+        route_back = (
+            _build_trace_route_hops(
+                interface,
+                destination_node,
+                list(route_discovery.route_back),
+                source_node,
+                list(route_discovery.snr_back),
+            )
+            if "hopStart" in p
+            else None
+        )
+    except (
+        protobuf_message.DecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as exc:
         interface._set_wait_error(
             WAIT_ATTR_TRACEROUTE,
             f"Failed to parse traceroute response payload: {exc}",
             request_id=request_id,
         )
-        return
+        return None
 
-    def _append_hop(route_text: str, node_num: int, snr_text: str) -> str:
-        """Append a hop description to an existing route string."""
-        return f"{route_text} --> {_node_label(interface, node_num)} ({snr_text}dB)"
+    result = TraceRouteResult(
+        route_towards=route_towards,
+        route_back=route_back,
+        request_id=request_id,
+    )
+    if emit_summary:
+        _emit_response_summary("Route traced towards destination:")
+        _emit_response_summary(_format_trace_route(result.route_towards))
+        if result.route_back is not None:
+            _emit_response_summary("Route traced back to us:")
+            _emit_response_summary(_format_trace_route(result.route_back))
 
-    route_towards = asDict.get("route", [])
-    snr_towards = asDict.get("snrTowards", [])
-    snr_towards_valid = len(snr_towards) == len(route_towards) + 1
-
-    _emit_response_summary("Route traced towards destination:")
-    routeStr = _node_label(interface, p["to"])
-    for idx, nodeNum in enumerate(route_towards):
-        hop_snr = _format_snr(snr_towards[idx]) if snr_towards_valid else "?"
-        routeStr = _append_hop(routeStr, nodeNum, hop_snr)
-    final_towards_snr = _format_snr(snr_towards[-1]) if snr_towards_valid else "?"
-    routeStr = _append_hop(routeStr, p["from"], final_towards_snr)
-
-    _emit_response_summary(routeStr)
-
-    route_back = asDict.get("routeBack", [])
-    snr_back = asDict.get("snrBack", [])
-    backValid = "hopStart" in p and len(snr_back) == len(route_back) + 1
-    if backValid:
-        _emit_response_summary("Route traced back to us:")
-        routeStr = _node_label(interface, p["from"])
-        for idx, nodeNum in enumerate(route_back):
-            routeStr = _append_hop(routeStr, nodeNum, _format_snr(snr_back[idx]))
-        routeStr = _append_hop(routeStr, p["to"], _format_snr(snr_back[-1]))
-        _emit_response_summary(routeStr)
-
+    if on_result is not None:
+        on_result(result)
     interface._mark_wait_acknowledged(
         WAIT_ATTR_TRACEROUTE,
         request_id=request_id,
     )
+    return result
+
+
+def _send_traceroute(
+    interface: "MeshInterface",
+    dest: int | str,
+    hopLimit: int,
+    channelIndex: int,
+    *,
+    emit_summary: bool,
+) -> TraceRouteResult | None:
+    """Send one traceroute request and return its structured response when available."""
+    result: TraceRouteResult | None = None
+
+    def _capture_response(trace_result: TraceRouteResult) -> None:
+        nonlocal result
+        # Response handlers are normally one-shot; retain the first valid route
+        # if a duplicate packet reaches the callback before handler retirement.
+        if result is None:
+            result = trace_result
+
+    def _handle_response(packet: dict[str, Any]) -> None:
+        _on_response_traceroute(
+            interface,
+            packet,
+            emit_summary=emit_summary,
+            on_result=_capture_response,
+        )
+
+    packet = interface._send_data_with_wait(
+        mesh_pb2.RouteDiscovery(),
+        destinationId=dest,
+        portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
+        wantResponse=True,
+        onResponse=_handle_response,
+        channelIndex=channelIndex,
+        hopLimit=hopLimit,
+        response_wait_attr=WAIT_ATTR_TRACEROUTE,
+    )
+    with interface._node_db_lock:
+        node_count = len(interface.nodes) if interface.nodes else 0
+    nodes_based_factor = (node_count - 1) if node_count else (hopLimit + 1)
+    wait_factor = max(1, min(nodes_based_factor, hopLimit + 1))
+    request_id = interface._extract_request_id_from_sent_packet(packet)
+    if request_id is None:
+        raise interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
+    interface.waitForTraceRoute(wait_factor, request_id=request_id)
+    return result
 
 
 def sendTraceroute(
@@ -241,26 +337,35 @@ def sendTraceroute(
     hopLimit: int,
     channelIndex: int = 0,
 ) -> None:
-    """Initiate a traceroute request toward a destination node and wait for responses."""
-    r = mesh_pb2.RouteDiscovery()
-    packet = interface._send_data_with_wait(
-        r,
-        destinationId=dest,
-        portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
-        wantResponse=True,
-        onResponse=lambda packet: _on_response_traceroute(interface, packet),
-        channelIndex=channelIndex,
-        hopLimit=hopLimit,
-        response_wait_attr=WAIT_ATTR_TRACEROUTE,
+    """Initiate a traceroute and retain historical human-readable output."""
+    _send_traceroute(
+        interface,
+        dest,
+        hopLimit,
+        channelIndex,
+        emit_summary=True,
     )
-    with interface._node_db_lock:
-        node_count = len(interface.nodes) if interface.nodes else 0
-    nodes_based_factor = (node_count - 1) if node_count else (hopLimit + 1)
-    waitFactor = max(1, min(nodes_based_factor, hopLimit + 1))
-    request_id = interface._extract_request_id_from_sent_packet(packet)
-    if request_id is None:
-        raise interface.MeshInterfaceError(RESPONSE_WAIT_REQID_ERROR)
-    interface.waitForTraceRoute(waitFactor, request_id=request_id)
+
+
+def _request_traceroute(
+    interface: "MeshInterface",
+    dest: int | str,
+    hopLimit: int,
+    channelIndex: int = 0,
+) -> TraceRouteResult:
+    """Initiate a traceroute and return its structured result."""
+    result = _send_traceroute(
+        interface,
+        dest,
+        hopLimit,
+        channelIndex,
+        emit_summary=False,
+    )
+    if result is None:
+        raise interface.MeshInterfaceError(
+            "Traceroute completed without a route result"
+        )
+    return result
 
 
 def _on_response_telemetry(interface: "MeshInterface", p: dict[str, Any]) -> None:

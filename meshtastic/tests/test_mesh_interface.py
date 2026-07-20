@@ -36,6 +36,7 @@ from meshtastic.mesh_interface_runtime.request_wait import (
     WAIT_ATTR_TRACEROUTE,
     WAIT_ATTR_WAYPOINT,
 )
+from meshtastic.traceroute import TraceRouteResult
 
 from .. import BROADCAST_ADDR, LOCAL_ADDR, NODELESS_WANT_CONFIG_ID, ResponseHandler
 from ..mesh_interface import MeshInterface
@@ -2498,6 +2499,232 @@ def test_send_traceroute_and_response_rendering(
 
     assert "Route traced towards destination:" in caplog.text
     assert "Route traced back to us:" in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_traceroute_returns_structured_routes(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Library traceroutes should return typed paths without CLI-oriented logging."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            "!0000000b": {"num": 11},
+            "!0000000c": {"num": 12},
+            "!00000014": {"num": 20},
+            "!00000015": {"num": 21},
+        }
+        response = mesh_pb2.RouteDiscovery()
+        response.route.extend([11])
+        response.snr_towards.extend([8, 12])
+        response.route_back.extend([12])
+        response.snr_back.extend([16, 20])
+        sent_packet = mesh_pb2.MeshPacket(id=88)
+        response_callback: Callable[[dict[str, Any]], None] | None = None
+
+        def _send_data_with_response(
+            _payload: object, **kwargs: Any
+        ) -> mesh_pb2.MeshPacket:
+            nonlocal response_callback
+            response_callback = cast(
+                Callable[[dict[str, Any]], None], kwargs["onResponse"]
+            )
+            return sent_packet
+
+        def _wait_for_response(
+            wait_factor: float, request_id: int | None = None
+        ) -> None:
+            assert wait_factor == 3
+            assert request_id == 88
+            assert response_callback is not None
+            response_callback(
+                {
+                    "decoded": {
+                        "payload": response.SerializeToString(),
+                        "requestId": 88,
+                    },
+                    "to": 20,
+                    "from": 21,
+                    "hopStart": 1,
+                }
+            )
+
+        monkeypatch.setattr(iface, "_send_data_with_wait", _send_data_with_response)
+        monkeypatch.setattr(iface, "waitForTraceRoute", _wait_for_response)
+        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
+            result = iface.requestTraceRoute(dest=21, hopLimit=3, channelIndex=1)
+
+    assert result.request_id == 88
+    assert [hop.node_num for hop in result.route_towards] == [20, 11, 21]
+    assert [hop.snr_db for hop in result.route_towards] == [None, 2.0, 3.0]
+    assert result.route_back is not None
+    assert [hop.node_num for hop in result.route_back] == [21, 12, 20]
+    assert [hop.snr_db for hop in result.route_back] == [None, 4.0, 5.0]
+    assert result.source.node_num == 20
+    assert result.destination.node_num == 21
+    assert "Route traced" not in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_traceroute_preserves_unknown_link_snr() -> None:
+    """Incomplete firmware SNR arrays should produce unknown links, not bad indexing."""
+    with MeshInterface(noProto=True) as iface:
+        response = mesh_pb2.RouteDiscovery()
+        response.route.extend([11])
+        response.snr_towards.extend([8])
+        result = flows_module._on_response_traceroute(  # pylint: disable=protected-access
+            iface,
+            {
+                "decoded": {
+                    "payload": response.SerializeToString(),
+                    "requestId": 89,
+                },
+                "to": 20,
+                "from": 21,
+            },
+            emit_summary=False,
+        )
+
+    assert result is not None
+    assert [hop.snr_db for hop in result.route_towards] == [None, None, None]
+    assert result.route_back is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_traceroute_preserves_reverse_route_with_unknown_snr() -> None:
+    """Reverse topology should survive incomplete firmware SNR arrays."""
+    with MeshInterface(noProto=True) as iface:
+        response = mesh_pb2.RouteDiscovery()
+        response.route_back.extend([12])
+        response.snr_back.extend([16])
+        result = flows_module._on_response_traceroute(  # pylint: disable=protected-access
+            iface,
+            {
+                "decoded": {
+                    "payload": response.SerializeToString(),
+                    "requestId": 90,
+                },
+                "to": 20,
+                "from": 21,
+                "hopStart": 1,
+            },
+            emit_summary=False,
+        )
+
+    assert result is not None
+    assert result.route_back is not None
+    assert [hop.node_num for hop in result.route_back] == [21, 12, 20]
+    assert [hop.snr_db for hop in result.route_back] == [None, None, None]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_traceroute_stores_result_before_releasing_waiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The response result must be visible before acknowledgment wakes the waiter."""
+    with MeshInterface(noProto=True) as iface:
+        response = mesh_pb2.RouteDiscovery()
+        response.route.extend([11])
+        response.snr_towards.extend([8, 12])
+        sent_packet = mesh_pb2.MeshPacket(id=91)
+        response_callback: Callable[[dict[str, Any]], None] | None = None
+        request_finished = threading.Event()
+        outcome: dict[str, object] = {}
+
+        def _send_data_with_response(
+            _payload: object, **kwargs: Any
+        ) -> mesh_pb2.MeshPacket:
+            nonlocal response_callback
+            response_callback = cast(
+                Callable[[dict[str, Any]], None], kwargs["onResponse"]
+            )
+            iface._clear_wait_error(WAIT_ATTR_TRACEROUTE, request_id=91)
+            return sent_packet
+
+        original_mark_acknowledged = iface._mark_wait_acknowledged
+
+        def _mark_and_hold(*args: Any, **kwargs: Any) -> None:
+            original_mark_acknowledged(*args, **kwargs)
+            assert request_finished.wait(timeout=1.0)
+
+        def _request() -> None:
+            try:
+                outcome["result"] = iface.requestTraceRoute(
+                    dest=21, hopLimit=3, channelIndex=1
+                )
+            except Exception as exc:  # pragma: no cover - asserted below
+                outcome["error"] = exc
+            finally:
+                request_finished.set()
+
+        monkeypatch.setattr(iface, "_send_data_with_wait", _send_data_with_response)
+        monkeypatch.setattr(iface, "_mark_wait_acknowledged", _mark_and_hold)
+        request_thread = threading.Thread(target=_request, daemon=True)
+        request_thread.start()
+        _wait_for_scoped_wait_registration(
+            iface, acknowledgment_attr=WAIT_ATTR_TRACEROUTE, request_id=91
+        )
+        assert response_callback is not None
+        response_callback(
+            {
+                "decoded": {
+                    "payload": response.SerializeToString(),
+                    "requestId": 91,
+                },
+                "to": 20,
+                "from": 21,
+            }
+        )
+        request_thread.join(timeout=1.0)
+
+    assert not request_thread.is_alive()
+    assert "error" not in outcome
+    result = cast(TraceRouteResult, outcome["result"])
+    assert result.request_id == 91
+    assert [hop.node_num for hop in result.route_towards] == [20, 11, 21]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_request_traceroute_keeps_first_structured_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Duplicate route responses should not replace the first completed result."""
+    with MeshInterface(noProto=True) as iface:
+        first = mesh_pb2.RouteDiscovery()
+        first.route.extend([11])
+        first.snr_towards.extend([8, 12])
+        second = mesh_pb2.RouteDiscovery()
+        second.route.extend([12])
+        second.snr_towards.extend([16, 20])
+        sent_packet = mesh_pb2.MeshPacket(id=92)
+
+        def _send_duplicate_responses(
+            _payload: object, **kwargs: Any
+        ) -> mesh_pb2.MeshPacket:
+            callback = cast(Callable[[dict[str, Any]], None], kwargs["onResponse"])
+            for route in (first, second):
+                callback(
+                    {
+                        "decoded": {
+                            "payload": route.SerializeToString(),
+                            "requestId": 92,
+                        },
+                        "to": 20,
+                        "from": 21,
+                    }
+                )
+            return sent_packet
+
+        monkeypatch.setattr(iface, "_send_data_with_wait", _send_duplicate_responses)
+        monkeypatch.setattr(iface, "waitForTraceRoute", lambda *_args, **_kwargs: None)
+        result = iface.requestTraceRoute(dest=21, hopLimit=3, channelIndex=1)
+
+    assert [hop.node_num for hop in result.route_towards] == [20, 11, 21]
 
 
 @pytest.mark.unit

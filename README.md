@@ -154,6 +154,26 @@ interface.sendText("hello mesh")
 interface.close()
 ```
 
+### Structured traceroute results
+
+Library callers can request a traceroute without parsing CLI-oriented log output:
+
+```python
+from meshtastic.serial_interface import SerialInterface
+
+with SerialInterface() as interface:
+    result = interface.requestTraceRoute("!ba4bf9d0", hopLimit=5)
+
+for hop in result.route_towards:
+    print(hop.node_id, hop.snr_db)
+```
+
+Each route contains the source and destination plus any intermediate hops.
+`snr_db` describes the link into a hop and is `None` when firmware omits a
+complete SNR sequence. `route_back` is `None` unless firmware reports a reverse
+route; incomplete reverse SNR data preserves the route with unknown link values.
+The historical `sendTraceRoute()` API and its logging behavior remain unchanged.
+
 ## Support
 
 Report `mtjk`-specific issues here:

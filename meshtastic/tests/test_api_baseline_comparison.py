@@ -397,6 +397,7 @@ class TestMeshInterfaceAPIAgainstBaseline:
             "sendPosition",
             "sendTelemetry",
             "sendTraceRoute",
+            "requestTraceRoute",
             "sendWaypoint",
             "getNode",
             "showNodes",
