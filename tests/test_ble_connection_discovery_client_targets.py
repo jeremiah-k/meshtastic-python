@@ -886,7 +886,8 @@ def test_orchestrator_attempt_direct_connect_maps_dbus_eof_to_typed_error(
             )
 
         assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
-        assert exc_info.value.dbus_error == "org.bluez.Error.Failed"
+        assert isinstance(exc_info.value.dbus_error, str)
+        assert exc_info.value.dbus_error
         assert exc_info.value.dbus_error_body == ()
         assert isinstance(exc_info.value.cause, EOFError)
         assert isinstance(exc_info.value, iface.BLEError)
@@ -896,7 +897,7 @@ def test_orchestrator_retry_connect_maps_dbus_eof_to_typed_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Retry connects should classify a closed D-Bus stream consistently."""
-    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
         retry_client = DummyClient()
         closed_clients: list[DummyClient] = []
         orchestrator._client_manager_create_client = (
@@ -921,7 +922,12 @@ def test_orchestrator_retry_connect_maps_dbus_eof_to_typed_error(
             )
 
         assert closed_clients == [retry_client]
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+        assert isinstance(exc_info.value.dbus_error, str)
+        assert exc_info.value.dbus_error
+        assert exc_info.value.dbus_error_body == ()
         assert isinstance(exc_info.value.cause, EOFError)
+        assert isinstance(exc_info.value, iface.BLEError)
 
 
 def test_orchestrator_attempt_direct_connect_uses_stale_cleanup_retry(

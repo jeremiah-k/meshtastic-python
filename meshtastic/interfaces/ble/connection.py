@@ -91,6 +91,22 @@ _STALE_BLUEZ_FALLBACK_MESSAGE_TOKENS: tuple[str, ...] = (
 )
 
 
+def _normalize_dbus_transport_error(
+    error: BleakDBusError | EOFError,
+    *,
+    message: str,
+    requested_identifier: str | None,
+    address: str | None,
+) -> BLEDBusTransportError:
+    """Return the canonical typed error for BlueZ and closed D-Bus streams."""
+    return BLEDBusTransportError.from_exception(
+        error,
+        message=message,
+        requested_identifier=requested_identifier,
+        address=address,
+    )
+
+
 def _is_device_not_found_error(err: Exception) -> bool:
     """Return True when an exception indicates the target BLE device was not found."""
     if isinstance(err, BleakDeviceNotFoundError):
@@ -1700,7 +1716,7 @@ class ConnectionOrchestrator:
                             retry_dbus_err,
                             exc_info=True,
                         )
-                        raise BLEDBusTransportError.from_exception(
+                        raise _normalize_dbus_transport_error(
                             retry_dbus_err,
                             message="BLE DBus transport error during direct connect.",
                             requested_identifier=target_address,
@@ -1720,7 +1736,7 @@ class ConnectionOrchestrator:
                         )
                         raise
             if isinstance(error_for_fallback, (BleakDBusError, EOFError)):
-                raise BLEDBusTransportError.from_exception(
+                raise _normalize_dbus_transport_error(
                     error_for_fallback,
                     message="BLE DBus transport error during direct connect.",
                     requested_identifier=target_address,
@@ -1882,7 +1898,7 @@ class ConnectionOrchestrator:
             raise
         except (BleakDBusError, EOFError) as dbus_err:
             self._client_manager_safe_close_client(client)
-            raise BLEDBusTransportError.from_exception(
+            raise _normalize_dbus_transport_error(
                 dbus_err,
                 message="BLE DBus transport error during retry connect.",
                 requested_identifier=target_address or resolved_address,
