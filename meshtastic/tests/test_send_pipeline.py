@@ -782,9 +782,7 @@ class TestSendTraceRoute:
         )
 
     @pytest.mark.unit
-    def test_request_traceroute_delegates(
-        self, send_pipeline: SendPipeline
-    ) -> None:
+    def test_request_traceroute_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test structured traceroute requests delegate to the flow function."""
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline._request_traceroute"
