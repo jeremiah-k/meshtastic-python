@@ -210,8 +210,9 @@ def _on_response_traceroute(
     p: dict[str, Any],
     *,
     emit_summary: bool = True,
+    on_result: Callable[[TraceRouteResult], None] | None = None,
 ) -> TraceRouteResult | None:
-    """Parse a traceroute response, record completion, and optionally log it."""
+    """Parse a traceroute response and publish its result before waking waiters."""
     decoded = p["decoded"]
     request_id = interface._extract_request_id_from_packet(p)
     if decoded.get("portnum") == portnums_pb2.PortNum.Name(
@@ -247,7 +248,6 @@ def _on_response_traceroute(
                 list(route_discovery.snr_back),
             )
             if "hopStart" in p
-            and len(route_discovery.snr_back) == len(route_discovery.route_back) + 1
             else None
         )
     except (
@@ -275,6 +275,8 @@ def _on_response_traceroute(
             _emit_response_summary("Route traced back to us:")
             _emit_response_summary(_format_trace_route(result.route_back))
 
+    if on_result is not None:
+        on_result(result)
     interface._mark_wait_acknowledged(
         WAIT_ATTR_TRACEROUTE,
         request_id=request_id,
@@ -293,10 +295,19 @@ def _send_traceroute(
     """Send one traceroute request and return its structured response when available."""
     result: TraceRouteResult | None = None
 
-    def _capture_response(packet: dict[str, Any]) -> None:
+    def _capture_response(trace_result: TraceRouteResult) -> None:
         nonlocal result
-        result = _on_response_traceroute(
-            interface, packet, emit_summary=emit_summary
+        # Response handlers are normally one-shot; retain the first valid route
+        # if a duplicate packet reaches the callback before handler retirement.
+        if result is None:
+            result = trace_result
+
+    def _handle_response(packet: dict[str, Any]) -> None:
+        _on_response_traceroute(
+            interface,
+            packet,
+            emit_summary=emit_summary,
+            on_result=_capture_response,
         )
 
     packet = interface._send_data_with_wait(
@@ -304,7 +315,7 @@ def _send_traceroute(
         destinationId=dest,
         portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
         wantResponse=True,
-        onResponse=_capture_response,
+        onResponse=_handle_response,
         channelIndex=channelIndex,
         hopLimit=hopLimit,
         response_wait_attr=WAIT_ATTR_TRACEROUTE,

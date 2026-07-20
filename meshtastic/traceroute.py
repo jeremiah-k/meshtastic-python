@@ -27,8 +27,8 @@ class TraceRouteResult:
 
     ``route_towards`` always starts with the local/source node and ends with
     the destination node. ``route_back`` follows the destination back to the
-    source when the firmware returned a complete reverse route; otherwise it
-    is ``None``.
+    source when firmware reports a reverse route; otherwise it is ``None``.
+    Incomplete SNR arrays preserve the reported topology with unknown links.
     """
 
     route_towards: tuple[TraceRouteHop, ...]
