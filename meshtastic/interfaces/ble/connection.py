@@ -68,6 +68,12 @@ _CONNECT_TIMEOUT_INVALID_MSG: str = (
 )
 _CONNECT_TIMEOUT_FALLBACK_SECONDS: float = 10.0
 _DISPATCH_MISSING: object = object()
+_DIRECT_CONNECT_DBUS_TRANSPORT_ERROR_MESSAGE: str = (
+    "BLE DBus transport error during direct connect."
+)
+_RETRY_CONNECT_DBUS_TRANSPORT_ERROR_MESSAGE: str = (
+    "BLE DBus transport error during retry connect."
+)
 _STALE_BLUEZ_DBUS_ERROR_NAMES: frozenset[str] = frozenset(
     {
         "org.bluez.error.alreadyconnected",
@@ -1718,7 +1724,7 @@ class ConnectionOrchestrator:
                         )
                         raise _normalize_dbus_transport_error(
                             retry_dbus_err,
-                            message="BLE DBus transport error during direct connect.",
+                            message=_DIRECT_CONNECT_DBUS_TRANSPORT_ERROR_MESSAGE,
                             requested_identifier=target_address,
                             address=target_address,
                         ) from retry_dbus_err
@@ -1738,7 +1744,7 @@ class ConnectionOrchestrator:
             if isinstance(error_for_fallback, (BleakDBusError, EOFError)):
                 raise _normalize_dbus_transport_error(
                     error_for_fallback,
-                    message="BLE DBus transport error during direct connect.",
+                    message=_DIRECT_CONNECT_DBUS_TRANSPORT_ERROR_MESSAGE,
                     requested_identifier=target_address,
                     address=target_address,
                 ) from error_for_fallback
@@ -1900,7 +1906,7 @@ class ConnectionOrchestrator:
             self._client_manager_safe_close_client(client)
             raise _normalize_dbus_transport_error(
                 dbus_err,
-                message="BLE DBus transport error during retry connect.",
+                message=_RETRY_CONNECT_DBUS_TRANSPORT_ERROR_MESSAGE,
                 requested_identifier=target_address or resolved_address,
                 address=resolved_address,
             ) from dbus_err
