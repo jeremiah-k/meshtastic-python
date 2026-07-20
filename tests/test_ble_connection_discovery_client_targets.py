@@ -857,6 +857,129 @@ def test_orchestrator_attempt_direct_connect_maps_dbus_error_to_typed_error(
         assert isinstance(exc_info.value, iface.BLEError)
 
 
+def test_orchestrator_attempt_direct_connect_maps_dbus_eof_to_typed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A closed dbus-fast transport should use the typed DBus error path."""
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        direct_client = DummyClient()
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: direct_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(EOFError())
+        orchestrator._should_attempt_stale_bluez_cleanup = lambda **_kwargs: False
+        orchestrator._client_manager_safe_close_client = lambda *_args, **_kwargs: None
+
+        with pytest.raises(BLEDBusTransportError) as exc_info:
+            orchestrator._attempt_direct_connect(
+                target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+        assert isinstance(exc_info.value.dbus_error, str)
+        assert exc_info.value.dbus_error
+        assert exc_info.value.dbus_error_body == ()
+        assert isinstance(exc_info.value.cause, EOFError)
+        assert isinstance(exc_info.value, iface.BLEError)
+
+
+def test_orchestrator_retry_connect_maps_dbus_eof_to_typed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry connects should classify a closed D-Bus stream consistently."""
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        retry_client = DummyClient()
+        closed_clients: list[DummyClient] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: retry_client
+        )
+        orchestrator._client_manager_connect_client = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(EOFError())
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
+
+        with pytest.raises(BLEDBusTransportError) as exc_info:
+            orchestrator._connect_retry_target(
+                connection_target=TEST_BLE_ADDRESS,
+                resolved_address=TEST_BLE_ADDRESS,
+                target_address=TEST_BLE_ADDRESS,
+                skip_discovery_scan=True,
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                retry_connect_timeout=1.0,
+            )
+
+        assert closed_clients == [retry_client]
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+        assert isinstance(exc_info.value.dbus_error, str)
+        assert exc_info.value.dbus_error
+        assert exc_info.value.dbus_error_body == ()
+        assert isinstance(exc_info.value.cause, EOFError)
+        assert isinstance(exc_info.value, iface.BLEError)
+
+
+def test_orchestrator_stale_cleanup_retry_maps_dbus_eof_to_typed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-cleanup direct retry should normalize and clean up D-Bus EOF."""
+    with _make_orchestrator(monkeypatch) as (iface, orchestrator):
+        direct_client = DummyClient()
+        retry_client = DummyClient()
+        clients = iter((direct_client, retry_client))
+        closed_clients: list[DummyClient] = []
+        orchestrator._client_manager_create_client = (
+            lambda *_args, **_kwargs: next(clients)
+        )
+
+        def _connect_client(client: DummyClient, **_kwargs: object) -> None:
+            if client is direct_client:
+                raise BleakDBusError(
+                    "org.bluez.Error.InProgress",
+                    ["Device or resource busy"],
+                )
+            raise EOFError()
+
+        orchestrator._client_manager_connect_client = _connect_client
+        orchestrator._client_manager_safe_close_client = (
+            lambda client: closed_clients.append(client)
+        )
+        orchestrator._should_attempt_stale_bluez_cleanup = lambda **_kwargs: True
+        orchestrator._attempt_stale_bluez_cleanup = lambda **_kwargs: True
+
+        with pytest.raises(BLEDBusTransportError) as exc_info:
+            orchestrator._attempt_direct_connect(
+                target_address=TEST_BLE_ADDRESS,
+                explicit_address=True,
+                normalized_target="aabbccddeeff",
+                on_disconnect_func=lambda _client: None,
+                pair_on_connect=False,
+                direct_connect_timeout=1.0,
+                register_notifications_func=lambda _client: None,
+                on_connected_func=lambda: None,
+                emit_connected_side_effects=True,
+            )
+
+        assert closed_clients == [direct_client, retry_client]
+        assert exc_info.value.requested_identifier == TEST_BLE_ADDRESS
+        assert isinstance(exc_info.value.dbus_error, str)
+        assert exc_info.value.dbus_error
+        assert exc_info.value.dbus_error_body == ()
+        assert isinstance(exc_info.value.cause, EOFError)
+        assert isinstance(exc_info.value, iface.BLEError)
+
+
 def test_orchestrator_attempt_direct_connect_uses_stale_cleanup_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
