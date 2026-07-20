@@ -7,10 +7,10 @@
 import argparse
 import binascii
 import contextlib
+import contextvars
 import enum
 import getpass
 import importlib
-import contextvars
 import logging
 import os
 import platform
@@ -23,8 +23,8 @@ from typing import Any, NoReturn, Protocol, cast
 
 import yaml
 from google.protobuf.descriptor import FieldDescriptor
-from google.protobuf.message import Message
 from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import Message
 from pubsub import pub
 
 import meshtastic.cli.runtime as cli_runtime
@@ -745,9 +745,7 @@ def _temporary_instance_attributes(
     """Temporarily override instance attributes and restore their exact prior state."""
     missing = object()
     instance_values = vars(instance)
-    previous_values = {
-        name: instance_values.get(name, missing) for name in overrides
-    }
+    previous_values = {name: instance_values.get(name, missing) for name in overrides}
     try:
         for name, value in overrides.items():
             setattr(instance, name, value)
@@ -1429,9 +1427,7 @@ def traverseConfig(
     return success
 
 
-def _walk_config_path(
-    config: Any, name_parts: list[str]
-) -> tuple[Any, Any | None]:
+def _walk_config_path(config: Any, name_parts: list[str]) -> tuple[Any, Any | None]:
     """Return the parent message and descriptor for a dotted config path."""
     if not name_parts:
         return config, None
@@ -1891,9 +1887,7 @@ def _handle_configure_command(
         target_node.set_ringtone(configuration["ringtone"])
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    channel_url_key = (
-        "channel_url" if "channel_url" in configuration else "channelUrl"
-    )
+    channel_url_key = "channel_url" if "channel_url" in configuration else "channelUrl"
     if channel_url_key in configuration:
         if not phase1_started:
             _cli_print(CONFIGURE_PHASE1_HEADER)
@@ -3147,16 +3141,13 @@ def _set_missing_flags_false(
             d[path[-1]] = False
 
 
-def _prefix_base64_bytes_fields(
-    message: Message, values: dict[str, Any]
-) -> None:
+def _prefix_base64_bytes_fields(message: Message, values: dict[str, Any]) -> None:
     """Mark every protobuf bytes field in a ``MessageToDict`` mapping as base64."""
 
-    def _field_key(
-        field: FieldDescriptor, mapping: dict[str, Any]
-    ) -> str | None:
-        json_name = getattr(field, "json_name", field.name)
-        for candidate in (json_name, field.name):
+    def _field_key(field: FieldDescriptor, mapping: dict[str, Any]) -> str | None:
+        json_name: str = getattr(field, "json_name", field.name)
+        name: str = field.name
+        for candidate in (json_name, name):
             if candidate in mapping:
                 return candidate
         return None
@@ -3194,7 +3185,9 @@ def _prefix_base64_bytes_fields(
             if message_type.GetOptions().map_entry:
                 value_field = message_type.fields_by_name["value"]
                 if not isinstance(value, dict):
-                    raise TypeError(f"Expected mapping for protobuf map field {field_path}")
+                    raise TypeError(
+                        f"Expected mapping for protobuf map field {field_path}"
+                    )
                 if value_field.type == FieldDescriptor.TYPE_BYTES:
                     for map_key, map_value in value.items():
                         value[map_key] = _prefix_bytes(
@@ -3221,9 +3214,7 @@ def _prefix_base64_bytes_fields(
                     )
                 for index, item in enumerate(value):
                     if not isinstance(item, dict):
-                        raise TypeError(
-                            f"Expected mapping for {field_path}[{index}]"
-                        )
+                        raise TypeError(f"Expected mapping for {field_path}[{index}]")
                     _walk(message_type, item, path=f"{field_path}[{index}]")
             else:
                 if not isinstance(value, dict):

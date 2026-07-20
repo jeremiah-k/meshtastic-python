@@ -415,6 +415,7 @@ def test_send_to_radio_uses_runtime_pop_method(
 
     assert sent == [123, 456]
 
+
 @pytest.mark.unit
 def test_send_to_radio_times_out_when_queue_status_never_recovers(
     monkeypatch: pytest.MonkeyPatch,

@@ -395,6 +395,7 @@ def test_post_seturl_stability_check_triggers_reconnect_when_disconnected(
     iface.connect.assert_called()
     iface.waitForConfig.assert_called_once()
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_configure_redacts_channel_url_progress_output(
@@ -405,7 +406,9 @@ def test_configure_redacts_channel_url_progress_output(
     """Channel URLs contain channel keys and must not be echoed while applying YAML."""
     secret_url = "https://meshtastic.org/e/#distinctive-channel-key"
     config_path = tmp_path / "channel.yaml"
-    config_path.write_text(yaml.safe_dump({"channel_url": secret_url}), encoding="utf-8")
+    config_path.write_text(
+        yaml.safe_dump({"channel_url": secret_url}), encoding="utf-8"
+    )
     target_node = MagicMock()
     target_node.getURL.return_value = "https://meshtastic.org/e/#old-key"
     iface = MagicMock()

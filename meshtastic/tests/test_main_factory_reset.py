@@ -55,8 +55,6 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("reset_flag", "expected_full"),
     [("--factory-reset", False), ("--factory-reset-device", True)],
@@ -403,6 +401,7 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
     iface.connect.assert_called_once()
     assert iface.close.call_count >= 2
 
+
 @pytest.mark.unit
 def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     caplog: pytest.LogCaptureFixture,
@@ -432,6 +431,7 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     assert not hasattr(iface, "_connect_retry_budget_seconds")
     assert not hasattr(iface, "_suppress_connect_failure_logging")
     assert iface.close.call_count >= 2
+
 
 @pytest.mark.unit
 def test_temporary_instance_attributes_restores_existing_and_missing_values() -> None:

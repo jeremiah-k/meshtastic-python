@@ -939,8 +939,8 @@ def test_orchestrator_stale_cleanup_retry_maps_dbus_eof_to_typed_error(
         retry_client = DummyClient()
         clients = iter((direct_client, retry_client))
         closed_clients: list[DummyClient] = []
-        orchestrator._client_manager_create_client = (
-            lambda *_args, **_kwargs: next(clients)
+        orchestrator._client_manager_create_client = lambda *_args, **_kwargs: next(
+            clients
         )
 
         def _connect_client(client: DummyClient, **_kwargs: object) -> None:

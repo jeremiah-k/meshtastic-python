@@ -170,8 +170,6 @@ def test_main_init_parser_help_mentions_list_fields(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("flag", "destination"),
     (
@@ -1243,8 +1241,6 @@ def test_main_reboot_ota(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("args", "method_name", "marker"),
     [
@@ -2152,8 +2148,6 @@ def test_main_configure_with_camel_case_keys(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("owner_key", "expected_error"),
     [
@@ -2454,8 +2448,6 @@ def test_main_configure_applies_power_snake_case_keys(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     "alias_key",
     ["use_12_hour", "use12Hour", "use12hClock", "use12HClock"],
@@ -2565,8 +2557,6 @@ def test_main_configure_rejects_non_dict_module_config(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("top_key", "section_name", "section_value"),
     [
@@ -2999,8 +2989,6 @@ def test_main_ch_longfast_on_non_primary_channel(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("cli_args", "expected_preset"),
     (
@@ -4957,8 +4945,6 @@ def test_main_ch_set_psk_with_ch_index(capsys: pytest.CaptureFixture[str]) -> No
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     "psk_value",
     [
@@ -5119,8 +5105,6 @@ def test_tunnel_subnet_arg_with_no_devices(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="on windows is no fcntl module")
-
-
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("platform.system")
@@ -6111,8 +6095,6 @@ def test_flatten_leaf_paths_empty_nested_dict() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     "field,value,expected,expected_output_substring",
     [
@@ -6182,8 +6164,6 @@ def test_main_setPref_bitfield_invalid_name(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize("value", ["0xZZ", "0o10"], ids=["invalid_hex", "octal"])
 def test_main_setPref_bitfield_invalid_numeric_string(
     value: str,
@@ -6263,6 +6243,7 @@ def test_traverse_config_skips_unknown_deep_intermediate_field(
     )
 
     assert "unknown_group.value" in caplog.text
+
 
 @pytest.mark.unit
 def test_walk_config_path_handles_empty_path() -> None:
@@ -6368,7 +6349,6 @@ def test_secret_redaction_is_scoped_to_sensitive_preference_paths() -> None:
     assert main_module._redact_pref_value("unrelated.password", "visible") == "visible"
 
 
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("value", "message"),
@@ -6393,7 +6373,6 @@ def test_apply_configure_channel_url_rejects_invalid_values(
     target_node.setURL.assert_not_called()
 
 
-
 @pytest.mark.unit
 def test_apply_configure_channel_url_skips_matching_state(
     monkeypatch: pytest.MonkeyPatch,
@@ -6415,7 +6394,6 @@ def test_apply_configure_channel_url_skips_matching_state(
     assert applied is False
     target_node.setURL.assert_not_called()
     assert "already matches" in capsys.readouterr().out
-
 
 
 @pytest.mark.unit
@@ -6497,7 +6475,6 @@ def test_configure_preflight_reuses_target_node_and_preserves_logger(
     assert target_node.writeConfig.call_args_list == [call("bluetooth")]
     target_node.commitSettingsTransaction.assert_called_once_with()
     assert main_module.logger.disabled is False
-
 
 
 @pytest.mark.unit
@@ -6604,7 +6581,6 @@ def test_prefix_base64_bytes_fields_handles_bytes_map_values() -> None:
     assert values == {"values": {"primary": "base64:AQI="}}
 
 
-
 @pytest.mark.unit
 def test_prefix_base64_bytes_fields_rejects_invalid_repeated_values() -> None:
     message = localonly_pb2.LocalConfig()
@@ -6612,7 +6588,6 @@ def test_prefix_base64_bytes_fields_rejects_invalid_repeated_values() -> None:
 
     with pytest.raises(TypeError, match="repeated bytes field security.admin_key"):
         _prefix_base64_bytes_fields(message, values)
-
 
 
 def _build_nested_bytes_test_message() -> Any:
@@ -6687,7 +6662,6 @@ def _build_nested_bytes_test_message() -> Any:
     return message_class()
 
 
-
 @pytest.mark.unit
 def test_prefix_base64_bytes_fields_walks_nested_message_shapes() -> None:
     message = _build_nested_bytes_test_message()
@@ -6707,7 +6681,6 @@ def test_prefix_base64_bytes_fields_walks_nested_message_shapes() -> None:
         "blobs": ["base64:BA==", "base64:BQ=="],
         "scalarBlob": "base64:Bg==",
     }
-
 
 
 @pytest.mark.unit

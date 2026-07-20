@@ -498,8 +498,6 @@ def test_getNode_not_local(caplog: pytest.LogCaptureFixture) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize("request_channel_attempts", [None, 2])
 def test_getNode_not_local_timeout(
     caplog: pytest.LogCaptureFixture,
@@ -636,8 +634,6 @@ def test_close_waits_for_inflight_heartbeat_send(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     "disconnect_error",
     [
@@ -1234,8 +1230,6 @@ def test_sendPacket_uses_numeric_num_from_node_record(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("destination_id", "expected_num"),
     [
@@ -1259,8 +1253,6 @@ def test_sendPacket_parses_supported_hex_node_id_forms(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize("destination_id", ["nothexid", "nothexid1"])
 def test_sendPacket_with_non_hex_long_destination_falls_back_to_db_lookup(
     iface_with_nodes: MeshInterface,
@@ -2574,17 +2566,19 @@ def test_request_traceroute_preserves_unknown_link_snr() -> None:
         response = mesh_pb2.RouteDiscovery()
         response.route.extend([11])
         response.snr_towards.extend([8])
-        result = flows_module._on_response_traceroute(  # pylint: disable=protected-access
-            iface,
-            {
-                "decoded": {
-                    "payload": response.SerializeToString(),
-                    "requestId": 89,
+        result = (
+            flows_module._on_response_traceroute(  # pylint: disable=protected-access
+                iface,
+                {
+                    "decoded": {
+                        "payload": response.SerializeToString(),
+                        "requestId": 89,
+                    },
+                    "to": 20,
+                    "from": 21,
                 },
-                "to": 20,
-                "from": 21,
-            },
-            emit_summary=False,
+                emit_summary=False,
+            )
         )
 
     assert result is not None
@@ -2600,18 +2594,20 @@ def test_request_traceroute_preserves_reverse_route_with_unknown_snr() -> None:
         response = mesh_pb2.RouteDiscovery()
         response.route_back.extend([12])
         response.snr_back.extend([16])
-        result = flows_module._on_response_traceroute(  # pylint: disable=protected-access
-            iface,
-            {
-                "decoded": {
-                    "payload": response.SerializeToString(),
-                    "requestId": 90,
+        result = (
+            flows_module._on_response_traceroute(  # pylint: disable=protected-access
+                iface,
+                {
+                    "decoded": {
+                        "payload": response.SerializeToString(),
+                        "requestId": 90,
+                    },
+                    "to": 20,
+                    "from": 21,
+                    "hopStart": 1,
                 },
-                "to": 20,
-                "from": 21,
-                "hopStart": 1,
-            },
-            emit_summary=False,
+                emit_summary=False,
+            )
         )
 
     assert result is not None
@@ -3023,8 +3019,6 @@ def test_on_response_waypoint_paths(caplog: pytest.LogCaptureFixture) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-
-
 @pytest.mark.parametrize(
     ("handler_name", "waiter_name", "port_name", "error_prefix"),
     [
@@ -5014,6 +5008,7 @@ def test_mesh_interface_mqtt_proxy_delegates_to_send_pipeline() -> None:
         )
     ]
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_send_to_radio_reports_disconnected_queue_wait_as_interface_error() -> None:
@@ -5032,6 +5027,7 @@ def test_send_to_radio_reports_disconnected_queue_wait_as_interface_error() -> N
             iface._send_to_radio(packet)
 
         assert 903 not in iface.queue
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -5071,7 +5067,6 @@ def test_connection_probe_overrides_are_normalized() -> None:
     assert iface._connection_timeout_override("_probe_timeout", 3.0) == 3.0
     iface.__dict__["_probe_timeout"] = "invalid"
     assert iface._connection_timeout_override("_probe_timeout") is None
-
 
 
 @pytest.mark.unit
