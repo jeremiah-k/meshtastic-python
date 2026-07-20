@@ -1613,8 +1613,9 @@ class ConnectionOrchestrator:
 
         Raises
         ------
-        BleakDBusError
-            Propagated for DBus-level failures to allow upstream backoff.
+        BLEDBusTransportError
+            Raised for BlueZ/DBus failures, including an unexpectedly closed
+            dbus-fast transport.
         BleakError
             Propagated for non-recoverable direct-connect errors.
         BLEError
@@ -1635,7 +1636,12 @@ class ConnectionOrchestrator:
             connect_timeout=direct_connect_timeout,
         )
         error_for_fallback: (
-            BleakError | BLEClient.BLEError | OSError | TimeoutError | BleakDBusError
+            BleakError
+            | BLEClient.BLEError
+            | OSError
+            | TimeoutError
+            | BleakDBusError
+            | EOFError
         ) | None = None
         try:
             self._raise_if_interface_closing()
@@ -1645,6 +1651,7 @@ class ConnectionOrchestrator:
             raise
         except (
             BleakDBusError,
+            EOFError,
             BleakError,
             BLEClient.BLEError,
             OSError,
@@ -1686,7 +1693,7 @@ class ConnectionOrchestrator:
                         return retried_client, False
                     except BLEAddressMismatchError:
                         raise
-                    except BleakDBusError as retry_dbus_err:
+                    except (BleakDBusError, EOFError) as retry_dbus_err:
                         logger.debug(
                             "Direct reconnect after stale BlueZ cleanup failed for %s: %s",
                             normalized_target,
@@ -1712,7 +1719,7 @@ class ConnectionOrchestrator:
                             exc_info=True,
                         )
                         raise
-            if isinstance(error_for_fallback, BleakDBusError):
+            if isinstance(error_for_fallback, (BleakDBusError, EOFError)):
                 raise BLEDBusTransportError.from_exception(
                     error_for_fallback,
                     message="BLE DBus transport error during direct connect.",
@@ -1848,8 +1855,9 @@ class ConnectionOrchestrator:
 
         Raises
         ------
-        BleakDBusError
-            Propagated for DBus-level failures.
+        BLEDBusTransportError
+            Raised for BlueZ/DBus failures, including an unexpectedly closed
+            dbus-fast transport.
         BleakError
             Propagated when retry connect fails without eligible fallback.
         BLEError
@@ -1872,7 +1880,7 @@ class ConnectionOrchestrator:
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             self._client_manager_safe_close_client(client)
             raise
-        except BleakDBusError as dbus_err:
+        except (BleakDBusError, EOFError) as dbus_err:
             self._client_manager_safe_close_client(client)
             raise BLEDBusTransportError.from_exception(
                 dbus_err,
