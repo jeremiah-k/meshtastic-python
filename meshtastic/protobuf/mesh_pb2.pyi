@@ -3305,6 +3305,9 @@ class MeshPacket(_message.Message):
     rx_rssi: _builtins.int
     """
     rssi of received packet. Only sent to phone for dispay purposes.
+    Explicit presence: rssi 0 is a legitimate reading on some radios (SX126x can report exactly
+    0 dBm; SX127x's formula can even go positive). has_rx_rssi disambiguates; a replayed packet
+    built from history should leave this field absent rather than emitting 0.
     """
     @_builtins.property
     @_deprecated("""This field has been marked as deprecated using proto field options.""")
@@ -3328,6 +3331,10 @@ class MeshPacket(_message.Message):
     """
     Hop limit with which the original packet started. Sent via LoRa using three bits in the unencrypted header.
     When receiving a packet, the difference between hop_start and hop_limit gives how many hops it traveled.
+    hop_start == 0 does not necessarily mean a direct (0-hop) neighbor: firmware prior to 2.3.0
+    never populated this field, so a receiver can only trust hop_start == 0 as genuine once it has
+    decoded the packet and confirmed the sender's bitfield is present (added in 2.5.0). Until then,
+    or for a sender that never sets that bitfield, treat hop_start == 0 as unknown, not direct.
     """
     public_key: _builtins.bytes
     """
@@ -3380,7 +3387,7 @@ class MeshPacket(_message.Message):
         hop_limit: _builtins.int = ...,
         want_ack: _builtins.bool = ...,
         priority: Global___MeshPacket.Priority.ValueType = ...,
-        rx_rssi: _builtins.int = ...,
+        rx_rssi: _builtins.int | None = ...,
         delayed: Global___MeshPacket.Delayed.ValueType = ...,
         via_mqtt: _builtins.bool = ...,
         hop_start: _builtins.int = ...,
@@ -3392,12 +3399,17 @@ class MeshPacket(_message.Message):
         transport_mechanism: Global___MeshPacket.TransportMechanism.ValueType = ...,
         xeddsa_signed: _builtins.bool = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["decoded", b"decoded", "encrypted", b"encrypted", "payload_variant", b"payload_variant"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi", "decoded", b"decoded", "encrypted", b"encrypted", "payload_variant", b"payload_variant", "rx_rssi", b"rx_rssi"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["channel", b"channel", "decoded", b"decoded", "delayed", b"delayed", "encrypted", b"encrypted", "from", b"from", "hop_limit", b"hop_limit", "hop_start", b"hop_start", "id", b"id", "next_hop", b"next_hop", "payload_variant", b"payload_variant", "pki_encrypted", b"pki_encrypted", "priority", b"priority", "public_key", b"public_key", "relay_node", b"relay_node", "rx_rssi", b"rx_rssi", "rx_snr", b"rx_snr", "rx_time", b"rx_time", "to", b"to", "transport_mechanism", b"transport_mechanism", "tx_after", b"tx_after", "via_mqtt", b"via_mqtt", "want_ack", b"want_ack", "xeddsa_signed", b"xeddsa_signed"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi", "channel", b"channel", "decoded", b"decoded", "delayed", b"delayed", "encrypted", b"encrypted", "from", b"from", "hop_limit", b"hop_limit", "hop_start", b"hop_start", "id", b"id", "next_hop", b"next_hop", "payload_variant", b"payload_variant", "pki_encrypted", b"pki_encrypted", "priority", b"priority", "public_key", b"public_key", "relay_node", b"relay_node", "rx_rssi", b"rx_rssi", "rx_snr", b"rx_snr", "rx_time", b"rx_time", "to", b"to", "transport_mechanism", b"transport_mechanism", "tx_after", b"tx_after", "via_mqtt", b"via_mqtt", "want_ack", b"want_ack", "xeddsa_signed", b"xeddsa_signed"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__rx_rssi: _TypeAlias = _typing.Literal["rx_rssi"]  # noqa: Y015
+    _WhichOneofArgType__rx_rssi: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi"]  # noqa: Y015
     _WhichOneofReturnType_payload_variant: _TypeAlias = _typing.Literal["decoded", "encrypted"]  # noqa: Y015
     _WhichOneofArgType_payload_variant: _TypeAlias = _typing.Literal["payload_variant", b"payload_variant"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__rx_rssi) -> _WhichOneofReturnType__rx_rssi | None: ...
+    @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType_payload_variant) -> _WhichOneofReturnType_payload_variant | None: ...
 
 Global___MeshPacket: _TypeAlias = MeshPacket  # noqa: Y015
