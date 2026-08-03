@@ -1242,28 +1242,16 @@ def _redact_pref_value(name: str, value: str) -> str:
 
 
 def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
-    """Retrieve and display a configuration preference or channel field for a node.
-
-    Given a dot-separated preference name (section.field) or a single name (used for
-    both section and field resolution), print any populated local values for that
-    preference; if the field exists but is not populated locally, request the
-    remote node's configuration so the value can be fetched. When a message/section
-    name is provided (e.g., "channel" or "channel.label"), populated
-    subfields are printed.
-
-    Parameters
-    ----------
-    node : Any
-        Node object exposing `localConfig` and `moduleConfig`.
-    comp_name : str
-        Dot-separated preference path (e.g., "channel.label" or "label").
-        A single name is used for both section and field resolution.
-
-    Returns
-    -------
-    bool
-        `True` if the preference exists and local values were printed or a remote
-        config request was issued, `False` if the preference was not found.
+    """
+    Retrieve and display a node configuration preference or populated section fields.
+    
+    Parameters:
+        node (Any): Node exposing local and module configuration data and configuration requests.
+        comp_name (str): Preference path or configuration section name to retrieve.
+        allow_secrets (bool): Whether sensitive preference values may be displayed without redaction.
+    
+    Returns:
+        bool: `True` if the preference exists and values were displayed or requested, `False` if it was not found.
     """
 
     def _print_setting(
@@ -1832,6 +1820,13 @@ def _handle_ota_update(
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> None:
+    """Initiate a Wi-Fi OTA update for the directly connected local node.
+    
+    Parameters:
+    	interface (MeshInterface): TCP interface connected to the target node.
+    	args (Any): CLI arguments containing the OTA update path and destination.
+    	getNode_kwargs (dict[str, Any]): Additional arguments for retrieving the local node.
+    """
     if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
         _cli_exit(
             "Error: OTA update currently requires a TCP connection to the node (use --host)."
@@ -2010,22 +2005,21 @@ def _ensure_set_sections_loaded(
 def _preflight_set_entries(
     node: Any, set_entries: Sequence[tuple[str, Any]]
 ) -> bool:
-    """Validate an entire --set batch on protobuf copies before mutation.
-
+    """
+    Validate all --set entries against configuration copies before applying changes.
+    
     Parameters
     ----------
     node : Any
-        Node providing the current local and module configuration values.
+        Node providing the current local and module configuration.
     set_entries : Sequence[tuple[str, Any]]
-        Normalized preference names and raw values to validate as one batch.
-
+        Preference names and raw values to validate as one batch.
+    
     Returns
     -------
     bool
-        ``True`` when every entry can be applied; ``False`` when an unknown
-        field or non-fatal semantic validation rejects the batch. Unknown and
-        semantic rejections remain exit-code compatible with the historical CLI,
-        but now cancel the entire batch instead of permitting partial application.
+        ``True`` if every entry is valid; ``False`` if an unknown field or semantic
+        validation failure rejects the batch.
     """
     candidates: list[Any] = []
     for source in (node.localConfig, node.moduleConfig):
@@ -2097,8 +2091,9 @@ def _handle_set_command(
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> None:
-    """Validate and atomically apply one CLI ``--set`` batch.
-
+    """
+    Validate and apply a CLI ``--set`` batch without partial updates.
+    
     Parameters
     ----------
     interface : MeshInterface
@@ -2107,14 +2102,12 @@ def _handle_set_command(
         Parsed CLI arguments containing the ``--set`` entries and destination.
     getNode_kwargs : dict[str, Any]
         Additional keyword arguments forwarded to ``interface.getNode``.
-
+    
     Notes
     -----
-    Required device-backed sections are loaded before preflight snapshots are
-    created. A ``False`` preflight result means diagnostics were already emitted
-    and the entire batch is cancelled without mutation. After a successful
-    preflight, any resolution or validation difference during live application
-    is treated as an invariant violation and exits with an error.
+    Invalid batches are rejected before modifying the device. Valid batches write
+    all affected configuration sections and use a transaction when multiple
+    sections are changed.
     """
     node = interface.getNode(args.dest, False, **getNode_kwargs)
     set_entries = _normalize_set_entries(args.set)

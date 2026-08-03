@@ -144,6 +144,14 @@ def test_handle_set_loads_sections_before_invoking_preflight(
         target_node: MagicMock,
         _entries: list[tuple[str, object]],
     ) -> bool:
+        """Records the current LoRa ignore-incoming values observed during preflight.
+        
+        Parameters:
+        	target_node (MagicMock): Node whose configuration is inspected.
+        	_entries (list[tuple[str, object]]): Settings being preflighted.
+        
+        Returns:
+        	bool: `False` to reject the preflight."""
         observed_preflight_values.append(
             list(target_node.localConfig.lora.ignore_incoming)
         )
