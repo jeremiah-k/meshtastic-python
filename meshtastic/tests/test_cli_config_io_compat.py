@@ -69,3 +69,18 @@ def test_print_available_fields_facade_uses_current_localonly_factories(
     kwargs = runtime_print.call_args.kwargs
     assert kwargs["local_config_factory"] is local_factory
     assert kwargs["module_config_factory"] is module_factory
+
+
+@pytest.mark.unit
+def test_print_config_facade_uses_current_camel_case_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy ``printConfig`` should delegate with the current CLI casing mode."""
+    config = MagicMock()
+    runtime_print = MagicMock()
+    monkeypatch.setattr(main_module.cli_config_io, "print_config", runtime_print)
+    monkeypatch.setattr(main_module.mt_config, "camel_case", True)
+
+    main_module.printConfig(config)
+
+    runtime_print.assert_called_once_with(config, camel_case=True)

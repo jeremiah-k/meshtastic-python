@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from typing import Any, Protocol
 
 import yaml
@@ -118,31 +118,35 @@ def is_repeated_field(field_desc: Any) -> bool:
 
 
 def set_missing_flags_false(
-    config_dict: dict[str, Any], true_defaults: set[tuple[str, ...]]
+    config_dict: MutableMapping[str, Any], true_defaults: set[tuple[str, ...]]
 ) -> None:
     """Materialize omitted firmware-true boolean defaults as explicit ``False``.
 
     Parameters
     ----------
-    config_dict : dict[str, Any]
-        Nested configuration dictionary modified in place.
+    config_dict : MutableMapping[str, Any]
+        Nested configuration mapping modified in place.
     true_defaults : set[tuple[str, ...]]
         Key paths whose missing final key should be created with ``False``.
     """
     for path in true_defaults:
         current = config_dict
         for key in path[:-1]:
-            if key not in current or not isinstance(current[key], dict):
+            if key not in current or not isinstance(current[key], MutableMapping):
                 current[key] = {}
             current = current[key]
         if path[-1] not in current:
             current[path[-1]] = False
 
 
-def prefix_base64_bytes_fields(message: Message, values: dict[str, Any]) -> None:
+def prefix_base64_bytes_fields(
+    message: Message, values: MutableMapping[str, Any]
+) -> None:
     """Mark every protobuf bytes field in a ``MessageToDict`` mapping as base64."""
 
-    def _field_key(field: FieldDescriptor, mapping: dict[str, Any]) -> str | None:
+    def _field_key(
+        field: FieldDescriptor, mapping: MutableMapping[str, Any]
+    ) -> str | None:
         json_name: str = getattr(field, "json_name", field.name)
         for candidate in (json_name, field.name):
             if candidate in mapping:
@@ -164,7 +168,7 @@ def prefix_base64_bytes_fields(message: Message, values: dict[str, Any]) -> None
         raise TypeError(f"Expected base64 string for bytes field {field_path}")
 
     def _walk(
-        descriptor: DescriptorLike, mapping: dict[str, Any], *, path: str = ""
+        descriptor: DescriptorLike, mapping: MutableMapping[str, Any], *, path: str = ""
     ) -> None:
         for field in descriptor.fields:
             key = _field_key(field, mapping)
@@ -181,7 +185,7 @@ def prefix_base64_bytes_fields(message: Message, values: dict[str, Any]) -> None
             message_type = field.message_type
             if message_type.GetOptions().map_entry:
                 value_field = message_type.fields_by_name["value"]
-                if not isinstance(value, dict):
+                if not isinstance(value, MutableMapping):
                     raise TypeError(
                         f"Expected mapping for protobuf map field {field_path}"
                     )
@@ -192,7 +196,7 @@ def prefix_base64_bytes_fields(message: Message, values: dict[str, Any]) -> None
                         )
                 elif value_field.type == FieldDescriptor.TYPE_MESSAGE:
                     for map_key, map_value in value.items():
-                        if not isinstance(map_value, dict):
+                        if not isinstance(map_value, MutableMapping):
                             raise TypeError(
                                 "Expected mapping for protobuf message map value "
                                 f"{field_path}[{map_key!r}]"
@@ -210,17 +214,18 @@ def prefix_base64_bytes_fields(message: Message, values: dict[str, Any]) -> None
                         f"Expected list for repeated message field {field_path}"
                     )
                 for index, item in enumerate(value):
-                    if not isinstance(item, dict):
+                    if not isinstance(item, MutableMapping):
                         raise TypeError(f"Expected mapping for {field_path}[{index}]")
                     _walk(message_type, item, path=f"{field_path}[{index}]")
             else:
-                if not isinstance(value, dict):
+                if not isinstance(value, MutableMapping):
                     raise TypeError(f"Expected mapping for message field {field_path}")
                 _walk(message_type, value, path=field_path)
 
     _walk(message.DESCRIPTOR, values)
 
 
+# COMPAT_STABLE_SHIM: implementation backing meshtastic.__main__._prefix_base64_key.
 def prefix_base64_key(
     security: dict[str, Any], normalized_key_map: dict[str, str], camel_name: str
 ) -> None:
@@ -244,7 +249,7 @@ def prefix_base64_key(
 
 
 def _converted_section_keys(
-    values: dict[str, Any], *, camel_case: bool
+    values: Mapping[str, Any], *, camel_case: bool
 ) -> dict[str, Any]:
     """Return a shallow copy with top-level section names in requested casing."""
     converted: dict[str, Any] = {}
@@ -262,15 +267,15 @@ def export_config(
     interface: MeshInterface,
     *,
     camel_case: bool,
-    message_to_dict: Callable[[Message], dict[str, Any]] = MessageToDict,
+    message_to_dict: Callable[[Message], MutableMapping[str, Any]] = MessageToDict,
     prefix_base64_bytes_fields_fn: Callable[
-        [Message, dict[str, Any]], None
+        [Message, MutableMapping[str, Any]], None
     ] = prefix_base64_bytes_fields,
     set_missing_flags_false_fn: Callable[
-        [dict[str, Any], set[tuple[str, ...]]], None
+        [MutableMapping[str, Any], set[tuple[str, ...]]], None
     ] = set_missing_flags_false,
-    config_true_defaults: set[tuple[str, ...]] = CONFIG_TRUE_DEFAULTS,
-    module_true_defaults: set[tuple[str, ...]] = MODULE_TRUE_DEFAULTS,
+    config_true_defaults: set[tuple[str, ...]] | None = None,
+    module_true_defaults: set[tuple[str, ...]] | None = None,
 ) -> str:
     """Export local node and module configuration as Meshtastic YAML.
 
@@ -280,25 +285,32 @@ def export_config(
         Connected interface whose local node state should be exported.
     camel_case : bool
         Whether exported configuration section keys use camelCase.
-    message_to_dict : Callable[[Message], dict[str, Any]]
+    message_to_dict : Callable[[Message], MutableMapping[str, Any]]
         Protobuf-to-dictionary converter. The compatibility facade injects its
         current module-level symbol so monkeypatches continue to take effect.
-    prefix_base64_bytes_fields_fn : Callable[[Message, dict[str, Any]], None]
+    prefix_base64_bytes_fields_fn : Callable[[Message, MutableMapping[str, Any]], None]
         Bytes-field normalizer injected by the compatibility facade.
-    set_missing_flags_false_fn : Callable[[dict[str, Any], set[tuple[str, ...]]], None]
+    set_missing_flags_false_fn : Callable[[MutableMapping[str, Any], set[tuple[str, ...]]], None]
         Missing-default materializer injected by the compatibility facade.
-    config_true_defaults : set[tuple[str, ...]]
-        Local-config paths whose omitted firmware-true defaults are exported as
-        explicit ``False`` values.
-    module_true_defaults : set[tuple[str, ...]]
-        Module-config paths whose omitted firmware-true defaults are exported as
-        explicit ``False`` values.
+    config_true_defaults : set[tuple[str, ...]] | None
+        Optional local-config paths whose omitted firmware-true defaults are
+        exported as explicit ``False`` values.
+    module_true_defaults : set[tuple[str, ...]] | None
+        Optional module-config paths whose omitted firmware-true defaults are
+        exported as explicit ``False`` values.
 
     Returns
     -------
     str
         YAML text prefixed with the historical configure-file header.
     """
+    config_true_defaults = (
+        CONFIG_TRUE_DEFAULTS if config_true_defaults is None else config_true_defaults
+    )
+    module_true_defaults = (
+        MODULE_TRUE_DEFAULTS if module_true_defaults is None else module_true_defaults
+    )
+
     config_obj: dict[str, Any] = {}
 
     owner = interface.getLongName()
