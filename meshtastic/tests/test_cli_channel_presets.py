@@ -17,6 +17,7 @@ from meshtastic.serial_interface import SerialInterface
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_longfast_on_non_primary_channel(
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Verify that invoking the CLI with --ch-longfast and a non-primary.
@@ -26,8 +27,7 @@ def test_main_ch_longfast_on_non_primary_channel(
     "Connected to radio".
 
     """
-    sys.argv = ["", "--ch-longfast", "--ch-index", "1"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
+    monkeypatch.setattr(sys, "argv", ["meshtastic", "--ch-longfast", "--ch-index", "1"])
 
     mocked_node = MagicMock(autospec=Node)
 
