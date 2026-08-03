@@ -169,7 +169,12 @@ def test_receive_recovery_backoff_reaches_configured_cap_for_non_power_of_two(
         30.0,
         raising=True,
     )
-    monkeypatch.setattr(receive_service_mod.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(
+        receive_service_mod,
+        "time",
+        SimpleNamespace(monotonic=lambda: 100.0),
+        raising=True,
+    )
 
     receive_service_mod.BLEReceiveRecoveryService._recover_receive_thread(
         iface, "receive_thread_fatal"
@@ -350,34 +355,47 @@ def test_receive_loop_waits_for_reconnect_when_client_missing(
 def test_start_receive_thread_skips_when_interface_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive thread start helper should no-op once the interface is closed.
+    """Receive thread creation should run while open and stop after close()."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    monkeypatch.setattr(
+        type(iface),
+        "_start_receive_thread",
+        BLEInterface._start_receive_thread,
+        raising=True,
+    )
+    create_calls: list[dict[str, object]] = []
+    thread_like = SimpleNamespace(
+        name="BLEReceivePositiveControl",
+        ident=123,
+        is_alive=lambda: True,
+    )
 
-    Raises
-    ------
-    AssertionError
-    """
-    client = DummyClient()
-    iface = _build_interface(monkeypatch, client)
-    iface.close()
-
-    def should_not_create_thread(*_args: object, **_kwargs: object) -> None:
-        """Fail if thread creation is attempted after the interface has been closed.
-
-        Raises
-        ------
-        AssertionError
-            Always raised with the message "create_thread should not be called after close()".
-        """
-        raise AssertionError("create_thread should not be called after close()")
+    def _create_thread(**kwargs: object) -> object:
+        create_calls.append(dict(kwargs))
+        return thread_like
 
     monkeypatch.setattr(
         iface.thread_coordinator,
         "_create_thread",
-        should_not_create_thread,
+        _create_thread,
         raising=True,
     )
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_start_thread",
+        lambda _thread: None,
+        raising=True,
+    )
+    with iface._state_lock:
+        iface._want_receive = True
 
+    iface._start_receive_thread(name="BLEReceiveWhileOpen")
+    assert [call["name"] for call in create_calls] == ["BLEReceiveWhileOpen"]
+
+    iface.close()
+    create_calls.clear()
     iface._start_receive_thread(name="BLEReceiveAfterClose")
+    assert create_calls == []
 
 
 @pytest.mark.parametrize(
@@ -466,25 +484,38 @@ def _snapshot_receive_start_state(iface: BLEInterface) -> Iterator[None]:
 def _patch_receive_start_monotonic(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    values: list[float],
-    fallback_step: float,
-) -> None:
-    """Patch lifecycle monotonic clock with deterministic values for receive-start tests."""
-    monotonic_values = iter(values)
-    fallback_timestamp = values[-1] if values else 0.0
+    initial: float,
+) -> SimpleNamespace:
+    """Install a module-local, explicitly settable monotonic test clock.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace the lifecycle runtime's ``time`` module reference.
+    initial : float
+        Initial timestamp returned by the fake clock.
+
+    Returns
+    -------
+    SimpleNamespace
+        Mutable clock state. Assign to ``value`` before each operation whose
+        timing boundary matters.
+    """
+    import meshtastic.interfaces.ble.lifecycle_receive_runtime as lifecycle_receive_runtime
+
+    clock = SimpleNamespace(value=initial)
+    real_time = lifecycle_receive_runtime.time
 
     def _monotonic() -> float:
-        nonlocal fallback_timestamp
-        try:
-            return next(monotonic_values)
-        except StopIteration:
-            fallback_timestamp += fallback_step
-            return fallback_timestamp
+        return float(clock.value)
 
     monkeypatch.setattr(
-        "meshtastic.interfaces.ble.lifecycle_receive_runtime.time.monotonic",
-        _monotonic,
+        lifecycle_receive_runtime,
+        "time",
+        SimpleNamespace(monotonic=_monotonic, sleep=real_time.sleep),
+        raising=True,
     )
+    return clock
 
 
 def _patch_receive_start_threads(
@@ -575,18 +606,9 @@ def _run_receive_pending_marker_scenario(
 
     timeout = RECEIVE_START_PENDING_TIMEOUT_SECONDS
     small_delta = max(min(timeout / 10.0, 0.01), 1e-6)
-    _patch_receive_start_monotonic(
-        monkeypatch,
-        values=[
-            t0,
-            t0 + small_delta,
-            t0 + timeout - small_delta,
-            t0 + timeout + small_delta,
-            t0 + timeout + (2 * small_delta),
-        ],
-        fallback_step=small_delta,
-    )
+    clock = _patch_receive_start_monotonic(monkeypatch, initial=t0)
 
+    clock.value = t0
     start_receive(f"{prefix}One")
     assert [call["name"] for call in create_calls] == [f"{prefix}One"]
     assert all(
@@ -598,6 +620,7 @@ def _run_receive_pending_marker_scenario(
     assert iface._receiveThread is thread_one
     assert iface._receive_start_pending is True
 
+    clock.value = t0 + small_delta
     start_receive(f"{prefix}Skip")
     assert [call["name"] for call in create_calls] == [f"{prefix}One"]
     assert all(
@@ -609,6 +632,7 @@ def _run_receive_pending_marker_scenario(
     assert iface._receiveThread is thread_one
     assert iface._receive_start_pending is True
 
+    clock.value = t0 + timeout - small_delta
     start_receive(f"{prefix}StillWithinTimeout")
     assert [call["name"] for call in create_calls] == [f"{prefix}One"]
     assert all(
@@ -620,6 +644,7 @@ def _run_receive_pending_marker_scenario(
     assert iface._receiveThread is thread_one
     assert iface._receive_start_pending is True
 
+    clock.value = t0 + timeout + small_delta
     start_receive(f"{prefix}Two")
     assert [call["name"] for call in create_calls] == [f"{prefix}One", f"{prefix}Two"]
     assert all(
@@ -676,11 +701,8 @@ def _run_receive_current_thread_deferral_scenario(
         iface=iface,
         created_threads=[deferred_thread],
     )
-    _patch_receive_start_monotonic(
-        monkeypatch,
-        values=[t0],
-        fallback_step=0.001,
-    )
+    clock = _patch_receive_start_monotonic(monkeypatch, initial=t0)
+    clock.value = t0
 
     start_receive(deferred_name)
 
@@ -791,13 +813,13 @@ def test_start_receive_thread_pending_marker_via_interface_facade(
     from meshtastic.interfaces.ble.interface import BLEInterface
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr(
-        type(iface),
-        "_start_receive_thread",
-        BLEInterface._start_receive_thread,
-        raising=True,
-    )
     try:
+        monkeypatch.setattr(
+            type(iface),
+            "_start_receive_thread",
+            BLEInterface._start_receive_thread,
+            raising=True,
+        )
         with _snapshot_receive_start_state(iface):
             with iface._state_lock:
                 iface._want_receive = True
@@ -819,13 +841,13 @@ def test_start_receive_thread_current_thread_defers_via_interface_facade(
     from meshtastic.interfaces.ble.interface import BLEInterface
 
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr(
-        type(iface),
-        "_start_receive_thread",
-        BLEInterface._start_receive_thread,
-        raising=True,
-    )
     try:
+        monkeypatch.setattr(
+            type(iface),
+            "_start_receive_thread",
+            BLEInterface._start_receive_thread,
+            raising=True,
+        )
         with _snapshot_receive_start_state(iface):
             _run_receive_current_thread_deferral_scenario(
                 monkeypatch,
@@ -851,11 +873,8 @@ def test_start_receive_thread_ident_only_probe_keeps_pending_state(
                 iface._want_receive = True
                 iface._receive_recovery_attempts = 4
             t0 = 500.0
-            _patch_receive_start_monotonic(
-                monkeypatch,
-                values=[t0],
-                fallback_step=0.001,
-            )
+            clock = _patch_receive_start_monotonic(monkeypatch, initial=t0)
+            clock.value = t0
             thread_like = SimpleNamespace(
                 name="BLEReceiveIdentOnly",
                 ident=101,

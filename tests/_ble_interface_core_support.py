@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name
 
 import asyncio
+import subprocess
 import threading
 from types import SimpleNamespace, TracebackType
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, cast
@@ -14,7 +15,7 @@ from bleak.backends.device import BLEDevice
 from meshtastic.interfaces.ble import (
     BLEInterface,
 )
-from meshtastic.interfaces.ble.state import BLEStateManager
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 # Import common fixtures
 
@@ -36,23 +37,101 @@ SAFE_EXECUTE_CALLABLE_ONLY_ERROR_MSG = "callable-only failed"
 SAFE_EXECUTE_LEGACY_POSITIONAL_MISMATCH_ERROR_MSG = "legacy positional mismatch"
 
 
+
+def _pin_interface_platform(
+    monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    """Replace the BLE interface module's ``sys`` reference with a local platform fake.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace the module-local dependency.
+    platform : str
+        Platform string exposed to trust-management code.
+
+    Notes
+    -----
+    Patching ``interface.sys.platform`` would mutate Python's process-wide
+    ``sys`` singleton. Replacing the imported module reference keeps the test
+    isolated to the BLE interface module.
+    """
+    from meshtastic.interfaces.ble import interface as interface_mod
+
+    monkeypatch.setattr(
+        interface_mod,
+        "sys",
+        SimpleNamespace(platform=platform),
+        raising=True,
+    )
+
+
+def _pin_interface_shutil_which(
+    monkeypatch: pytest.MonkeyPatch, which: Callable[[str], str | None]
+) -> None:
+    """Replace the BLE interface module's ``shutil`` reference for one test.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace the module-local dependency.
+    which : Callable[[str], str | None]
+        Replacement for ``shutil.which``.
+    """
+    from meshtastic.interfaces.ble import interface as interface_mod
+
+    monkeypatch.setattr(
+        interface_mod,
+        "shutil",
+        SimpleNamespace(which=which),
+        raising=True,
+    )
+
+
+def _pin_interface_subprocess_run(
+    monkeypatch: pytest.MonkeyPatch, run: Callable[..., object]
+) -> None:
+    """Replace the BLE interface module's ``subprocess`` reference for one test.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace the module-local dependency.
+    run : Callable[..., object]
+        Replacement for ``subprocess.run``.
+
+    Notes
+    -----
+    The fake retains ``TimeoutExpired`` so timeout classification exercises the
+    same contract without mutating the process-wide ``subprocess`` module.
+    """
+    from meshtastic.interfaces.ble import interface as interface_mod
+
+    monkeypatch.setattr(
+        interface_mod,
+        "subprocess",
+        SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired),
+        raising=True,
+    )
+
 def _pin_trust_environment(
     monkeypatch: pytest.MonkeyPatch,
     *,
     run: Callable[..., object] | None = None,
 ) -> None:
-    """
-    Configure host-specific dependencies so tests of trust() run in a controlled Linux-like environment.
+    """Configure host dependencies for deterministic ``trust()`` tests.
 
     Parameters
     ----------
-        monkeypatch (pytest.MonkeyPatch): Fixture used to apply attribute patches.
-        run (Callable[..., object] | None): Optional replacement for subprocess.run used by trust(); if None, a sentinel callable is installed that raises AssertionError if invoked.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to apply attribute patches.
+    run : Callable[..., object] | None
+        Optional replacement for ``subprocess.run``. When omitted, a sentinel
+        callable raises if the subprocess path is unexpectedly reached.
     """
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: "/usr/bin/bluetoothctl",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
     )
     if run is None:
 
@@ -60,7 +139,126 @@ def _pin_trust_environment(
             raise AssertionError("subprocess.run should not be reached")
 
         run = _unexpected_run
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.subprocess.run", run)
+    _pin_interface_subprocess_run(monkeypatch, run)
+
+
+class _ImmediateThread:
+    """Thread double that runs its target synchronously from ``start()``."""
+
+    def __init__(
+        self,
+        *,
+        target: Callable[[], None],
+        name: str | None = None,
+        daemon: bool | None = None,
+    ) -> None:
+        """Store the target and thread metadata without starting a real thread."""
+        self._target = target
+        self.name = name
+        self.daemon = daemon
+
+    def start(self) -> None:
+        """Run the configured target immediately in the calling thread."""
+        self._target()
+
+
+def _make_send_message_recorder(
+    sent: list[tuple[str, object, bool]],
+) -> Callable[..., None]:
+    """Return a pubsub ``sendMessage`` fake that records status publications.
+
+    Parameters
+    ----------
+    sent : list[tuple[str, object, bool]]
+        Sink receiving ``(topic, interface, connected)`` records.
+
+    Returns
+    -------
+    Callable[..., None]
+        Replacement ``sendMessage`` callable.
+    """
+
+    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
+        sent.append((topic, interface, connected))
+
+    return _send_message
+
+
+def _make_establish_stub(
+    iface: BLEInterface,
+    client_factory: Callable[[], Any],
+    *,
+    connected_address: str | None = None,
+    device_key: str | None = None,
+    alias_key: str | None = None,
+    connection_alias_key: str | None = None,
+    on_call: Callable[[str | None, str | None, str | None, bool, float | None], None]
+    | None = None,
+) -> Callable[..., tuple[Any, str | None, str | None]]:
+    """Build an ``_establish_and_update_client`` test stub.
+
+    The returned stub preserves the production-facing state transition sequence
+    used by these connection tests while allowing each scenario to observe its
+    call arguments and choose the returned ownership keys.
+
+    Parameters
+    ----------
+    iface : BLEInterface
+        Interface whose connected state should be updated.
+    client_factory : Callable[[], Any]
+        Factory returning the client attached by each invocation.
+    connected_address : str | None
+        Address to store on ``iface``. When omitted, the client's ``address``
+        attribute is used.
+    device_key : str | None
+        Device ownership key returned by the stub.
+    alias_key : str | None
+        Alias ownership key returned by the stub.
+    connection_alias_key : str | None
+        Optional value stored in ``iface._connection_alias_key``.
+    on_call : Callable[..., None] | None
+        Optional hook receiving the three positional connection arguments plus
+        ``pair_on_connect`` and ``connect_timeout`` before state is mutated.
+
+    Returns
+    -------
+    Callable[..., tuple[Any, str | None, str | None]]
+        Replacement for ``BLEInterface._establish_and_update_client``.
+    """
+
+    def _establish(
+        address: str | None,
+        normalized_request: str | None,
+        address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[Any, str | None, str | None]:
+        if on_call is not None:
+            on_call(
+                address,
+                normalized_request,
+                address_key,
+                pair_on_connect,
+                connect_timeout,
+            )
+        client = client_factory()
+        resolved_address = (
+            connected_address
+            if connected_address is not None
+            else cast(str | None, getattr(client, "address", None))
+        )
+        with iface._state_lock:
+            cast(Any, iface).client = client
+            iface.address = resolved_address
+            if connection_alias_key is not None:
+                iface._connection_alias_key = connection_alias_key
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return client, device_key, alias_key
+
+    return _establish
 
 
 def _capture_management_wait_event(

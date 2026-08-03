@@ -24,6 +24,7 @@ from meshtastic.interfaces.ble.state import ConnectionState
 from tests._ble_interface_core_support import (
     _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL,
     _build_minimal_connect_test_interface,
+    _make_establish_stub,
 )
 
 # Import common fixtures
@@ -50,25 +51,21 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     captured_pair_flags: list[bool] = []
     captured_timeouts: list[float | None] = []
 
-    def _establish_stub(
-        address: str | None,
-        normalized_request: str | None,
-        address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (address, normalized_request, address_key)
-        client = DummyClient()
+    def _record_establish(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        pair_on_connect: bool,
+        connect_timeout: float | None,
+    ) -> None:
         captured_pair_flags.append(pair_on_connect)
         captured_timeouts.append(connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = client
-            iface.address = client.address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return client, None, None
+
+    _establish_stub = _make_establish_stub(
+        iface,
+        DummyClient,
+        on_call=_record_establish,
+    )
 
     monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
 
@@ -232,24 +229,20 @@ def test_connect_waits_for_inflight_management_before_establishing(
         lambda *_args, **_kwargs: None,
     )
 
-    def _establish_stub(
+    def _record_establish(
         _address: str | None,
         _normalized_request: str | None,
         _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
+        _pair_on_connect: bool,
+        _connect_timeout: float | None,
+    ) -> None:
         establish_calls.append(True)
-        client = DummyClient()
-        with iface._state_lock:
-            cast(Any, iface).client = client
-            iface.address = client.address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return client, None, None
+
+    _establish_stub = _make_establish_stub(
+        iface,
+        DummyClient,
+        on_call=_record_establish,
+    )
 
     monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
 
@@ -287,10 +280,21 @@ def test_connect_times_out_waiting_for_management_operations(
     iface._management_idle_condition = threading.Condition(iface._management_lock)
     iface._management_inflight = 1
 
+    import meshtastic.interfaces.ble.interface as interface_mod
+
     monotonic_values = iter([0.0, 999.0])
+    last_monotonic = 999.0
+
+    def _monotonic() -> float:
+        nonlocal last_monotonic
+        last_monotonic = next(monotonic_values, last_monotonic + 1.0)
+        return last_monotonic
+
     monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.time.monotonic",
-        lambda: next(monotonic_values),
+        interface_mod,
+        "time",
+        SimpleNamespace(monotonic=_monotonic),
+        raising=True,
     )
     monkeypatch.setattr(
         iface._management_idle_condition,
@@ -326,36 +330,43 @@ def test_connect_times_out_on_spurious_management_wakeups(
     )
 
     def _monotonic() -> float:
-        """
-        Advance and return a test monotonic timestamp by 0.01 seconds.
+        """Advance and return the deterministic monotonic test clock.
 
         Returns
         -------
-            Current monotonic time in seconds; the returned value increases by 0.01 on each call.
+        float
+            Current monotonic time, advanced by 0.01 seconds per call.
         """
         nonlocal fake_time
         fake_time += 0.01
         return fake_time
 
+    import meshtastic.interfaces.ble.interface as interface_mod
+
     monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.time.monotonic", _monotonic
+        interface_mod,
+        "time",
+        SimpleNamespace(monotonic=_monotonic),
+        raising=True,
     )
 
     def _spurious_wait(timeout: float | None = None) -> bool:
-        """
-        Record a spurious wait invocation and signal a wakeup.
+        """Record a bounded spurious condition wakeup.
 
         Parameters
         ----------
-            timeout (float | None): The timeout value passed to the wait; may be None.
+        timeout : float | None
+            Timeout passed to the condition wait.
 
         Returns
         -------
-            bool: `True` to indicate a spurious wakeup.
+        bool
+            ``True`` to simulate a spurious wakeup.
 
         Raises
         ------
-            AssertionError: If the number of recorded wait calls exceeds the configured budget.
+        AssertionError
+            If connect waits beyond the configured spurious-wakeup budget.
         """
         wait_calls.append(timeout)
         if len(wait_calls) > _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL:
@@ -400,12 +411,12 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
     )
 
     def _monotonic() -> float:
-        """
-        Provide a monotonic timestamp for tests, advancing through a preset sequence and falling back to incremental steps when the sequence is exhausted.
+        """Return the next deterministic timestamp, then advance after exhaustion.
 
         Returns
         -------
-            float: The current monotonic time value and updates the captured `last_time` variable.
+        float
+            Current monotonic test timestamp.
         """
         nonlocal last_time
         try:
@@ -414,25 +425,31 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
             last_time += 0.1
         return last_time
 
+    import meshtastic.interfaces.ble.interface as interface_mod
+
     monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.time.monotonic", _monotonic
+        interface_mod,
+        "time",
+        SimpleNamespace(monotonic=_monotonic),
+        raising=True,
     )
 
     def _wait_for_management(timeout: float | None = None) -> bool:
-        """
-        Simulate waiting for management operations to drain and record the requested timeout.
+        """Drain simulated management work and record the requested timeout.
 
         Parameters
         ----------
-            timeout (float | None): Maximum seconds to wait, or `None` to indicate an indefinite wait.
-
-        Behavior:
-            Appends the provided `timeout` value to the `wait_calls` list and sets
-            `iface._management_inflight` to 0 to indicate no inflight management operations.
+        timeout : float | None
+            Maximum seconds to wait, or ``None`` for an indefinite wait.
 
         Returns
         -------
-            bool: `True` to indicate the wait condition was signaled.
+        bool
+            ``True`` to indicate the wait condition was signaled.
+
+        Notes
+        -----
+        The fake records ``timeout`` and clears ``iface._management_inflight``.
         """
         wait_calls.append(timeout)
         iface._management_inflight = 0
@@ -472,38 +489,7 @@ def test_connect_management_wait_timeout_resets_between_wait_cycles(
         lambda *_args, **_kwargs: None,
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        """
-        Create and attach a DummyClient to the test BLE interface and mark it as connected.
-
-        Parameters
-        ----------
-            _address (str | None): Ignored; present to match the real establish signature.
-            _normalized_request (str | None): Ignored; present to match the real establish signature.
-            _address_key (str | None): Ignored; present to match the real establish signature.
-            pair_on_connect (bool): Accepted but ignored by this test stub.
-            connect_timeout (float | None): Accepted but ignored by this test stub.
-
-        Returns
-        -------
-            tuple[DummyClient, None, None]: The created DummyClient instance and two None placeholders (resolved address and resolved identifier).
-        """
-        _ = (pair_on_connect, connect_timeout)
-        client = DummyClient()
-        with iface._state_lock:
-            cast(Any, iface).client = client
-            iface.address = client.address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return client, None, None
+    _establish_stub = _make_establish_stub(iface, DummyClient)
 
     monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
 
@@ -554,24 +540,20 @@ def test_connect_retries_when_management_becomes_inflight_inside_connect_lock(
         lambda *_args, **_kwargs: None,
     )
 
-    def _establish_stub(
+    def _record_establish(
         _address: str | None,
         _normalized_request: str | None,
         _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
+        _pair_on_connect: bool,
+        _connect_timeout: float | None,
+    ) -> None:
         established.append(True)
-        client = DummyClient()
-        with iface._state_lock:
-            cast(Any, iface).client = client
-            iface.address = client.address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return client, None, None
+
+    _establish_stub = _make_establish_stub(
+        iface,
+        DummyClient,
+        on_call=_record_establish,
+    )
 
     monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
 
@@ -665,32 +647,34 @@ def test_ble_interface_establish_and_update_client_discards_late_connection_resu
     connected_client.bleak_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
     cleanup_calls: list[object] = []
 
-    monkeypatch.setattr(
-        iface._connection_orchestrator,
-        "_establish_connection",
-        lambda *_args, **_kwargs: cast(BLEClient, connected_client),
-    )
-    monkeypatch.setattr(
-        iface._client_manager,
-        "_safe_close_client",
-        lambda client: cleanup_calls.append(client),
-    )
+    try:
+        monkeypatch.setattr(
+            iface._connection_orchestrator,
+            "_establish_connection",
+            lambda *_args, **_kwargs: cast(BLEClient, connected_client),
+        )
+        monkeypatch.setattr(
+            iface._client_manager,
+            "_safe_close_client",
+            lambda client: cleanup_calls.append(client),
+        )
 
-    with iface._connect_lock:
+        with iface._connect_lock:
+            with iface._state_lock:
+                iface._closed = True
+            with pytest.raises(BLEInterface.BLEError, match="closing"):
+                iface._establish_and_update_client(
+                    "AA:BB:CC:DD:EE:FF",
+                    "aabbccddeeff",
+                    "aabbccddeeff",
+                    pair_on_connect=False,
+                )
+
+        assert cleanup_calls == [connected_client]
         with iface._state_lock:
-            iface._closed = True
-        with pytest.raises(BLEInterface.BLEError, match="closing"):
-            iface._establish_and_update_client(
-                "AA:BB:CC:DD:EE:FF",
-                "aabbccddeeff",
-                "aabbccddeeff",
-                pair_on_connect=False,
-            )
-
-    assert cleanup_calls == [connected_client]
-    with iface._state_lock:
-        assert cast(object, iface.client) is not connected_client
-    iface.close()
+            assert cast(object, iface.client) is not connected_client
+    finally:
+        iface.close()
 
 
 def test_establish_and_update_client_sets_last_request_from_device_and_updates_previous(
@@ -706,37 +690,45 @@ def test_establish_and_update_client_sets_last_request_from_device_and_updates_p
     connected_client.bleak_client = SimpleNamespace(address=connected_client.address)
     updated_refs: list[tuple[BLEClient, BLEClient | None]] = []
 
-    monkeypatch.setattr(
-        iface._connection_orchestrator,
-        "_establish_connection",
-        lambda *_args, **_kwargs: cast(BLEClient, connected_client),
-    )
-    monkeypatch.setattr(
-        iface._client_manager,
-        "_update_client_reference",
-        lambda new_client, old_client: updated_refs.append((new_client, old_client)),
-    )
-
-    with iface._state_lock:
-        cast(Any, iface).client = previous_client
-        iface._state_manager._reset_to_disconnected()
-        assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
-        assert iface._state_manager._transition_to(ConnectionState.CONNECTED) is True
-
-    with iface._connect_lock:
-        result_client, _, _ = iface._establish_and_update_client(
-            "AA:BB:CC:DD:EE:FF",
-            None,
-            "aabbccddeeff",
-            pair_on_connect=False,
+    try:
+        monkeypatch.setattr(
+            iface._connection_orchestrator,
+            "_establish_connection",
+            lambda *_args, **_kwargs: cast(BLEClient, connected_client),
+        )
+        monkeypatch.setattr(
+            iface._client_manager,
+            "_update_client_reference",
+            lambda new_client, old_client: updated_refs.append(
+                (new_client, old_client)
+            ),
         )
 
-    assert result_client is connected_client
-    assert updated_refs == [(cast(BLEClient, connected_client), previous_client)]
-    assert iface._last_connection_request == iface._sanitize_address(
-        connected_client.address
-    )
-    iface.close()
+        with iface._state_lock:
+            cast(Any, iface).client = previous_client
+            iface._state_manager._reset_to_disconnected()
+            assert (
+                iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
+            )
+            assert (
+                iface._state_manager._transition_to(ConnectionState.CONNECTED) is True
+            )
+
+        with iface._connect_lock:
+            result_client, _, _ = iface._establish_and_update_client(
+                "AA:BB:CC:DD:EE:FF",
+                None,
+                "aabbccddeeff",
+                pair_on_connect=False,
+            )
+
+        assert result_client is connected_client
+        assert updated_refs == [(cast(BLEClient, connected_client), previous_client)]
+        assert iface._last_connection_request == iface._sanitize_address(
+            connected_client.address
+        )
+    finally:
+        iface.close()
 
 
 def test_handle_disconnect_ignores_stale_callbacks(

@@ -7,7 +7,7 @@ import re
 import threading
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import pytest
 
@@ -421,22 +421,25 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     )
     cleanup_calls: list[Any] = []
 
+    def _temp_client_factory_with_kwargs(
+        _address: str, **_kwargs: object
+    ) -> SimpleNamespace:
+        return temp_client
+
+    def _temp_client_factory_without_kwargs(_address: str) -> SimpleNamespace:
+        return temp_client
+
+    temp_client_factory: Callable[..., SimpleNamespace]
     if factory_mode == "with_optional_kwargs":
-
-        def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
-            return temp_client
-
+        temp_client_factory = _temp_client_factory_with_kwargs
     elif factory_mode == "without_optional_kwargs":
-
-        def _temp_client_factory(_address: str) -> SimpleNamespace:
-            return temp_client
-
+        temp_client_factory = _temp_client_factory_without_kwargs
     else:
         pytest.fail(f"Unexpected factory_mode: {factory_mode}")
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.BLEClient",
-        _temp_client_factory,
+        temp_client_factory,
     )
     _clear_management_handler(iface)
     monkeypatch.setattr(

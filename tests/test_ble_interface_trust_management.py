@@ -38,6 +38,9 @@ from tests._ble_interface_core_support import (
     _capture_management_wait_event,
     _clear_management_handler,
     _create_ble_device,
+    _pin_interface_platform,
+    _pin_interface_shutil_which,
+    _pin_interface_subprocess_run,
     _pin_trust_environment,
 )
 
@@ -52,13 +55,10 @@ def test_ble_interface_trust_rejects_blank_explicit_target_before_environment_ch
 ) -> None:
     """trust() should reject blank targets before platform or tool validation."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "darwin")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: None,
-    )
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
+    _pin_interface_platform(monkeypatch, "darwin")
+    _pin_interface_shutil_which(monkeypatch, lambda _name: None)
+    _pin_interface_subprocess_run(
+        monkeypatch,
         lambda *_args, **_kwargs: pytest.fail("subprocess.run should not be reached"),
     )
 
@@ -325,13 +325,12 @@ def test_ble_interface_trust_includes_stdout_and_stderr_in_failure_details(
         "findDevice",
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: "/usr/bin/bluetoothctl",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
     )
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
+    _pin_interface_subprocess_run(
+        monkeypatch,
         lambda *_args, **_kwargs: SimpleNamespace(
             returncode=1,
             stdout="generic output",
@@ -362,14 +361,13 @@ def test_ble_interface_trust_truncates_long_subprocess_output(
         "findDevice",
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: "/usr/bin/bluetoothctl",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
     )
     long_output = "long-output-segment " * 200
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
+    _pin_interface_subprocess_run(
+        monkeypatch,
         lambda *_args, **_kwargs: SimpleNamespace(
             returncode=1,
             stdout="",
@@ -400,10 +398,9 @@ def test_ble_interface_trust_runs_bluetoothctl(
         "findDevice",
         lambda _address: _create_ble_device("aa bb cc dd ee ff", "Meshtastic"),
     )
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: "/usr/bin/bluetoothctl",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
     )
 
     run_calls: list[tuple[list[str], float]] = []
@@ -420,10 +417,7 @@ def test_ble_interface_trust_runs_bluetoothctl(
         run_calls.append((args, timeout))
         return SimpleNamespace(returncode=0, stdout="succeeded", stderr="")
 
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
-        _fake_run,
-    )
+    _pin_interface_subprocess_run(monkeypatch, _fake_run)
 
     iface.trust("mesh-node", timeout=7.0)
 
@@ -436,13 +430,12 @@ def test_ble_interface_trust_rejects_non_linux(
 ) -> None:
     """trust() should reject non-Linux hosts with a clear BLEError."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "darwin")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: pytest.fail("shutil.which should not be reached"),
+    _pin_interface_platform(monkeypatch, "darwin")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: pytest.fail("shutil.which should not be reached")
     )
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
+    _pin_interface_subprocess_run(
+        monkeypatch,
         lambda *_args, **_kwargs: pytest.fail("subprocess.run should not be reached"),
     )
     with pytest.raises(BLEInterface.BLEError, match="only supported on Linux"):
@@ -473,13 +466,10 @@ def test_ble_interface_trust_requires_bluetoothctl_binary(
 ) -> None:
     """trust() should fail before spawning when bluetoothctl is unavailable."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: None,
-    )
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(monkeypatch, lambda _name: None)
+    _pin_interface_subprocess_run(
+        monkeypatch,
         lambda *_args, **_kwargs: pytest.fail("subprocess.run should not be reached"),
     )
 
@@ -494,10 +484,9 @@ def test_ble_interface_trust_translates_subprocess_timeout(
 ) -> None:
     """trust() should translate bluetoothctl timeouts into BLEError."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: "/usr/bin/bluetoothctl",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
     )
 
     def _raise_timeout(*_args: object, **_kwargs: object) -> SimpleNamespace:
@@ -506,10 +495,7 @@ def test_ble_interface_trust_translates_subprocess_timeout(
             timeout=2.5,
         )
 
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
-        _raise_timeout,
-    )
+    _pin_interface_subprocess_run(monkeypatch, _raise_timeout)
 
     with pytest.raises(
         BLEInterface.BLEError,
@@ -527,19 +513,15 @@ def test_ble_interface_trust_translates_spawn_failure(
 ) -> None:
     """trust() should translate subprocess spawn failures into BLEError."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: "/usr/bin/bluetoothctl",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
     )
 
     def _raise_os_error(*_args: object, **_kwargs: object) -> SimpleNamespace:
         raise OSError("permission denied")
 
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
-        _raise_os_error,
-    )
+    _pin_interface_subprocess_run(monkeypatch, _raise_os_error)
 
     with pytest.raises(
         BLEInterface.BLEError,
@@ -578,15 +560,11 @@ def test_ble_interface_trust_rejects_closing_interface(
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(iface, "findDevice", _unexpected_find_device)
-    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.shutil.which",
-        lambda _name: "/usr/bin/bluetoothctl",
+    _pin_interface_platform(monkeypatch, "linux")
+    _pin_interface_shutil_which(
+        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
     )
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.subprocess.run",
-        _unexpected_run,
-    )
+    _pin_interface_subprocess_run(monkeypatch, _unexpected_run)
 
     try:
         with pytest.raises(BLEInterface.BLEError, match="closing"):
@@ -822,20 +800,23 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     )
 
     def _spurious_wait(timeout: float | None = None) -> bool:
-        """
-        Simulate a spurious wait for tests and track each requested timeout.
+        """Simulate a bounded spurious shutdown wait.
 
         Parameters
         ----------
-            timeout (float | None): The requested wait duration in seconds; if greater than zero the function sleeps for that duration.
+        timeout : float | None
+            Requested wait duration. Positive values are slept to preserve the
+            shutdown deadline behavior under test.
 
         Returns
         -------
-            bool: `True` to indicate the wait condition remains satisfied.
+        bool
+            ``True`` to simulate a spurious wakeup.
 
         Raises
         ------
-            AssertionError: If the number of invocations exceeds the allowed spurious-wait budget, signals that shutdown waited past its timeout.
+        AssertionError
+            If shutdown exceeds the configured spurious-wakeup budget.
         """
         wait_calls.append(timeout)
         if timeout is not None and timeout > 0:
@@ -857,16 +838,17 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     def _management_gate(
         address: str,
     ) -> contextlib.AbstractContextManager[None]:
-        """
-        Context manager used in tests to record a requested management address and provide a no-op gate.
+        """Record a management address and return a no-op gate.
 
         Parameters
         ----------
-            address (str): The management address being requested; the address is recorded for test inspection.
+        address : str
+            Management address requested by the close path.
 
         Returns
         -------
-            contextmanager: A context manager that performs no gating and yields `None`.
+        contextlib.AbstractContextManager[None]
+            No-op context manager for deterministic gate assertions.
         """
         gate_calls.append(address)
         return contextlib.nullcontext()
@@ -898,11 +880,7 @@ def test_ble_interface_close_bounds_wait_on_spurious_management_wakeups(
     )
 
     def _run_close() -> None:
-        """
-        Attempt to close the interface and signal completion.
-
-        Calls iface.close(). If an exception is raised, appends it to the shared close_errors list. Always sets the close_done event when finished.
-        """
+        """Close the interface, capture failures, and always signal completion."""
         try:
             iface.close()
         except Exception as exc:  # pragma: no cover - captured for assertion
@@ -1125,6 +1103,8 @@ def test_ble_interface_pair_waits_for_connect_lock(
     connect_lock_attempted = threading.Event()
 
     class _ObservedConnectLock:
+        """Connect-lock proxy that records acquisition before delegating."""
+
         def __enter__(self) -> "_ObservedConnectLock":
             connect_lock_attempted.set()
             real_connect_lock.acquire()
@@ -1214,6 +1194,8 @@ def test_ble_interface_pair_waits_for_address_gate(
     addr_gate_attempted = threading.Event()
 
     class _ObservedAddressLock:
+        """Address-lock test double that records context entry."""
+
         def __init__(self) -> None:
             self._lock = threading.RLock()
 

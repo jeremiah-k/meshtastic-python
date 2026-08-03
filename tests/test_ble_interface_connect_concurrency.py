@@ -26,6 +26,7 @@ from meshtastic.interfaces.ble.state import ConnectionState
 
 from tests._ble_interface_core_support import (
     _build_minimal_connect_test_interface,
+    _make_establish_stub,
 )
 
 # Import common fixtures
@@ -366,22 +367,12 @@ def test_connect_finalizes_gates_after_address_lock_scope(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = target_address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, "device-key", None
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=target_address,
+        device_key="device-key",
+    )
 
     monkeypatch.setattr(
         iface,
@@ -428,22 +419,13 @@ def test_connect_marks_provisional_claims_before_gate_release(
     )
     monkeypatch.setattr(iface, "_connected", lambda: None, raising=True)
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = connected_client.address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, device_key, target_identifier
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=connected_client.address,
+        device_key=device_key,
+        alias_key=target_identifier,
+    )
 
     def _finalize_stub(
         _self: BLEInterface,
@@ -471,8 +453,10 @@ def test_connect_marks_provisional_claims_before_gate_release(
 
 def test_connect_name_target_reserves_requested_and_resolved_keys(
     monkeypatch: pytest.MonkeyPatch,
+    clear_registry: Any,
 ) -> None:
     """Name-based connect should reserve both alias and resolved concrete keys."""
+    _ = clear_registry
     from meshtastic.interfaces.ble.gating import _addr_key
 
     iface = _build_minimal_connect_test_interface()
@@ -526,27 +510,23 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
         _record_addr_lock_context,
     )
 
-    def _establish_stub(
+    def _record_establish(
         address: str | None,
         normalized_request: str | None,
         address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
+        _pair_on_connect: bool,
+        _connect_timeout: float | None,
+    ) -> None:
         established_args.append((address, normalized_request, address_key))
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = resolved_address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return (
-            connected_client,
-            _addr_key(resolved_address),
-            _addr_key(target_identifier),
-        )
+
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=resolved_address,
+        device_key=_addr_key(resolved_address),
+        alias_key=_addr_key(target_identifier),
+        on_call=_record_establish,
+    )
 
     monkeypatch.setattr(
         iface,
@@ -555,27 +535,23 @@ def test_connect_name_target_reserves_requested_and_resolved_keys(
         raising=True,
     )
 
-    try:
-        result = iface.connect(target_identifier)
+    result = iface.connect(target_identifier)
 
-        assert cast(object, result) is connected_client
-        requested_key = _addr_key(target_identifier)
-        resolved_key = _addr_key(resolved_address)
-        assert requested_key is not None and resolved_key is not None
-        assert duplicate_checks.count(requested_key) >= 2
-        assert duplicate_checks.count(resolved_key) >= 2
-        assert requested_key in addr_lock_keys
-        assert resolved_key in addr_lock_keys
-        assert established_args == [
-            (
-                resolved_address,
-                iface._sanitize_address(target_identifier),
-                requested_key,
-            )
-        ]
-    finally:
-        if hasattr(iface, "_shutdown_event"):
-            iface.close()
+    assert cast(object, result) is connected_client
+    requested_key = _addr_key(target_identifier)
+    resolved_key = _addr_key(resolved_address)
+    assert requested_key is not None and resolved_key is not None
+    assert duplicate_checks.count(requested_key) >= 2
+    assert duplicate_checks.count(resolved_key) >= 2
+    assert requested_key in addr_lock_keys
+    assert resolved_key in addr_lock_keys
+    assert established_args == [
+        (
+            resolved_address,
+            iface._sanitize_address(target_identifier),
+            requested_key,
+        )
+    ]
 
 
 def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
@@ -617,22 +593,12 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
         raising=True,
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = target_address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, "device-key", None
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=target_address,
+        device_key="device-key",
+    )
 
     def _finalize_stub(
         _self: BLEInterface,
@@ -708,23 +674,14 @@ def test_connect_preserves_reclaimed_keys_for_newer_client_after_gate_finalizati
         raising=True,
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = target_address
-            iface._connection_alias_key = alias_key
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, device_key, alias_key
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=target_address,
+        device_key=device_key,
+        alias_key=alias_key,
+        connection_alias_key=alias_key,
+    )
 
     def _finalize_stub(
         _self: BLEInterface,
@@ -803,22 +760,12 @@ def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
         lambda key, owner=None: key == "device-key" and owner is iface,
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = target_address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, "device-key", None
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=target_address,
+        device_key="device-key",
+    )
 
     def _finalize_stub(
         _self: BLEInterface,
@@ -888,22 +835,12 @@ def test_connect_restores_requested_identifier_after_name_target_loses_ownership
         lambda key, owner=None: key == "device-key" and owner is iface,
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = target_address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, "device-key", None
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=target_address,
+        device_key="device-key",
+    )
 
     monkeypatch.setattr(
         iface,
@@ -940,6 +877,9 @@ def test_connect_rechecks_ownership_before_publishing_connected(
     released_claims: list[tuple[str | None, ...]] = []
     status_checks = iter([(True, False), (False, False)])
 
+    def _next_status(_iface: BLEInterface, _client: BLEClient) -> tuple[bool, bool]:
+        return next(status_checks, (False, False))
+
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(
@@ -966,29 +906,19 @@ def test_connect_rechecks_ownership_before_publishing_connected(
     monkeypatch.setattr(
         BLELifecycleService,
         "_get_connected_client_status_locked",
-        lambda _iface, _client: next(status_checks),
+        _next_status,
         raising=True,
     )
     monkeypatch.setattr(
         iface, "_has_lost_gate_ownership", lambda *_keys: True, raising=True
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = target_address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, "device-key", None
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=target_address,
+        device_key="device-key",
+    )
 
     monkeypatch.setattr(
         iface,
@@ -1046,22 +976,12 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
         raising=True,
     )
 
-    def _establish_stub(
-        _address: str | None,
-        _normalized_request: str | None,
-        _address_key: str | None,
-        *,
-        pair_on_connect: bool = False,
-        connect_timeout: float | None = None,
-    ) -> tuple[DummyClient, str | None, str | None]:
-        _ = (pair_on_connect, connect_timeout)
-        with iface._state_lock:
-            cast(Any, iface).client = connected_client
-            iface.address = target_address
-            iface._state_manager._reset_to_disconnected()
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
-        return connected_client, "device-key", None
+    _establish_stub = _make_establish_stub(
+        iface,
+        lambda: connected_client,
+        connected_address=target_address,
+        device_key="device-key",
+    )
 
     def _finalize_stub(
         _self: BLEInterface,

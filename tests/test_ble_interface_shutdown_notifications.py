@@ -52,10 +52,19 @@ def test_close_with_timeout_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.close_calls == 1
 
 
-@pytest.mark.parametrize("exc_cls", [BleakError, RuntimeError, OSError])
+@pytest.mark.parametrize(
+    ("exc_cls", "message"),
+    [
+        pytest.param(BleakError, "boom", id="BleakError"),
+        pytest.param(RuntimeError, "boom", id="RuntimeError"),
+        pytest.param(OSError, "boom", id="OSError"),
+        pytest.param(OSError, "Permission denied", id="permission-denied"),
+    ],
+)
 def test_close_handles_errors(
     monkeypatch: pytest.MonkeyPatch,
     exc_cls: type[Exception],
+    message: str,
 ) -> None:
     """Test that close() handles various exception types gracefully."""
     # pub already imported at top as mesh_iface_module.pub
@@ -78,7 +87,7 @@ def test_close_handles_errors(
 
     monkeypatch.setattr(pub, "sendMessage", _capture)
 
-    client = DummyClient(disconnect_exception=exc_cls("boom"))
+    client = DummyClient(disconnect_exception=exc_cls(message))
     iface = _build_interface(monkeypatch, client)
 
     iface.close()
@@ -93,14 +102,6 @@ def test_close_handles_errors(
         )
         == 1
     )
-
-    client = DummyClient(disconnect_exception=OSError("Permission denied"))
-    iface = _build_interface(monkeypatch, client)
-
-    iface.close()
-
-    assert client.disconnect_calls == 1
-    assert client.close_calls == 1
 
 
 @pytest.mark.usefixtures("clear_registry")
@@ -130,19 +131,33 @@ def test_close_clears_connecting_state(
 def test_close_skips_disconnect_when_interpreter_finalizing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """close() should avoid scheduling disconnect coroutines during finalization."""
+    """close() should skip client I/O during finalization without leaking resources."""
+    import meshtastic.interfaces.ble.connection as connection_mod
+
     client = DummyClient()
-    iface = _build_interface(monkeypatch, client)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    try:
+        with monkeypatch.context() as finalizing:
+            sys_attrs = vars(connection_mod.sys).copy()
+            sys_attrs["is_finalizing"] = lambda: True
+            finalizing.setattr(
+                connection_mod,
+                "sys",
+                SimpleNamespace(**sys_attrs),
+                raising=True,
+            )
 
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.connection.sys.is_finalizing",
-        lambda: True,
-    )
+            iface.close()
 
-    iface.close()
+            assert client.disconnect_calls == 0
+            assert client.close_calls == 0
+    finally:
+        # The interpreter-finalizing branch intentionally skips client I/O.
+        # Clean the test double after the scoped module patch is restored.
+        iface._client_manager._safe_close_client(client)
 
-    assert client.disconnect_calls == 0
-    assert client.close_calls == 0
+    assert client.disconnect_calls == 1
+    assert client.close_calls == 1
 
 
 def test_close_closes_discovery_manager_before_receive_thread_join(
@@ -193,29 +208,28 @@ def test_close_clears_ble_threads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Closing the interface should leave no BLE* threads running."""
     # threading already imported at top
 
+    baseline_threads = set(threading.enumerate())
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
 
     iface.close()
 
-    # Poll for thread cleanup with a reasonable timeout
-    max_wait_time = 1.0  # Maximum time to wait for thread cleanup
-    poll_interval = 0.05  # Time between checks
+    # Poll only for BLE threads created by this interface. Other tests and
+    # process-wide singleton workers are outside this test's ownership.
+    max_wait_time = 1.0
+    poll_interval = 0.05
     deadline = time.monotonic() + max_wait_time
-    lingering = []  # Initialize to ensure it's defined outside the loop
+    lingering: list[str] = []
 
     while time.monotonic() < deadline:
-        # Check for specific BLE interface threads that should be cleaned up
-        # Exclude singleton threads that persist across interface instances
         lingering = [
             thread.name
             for thread in threading.enumerate()
-            if thread.name.startswith("BLE")
-            and thread.name not in ("BLEClient", "BLECoroutineRunner")
+            if thread not in baseline_threads and thread.name.startswith("BLE")
         ]
 
         if not lingering:
-            break  # No lingering threads found
+            break
 
         time.sleep(poll_interval)
 
@@ -342,6 +356,7 @@ def test_bleak_error_transient_retry_logic(
 
     assert "Transient BLE read error, retrying" in caplog.text
     assert "Fatal BLE read error after retries" in caplog.text
+    assert client.read_count == ble_mod.BLEConfig.TRANSIENT_READ_MAX_RETRIES + 1
     assert close_called.is_set()
 
     # Clean up
@@ -451,14 +466,36 @@ class _ClientWithCallbacks(DummyClient):
     """Reusable notification test double that captures callback and notify registrations."""
 
     def __init__(self) -> None:
+        """Initialize callback and notification-registration capture state."""
         super().__init__()
         self.callbacks: dict[str, Callable[[Any, bytes], None]] = {}
         self.start_notify_calls: dict[str, int] = {}
 
     def has_characteristic(self, uuid: str) -> bool:
+        """Return whether the notification UUID is supported by the double.
+
+        Parameters
+        ----------
+        uuid : str
+            Characteristic UUID queried by notification registration.
+
+        Returns
+        -------
+        bool
+            ``True`` for the three notification characteristics under test.
+        """
         return uuid in {LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID}
 
     def start_notify(self, *args: object, **kwargs: object) -> None:
+        """Record a notification callback registration.
+
+        Parameters
+        ----------
+        *args : object
+            Positional notification arguments; the first two are UUID and callback.
+        **kwargs : object
+            Additional notification options, accepted for interface compatibility.
+        """
         _ = kwargs
         if len(args) >= 2:
             uuid = str(args[0])
@@ -863,17 +900,16 @@ def test_reconnect_scheduler_tracks_threads() -> None:
             """
             thread.started = True
 
-    worker = SimpleNamespace(
-        attempt_reconnect_loop=lambda *_args, **_kwargs: None,
+    interface_stub = SimpleNamespace(
         _is_connection_closing=False,
         _can_initiate_connection=True,
     )
     coordinator = StubCoordinator()
-    scheduler = ReconnectScheduler(  # noqa: PLR0913  # type: ignore[arg-type]
+    scheduler = ReconnectScheduler(
         state_manager,
         state_manager._lock,
         coordinator,  # type: ignore[arg-type]
-        worker,  # type: ignore[arg-type]
+        interface_stub,  # type: ignore[arg-type]
     )
 
     assert scheduler._schedule_reconnect(True, shutdown_event) is True
@@ -886,7 +922,7 @@ def test_reconnect_scheduler_tracks_threads() -> None:
     assert state_manager._transition_to(ConnectionState.CONNECTING) is True
     assert state_manager._transition_to(ConnectionState.CONNECTED) is True
     assert state_manager._transition_to(ConnectionState.DISCONNECTING) is True
-    worker._is_connection_closing = True
+    interface_stub._is_connection_closing = True
     assert scheduler._schedule_reconnect(True, shutdown_event) is False
 
 

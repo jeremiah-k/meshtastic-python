@@ -43,7 +43,9 @@ from tests._ble_interface_core_support import (
     SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG,
     SAFE_EXECUTE_UNEXPECTED_ERROR_MSG,
     _FakeDiscoveryClient,
+    _ImmediateThread,
     _create_ble_device,
+    _make_send_message_recorder,
 )
 
 # Import common fixtures
@@ -446,30 +448,12 @@ def test_publish_connection_status_runs_async_fallback_when_queuework_unconfigur
 
     sent: list[tuple[str, object, bool]] = []
 
-    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
-        sent.append((topic, interface, connected))
-
     monkeypatch.setattr(
         mesh_iface_module,
         "pub",
-        SimpleNamespace(sendMessage=_send_message),
+        SimpleNamespace(sendMessage=_make_send_message_recorder(sent)),
         raising=True,
     )
-
-    class _ImmediateThread:
-        def __init__(
-            self,
-            *,
-            target: Callable[[], None],
-            name: str | None = None,
-            daemon: bool | None = None,
-        ) -> None:
-            self._target = target
-            self._name = name
-            self._daemon = daemon
-
-        def start(self) -> None:
-            self._target()
 
     monkeypatch.setattr(
         compatibility_service_mod,
@@ -522,30 +506,12 @@ def test_publish_connection_status_runs_async_fallback_when_enqueue_raises(
 
     sent: list[tuple[str, object, bool]] = []
 
-    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
-        sent.append((topic, interface, connected))
-
     monkeypatch.setattr(
         mesh_iface_module,
         "pub",
-        SimpleNamespace(sendMessage=_send_message),
+        SimpleNamespace(sendMessage=_make_send_message_recorder(sent)),
         raising=True,
     )
-
-    class _ImmediateThread:
-        def __init__(
-            self,
-            *,
-            target: Callable[[], None],
-            name: str | None = None,
-            daemon: bool | None = None,
-        ) -> None:
-            self._target = target
-            self._name = name
-            self._daemon = daemon
-
-        def start(self) -> None:
-            self._target()
 
     monkeypatch.setattr(
         compatibility_service_mod,
@@ -595,30 +561,12 @@ def test_publish_connection_status_runs_async_fallback_when_publishing_thread_mi
 
     sent: list[tuple[str, object, bool]] = []
 
-    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
-        sent.append((topic, interface, connected))
-
     monkeypatch.setattr(
         mesh_iface_module,
         "pub",
-        SimpleNamespace(sendMessage=_send_message),
+        SimpleNamespace(sendMessage=_make_send_message_recorder(sent)),
         raising=True,
     )
-
-    class _ImmediateThread:
-        def __init__(
-            self,
-            *,
-            target: Callable[[], None],
-            name: str | None = None,
-            daemon: bool | None = None,
-        ) -> None:
-            self._target = target
-            self._name = name
-            self._daemon = daemon
-
-        def start(self) -> None:
-            self._target()
 
     monkeypatch.setattr(
         compatibility_service_mod,
@@ -654,13 +602,10 @@ def test_publish_connection_status_skips_when_publishing_thread_missing_during_s
 
     sent: list[tuple[str, object, bool]] = []
 
-    def _send_message(topic: str, *, interface: object, connected: bool) -> None:
-        sent.append((topic, interface, connected))
-
     monkeypatch.setattr(
         mesh_iface_module,
         "pub",
-        SimpleNamespace(sendMessage=_send_message),
+        SimpleNamespace(sendMessage=_make_send_message_recorder(sent)),
         raising=True,
     )
 
@@ -1051,14 +996,19 @@ def test_finalize_discovery_close_task_discards_task_and_logs_exception(
     with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
         discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS.add(cast(Any, task))
 
-    with caplog.at_level(logging.DEBUG):
-        discovery_mod._finalize_discovery_close_task(task)  # type: ignore[arg-type]
+    try:
+        with caplog.at_level(logging.DEBUG):
+            discovery_mod._finalize_discovery_close_task(task)  # type: ignore[arg-type]
 
-    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
-        assert cast(Any, task) not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
-    assert (
-        "Async close/disconnect failed for discarded discovery client." in caplog.text
-    )
+        with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+            assert cast(Any, task) not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+        assert (
+            "Async close/disconnect failed for discarded discovery client."
+            in caplog.text
+        )
+    finally:
+        with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+            discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS.discard(cast(Any, task))
 
 
 def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
@@ -1124,13 +1074,17 @@ def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
 
     _close_discovery_client_best_effort(_Client())
 
-    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
-        assert cast(Any, task) in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
-    assert len(task._callbacks) == 1
+    try:
+        with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+            assert cast(Any, task) in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+        assert len(task._callbacks) == 1
 
-    task._callbacks[0](task)
-    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
-        assert cast(Any, task) not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+        task._callbacks[0](task)
+        with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+            assert cast(Any, task) not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+    finally:
+        with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+            discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS.discard(cast(Any, task))
 
 
 def test_discovery_manager_raises_when_factory_returns_none() -> None:
