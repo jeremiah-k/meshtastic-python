@@ -107,9 +107,9 @@ def test_cli_invalid_channel_psk_exits_without_writing(
 
     assert exc_info.value.code == 1
     node.writeChannel.assert_not_called()
-    _out, err = capsys.readouterr()
+    out, err = capsys.readouterr()
     assert "Invalid channel PSK: Invalid hex PSK" in err
-    assert "Traceback" not in err
+    assert "Traceback" not in out + err
 
 
 @pytest.mark.unit
@@ -156,3 +156,17 @@ def test_set_pref_valid_enum_still_uses_symbolic_name() -> None:
 
     assert setPref(config, "lora.region", "US") is True
     assert config.lora.region == config_pb2.Config.LoRaConfig.RegionCode.US
+
+@pytest.mark.unit
+def test_set_pref_redacts_secret_values_in_validation_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Invalid secret-bearing values must not be echoed in diagnostics."""
+    config = localonly_pb2.LocalConfig()
+    secret = "definitely-secret-not-bytes"
+
+    assert setPref(config, "security.private_key", secret) is False
+
+    out, err = capsys.readouterr()
+    assert "Invalid value <redacted> for security.private_key" in out
+    assert secret not in out + err

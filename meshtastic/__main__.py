@@ -178,6 +178,16 @@ class _PreferenceValueError(ValueError):
     """Raised internally when CLI preference assignment has an invalid scalar value."""
 
 
+@contextlib.contextmanager
+def _fatal_preference_value_errors() -> Iterator[None]:
+    """Temporarily make scalar preference validation failures fatal to the CLI."""
+    token = _SET_PREF_VALUE_ERRORS_FATAL.set(True)
+    try:
+        yield
+    finally:
+        _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
+
+
 # Map dotted preference paths to the protobuf enum that defines their flags.
 # These fields are stored as uint32 bitmasks in the protobuf but have an
 # associated enum that names the individual flags. Add new bitfield-enum
@@ -1517,8 +1527,9 @@ def _assign_scalar_pref_value(
                 return True
             except (TypeError, ValueError, OverflowError):
                 pass
+    display_value = _redact_pref_value(field_path, repr(raw_value))
     message = (
-        f"Invalid value {raw_value!r} for {field_path}; "
+        f"Invalid value {display_value} for {field_path}; "
         f"expected {_protobuf_field_type_label(field)}."
     )
     if _SET_PREF_VALUE_ERRORS_FATAL.get():
@@ -1731,13 +1742,11 @@ def _handle_set_command(
             if config_type is not None:
                 if len(config.ListFields()) == 0:
                     node.requestConfig(config_type)
-                token = _SET_PREF_VALUE_ERRORS_FATAL.set(True)
                 try:
-                    found = setPref(config, normalized_pref_name, pref_item[1])
+                    with _fatal_preference_value_errors():
+                        found = setPref(config, normalized_pref_name, pref_item[1])
                 except _PreferenceValueError as exc:
                     _cli_exit(str(exc), 1)
-                finally:
-                    _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
                 if found:
                     any_found = True
                     fields.add(field)
