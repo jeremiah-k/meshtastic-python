@@ -169,6 +169,14 @@ logger = logging.getLogger(__name__)
 _CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "configure_preflight_mode", default=False
 )
+_SET_PREF_VALUE_ERRORS_FATAL: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "set_pref_value_errors_fatal", default=False
+)
+
+
+class _PreferenceValueError(ValueError):
+    """Raised internally when CLI preference assignment has an invalid scalar value."""
+
 
 # Map dotted preference paths to the protobuf enum that defines their flags.
 # These fields are stored as uint32 bitmasks in the protobuf but have an
@@ -1464,6 +1472,61 @@ def _resolve_pref(config: Any, comp_name: str) -> bool:
     return config_type is not None
 
 
+def _protobuf_field_type_label(field: FieldDescriptor) -> str:
+    """Return a concise user-facing type label for a protobuf field."""
+    if field.type in {
+        FieldDescriptor.TYPE_INT32,
+        FieldDescriptor.TYPE_INT64,
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_UINT64,
+        FieldDescriptor.TYPE_SINT32,
+        FieldDescriptor.TYPE_SINT64,
+        FieldDescriptor.TYPE_FIXED32,
+        FieldDescriptor.TYPE_FIXED64,
+        FieldDescriptor.TYPE_SFIXED32,
+        FieldDescriptor.TYPE_SFIXED64,
+    }:
+        return "integer"
+    if field.type in {FieldDescriptor.TYPE_FLOAT, FieldDescriptor.TYPE_DOUBLE}:
+        return "number"
+    if field.type == FieldDescriptor.TYPE_BOOL:
+        return "boolean"
+    if field.type == FieldDescriptor.TYPE_BYTES:
+        return "bytes (hex/base64)"
+    if field.type == FieldDescriptor.TYPE_STRING:
+        return "string"
+    return "compatible value"
+
+
+def _assign_scalar_pref_value(
+    target: Any,
+    field: FieldDescriptor,
+    value: Any,
+    *,
+    field_path: str,
+    raw_value: Any,
+) -> bool:
+    """Assign one non-repeated protobuf field without leaking conversion errors."""
+    try:
+        setattr(target, field.name, value)
+        return True
+    except (TypeError, ValueError, OverflowError):
+        if field.type == FieldDescriptor.TYPE_STRING and not isinstance(value, str):
+            try:
+                setattr(target, field.name, str(value))
+                return True
+            except (TypeError, ValueError, OverflowError):
+                pass
+    message = (
+        f"Invalid value {raw_value!r} for {field_path}; "
+        f"expected {_protobuf_field_type_label(field)}."
+    )
+    if _SET_PREF_VALUE_ERRORS_FATAL.get():
+        raise _PreferenceValueError(message)
+    print(message)
+    return False
+
+
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     """Set a protobuf configuration or channel field identified by a dot-separated path.
 
@@ -1549,17 +1612,21 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             return False
 
     # repeating fields need to be handled with append, not setattr
+    assignment_ok = True
+    print_assignment = True
     if not _is_repeated_field(pref):
-        try:
-            if config_type.message_type is not None:
-                config_values = getattr(config_part, config_type.name)
-                setattr(config_values, pref.name, val)
-            else:
-                setattr(config_part, snake_name, val)
-        except TypeError:
-            # The setter didn't like our arg type guess try again as a string
-            config_values = getattr(config_part, config_type.name)
-            setattr(config_values, pref.name, str(val))
+        target = (
+            getattr(config_part, config_type.name)
+            if config_type.message_type is not None
+            else config_part
+        )
+        assignment_ok = _assign_scalar_pref_value(
+            target,
+            pref,
+            val,
+            field_path=comp_name,
+            raw_value=raw_val,
+        )
     elif isinstance(val, list):
         new_vals = [meshtastic.util.fromStr(x) for x in val]
         config_values = getattr(config, config_type.name)
@@ -1583,14 +1650,17 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             if val not in cur_vals:
                 cur_vals.append(val)
             getattr(config_values, pref.name)[:] = cur_vals
-        return True
+        print_assignment = False
 
-    prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
-    if not _CONFIGURE_PREFLIGHT_MODE.get():
-        _cli_print(f"Set {prefix}{uni_name} to {display_value}")
+    if assignment_ok and print_assignment:
+        prefix = (
+            f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
+        )
+        display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
+        if not _CONFIGURE_PREFLIGHT_MODE.get():
+            _cli_print(f"Set {prefix}{uni_name} to {display_value}")
 
-    return True
+    return assignment_ok
 
 
 def _handle_ota_update(
@@ -1661,7 +1731,13 @@ def _handle_set_command(
             if config_type is not None:
                 if len(config.ListFields()) == 0:
                     node.requestConfig(config_type)
-                found = setPref(config, normalized_pref_name, pref_item[1])
+                token = _SET_PREF_VALUE_ERRORS_FATAL.set(True)
+                try:
+                    found = setPref(config, normalized_pref_name, pref_item[1])
+                except _PreferenceValueError as exc:
+                    _cli_exit(str(exc), 1)
+                finally:
+                    _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
                 if found:
                     any_found = True
                     fields.add(field)
@@ -2720,7 +2796,10 @@ def onConnected(interface: MeshInterface) -> None:
             for pref in args.ch_set or []:
                 if pref[0] == "psk":
                     found = True
-                    ch.settings.psk = meshtastic.util.fromPSK(pref[1])
+                    try:
+                        ch.settings.psk = meshtastic.util.fromPSK(pref[1])
+                    except ValueError as exc:
+                        _cli_exit(f"Invalid channel PSK: {exc}", 1)
                 else:
                     found = setPref(ch.settings, pref[0], pref[1])
                 if not found:
