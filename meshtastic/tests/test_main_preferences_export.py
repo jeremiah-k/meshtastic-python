@@ -1,6 +1,6 @@
 """Meshtastic unit tests for __main__.py."""
 
-# pylint: disable=C0302,W0613,R0917
+# pylint: disable=W0613,R0917
 
 import sys
 from pathlib import Path
