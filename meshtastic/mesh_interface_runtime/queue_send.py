@@ -344,7 +344,9 @@ class _QueueSendRuntime:
                 with self._lock:
                     self._prune_awaiting_queue_status_ids_locked(time.monotonic())
                     self._claimed_queue_status_by_id.pop(packet_id, None)
-                    should_track_reply = self._queue_status_seen or uses_capacity is False
+                    should_track_reply = (
+                        self._queue_status_seen or uses_capacity is False
+                    )
                     if should_track_reply:
                         self._awaiting_queue_status_ids[packet_id] = time.monotonic()
                     else:

@@ -108,6 +108,7 @@ def test_nodes_show_fields_accepts_schema_fields_absent_from_node_database(
         True, ["user.id", "environmentMetrics.temperature"]
     )
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @pytest.mark.parametrize("nodes_by_num", [None, {}])

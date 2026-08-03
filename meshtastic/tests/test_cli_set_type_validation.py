@@ -145,6 +145,7 @@ def test_set_pref_valid_enum_still_uses_symbolic_name() -> None:
     assert setPref(config, "lora.region", "US") is True
     assert config.lora.region == config_pb2.Config.LoRaConfig.RegionCode.US
 
+
 @pytest.mark.unit
 def test_set_pref_redacts_secret_values_in_validation_errors(
     capsys: pytest.CaptureFixture[str],
