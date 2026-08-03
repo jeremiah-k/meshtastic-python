@@ -2869,6 +2869,7 @@ def onConnected(interface: MeshInterface) -> None:
             # leave earlier values partially mutated in the local cache.
             pending_settings = type(ch.settings)()
             pending_settings.CopyFrom(ch.settings)
+            channel_update_valid = True
             for pref in args.ch_set or []:
                 if pref[0] == "psk":
                     try:
@@ -2878,7 +2879,8 @@ def onConnected(interface: MeshInterface) -> None:
                 else:
                     if not _resolve_pref(pending_settings, pref[0]):
                         _print_channel_field_choices(pending_settings, pref[0])
-                        _cli_exit("Channel setting was not applied.", 1)
+                        channel_update_valid = False
+                        break
                     try:
                         with _fatal_preference_value_errors():
                             found = setPref(pending_settings, pref[0], pref[1])
@@ -2889,20 +2891,21 @@ def onConnected(interface: MeshInterface) -> None:
 
                 enable = True  # If we set any pref, assume the user wants to enable the channel
 
-            if args.ch_set:
-                ch.settings.CopyFrom(pending_settings)
+            if channel_update_valid:
+                if args.ch_set:
+                    ch.settings.CopyFrom(pending_settings)
 
-            if enable:
-                ch.role = (
-                    channel_pb2.Channel.Role.PRIMARY
-                    if (_idx == 0)
-                    else channel_pb2.Channel.Role.SECONDARY
-                )
-            else:
-                ch.role = channel_pb2.Channel.Role.DISABLED
+                if enable:
+                    ch.role = (
+                        channel_pb2.Channel.Role.PRIMARY
+                        if (_idx == 0)
+                        else channel_pb2.Channel.Role.SECONDARY
+                    )
+                else:
+                    ch.role = channel_pb2.Channel.Role.DISABLED
 
-            _cli_print("Writing modified channels to device")
-            node.writeChannel(_idx)
+                _cli_print("Writing modified channels to device")
+                node.writeChannel(_idx)
 
         if args.get_canned_message:
             closeNow = True

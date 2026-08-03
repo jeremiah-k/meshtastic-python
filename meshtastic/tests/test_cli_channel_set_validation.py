@@ -66,21 +66,24 @@ def test_invalid_non_psk_channel_value_exits_without_writing(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_unknown_channel_field_exits_without_writing(
+def test_unknown_channel_field_reports_choices_without_writing(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """Unknown fields preserve the historical nonfatal choices-only contract."""
     interface, node = _interface_with_channels()
+    original_channel = channel_pb2.Channel()
+    original_channel.CopyFrom(node.channels[1])
 
-    with pytest.raises(SystemExit) as exc_info:
-        _run_channel_set(monkeypatch, interface, "not_a_channel_field", "1")
+    _run_channel_set(monkeypatch, interface, "not_a_channel_field", "1")
 
-    assert exc_info.value.code == 1
     node.writeChannel.assert_not_called()
+    assert node.channels[1] == original_channel
     out, err = capsys.readouterr()
     assert "does not have an attribute not_a_channel_field" in out
     assert "Choices are..." in out
-    assert "Channel setting was not applied." in err
+    assert "Writing modified channels to device" not in out
+    assert err == ""
 
 
 @pytest.mark.unit
@@ -128,3 +131,43 @@ def test_channel_set_batch_does_not_partially_mutate_on_later_failure(
 
     assert node.channels[1].settings.uplink_enabled is original
     node.writeChannel.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_channel_set_batch_does_not_mutate_on_later_unknown_field(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A later unknown field cancels an otherwise valid channel update atomically."""
+    interface, node = _interface_with_channels()
+    original_channel = channel_pb2.Channel()
+    original_channel.CopyFrom(node.channels[1])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--ch-index",
+            "1",
+            "--ch-set",
+            "uplink_enabled",
+            "true",
+            "--ch-set",
+            "not_a_channel_field",
+            "1",
+        ],
+    )
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        main()
+
+    node.writeChannel.assert_not_called()
+    assert node.channels[1] == original_channel
+    out, err = capsys.readouterr()
+    assert "does not have an attribute not_a_channel_field" in out
+    assert "Choices are..." in out
+    assert "Writing modified channels to device" not in out
+    assert err == ""
