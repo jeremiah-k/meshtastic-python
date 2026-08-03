@@ -13,10 +13,10 @@ import pytest
 import yaml
 
 import meshtastic.__main__ as main_module
-from meshtastic.tests.test_main import (
-    _build_configure_interface,
-    _patch_fast_monotonic,
-    _run_main_configure_file,
+from meshtastic.tests._main_legacy_support import (
+    build_configure_interface as _build_configure_interface,
+    patch_fast_monotonic as _patch_fast_monotonic,
+    run_main_configure_file as _run_main_configure_file,
 )
 
 # from ..radioconfig_pb2 import UserPreferences
