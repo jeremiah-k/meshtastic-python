@@ -265,6 +265,7 @@ def test_sent_packet_without_queue_status_does_not_track_awaiting_correlation() 
     )
 
     assert runtime._awaiting_queue_status_ids == {}
+    assert 654 not in runtime._packet_uses_capacity_by_id
 
 
 @pytest.mark.unit
@@ -336,6 +337,7 @@ def test_expired_awaiting_queue_status_id_is_treated_as_unexpected(
     runtime._correlate_queue_status_reply(queue_status_reply)
 
     assert 777 not in runtime._awaiting_queue_status_ids
+    assert 777 not in runtime._packet_uses_capacity_by_id
     assert harness.queue[777] is False
 
 
