@@ -68,34 +68,11 @@ _FROM_RADIO_BRANCHES: tuple[
 )
 
 # Module-level constants
-LOCAL_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
-    "device",
-    "position",
-    "power",
-    "network",
-    "display",
-    "lora",
-    "bluetooth",
-    "security",
-    "sessionkey",
-    "device_ui",
+LOCAL_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = tuple(
+    field.name for field in config_pb2.Config.DESCRIPTOR.fields
 )
-MODULE_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = (
-    "mqtt",
-    "serial",
-    "external_notification",
-    "store_forward",
-    "range_test",
-    "telemetry",
-    "canned_message",
-    "audio",
-    "remote_hardware",
-    "neighbor_info",
-    "detection_sensor",
-    "ambient_lighting",
-    "paxcounter",
-    "statusmessage",
-    "traffic_management",
+MODULE_CONFIG_FROM_RADIO_FIELDS: tuple[str, ...] = tuple(
+    field.name for field in module_config_pb2.ModuleConfig.DESCRIPTOR.fields
 )
 DECODE_FAILED_PREFIX = "decode-failed: "
 
