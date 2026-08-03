@@ -10,6 +10,7 @@ from google.protobuf.message import DecodeError
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime.receive_pipeline import ReceivePipeline
 from meshtastic.serial_interface import (
+    SERIAL_BOOTSTRAP_DECODE_ERROR_REASON,
     SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD,
     SerialInterface,
 )
@@ -28,38 +29,57 @@ def test_receive_pipeline_records_malformed_bootstrap_frame() -> None:
 
 
 @pytest.mark.unit
-def test_serial_wait_aborts_after_repeated_bootstrap_decode_errors() -> None:
+def test_receive_pipeline_honors_instance_bootstrap_error_recorder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed-frame accounting should respect per-instance overrides."""
+    with MeshInterface(noProto=True) as interface:
+        recorder = MagicMock(return_value=3)
+        monkeypatch.setattr(interface, "_record_bootstrap_decode_error", recorder)
+        pipeline = ReceivePipeline(interface)
+
+        with pytest.raises(DecodeError):
+            pipeline._parse_from_radio_bytes(b"\x80")  # noqa: SLF001
+
+        recorder.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_serial_wait_aborts_after_repeated_bootstrap_decode_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     interface = object.__new__(SerialInterface)
     interface._wantExit = False
     interface.stream = SimpleNamespace(is_open=True)
     interface._rxThread = MagicMock()
     interface._rxThread.is_alive.return_value = True
-    interface._bootstrap_decode_error_count_snapshot = MagicMock(
-        return_value=SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD
-    )
+    snapshot = MagicMock(return_value=SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD)
+    monkeypatch.setattr(interface, "_bootstrap_decode_error_count_snapshot", snapshot)
 
     reason = interface._connect_wait_should_abort()
 
     assert reason is not None
-    assert "Corrupt protocol frames during serial connection bootstrap" in reason
+    assert SERIAL_BOOTSTRAP_DECODE_ERROR_REASON in reason
+    snapshot.assert_called_once_with()
 
 
 @pytest.mark.unit
-def test_serial_wait_prioritizes_transport_shutdown_over_decode_retry() -> None:
+def test_serial_wait_prioritizes_transport_shutdown_over_decode_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     interface = object.__new__(SerialInterface)
     interface._wantExit = True
     interface.stream = SimpleNamespace(is_open=True)
     interface._rxThread = MagicMock()
     interface._rxThread.is_alive.return_value = True
-    interface._bootstrap_decode_error_count_snapshot = MagicMock(
-        return_value=SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD
-    )
+    snapshot = MagicMock(return_value=SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD)
+    monkeypatch.setattr(interface, "_bootstrap_decode_error_count_snapshot", snapshot)
 
     assert (
         interface._connect_wait_should_abort()
         == "Connection cancelled while waiting for completion"
     )
-    interface._bootstrap_decode_error_count_snapshot.assert_not_called()
+    snapshot.assert_not_called()
 
 
 @pytest.mark.unit

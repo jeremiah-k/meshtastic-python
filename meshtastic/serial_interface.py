@@ -60,6 +60,11 @@ SERIAL_CONNECT_MAX_ATTEMPTS = 12
 SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD = 2
 """Malformed bootstrap frames tolerated before restarting the serial handshake."""
 
+SERIAL_BOOTSTRAP_DECODE_ERROR_REASON = (
+    "Corrupt protocol frames during serial connection bootstrap"
+)
+"""Stable error prefix used to classify malformed-frame bootstrap retries."""
+
 SERIAL_PORT_PATH_EMPTY_ERROR = (
     "Serial port path cannot be empty; pass None to auto-detect."
 )
@@ -364,7 +369,7 @@ class SerialInterface(StreamInterface):
         decode_errors = self._bootstrap_decode_error_count_snapshot()
         if decode_errors >= SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD:
             return (
-                "Corrupt protocol frames during serial connection bootstrap "
+                f"{SERIAL_BOOTSTRAP_DECODE_ERROR_REASON} "
                 f"({decode_errors} decode errors)"
             )
         return None
@@ -387,8 +392,7 @@ class SerialInterface(StreamInterface):
                 or "Connection lost while waiting for connection completion" in message
                 or "No serial Meshtastic device detected for reconnect." in message
                 or "does not exist (device disconnected)" in message
-                or "Corrupt protocol frames during serial connection bootstrap"
-                in message
+                or SERIAL_BOOTSTRAP_DECODE_ERROR_REASON in message
             )
         return False
 
