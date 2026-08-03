@@ -63,8 +63,10 @@ def _runtime(
             queue_wait_delay_seconds=queue_wait_delay_seconds,
             queue_wait_timeout_seconds=queue_wait_timeout_seconds,
         )
-    if classifier is None:
-        def classifier(message: mesh_pb2.ToRadio) -> bool:
+    if classifier is not None:
+        _selected_classifier = classifier
+    else:
+        def _selected_classifier(message: mesh_pb2.ToRadio) -> bool:
             return message.packet.to != local_num
 
     return _QueueSendRuntime(
@@ -74,7 +76,7 @@ def _runtime(
         set_queue_status=harness.set_queue_status,
         queue_wait_delay_seconds=queue_wait_delay_seconds,
         queue_wait_timeout_seconds=queue_wait_timeout_seconds,
-        uses_tx_queue_capacity=classifier,
+        uses_tx_queue_capacity=_selected_classifier,
     )
 
 
