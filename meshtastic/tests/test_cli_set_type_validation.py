@@ -1,26 +1,14 @@
 """CLI regression tests for invalid preference and channel value types."""
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from meshtastic.__main__ import main, setPref
-from meshtastic.node import Node
-from meshtastic.protobuf import channel_pb2, config_pb2, localonly_pb2
-from meshtastic.tcp_interface import TCPInterface
+from meshtastic.protobuf import config_pb2, localonly_pb2
 
-
-def _tcp_interface_with_node() -> tuple[MagicMock, MagicMock]:
-    interface = MagicMock(autospec=TCPInterface)
-    interface.__enter__ = MagicMock(return_value=interface)
-    interface.__exit__ = MagicMock(return_value=None)
-    node = MagicMock(autospec=Node)
-    node.localConfig = localonly_pb2.LocalConfig()
-    node.moduleConfig = localonly_pb2.LocalModuleConfig()
-    node.channels = [channel_pb2.Channel(index=0), channel_pb2.Channel(index=1)]
-    interface.getNode.return_value = node
-    return interface, node
+from .cli_validation_test_helpers import _mock_tcp_interface_with_channels
 
 
 @pytest.mark.unit
@@ -66,7 +54,7 @@ def test_cli_invalid_integer_set_exits_without_writing(
             "not_a_number",
         ],
     )
-    interface, node = _tcp_interface_with_node()
+    interface, node = _mock_tcp_interface_with_channels()
 
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
         with pytest.raises(SystemExit) as exc_info:
@@ -99,7 +87,7 @@ def test_cli_invalid_channel_psk_exits_without_writing(
             "0xNOTHEX",
         ],
     )
-    interface, node = _tcp_interface_with_node()
+    interface, node = _mock_tcp_interface_with_channels()
 
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
         with pytest.raises(SystemExit) as exc_info:
@@ -141,7 +129,7 @@ def test_cli_valid_hex_channel_psk_still_writes(
             "0x1a1a",
         ],
     )
-    interface, node = _tcp_interface_with_node()
+    interface, node = _mock_tcp_interface_with_channels()
 
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
         main()
@@ -207,7 +195,7 @@ def test_cli_malformed_encoded_value_exits_without_writing(
             malformed,
         ],
     )
-    interface, node = _tcp_interface_with_node()
+    interface, node = _mock_tcp_interface_with_channels()
 
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
         with pytest.raises(SystemExit) as exc_info:
@@ -283,7 +271,7 @@ def test_cli_invalid_repeated_value_exits_without_mutation_or_write(
             "not-a-number",
         ],
     )
-    interface, node = _tcp_interface_with_node()
+    interface, node = _mock_tcp_interface_with_channels()
     node.localConfig.lora.ignore_incoming.append(123)
 
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):

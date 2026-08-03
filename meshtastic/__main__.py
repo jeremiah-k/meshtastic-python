@@ -172,9 +172,6 @@ _CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar
 _SET_PREF_VALUE_ERRORS_FATAL: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "set_pref_value_errors_fatal", default=False
 )
-_PREF_VALIDATION_REPORTER: contextvars.ContextVar[Callable[[str], None] | None] = (
-    contextvars.ContextVar("pref_validation_reporter", default=None)
-)
 
 
 class _PreferenceValueError(ValueError):
@@ -332,23 +329,15 @@ def _cli_print(message: str, *, force: bool = False) -> None:
 
 
 def _report_pref_validation(message: str) -> None:
-    """Route preference validation output through the active validation context.
+    """Print preference validation output through the shared CLI path.
 
     Parameters
     ----------
     message : str
         User-facing validation diagnostic.
 
-    Notes
-    -----
     Configure preflight intentionally suppresses low-level duplicate diagnostics.
-    Other preflight callers may install a context-local reporter to aggregate the
-    messages and surface them after the full batch has been validated.
     """
-    reporter = _PREF_VALIDATION_REPORTER.get()
-    if reporter is not None:
-        reporter(message)
-        return
     _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
 
 
@@ -2989,6 +2978,11 @@ def onConnected(interface: MeshInterface) -> None:
 
                 _cli_print("Writing modified channels to device")
                 node.writeChannel(_idx)
+            else:
+                _cli_exit(
+                    "Warning: Unknown channel setting name. No changes were made.",
+                    1,
+                )
 
         if args.get_canned_message:
             closeNow = True

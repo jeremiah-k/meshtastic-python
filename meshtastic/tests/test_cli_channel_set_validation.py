@@ -6,21 +6,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic.__main__ import main
-from meshtastic.node import Node
-from meshtastic.protobuf import channel_pb2, localonly_pb2
-from meshtastic.tcp_interface import TCPInterface
+from meshtastic.protobuf import channel_pb2
 
-
-def _interface_with_channels() -> tuple[MagicMock, MagicMock]:
-    interface = MagicMock(autospec=TCPInterface)
-    interface.__enter__ = MagicMock(return_value=interface)
-    interface.__exit__ = MagicMock(return_value=None)
-    node = MagicMock(autospec=Node)
-    node.localConfig = localonly_pb2.LocalConfig()
-    node.moduleConfig = localonly_pb2.LocalModuleConfig()
-    node.channels = [channel_pb2.Channel(index=0), channel_pb2.Channel(index=1)]
-    interface.getNode.return_value = node
-    return interface, node
+from .cli_validation_test_helpers import _mock_tcp_interface_with_channels
 
 
 def _run_channel_set(
@@ -51,7 +39,7 @@ def test_invalid_non_psk_channel_value_exits_without_writing(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    interface, node = _interface_with_channels()
+    interface, node = _mock_tcp_interface_with_channels()
 
     with pytest.raises(SystemExit) as exc_info:
         _run_channel_set(monkeypatch, interface, "uplink_enabled", "not-a-boolean")
@@ -70,20 +58,22 @@ def test_unknown_channel_field_reports_choices_without_writing(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Unknown fields preserve the historical nonfatal choices-only contract."""
-    interface, node = _interface_with_channels()
+    """Unknown fields report choices and fail without writing."""
+    interface, node = _mock_tcp_interface_with_channels()
     original_channel = channel_pb2.Channel()
     original_channel.CopyFrom(node.channels[1])
 
-    _run_channel_set(monkeypatch, interface, "not_a_channel_field", "1")
+    with pytest.raises(SystemExit) as exc_info:
+        _run_channel_set(monkeypatch, interface, "not_a_channel_field", "1")
 
+    assert exc_info.value.code == 1
     node.writeChannel.assert_not_called()
     assert node.channels[1] == original_channel
     out, err = capsys.readouterr()
     assert "does not have an attribute not_a_channel_field" in out
     assert "Choices are..." in out
     assert "Writing modified channels to device" not in out
-    assert err == ""
+    assert "Unknown channel setting name. No changes were made." in err
 
 
 @pytest.mark.unit
@@ -91,7 +81,7 @@ def test_unknown_channel_field_reports_choices_without_writing(
 def test_valid_non_psk_channel_value_still_writes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    interface, node = _interface_with_channels()
+    interface, node = _mock_tcp_interface_with_channels()
 
     _run_channel_set(monkeypatch, interface, "uplink_enabled", "true")
 
@@ -105,7 +95,7 @@ def test_channel_set_batch_does_not_partially_mutate_on_later_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A rejected later entry must leave earlier channel values untouched."""
-    interface, node = _interface_with_channels()
+    interface, node = _mock_tcp_interface_with_channels()
     original = node.channels[1].settings.uplink_enabled
     monkeypatch.setattr(
         sys,
@@ -140,7 +130,7 @@ def test_channel_set_batch_does_not_mutate_on_later_unknown_field(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A later unknown field cancels an otherwise valid channel update atomically."""
-    interface, node = _interface_with_channels()
+    interface, node = _mock_tcp_interface_with_channels()
     original_channel = channel_pb2.Channel()
     original_channel.CopyFrom(node.channels[1])
     monkeypatch.setattr(
@@ -162,15 +152,17 @@ def test_channel_set_batch_does_not_mutate_on_later_unknown_field(
     )
 
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
-        main()
+        with pytest.raises(SystemExit) as exc_info:
+            main()
 
+    assert exc_info.value.code == 1
     node.writeChannel.assert_not_called()
     assert node.channels[1] == original_channel
     out, err = capsys.readouterr()
     assert "does not have an attribute not_a_channel_field" in out
     assert "Choices are..." in out
     assert "Writing modified channels to device" not in out
-    assert err == ""
+    assert "Unknown channel setting name. No changes were made." in err
 
 
 @pytest.mark.unit
@@ -180,7 +172,7 @@ def test_unknown_channel_field_does_not_hide_later_invalid_value(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Validation continues after an unknown field while the whole batch stays atomic."""
-    interface, node = _interface_with_channels()
+    interface, node = _mock_tcp_interface_with_channels()
     original_channel = channel_pb2.Channel()
     original_channel.CopyFrom(node.channels[1])
     monkeypatch.setattr(
