@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meshtastic.__main__ import main
+from meshtastic.__main__ import _REDACTED_PREF_VALUE, _is_secret_pref, main
 from meshtastic.node import Node
 from meshtastic.protobuf import localonly_pb2
 from meshtastic.tcp_interface import TCPInterface
@@ -28,6 +28,7 @@ def test_invalid_batch_is_rejected_before_any_config_mutation(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """A fatal later entry must leave every earlier setting untouched."""
     monkeypatch.setattr(
         sys,
         "argv",
@@ -66,6 +67,7 @@ def test_preflight_reports_every_invalid_entry(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """Preflight must aggregate every fatal value error in one invocation."""
     monkeypatch.setattr(
         sys,
         "argv",
@@ -164,6 +166,7 @@ def test_nonfatal_validation_rejection_still_prevents_prior_batch_mutation(
     assert "network.wifi_psk must be 8 or more characters" in out
     assert "do not have an attribute network.wifi_psk" not in out
     assert err == ""
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -411,8 +414,12 @@ def test_preflight_exception_redacts_secret_value_across_runtime_messages(
         with pytest.raises(SystemExit) as exc_info:
             main()
 
+    assert _is_secret_pref("bluetooth.fixed_pin")
     assert exc_info.value.code == 1
     node.writeConfig.assert_not_called()
     out, err = capsys.readouterr()
-    assert "bluetooth.fixed_pin: invalid value <redacted> (TypeError)" in err
+    assert (
+        f"bluetooth.fixed_pin: invalid value {_REDACTED_PREF_VALUE} (TypeError)"
+        in err
+    )
     assert secret not in out + err
