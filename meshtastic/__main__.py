@@ -187,11 +187,10 @@ def _fatal_preference_value_errors() -> Iterator[None]:
     finally:
         _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
 
-=======
+
 _PREF_VALIDATION_REPORTER: contextvars.ContextVar[Callable[[str], None] | None] = (
     contextvars.ContextVar("pref_validation_reporter", default=None)
 )
->>>>>>> b4d18df0 (Polish atomic set validation diagnostics)
 
 # Map dotted preference paths to the protobuf enum that defines their flags.
 # These fields are stored as uint32 bitmasks in the protobuf but have an
@@ -1929,6 +1928,8 @@ def _format_set_preflight_exception(pref_name: str, exc: Exception) -> str:
     str
         Safe error detail suitable for the aggregated CLI failure message.
     """
+    if isinstance(exc, _PreferenceValueError):
+        return str(exc)
     if _redact_pref_value(pref_name, "value") == "<redacted>":
         return f"{pref_name}: invalid value <redacted> ({type(exc).__name__})"
     return f"{pref_name}: {exc}"
@@ -1986,7 +1987,8 @@ def _preflight_set_entries(
             )
             try:
                 try:
-                    valid = setPref(candidate, pref_name, raw_value)
+                    with _fatal_preference_value_errors():
+                        valid = setPref(candidate, pref_name, raw_value)
                 finally:
                     _PREF_VALIDATION_REPORTER.reset(reporter_token)
             except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
