@@ -397,6 +397,7 @@ class MeshInterface:  # pylint: disable=R0902
             queue_wait_delay_seconds=QUEUE_WAIT_DELAY_SECONDS,
             queue_wait_timeout_seconds=self._queue_wait_timeout_seconds,
             abort_wait=self._queue_wait_abort_reason,
+            uses_tx_queue_capacity=self._packet_uses_tx_queue_capacity,
         )
         self._from_radio_dispatch_map_cache: (
             dict[str, Callable[[_FromRadioContext], list[_PublicationIntent]]] | None
@@ -410,6 +411,22 @@ class MeshInterface:  # pylint: disable=R0902
         # for any external consumers of the library.
         if debugOut:
             pub.subscribe(MeshInterface._print_log_line, "meshtastic.log.line")
+
+    def _packet_uses_tx_queue_capacity(self, to_radio: mesh_pb2.ToRadio) -> bool:
+        """Return whether ``to_radio`` consumes firmware RF TX-queue capacity.
+
+        Firmware loopback-delivers packets addressed to the local node without
+        enqueueing them for RF transmission. QueueStatus therefore describes an
+        unrelated resource for those packets and must not block their delivery.
+        Until the local node number is known, retain the conservative historical
+        behavior and treat packets as RF-queue consumers.
+        """
+        if not to_radio.HasField("packet"):
+            return True
+        my_info = self.myInfo
+        if my_info is None:
+            return True
+        return to_radio.packet.to != my_info.my_node_num
 
     def _queue_wait_abort_reason(self) -> str | None:
         """Return why a blocked TX-queue wait can no longer make progress."""

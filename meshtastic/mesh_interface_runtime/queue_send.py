@@ -37,6 +37,7 @@ class _QueueSendRuntime:
         queue_wait_delay_seconds: float,
         queue_wait_timeout_seconds: float = QUEUE_WAIT_TIMEOUT_SECONDS,
         abort_wait: Callable[[], str | None] | None = None,
+        uses_tx_queue_capacity: Callable[[mesh_pb2.ToRadio], bool] | None = None,
     ) -> None:
         self._lock = lock
         self._get_queue = get_queue
@@ -45,6 +46,7 @@ class _QueueSendRuntime:
         self._queue_wait_delay_seconds = queue_wait_delay_seconds
         self._queue_wait_timeout_seconds = max(0.0, queue_wait_timeout_seconds)
         self._abort_wait = abort_wait
+        self._uses_tx_queue_capacity = uses_tx_queue_capacity
         self._awaiting_queue_status_ids: dict[int, float] = {}
         self._queue_status_seen = False
 
@@ -74,27 +76,88 @@ class _QueueSendRuntime:
         """Claim one queue slot when queue status is available."""
         self._claim()
 
+    def _packet_uses_tx_queue_capacity(self, packet: mesh_pb2.ToRadio) -> bool:
+        """Return whether a packet consumes one firmware RF TX-queue slot."""
+        if self._uses_tx_queue_capacity is None:
+            return True
+        return self._uses_tx_queue_capacity(packet)
+
     def _pop_for_send(self) -> tuple[int, mesh_pb2.ToRadio | bool] | None:
-        """Pop the next sendable queue entry while honoring queue free-space state."""
+        """Pop the next sendable entry while honoring firmware RF queue capacity."""
         with self._lock:
             queue = self._get_queue()
             if not queue:
                 return None
+
             queue_status = self._get_queue_status()
             if queue_status is not None and queue_status.free <= 0:
-                packet_id, packet = next(iter(queue.items()))
-                if not isinstance(packet, mesh_pb2.ToRadio):
-                    queue.pop(packet_id, None)
-                    return packet_id, packet
+                first_packet_id, first_packet = next(iter(queue.items()))
+                if not isinstance(first_packet, mesh_pb2.ToRadio):
+                    queue.pop(first_packet_id, None)
+                    return first_packet_id, first_packet
+                for packet_id, packet in tuple(queue.items()):
+                    if (
+                        isinstance(packet, mesh_pb2.ToRadio)
+                        and not self._packet_uses_tx_queue_capacity(packet)
+                    ):
+                        queue.pop(packet_id, None)
+                        return packet_id, packet
                 return None
+
             to_resend = queue.popitem(last=False)
-            if queue_status is not None and isinstance(to_resend[1], mesh_pb2.ToRadio):
+            packet = to_resend[1]
+            if (
+                queue_status is not None
+                and isinstance(packet, mesh_pb2.ToRadio)
+                and self._packet_uses_tx_queue_capacity(packet)
+            ):
                 queue_status.free -= 1
             return to_resend
 
     def pop_for_send(self) -> tuple[int, mesh_pb2.ToRadio | bool] | None:
         """Pop the next sendable queue entry while honoring queue free-space state."""
         return self._pop_for_send()
+
+    def _pop_capacity_exempt_for_send(
+        self,
+    ) -> tuple[int, mesh_pb2.ToRadio] | None:
+        """Pop the next entry that can progress without firmware RF capacity."""
+        with self._lock:
+            queue = self._get_queue()
+            for packet_id, packet in tuple(queue.items()):
+                if isinstance(
+                    packet, mesh_pb2.ToRadio
+                ) and not self._packet_uses_tx_queue_capacity(packet):
+                    queue.pop(packet_id, None)
+                    return packet_id, packet
+        return None
+
+    def _send_capacity_exempt_packets(
+        self,
+        to_radio: mesh_pb2.ToRadio,
+        *,
+        send_impl: Callable[[mesh_pb2.ToRadio], None],
+    ) -> None:
+        """Send local-loopback backlog without waiting on firmware RF capacity."""
+        with self._lock:
+            self._get_queue()[to_radio.packet.id] = to_radio
+
+        resent_queue: OrderedDict[int, mesh_pb2.ToRadio | bool] = OrderedDict()
+        sent_packet_ids: set[int] = set()
+        try:
+            while True:
+                to_resend = self._pop_capacity_exempt_for_send()
+                if to_resend is None:
+                    break
+                packet_id, packet = to_resend
+                resent_queue[packet_id] = packet
+                send_impl(packet)
+                sent_packet_ids.add(packet_id)
+        finally:
+            self._reconcile_resent_queue(
+                resent_queue=resent_queue,
+                sent_packet_ids=sent_packet_ids,
+            )
 
     def _send_to_radio(
         self,
@@ -107,9 +170,12 @@ class _QueueSendRuntime:
         if not to_radio.HasField("packet"):
             send_impl(to_radio)
             return
-        else:
-            with self._lock:
-                self._get_queue()[to_radio.packet.id] = to_radio
+        if not self._packet_uses_tx_queue_capacity(to_radio):
+            self._send_capacity_exempt_packets(to_radio, send_impl=send_impl)
+            return
+
+        with self._lock:
+            self._get_queue()[to_radio.packet.id] = to_radio
 
         resent_queue: OrderedDict[int, mesh_pb2.ToRadio | bool] = OrderedDict()
         sent_packet_ids: set[int] = set()
@@ -179,6 +245,28 @@ class _QueueSendRuntime:
             sleep_fn=sleep_fn,
         )
 
+    def _requeue_capacity_exempt_packet_locked(
+        self,
+        packet_id: int,
+        packet: mesh_pb2.ToRadio,
+    ) -> None:
+        """Requeue a failed local packet ahead of newer local-loopback work."""
+        queue = self._get_queue()
+        queued_items = tuple(queue.items())
+        queue.clear()
+        inserted = False
+        for queued_id, queued_packet in queued_items:
+            if (
+                not inserted
+                and isinstance(queued_packet, mesh_pb2.ToRadio)
+                and not self._packet_uses_tx_queue_capacity(queued_packet)
+            ):
+                queue[packet_id] = packet
+                inserted = True
+            queue[queued_id] = queued_packet
+        if not inserted:
+            queue[packet_id] = packet
+
     def _reconcile_resent_queue(
         self,
         *,
@@ -201,7 +289,10 @@ class _QueueSendRuntime:
             if queued_value is missing and packet_id in sent_packet_ids:
                 with self._lock:
                     self._prune_awaiting_queue_status_ids_locked(time.monotonic())
-                    if self._queue_status_seen:
+                    packet_uses_capacity = isinstance(
+                        packet, mesh_pb2.ToRadio
+                    ) and self._packet_uses_tx_queue_capacity(packet)
+                    if self._queue_status_seen or not packet_uses_capacity:
                         self._awaiting_queue_status_ids[packet_id] = time.monotonic()
                 logger.debug(
                     "packet %08x sent and awaiting queue-status correlation",
@@ -213,7 +304,10 @@ class _QueueSendRuntime:
                 packet_to_requeue = queued_value
             elif isinstance(packet, mesh_pb2.ToRadio):
                 packet_to_requeue = packet
-                restore_queue_slot = packet_id not in sent_packet_ids
+                restore_queue_slot = (
+                    packet_id not in sent_packet_ids
+                    and self._packet_uses_tx_queue_capacity(packet)
+                )
             elif queued_value is not missing and isinstance(queued_value, bool):
                 packet_to_requeue = queued_value
             if packet_to_requeue is not None:
@@ -225,7 +319,16 @@ class _QueueSendRuntime:
                                 queue_status.maxlen,
                                 queue_status.free + 1,
                             )
-                    self._get_queue()[packet_id] = packet_to_requeue
+                    if (
+                        isinstance(packet_to_requeue, mesh_pb2.ToRadio)
+                        and not self._packet_uses_tx_queue_capacity(packet_to_requeue)
+                    ):
+                        self._requeue_capacity_exempt_packet_locked(
+                            packet_id,
+                            packet_to_requeue,
+                        )
+                    else:
+                        self._get_queue()[packet_id] = packet_to_requeue
 
     def reconcile_resent_queue(
         self,
