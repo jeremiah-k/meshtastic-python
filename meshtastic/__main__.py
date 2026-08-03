@@ -3931,21 +3931,6 @@ def _create_power_meter() -> None:
             _cli_exit(
                 f"Voltage must be between {MIN_SUPPLY_VOLTAGE_V}V and {MAX_SUPPLY_VOLTAGE_V}V"
             )
-    if RidenPowerSupply is None or PPK2PowerSupply is None or SimPowerSupply is None:
-        _cli_exit(
-            "The powermon module loaded incompletely and required meter classes are "
-            "unavailable."
-        )
-
-    # If the user specified a voltage, make sure it is valid
-    v = 0.0
-    if args.power_voltage:
-        v = float(args.power_voltage)
-        if v < MIN_SUPPLY_VOLTAGE_V or v > MAX_SUPPLY_VOLTAGE_V:
-            _cli_exit(
-                f"Voltage must be between {MIN_SUPPLY_VOLTAGE_V}V and {MAX_SUPPLY_VOLTAGE_V}V"
-            )
-
     if args.power_riden:
         meter = RidenPowerSupply(args.power_riden)
     elif args.power_ppk2_supply or args.power_ppk2_meter:
