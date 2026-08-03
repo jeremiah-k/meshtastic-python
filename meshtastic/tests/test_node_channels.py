@@ -1,0 +1,865 @@
+"""Meshtastic unit tests for node.py."""
+
+# pylint: disable=C0302
+
+import logging
+import re
+from collections.abc import Callable
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
+
+import pytest
+from pytest import CaptureFixture, LogCaptureFixture
+
+from ..mesh_interface import MeshInterface
+from ..node import MAX_CHANNELS, Node
+from ..protobuf import (
+    admin_pb2,
+    localonly_pb2,
+    mesh_pb2,
+)
+from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
+from ..serial_interface import SerialInterface
+from ..util import fromPSK
+
+from ._node_legacy_support import (
+    _get_mock_call_arg,
+    _make_fake_send_admin,
+)
+
+CHANNEL_LIMIT = MAX_CHANNELS
+
+
+@pytest.mark.unit
+def test_getChannelByChannelIndex(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test getChannelByChannelIndex()."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    channel1 = Channel(index=0, role=Channel.Role.PRIMARY)  # primary channel
+    channel2 = Channel(index=1, role=Channel.Role.SECONDARY)  # secondary channel
+    channel3 = Channel(index=2, role=Channel.Role.DISABLED)
+    channel4 = Channel(index=3, role=Channel.Role.DISABLED)
+    channel5 = Channel(index=4, role=Channel.Role.DISABLED)
+    channel6 = Channel(index=5, role=Channel.Role.DISABLED)
+    channel7 = Channel(index=6, role=Channel.Role.DISABLED)
+    channel8 = Channel(index=7, role=Channel.Role.DISABLED)
+
+    channels = [
+        channel1,
+        channel2,
+        channel3,
+        channel4,
+        channel5,
+        channel6,
+        channel7,
+        channel8,
+    ]
+
+    anode.channels = channels
+
+    # test primary
+    selected_primary = anode.getChannelByChannelIndex(0)
+    assert selected_primary is not None
+    assert selected_primary is channel1
+    # test secondary
+    assert anode.getChannelByChannelIndex(1) is not None
+    # test disabled
+    assert anode.getChannelByChannelIndex(2) is not None
+    # test invalid values
+    assert anode.getChannelByChannelIndex(-1) is None
+    assert anode.getChannelByChannelIndex(9) is None
+
+    copied_primary = anode.getChannelCopyByChannelIndex(0)
+    assert copied_primary is not None
+    assert copied_primary is not channel1
+    copied_primary.role = Channel.Role.DISABLED
+    assert channel1.role == Channel.Role.PRIMARY
+
+
+@pytest.mark.unit
+def test_writeConfig_with_no_radioConfig(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test writeConfig raises MeshInterfaceError for invalid config name."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No valid config with name foo",
+    ):
+        anode.writeConfig("foo")
+
+
+@pytest.mark.unit
+def test_writeChannel_with_no_channels_raises_mesh_error(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test writeChannel raises when channels have not been loaded."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.writeChannel(0)
+
+
+@pytest.mark.unit
+def test_writeChannel_forwards_admin_index_to_session_key_bootstrap(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """WriteChannel should use the same admin index for session bootstrap and channel write."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    anode.channels = [primary]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())  # type: ignore[method-assign]
+
+    anode.writeChannel(0, adminIndex=4)
+
+    assert (
+        _get_mock_call_arg(
+            anode.ensureSessionKey.call_args,
+            name="adminIndex",
+            positional_index=0,
+        )
+        == 4
+    )
+    assert (
+        _get_mock_call_arg(
+            anode._send_admin.call_args,
+            name="adminIndex",
+            positional_index=3,
+        )
+        == 4
+    )
+
+
+@pytest.mark.unit
+def test_writeConfig_traffic_management(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test writeConfig writes traffic_management module config through set_module_config.
+
+    The bool toggles (``enabled``, ``rate_limit_enabled``, ...) were removed
+    from the protobuf in favour of the "non-zero implies enabled" convention
+    on their companion uint32 fields, so we exercise that convention here.
+    """
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    tm = anode.moduleConfig.traffic_management
+    tm.position_min_interval_secs = 30
+    tm.rate_limit_window_secs = 60
+    tm.rate_limit_max_packets = 100
+
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        sent_messages=sent_messages
+    )
+
+    anode.writeConfig("traffic_management")
+
+    assert len(sent_messages) == 1
+    sent_message = sent_messages[0]
+    assert sent_message.HasField("set_module_config")
+    assert sent_message.set_module_config.HasField("traffic_management")
+    result = sent_message.set_module_config.traffic_management
+    assert result.position_min_interval_secs == 30
+    assert result.rate_limit_window_secs == 60
+    assert result.rate_limit_max_packets == 100
+
+
+@pytest.mark.unit
+def test_requestChannel_not_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Verify that requesting channel 0 on a non-local node logs a remote channel info request.
+
+    Sets up a mocked SerialInterface and a Node that is not the local node, configures max channels,
+    calls _request_channel(0), and asserts that an INFO log contains "Requesting channel 0 info".
+
+    """
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    with caplog.at_level(logging.INFO):
+        anode._request_channel(0)
+        assert re.search(
+            r"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
+        )
+
+
+@pytest.mark.unit
+def test_requestChannel_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Verify that a local node logs a local channel request when _request_channel is called.
+
+    Checks that the log contains "Requesting channel 0" and does not include "from remote node".
+
+    """
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+
+    with caplog.at_level(logging.DEBUG):
+        anode._request_channel(0)
+        assert re.search(r"Requesting channel 0", caplog.text, re.MULTILINE)
+        assert not re.search(r"from remote node", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_requestChannels_non_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Test requestChannels() with a starting index of 0."""
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    # Set a sentinel value to verify it gets reset
+    anode.partialChannels = [Channel()]
+    with caplog.at_level(logging.DEBUG):
+        anode.requestChannels(0)
+        assert re.search(
+            "Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
+        )
+        assert not anode.partialChannels
+
+
+@pytest.mark.unit
+def test_requestChannels_non_localNode_starting_index(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
+    """Test requestChannels() with a starting index of non-0."""
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    sentinel_channel = Channel()
+    anode.partialChannels = [sentinel_channel]
+    with caplog.at_level(logging.DEBUG):
+        anode.requestChannels(3)
+        assert re.search(
+            "Requesting channel 3 info from remote node", caplog.text, re.MULTILINE
+        )
+        # make sure it hasn't been initialized (identity check ensures list wasn't replaced)
+        assert (
+            len(anode.partialChannels) == 1
+            and anode.partialChannels[0] is sentinel_channel
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
+def test_set_favorite(
+    favorite: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify setFavorite sends an admin message marking the given node as a favorite and transmits it.
+
+    Parameters
+    ----------
+    favorite : str | int
+        Node ID to mark as favorite.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
+    node = Node(iface, 12345678)
+    amesg = admin_pb2.AdminMessage()
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
+        node.setFavorite(favorite)
+    assert amesg.set_favorite_node == 502009325
+    iface.sendData.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
+def test_remove_favorite(
+    favorite: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify that removing a favorite node creates an AdminMessage with the expected node ID and sends it via the interface.
+
+    Parameters
+    ----------
+    favorite : str | int
+        Identifier of the favorite node to remove; used to populate the admin message sent to the interface.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
+    node = Node(iface, 12345678)
+    amesg = admin_pb2.AdminMessage()
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
+        node.removeFavorite(favorite)
+
+    assert amesg.remove_favorite_node == 502009325
+    iface.sendData.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
+def test_set_ignored(
+    ignored: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify that Node.setIgnored constructs an AdminMessage marking the given node ID as ignored and sends it.
+
+    Parameters
+    ----------
+    ignored : str | int
+        Node identifier passed to setIgnored.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
+    node = Node(iface, 12345678)
+    amesg = admin_pb2.AdminMessage()
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
+        node.setIgnored(ignored)
+    assert amesg.set_ignored_node == 502009325
+    iface.sendData.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
+def test_remove_ignored(
+    ignored: str | int,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Verify that calling removeIgnored sends an admin message to remove a node from the ignored list and transmits it.
+
+    Parameters
+    ----------
+    ignored : str | int
+        Node identifier (e.g., node ID or address) that will be encoded into `remove_ignored_node` on the AdminMessage.
+    """
+    iface = autospec_local_node_iface(SerialInterface)
+    node = Node(iface, 12345678)
+    amesg = admin_pb2.AdminMessage()
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
+        node.removeIgnored(ignored)
+
+    assert amesg.remove_ignored_node == 502009325
+    iface.sendData.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("param_name", "value", "expected_error"),
+    [
+        (
+            "long_name",
+            "   ",
+            "Long Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "long_name",
+            "",
+            "Long Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "short_name",
+            "   ",
+            "Short Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "short_name",
+            "",
+            "Short Name cannot be empty or contain only whitespace characters",
+        ),
+    ],
+)
+def test_setOwner_rejects_empty_or_whitespace_names(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    param_name: str,
+    value: str,
+    expected_error: str,
+) -> None:
+    """Test setOwner rejects empty or whitespace-only names."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    with pytest.raises(MeshInterface.MeshInterfaceError, match=expected_error):
+        anode.setOwner(**{param_name: value})  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("owner_kwargs", "expected_patterns"),
+    [
+        (
+            {"long_name": "ValidName", "short_name": "VN"},
+            (
+                r"p\.set_owner\.long_name_set:True",
+                r"p\.set_owner\.short_name_set:True",
+            ),
+        ),
+        (
+            {"short_name": "TST"},
+            (r"p\.set_owner\.short_name_set:True",),
+        ),
+        (
+            {"long_name": "TestUser", "short_name": "TOOLONG"},
+            (r"p\.set_owner\.short_name_set:True",),
+        ),
+        (
+            {"long_name": "LicensedUser", "is_licensed": True},
+            (r"p\.set_owner\.is_licensed:True",),
+        ),
+        (
+            {"long_name": "TestUser", "is_unmessagable": True},
+            (r"p\.set_owner\.is_unmessagable:True",),
+        ),
+    ],
+)
+def test_setOwner_logs_expected_fields_for_variants(
+    caplog: LogCaptureFixture,
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    owner_kwargs: dict[str, Any],
+    expected_patterns: tuple[str, ...],
+) -> None:
+    """Test setOwner variants log the expected fields."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    with caplog.at_level(logging.DEBUG):
+        anode.setOwner(**owner_kwargs)
+
+    for pattern in expected_patterns:
+        assert re.search(pattern, caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_waitForConfig_timeout(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test waitForConfig returns False on timeout."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+    # Mock timeout to simulate immediate timeout (waitForSet returns False)
+    anode._timeout = MagicMock()
+    anode._timeout.waitForSet.return_value = False
+
+    result = anode.waitForConfig()
+    assert result is False
+
+
+@pytest.mark.unit
+def test_waitForConfig_success(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test waitForConfig returns True when config is available."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    # Set up the config to be "available"
+    anode.localConfig = localonly_pb2.LocalConfig()
+
+    # Mock the timeout to return True
+    anode._timeout = MagicMock()
+    anode._timeout.waitForSet.return_value = True
+
+    result = anode.waitForConfig()
+    assert result is True
+
+
+@pytest.mark.unit
+def test_start_ota_local_node() -> None:
+    """Test startOTA canonical signature on local node."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 1234567890, noProto=True)
+    iface.localNode = anode
+
+    captured: dict[str, object] = {}
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured
+    )
+
+    test_hash = b"\x01\x02\x03" * 8  # 24-byte hash
+    anode.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
+
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
+    assert sent_msg.ota_request.ota_hash == test_hash
+
+
+@pytest.mark.unit
+def test_start_ota_local_node_legacy_alias_keywords() -> None:
+    """Test startOTA legacy aliases ota_mode/ota_hash remain supported."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 1234567890, noProto=True)
+    iface.localNode = anode
+
+    captured: dict[str, object] = {}
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured
+    )
+
+    test_hash = b"\x11\x22\x33" * 8
+    anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
+
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
+    assert sent_msg.ota_request.ota_hash == test_hash
+
+
+@pytest.mark.unit
+def test_start_ota_remote_node_raises_error() -> None:
+    """Test startOTA on remote node raises MeshInterfaceError."""
+    iface = MagicMock(autospec=MeshInterface)
+    local_node = Node(iface, 1234567890, noProto=True)
+    remote_node = Node(iface, 9876543210, noProto=True)
+    iface.localNode = local_node
+
+    test_hash = b"\x01\x02\x03" * 8
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="startOTA only possible on local node"
+    ):
+        remote_node.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=test_hash)
+
+
+@pytest.mark.unit
+def test_requestConfig_with_module_config_descriptor(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """Verify requestConfig sets get_module_config_request for LocalModuleConfig fields.
+
+    Tests line 370: when configType is a field descriptor with containing_type.name
+    != 'LocalConfig', it should set get_module_config_request to the field index.
+    """
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    mock_serial_interface.localNode = anode
+
+    # Get a field descriptor from LocalModuleConfig (not LocalConfig)
+    module_config = localonly_pb2.LocalModuleConfig()
+    mqtt_field = module_config.DESCRIPTOR.fields_by_name["mqtt"]
+
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        sent_messages=sent_messages
+    )
+
+    anode.requestConfig(mqtt_field)
+
+    assert len(sent_messages) == 1
+    sent_msg = sent_messages[0]
+    # mqtt field has index 0, should be set as get_module_config_request
+    assert sent_msg.get_module_config_request == 0
+
+
+@pytest.mark.unit
+def test_showChannels_logs_snapshot_and_skips_disabled_entries(
+    caplog: LogCaptureFixture,
+    capsys: CaptureFixture[str],
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """ShowChannels should log channel snapshot and print only non-disabled channels."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    primary.settings.psk = b"\x01"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled.settings.name = "disabled"
+    anode.channels = [primary, disabled]
+    anode.localConfig.lora.hop_limit = 3
+
+    with caplog.at_level(logging.DEBUG):
+        anode.showChannels()
+
+    out, _ = capsys.readouterr()
+    assert "channel snapshot captured" in caplog.text
+    assert "Index 0: PRIMARY" in out
+    assert "Index 1:" not in out
+
+
+@pytest.mark.unit
+def test_turnOffEncryptionOnPrimaryChannel_requires_loaded_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """TurnOffEncryptionOnPrimaryChannel should fail when channels are missing."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = []
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No channels have been read",
+    ):
+        anode.turnOffEncryptionOnPrimaryChannel()
+
+
+@pytest.mark.unit
+def test_turnOffEncryptionOnPrimaryChannel_updates_primary_and_writes(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """TurnOffEncryptionOnPrimaryChannel should disable PSK and write channel 0."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.psk = b"\x01"
+    anode.channels = [primary]
+    anode._write_channel_snapshot = MagicMock()  # type: ignore[method-assign]
+
+    anode.turnOffEncryptionOnPrimaryChannel()
+
+    assert anode.channels[0].settings.psk == fromPSK("none")
+    anode._write_channel_snapshot.assert_called_once()
+    written_channel = anode._write_channel_snapshot.call_args.args[0]
+    assert written_channel.index == 0
+    assert written_channel.settings.psk == fromPSK("none")
+
+
+@pytest.mark.unit
+def test_writeChannel_out_of_range_raises_mesh_error(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """WriteChannel should reject invalid channel indices."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.PRIMARY)]
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"Channel index 1 out of range \(0-0\)",
+    ):
+        anode.writeChannel(1)
+
+
+@pytest.mark.unit
+def test_deleteChannel_rejects_non_secondary_or_disabled(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should only allow SECONDARY or DISABLED channels."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.PRIMARY)]
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Only SECONDARY or DISABLED channels can be deleted",
+    ):
+        anode.deleteChannel(0)
+
+
+@pytest.mark.unit
+def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should start on pre-delete admin index and switch after that slot is rewritten."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    admin_secondary = Channel(index=1, role=Channel.Role.SECONDARY)
+    admin_secondary.settings.name = "admin"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, admin_secondary, disabled]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    written_indexes = [
+        call.args[0].set_channel.index for call in anode._send_admin.call_args_list
+    ]
+    # Slot 2 was present in the incomplete cache and is already the same
+    # normalized DISABLED protobuf. Unknown slots 3..7 remain conservative.
+    assert written_indexes == [1, *range(3, CHANNEL_LIMIT)]
+    admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3)
+        for call in anode._send_admin.call_args_list
+    ]
+    assert admin_indexes[0] == 1
+    assert all(index == 0 for index in admin_indexes[1:])
+
+
+@pytest.mark.unit
+def test_deleteChannel_switches_admin_index_after_rewriting_former_admin_slot(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should keep using the old admin index until the old admin slot is rewritten."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    removable = Channel(index=1, role=Channel.Role.SECONDARY)
+    removable.settings.name = "remove-me"
+    admin_secondary = Channel(index=2, role=Channel.Role.SECONDARY)
+    admin_secondary.settings.name = "admin"
+    disabled = Channel(index=3, role=Channel.Role.DISABLED)
+    anode.channels = [primary, removable, admin_secondary, disabled]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    admin_indexes = [
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3)
+        for call in anode._send_admin.call_args_list
+    ]
+    # Keep old admin index (2) through rewrite of old slot 2, then switch to 1.
+    assert admin_indexes[:2] == [2, 2]
+    assert all(index == 1 for index in admin_indexes[2:])
+
+
+def _build_full_channel_table(
+    highest_secondary_index: int,
+) -> list[Channel]:
+    """Build a complete channel table with a contiguous active prefix."""
+    channels: list[Channel] = []
+    for index in range(CHANNEL_LIMIT):
+        channel = Channel(index=index)
+        if index == 0:
+            channel.role = Channel.Role.PRIMARY
+            channel.settings.name = "primary"
+        elif index <= highest_secondary_index:
+            channel.role = Channel.Role.SECONDARY
+            channel.settings.name = f"channel-{index}"
+        else:
+            channel.role = Channel.Role.DISABLED
+        channels.append(channel)
+    return channels
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("highest_secondary_index", "delete_index", "expected_writes"),
+    (
+        pytest.param(1, 1, [1], id="delete-only-secondary"),
+        pytest.param(2, 1, [1, 2], id="shift-one-secondary"),
+        pytest.param(3, 1, [1, 2, 3], id="shift-two-secondaries"),
+        pytest.param(3, 2, [2, 3], id="delete-middle-secondary"),
+    ),
+)
+def test_deleteChannel_writes_only_changed_complete_cache_slots(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    highest_secondary_index: int,
+    delete_index: int,
+    expected_writes: list[int],
+) -> None:
+    """A complete cache should not rewrite identical trailing disabled slots."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = _build_full_channel_table(highest_secondary_index)
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(delete_index)
+
+    written_indexes = [
+        call.args[0].set_channel.index for call in anode._send_admin.call_args_list
+    ]
+    assert written_indexes == expected_writes
+    assert all(
+        _get_mock_call_arg(call, name="adminIndex", positional_index=3) == 0
+        for call in anode._send_admin.call_args_list
+    )
+    assert anode.channels is not None
+    assert [channel.index for channel in anode.channels] == list(range(CHANNEL_LIMIT))
+
+
+@pytest.mark.unit
+def test_deleteChannel_identical_trailing_disabled_slot_requires_no_write(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Deleting the final empty disabled slot should be an on-device no-op."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = _build_full_channel_table(1)
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(CHANNEL_LIMIT - 1)
+
+    anode.ensureSessionKey.assert_not_called()
+    anode._send_admin.assert_not_called()
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert anode.channels[-1].role == Channel.Role.DISABLED
+
+
+@pytest.mark.unit
+def test_deleteChannel_compares_complete_payload_not_only_channel_role(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Settings changes in disabled slots must still be rewritten after a shift."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = _build_full_channel_table(1)
+    anode.channels[2].settings.name = "stale-disabled-payload"
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    written_indexes = [
+        call.args[0].set_channel.index for call in anode._send_admin.call_args_list
+    ]
+    assert written_indexes == [1, 2]
+
+
+@pytest.mark.unit
+def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Channel helper lookups should find expected channels under lock."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "main"
+    admin_channel = Channel(index=1, role=Channel.Role.SECONDARY)
+    admin_channel.settings.name = "AdMiN"
+    disabled = Channel(index=2, role=Channel.Role.DISABLED)
+    anode.channels = [primary, admin_channel, disabled]
+
+    named_channel = anode.getChannelByName("main")
+    assert named_channel is not None
+    assert named_channel is primary
+    assert named_channel.index == primary.index
+
+    disabled_channel = anode.getDisabledChannel()
+    assert disabled_channel is not None
+    assert disabled_channel is disabled
+    assert disabled_channel.index == disabled.index
+
+    named_channel_copy = anode.getChannelCopyByName("main")
+    assert named_channel_copy is not None
+    assert named_channel_copy is not primary
+    assert named_channel_copy.index == primary.index
+
+    disabled_channel_copy = anode.getDisabledChannelCopy()
+    assert disabled_channel_copy is not None
+    assert disabled_channel_copy is not disabled
+    assert disabled_channel_copy.index == disabled.index
+
+    named_channel.role = Channel.Role.DISABLED
+    assert primary.role == Channel.Role.DISABLED
+    disabled_channel.role = Channel.Role.PRIMARY
+    assert disabled.role == Channel.Role.PRIMARY
+    named_channel_copy.role = Channel.Role.PRIMARY
+    assert primary.role == Channel.Role.DISABLED
+    disabled_channel_copy.role = Channel.Role.DISABLED
+    assert disabled.role == Channel.Role.PRIMARY
+    assert anode._get_admin_channel_index() == 1
+    assert anode.getAdminChannelIndex() == 1
+
+    anode.channels = None
+    assert anode.getDisabledChannel() is None
+
+
+@pytest.mark.unit
+def test_get_named_admin_channel_index_ignores_disabled_admin_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_named_admin_channel_index should skip channels that are DISABLED."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "primary"
+    disabled_admin = Channel(index=1, role=Channel.Role.DISABLED)
+    disabled_admin.settings.name = "admin"
+    secondary = Channel(index=2, role=Channel.Role.SECONDARY)
+    secondary.settings.name = "secondary"
+    anode.channels = [primary, disabled_admin, secondary]
+
+    assert anode._get_named_admin_channel_index() is None
+    assert anode._get_admin_channel_index() == 0
