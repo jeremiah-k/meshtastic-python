@@ -172,6 +172,9 @@ _CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar
 _SET_PREF_VALUE_ERRORS_FATAL: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "set_pref_value_errors_fatal", default=False
 )
+_PREF_VALIDATION_REPORTER: contextvars.ContextVar[Callable[[str], None] | None] = (
+    contextvars.ContextVar("pref_validation_reporter", default=None)
+)
 
 
 class _PreferenceValueError(ValueError):
@@ -326,6 +329,27 @@ def _cli_print(message: str, *, force: bool = False) -> None:
     if not force and args and getattr(args, "quiet", False):
         return
     print(message)
+
+
+def _report_pref_validation(message: str) -> None:
+    """Route preference validation output through the active validation context.
+
+    Parameters
+    ----------
+    message : str
+        User-facing validation diagnostic.
+
+    Notes
+    -----
+    Configure preflight intentionally suppresses low-level duplicate diagnostics.
+    Other preflight callers may install a context-local reporter to aggregate the
+    messages and surface them after the full batch has been validated.
+    """
+    reporter = _PREF_VALIDATION_REPORTER.get()
+    if reporter is not None:
+        reporter(message)
+        return
+    _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
 
 
 def supportInfo() -> None:
@@ -1499,7 +1523,7 @@ def _protobuf_field_type_label(field: FieldDescriptor) -> str:
     str
         Concise user-facing label for the field type.
     """
-    if field.type in {
+    integer_types = {
         FieldDescriptor.TYPE_INT32,
         FieldDescriptor.TYPE_INT64,
         FieldDescriptor.TYPE_UINT32,
@@ -1510,18 +1534,19 @@ def _protobuf_field_type_label(field: FieldDescriptor) -> str:
         FieldDescriptor.TYPE_FIXED64,
         FieldDescriptor.TYPE_SFIXED32,
         FieldDescriptor.TYPE_SFIXED64,
-    }:
+    }
+    if field.type in integer_types:
         return "integer"
-    if field.type in {FieldDescriptor.TYPE_FLOAT, FieldDescriptor.TYPE_DOUBLE}:
-        return "number"
-    if field.type == FieldDescriptor.TYPE_BOOL:
-        return "boolean"
-    if field.type == FieldDescriptor.TYPE_BYTES:
-        return "bytes (hex/base64)"
-    if field.type == FieldDescriptor.TYPE_STRING:
-        return "string"
-    return "compatible value"
 
+    type_labels = {
+        FieldDescriptor.TYPE_ENUM: "enum name or integer",
+        FieldDescriptor.TYPE_FLOAT: "number",
+        FieldDescriptor.TYPE_DOUBLE: "number",
+        FieldDescriptor.TYPE_BOOL: "boolean",
+        FieldDescriptor.TYPE_BYTES: "bytes (hex/base64)",
+        FieldDescriptor.TYPE_STRING: "string",
+    }
+    return type_labels.get(field.type, "compatible value")
 
 
 def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
@@ -1546,6 +1571,45 @@ def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
             continue
         for sub_field in sorted(field.message_type.fields, key=lambda item: item.name):
             print(f"    {field.name}.{sub_field.name}")
+
+
+def _reject_pref_value(
+    field: FieldDescriptor,
+    *,
+    field_path: str,
+    raw_value: Any,
+) -> bool:
+    """Report one invalid preference value without exposing secret input.
+
+    Parameters
+    ----------
+    field : FieldDescriptor
+        Descriptor for the field whose value was rejected.
+    field_path : str
+        Canonical dotted preference path used in diagnostics and redaction.
+    raw_value : Any
+        Original caller-supplied value used for safe diagnostic rendering.
+
+    Returns
+    -------
+    bool
+        Always ``False`` for convenient use from validation branches.
+
+    Raises
+    ------
+    _PreferenceValueError
+        If fatal preference-value handling is active.
+    """
+    display_value = _redact_pref_value(field_path, repr(raw_value))
+    message = (
+        f"Invalid value {display_value} for {field_path}; "
+        f"expected {_protobuf_field_type_label(field)}."
+    )
+    if _SET_PREF_VALUE_ERRORS_FATAL.get():
+        raise _PreferenceValueError(message)
+    _report_pref_validation(message)
+    return False
+
 
 def _assign_scalar_pref_value(
     target: Any,
@@ -1591,15 +1655,7 @@ def _assign_scalar_pref_value(
                 return True
             except (TypeError, ValueError, OverflowError):
                 pass
-    display_value = _redact_pref_value(field_path, repr(raw_value))
-    message = (
-        f"Invalid value {display_value} for {field_path}; "
-        f"expected {_protobuf_field_type_label(field)}."
-    )
-    if _SET_PREF_VALUE_ERRORS_FATAL.get():
-        raise _PreferenceValueError(message)
-    _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
-    return False
+    return _reject_pref_value(field, field_path=field_path, raw_value=raw_value)
 
 
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
@@ -1655,16 +1711,25 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         try:
             val = _parse_bitfield_value(bitfield_enum, raw_val)
         except ValueError as e:
-            print(f"ERROR: {e}")
+            _report_pref_validation(f"ERROR: {e}")
             return False
     elif isinstance(raw_val, str):
-        val = meshtastic.util.fromStr(raw_val)
+        try:
+            val = meshtastic.util.fromStr(raw_val)
+        except (ValueError, binascii.Error):
+            return _reject_pref_value(
+                pref,
+                field_path=comp_name,
+                raw_value=raw_val,
+            )
     else:
         val = raw_val
     logger.debug("val:%s", _redact_pref_value(comp_name, meshtastic.util.toStr(val)))
 
     if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
-        print("Warning: network.wifi_psk must be 8 or more characters.")
+        _report_pref_validation(
+            "Warning: network.wifi_psk must be 8 or more characters."
+        )
         return False
 
     enumType = pref.enum_type
@@ -1674,16 +1739,16 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         if ev:
             val = ev.number
         else:
-            print(
+            _report_pref_validation(
                 f"{name[0]}.{uni_name} does not have an enum called {val}, so you can not set it."
             )
-            print("Choices in sorted order are:")
+            _report_pref_validation("Choices in sorted order are:")
             names = []
             for f in enumType.values:
                 # Note: We must use the value of the enum (regardless if camel or snake case)
                 names.append(f"{f.name}")
             for temp_name in sorted(names):
-                print(f"    {temp_name}")
+                _report_pref_validation(f"    {temp_name}")
             return False
 
     # repeating fields need to be handled with append, not setattr
@@ -1702,30 +1767,48 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             field_path=comp_name,
             raw_value=raw_val,
         )
-    elif isinstance(val, list):
-        new_vals = [meshtastic.util.fromStr(x) for x in val]
-        config_values = getattr(config, config_type.name)
-        getattr(config_values, pref.name)[:] = new_vals
     else:
-        config_values = getattr(config, config_type.name)
-        if val == 0:
-            # clear values
-            if not _CONFIGURE_PREFLIGHT_MODE.get():
-                _cli_print(f"Clearing {pref.name} list")
-            del getattr(config_values, pref.name)[:]
-        else:
-            display_value = _redact_pref_value(
-                comp_name, meshtastic.util.toStr(raw_val)
+        target = (
+            getattr(config_part, config_type.name)
+            if config_type.message_type is not None
+            else config_part
+        )
+        candidate = type(target)()
+        candidate.CopyFrom(target)
+        candidate_values = getattr(candidate, pref.name)
+        try:
+            if isinstance(val, list):
+                new_vals = [
+                    meshtastic.util.fromStr(item) if isinstance(item, str) else item
+                    for item in val
+                ]
+                candidate_values[:] = new_vals
+            elif val == 0:
+                del candidate_values[:]
+            else:
+                cur_vals = [x for x in candidate_values if x not in [0, "", b""]]
+                if val not in cur_vals:
+                    cur_vals.append(val)
+                candidate_values[:] = cur_vals
+        except (TypeError, ValueError, OverflowError, binascii.Error):
+            assignment_ok = _reject_pref_value(
+                pref,
+                field_path=comp_name,
+                raw_value=raw_val,
             )
-            if not _CONFIGURE_PREFLIGHT_MODE.get():
-                _cli_print(f"Adding '{display_value}' to the {pref.name} list")
-            cur_vals = [
-                x for x in getattr(config_values, pref.name) if x not in [0, "", b""]
-            ]
-            if val not in cur_vals:
-                cur_vals.append(val)
-            getattr(config_values, pref.name)[:] = cur_vals
-        print_assignment = False
+        else:
+            target.CopyFrom(candidate)
+            if not isinstance(val, list):
+                if val == 0:
+                    if not _CONFIGURE_PREFLIGHT_MODE.get():
+                        _cli_print(f"Clearing {pref.name} list")
+                else:
+                    display_value = _redact_pref_value(
+                        comp_name, meshtastic.util.toStr(raw_val)
+                    )
+                    if not _CONFIGURE_PREFLIGHT_MODE.get():
+                        _cli_print(f"Adding '{display_value}' to the {pref.name} list")
+                print_assignment = False
 
     if assignment_ok and print_assignment:
         prefix = (
@@ -2880,7 +2963,7 @@ def onConnected(interface: MeshInterface) -> None:
                     if not _resolve_pref(pending_settings, pref[0]):
                         _print_channel_field_choices(pending_settings, pref[0])
                         channel_update_valid = False
-                        break
+                        continue
                     try:
                         with _fatal_preference_value_errors():
                             found = setPref(pending_settings, pref[0], pref[1])

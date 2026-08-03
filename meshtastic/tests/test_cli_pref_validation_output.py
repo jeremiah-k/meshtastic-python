@@ -43,3 +43,32 @@ def test_configure_preflight_validation_respects_quiet_mode(
     out, err = capsys.readouterr()
     assert out == ""
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("lora.region", "NOT_A_REGION"),
+        ("network.enabled_protocols", "TCP"),
+        ("network.wifi_psk", "short"),
+    ),
+)
+def test_configure_preflight_semantic_diagnostics_respect_quiet_mode(
+    field: str,
+    value: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Configure preflight keeps historical diagnostics but honors ``--quiet``."""
+    mt_config.args = cast(Any, SimpleNamespace(quiet=True))
+    config = localonly_pb2.LocalConfig()
+    token = _CONFIGURE_PREFLIGHT_MODE.set(True)
+    try:
+        assert setPref(config, field, value) is False
+    finally:
+        _CONFIGURE_PREFLIGHT_MODE.reset(token)
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err == ""

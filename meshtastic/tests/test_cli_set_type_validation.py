@@ -170,3 +170,129 @@ def test_set_pref_redacts_secret_values_in_validation_errors(
     out, err = capsys.readouterr()
     assert "Invalid value <redacted> for security.private_key" in out
     assert secret not in out + err
+
+
+@pytest.mark.unit
+def test_set_pref_rejects_malformed_encoded_value_without_exception(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Malformed encoded input is rejected through the normal validation path."""
+    config = localonly_pb2.LocalConfig()
+    malformed = "0xNOTHEX"
+
+    assert setPref(config, "security.private_key", malformed) is False
+
+    out, err = capsys.readouterr()
+    assert "Invalid value <redacted> for security.private_key" in out
+    assert malformed not in out + err
+    assert config.security.private_key == b""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_cli_malformed_encoded_value_exits_without_writing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    malformed = "0xNOTHEX"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "security.private_key",
+            malformed,
+        ],
+    )
+    interface, node = _tcp_interface_with_node()
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    node.writeConfig.assert_not_called()
+    out, err = capsys.readouterr()
+    assert "Invalid value <redacted> for security.private_key" in err
+    assert malformed not in out + err
+    assert "Traceback" not in out + err
+
+
+@pytest.mark.unit
+def test_set_pref_repeated_failure_does_not_partially_mutate(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Repeated scalar validation must complete on a copy before mutation."""
+    config = localonly_pb2.LocalConfig()
+    config.lora.ignore_incoming.append(123)
+
+    assert setPref(config, "lora.ignore_incoming", "not-a-number") is False
+
+    assert list(config.lora.ignore_incoming) == [123]
+    out, err = capsys.readouterr()
+    assert "expected integer" in out
+    assert "Adding 'not-a-number'" not in out
+    assert err == ""
+
+
+@pytest.mark.unit
+def test_set_pref_repeated_list_preserves_historical_string_conversion() -> None:
+    """Repeated list entries retain historical per-item ``fromStr`` conversion."""
+    config = localonly_pb2.LocalConfig()
+    config.lora.ignore_incoming.append(123)
+
+    assert setPref(config, "lora.ignore_incoming", ["456"]) is True
+
+    assert list(config.lora.ignore_incoming) == [456]
+
+
+@pytest.mark.unit
+def test_set_pref_invalid_repeated_list_is_atomic(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A bad converted list element must not partially replace the live container."""
+    config = localonly_pb2.LocalConfig()
+    config.lora.ignore_incoming.append(123)
+
+    assert setPref(config, "lora.ignore_incoming", ["456", "not-a-number"]) is False
+
+    assert list(config.lora.ignore_incoming) == [123]
+    out, err = capsys.readouterr()
+    assert "expected integer" in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_cli_invalid_repeated_value_exits_without_mutation_or_write(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "lora.ignore_incoming",
+            "not-a-number",
+        ],
+    )
+    interface, node = _tcp_interface_with_node()
+    node.localConfig.lora.ignore_incoming.append(123)
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    assert list(node.localConfig.lora.ignore_incoming) == [123]
+    node.writeConfig.assert_not_called()
+    out, err = capsys.readouterr()
+    assert "expected integer" in err
+    assert "Traceback" not in out + err

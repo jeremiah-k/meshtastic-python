@@ -171,3 +171,44 @@ def test_channel_set_batch_does_not_mutate_on_later_unknown_field(
     assert "Choices are..." in out
     assert "Writing modified channels to device" not in out
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_unknown_channel_field_does_not_hide_later_invalid_value(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Validation continues after an unknown field while the whole batch stays atomic."""
+    interface, node = _interface_with_channels()
+    original_channel = channel_pb2.Channel()
+    original_channel.CopyFrom(node.channels[1])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--ch-index",
+            "1",
+            "--ch-set",
+            "not_a_channel_field",
+            "1",
+            "--ch-set",
+            "uplink_enabled",
+            "not-a-boolean",
+        ],
+    )
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    node.writeChannel.assert_not_called()
+    assert node.channels[1] == original_channel
+    out, err = capsys.readouterr()
+    assert "does not have an attribute not_a_channel_field" in out
+    assert "expected boolean" in err
+    assert "Traceback" not in out + err
