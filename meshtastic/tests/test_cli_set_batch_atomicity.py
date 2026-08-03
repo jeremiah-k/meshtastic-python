@@ -12,6 +12,14 @@ from meshtastic.tcp_interface import TCPInterface
 
 
 def _interface_with_config_node() -> tuple[MagicMock, MagicMock]:
+    """
+    Create a mocked interface and node with empty local and module configurations.
+    
+    Returns
+    -------
+    tuple[MagicMock, MagicMock]
+        The configured mock interface and associated mock node.
+    """
     interface = MagicMock(autospec=TCPInterface)
     interface.__enter__ = MagicMock(return_value=interface)
     interface.__exit__ = MagicMock(return_value=None)
