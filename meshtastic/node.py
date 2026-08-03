@@ -20,7 +20,7 @@ from meshtastic.node_runtime.channel_presentation_runtime import (
     _NodeChannelPresentationRuntime,
 )
 from meshtastic.node_runtime.channel_request_runtime import _NodeChannelRequestRuntime
-import meshtastic.node_runtime.contact_runtime as contact_runtime
+from meshtastic.node_runtime import contact_runtime
 from meshtastic.node_runtime.settings_runtime import (
     _NodeAdminCommandRuntime,
     _NodeOwnerProfileRuntime,
