@@ -2,6 +2,10 @@
 
 from typing import Any
 
+from google.protobuf.descriptor import Descriptor
+
+from meshtastic.protobuf import mesh_pb2, telemetry_pb2
+
 
 def extractNodeFieldValue(node_dict: dict[str, Any], field_path: str) -> Any:
     """Retrieve a nested value from a dictionary using a dotted key path.
@@ -106,3 +110,51 @@ def sortNodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         key=lambda r: r.get("lastHeard") or 0,
         reverse=True,
     )
+
+
+def _descriptor_field_paths(descriptor: Descriptor, prefix: str = "") -> set[str]:
+    """Return JSON-style dotted paths reachable from one protobuf descriptor."""
+    paths: set[str] = set()
+    for field in descriptor.fields:
+        path = f"{prefix}.{field.json_name}" if prefix else field.json_name
+        paths.add(path)
+        if (
+            field.message_type is not None
+            and not field.message_type.GetOptions().map_entry
+        ):
+            paths.update(_descriptor_field_paths(field.message_type, path))
+    return paths
+
+
+def getKnownFieldPaths(nodes: list[dict[str, Any]] | None = None) -> list[str]:
+    """Return known CLI node-table field paths from schema plus observed node data."""
+    paths: set[str] = set(DEFAULT_SHOW_FIELDS)
+    paths.update(_descriptor_field_paths(mesh_pb2.NodeInfo.DESCRIPTOR))
+
+    for telemetry_field in telemetry_pb2.Telemetry.DESCRIPTOR.fields:
+        if telemetry_field.message_type is None:
+            continue
+        paths.add(telemetry_field.json_name)
+        paths.update(
+            _descriptor_field_paths(
+                telemetry_field.message_type,
+                telemetry_field.json_name,
+            )
+        )
+
+    # These are synthesized by presentation/runtime logic rather than represented
+    # directly in NodeInfo's protobuf descriptor.
+    paths.update({"N", "since", "position.latitude", "position.longitude"})
+
+    def _walk_observed(value: Any, prefix: str = "") -> None:
+        if not isinstance(value, dict):
+            return
+        for key, child in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            paths.add(path)
+            _walk_observed(child, path)
+
+    for node in nodes or []:
+        _walk_observed(node)
+
+    return sorted(paths)

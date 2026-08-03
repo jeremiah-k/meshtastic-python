@@ -28,6 +28,7 @@ from google.protobuf.message import Message
 from pubsub import pub
 
 import meshtastic.cli.runtime as cli_runtime
+from meshtastic.mesh_interface_runtime import node_data
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
@@ -2041,6 +2042,22 @@ def _handle_configure_command(
     )
 
 
+def _validate_cli_show_fields(interface: MeshInterface, show_fields: list[str]) -> None:
+    """Reject unavailable --show-fields values with a concrete choice list."""
+    nodes_by_num = getattr(interface, "nodesByNum", None)
+    if not isinstance(nodes_by_num, dict) or not nodes_by_num:
+        return
+    available = node_data.getKnownFieldPaths(list(nodes_by_num.values()))
+    available_set = set(available)
+    invalid = [field for field in show_fields if field not in available_set]
+    if invalid:
+        _cli_exit(
+            "Unknown --show-fields value(s): "
+            f"{', '.join(invalid)}. Available fields: {', '.join(available)}",
+            1,
+        )
+
+
 def onConnected(interface: MeshInterface) -> None:
     """Execute CLI actions specified by parsed command-line arguments using the provided MeshInterface.
 
@@ -2545,7 +2562,9 @@ def onConnected(interface: MeshInterface) -> None:
             if ch_add_idx is not None:
                 # Since we set the channel index after adding a channel, don't allow --ch-index
                 _cli_exit(
-                    "Warning: '--ch-add' and '--ch-index' are incompatible. Channel not added."
+                    "Warning: --ch-add chooses the next free channel index automatically; "
+                    "remove --ch-index and retry. Use --ch-set, --ch-del, --ch-enable, "
+                    "or --ch-disable when targeting a specific index."
                 )
             closeNow = True
             if len(args.ch_add) > 10:
@@ -2911,6 +2930,8 @@ def onConnected(interface: MeshInterface) -> None:
             if args.dest != BROADCAST_ADDR:
                 print("Showing node list of a remote node is not supported.")
                 return
+            if args.show_fields:
+                _validate_cli_show_fields(interface, args.show_fields)
             interface.showNodes(True, args.show_fields)
 
         if args.show_fields and not args.nodes:
