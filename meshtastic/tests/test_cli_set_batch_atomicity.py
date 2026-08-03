@@ -259,3 +259,157 @@ def test_camel_case_multiword_section_preflights_and_applies_consistently(
     node.writeConfig.assert_called_once_with("external_notification")
     node.beginSettingsTransaction.assert_not_called()
     node.commitSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_unknown_field_cancels_prior_valid_entry_without_error_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Unknown fields preserve exit-0 guidance while cancelling the whole batch."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "bluetooth.enabled",
+            "true",
+            "--set",
+            "lora.not_a_field",
+            "1",
+        ],
+    )
+    interface, node = _interface_with_config_node()
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        main()
+
+    assert node.localConfig.bluetooth.enabled is False
+    node.writeConfig.assert_not_called()
+    out, err = capsys.readouterr()
+    assert "do not have an attribute lora.not_a_field" in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("field", "value", "diagnostic"),
+    (
+        ("lora.region", "NOT_A_REGION", "does not have an enum called"),
+        ("network.enabled_protocols", "TCP", "Unknown flag 'TCP'"),
+    ),
+)
+def test_semantic_rejection_cancels_prior_valid_entry_and_reports_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    value: str,
+    diagnostic: str,
+) -> None:
+    """Enum and bitfield failures remain nonfatal but cannot partially apply a batch."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "bluetooth.enabled",
+            "true",
+            "--set",
+            field,
+            value,
+        ],
+    )
+    interface, node = _interface_with_config_node()
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        main()
+
+    assert node.localConfig.bluetooth.enabled is False
+    node.writeConfig.assert_not_called()
+    out, err = capsys.readouterr()
+    assert diagnostic in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_semantic_and_fatal_rejections_are_reported_together_on_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A fatal batch reports captured semantic diagnostics in the same error stream."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "lora.region",
+            "NOT_A_REGION",
+            "--set",
+            "power.ls_secs",
+            "not-a-number",
+        ],
+    )
+    interface, node = _interface_with_config_node()
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    node.writeConfig.assert_not_called()
+    out, err = capsys.readouterr()
+    assert "does not have an enum called" not in out
+    assert "power.ls_secs" in err
+    assert "lora.region: value rejected by validation" in err
+    assert "does not have an enum called" in err
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_preflight_exception_redacts_secret_value_across_runtime_messages(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Runtime-specific exception wording must never defeat secret redaction."""
+    secret = "SENTINEL_PRIVATE_VALUE"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "bluetooth.fixed_pin",
+            secret,
+        ],
+    )
+    interface, node = _interface_with_config_node()
+
+    with (
+        patch("meshtastic.tcp_interface.TCPInterface", return_value=interface),
+        patch(
+            "meshtastic.__main__.setPref",
+            side_effect=TypeError(f"{secret!r} has type str"),
+        ),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    node.writeConfig.assert_not_called()
+    out, err = capsys.readouterr()
+    assert "bluetooth.fixed_pin: invalid value <redacted> (TypeError)" in err
+    assert secret not in out + err

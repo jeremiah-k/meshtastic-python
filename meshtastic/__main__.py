@@ -187,6 +187,11 @@ def _fatal_preference_value_errors() -> Iterator[None]:
     finally:
         _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
 
+=======
+_PREF_VALIDATION_REPORTER: contextvars.ContextVar[Callable[[str], None] | None] = (
+    contextvars.ContextVar("pref_validation_reporter", default=None)
+)
+>>>>>>> b4d18df0 (Polish atomic set validation diagnostics)
 
 # Map dotted preference paths to the protobuf enum that defines their flags.
 # These fields are stored as uint32 bitmasks in the protobuf but have an
@@ -336,8 +341,16 @@ def _report_pref_validation(message: str) -> None:
     message : str
         User-facing validation diagnostic.
 
-    Configure preflight intentionally suppresses low-level duplicate diagnostics.
+    Notes
+    -----
+    Outside preflight, validation messages retain their historical direct stdout
+    behavior, including visibility under ``--quiet``. Batch preflight installs a
+    reporter so diagnostics can be emitted coherently after all entries are checked.
     """
+    reporter = _PREF_VALIDATION_REPORTER.get()
+    if reporter is not None:
+        reporter(message)
+        return
     _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
 
 
@@ -1856,9 +1869,7 @@ def _handle_ota_update(
     _cli_print("\nOTA update completed successfully!")
 
 
-def _print_set_field_choices(
-    node: Any, pref_names: str | Sequence[str]
-) -> None:
+def _print_set_field_choices(node: Any, pref_names: str | Sequence[str]) -> None:
     """Print historical field-not-found guidance for one or more --set names.
 
     Parameters
@@ -1888,6 +1899,8 @@ def _normalize_set_entries(
     ----------
     set_entries : Sequence[Sequence[Any] | None]
         Parsed ``--set`` entries, each containing at least a field name and value.
+        Any additional elements are ignored for compatibility with the historical
+        ``item[0]``/``item[1]`` parsing contract.
 
     Returns
     -------
@@ -1899,6 +1912,26 @@ def _normalize_set_entries(
         for item in set_entries
         if item is not None and len(item) >= 2
     ]
+
+
+def _format_set_preflight_exception(pref_name: str, exc: Exception) -> str:
+    """Format a preflight exception without exposing secret preference values.
+
+    Parameters
+    ----------
+    pref_name : str
+        Canonical preference path whose validation raised ``exc``.
+    exc : Exception
+        Validation exception raised by the protobuf/runtime conversion path.
+
+    Returns
+    -------
+    str
+        Safe error detail suitable for the aggregated CLI failure message.
+    """
+    if _redact_pref_value(pref_name, "value") == "<redacted>":
+        return f"{pref_name}: invalid value <redacted> ({type(exc).__name__})"
+    return f"{pref_name}: {exc}"
 
 
 def _preflight_set_entries(
@@ -1917,7 +1950,9 @@ def _preflight_set_entries(
     -------
     bool
         ``True`` when every entry can be applied; ``False`` when an unknown
-        field or non-fatal semantic validation rejects the batch.
+        field or non-fatal semantic validation rejects the batch. Unknown and
+        semantic rejections remain exit-code compatible with the historical CLI,
+        but now cancel the entire batch instead of permitting partial application.
     """
     candidates = []
     for source in (node.localConfig, node.moduleConfig):
@@ -1927,12 +1962,12 @@ def _preflight_set_entries(
 
     fatal_errors: list[str] = []
     unknown_fields: list[str] = []
-    value_rejections: list[str] = []
+    value_rejections: list[tuple[str, tuple[str, ...]]] = []
     token = _CONFIGURE_PREFLIGHT_MODE.set(True)
     try:
         for raw_pref_name, raw_value in set_entries:
             pref_name = _normalize_pref_name(raw_pref_name)
-            root_field = meshtastic.util.camel_to_snake(splitCompoundName(pref_name)[0])
+            root_field = splitCompoundName(pref_name)[0]
             candidate = next(
                 (
                     config
@@ -1945,13 +1980,20 @@ def _preflight_set_entries(
                 unknown_fields.append(pref_name)
                 continue
 
+            validation_messages: list[str] = []
+            reporter_token = _PREF_VALIDATION_REPORTER.set(
+                validation_messages.append
+            )
             try:
-                valid = setPref(candidate, pref_name, raw_value)
+                try:
+                    valid = setPref(candidate, pref_name, raw_value)
+                finally:
+                    _PREF_VALIDATION_REPORTER.reset(reporter_token)
             except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
-                fatal_errors.append(f"{pref_name}: {exc}")
+                fatal_errors.append(_format_set_preflight_exception(pref_name, exc))
                 continue
             if not valid:
-                value_rejections.append(pref_name)
+                value_rejections.append((pref_name, tuple(validation_messages)))
     finally:
         _CONFIGURE_PREFLIGHT_MODE.reset(token)
 
@@ -1959,8 +2001,19 @@ def _preflight_set_entries(
         _print_set_field_choices(node, unknown_fields)
 
     if fatal_errors:
-        details = "\n".join(f"  - {error}" for error in fatal_errors)
+        detail_lines = [f"  - {error}" for error in fatal_errors]
+        for pref_name, messages in value_rejections:
+            detail_lines.append(f"  - {pref_name}: value rejected by validation")
+            detail_lines.extend(f"      {message}" for message in messages)
+        details = "\n".join(detail_lines)
         _cli_exit(f"ERROR: --set batch rejected before applying changes:\n{details}")
+
+    for pref_name, messages in value_rejections:
+        if messages:
+            for message in messages:
+                print(message)
+        else:
+            print(f"{pref_name}: value was rejected by validation.")
 
     return not (unknown_fields or value_rejections)
 
@@ -1975,26 +2028,41 @@ def _handle_set_command(
     if not _preflight_set_entries(node, set_entries):
         return
 
-    last_pref: tuple[str, Any] | None = None
     fields: set[str] = set()
-    any_found = False
     for raw_pref_name, raw_value in set_entries:
-        last_pref = (raw_pref_name, raw_value)
-        found = False
         normalized_pref_name = _normalize_pref_name(raw_pref_name)
         field = splitCompoundName(normalized_pref_name)[0]
+        applied = False
         for config in [node.localConfig, node.moduleConfig]:
             config_type = config.DESCRIPTOR.fields_by_name.get(field)
             if config_type is not None:
                 if len(config.ListFields()) == 0:
                     node.requestConfig(config_type)
-                found = setPref(config, normalized_pref_name, raw_value)
-                if found:
-                    any_found = True
-                    fields.add(field)
-                    break
+                try:
+                    found = setPref(config, normalized_pref_name, raw_value)
+                except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
+                    detail = _format_set_preflight_exception(
+                        normalized_pref_name, exc
+                    )
+                    _cli_exit(
+                        "ERROR: --set apply diverged after successful preflight:\n"
+                        f"  - {detail}"
+                    )
+                if not found:
+                    _cli_exit(
+                        "ERROR: --set apply diverged after successful preflight for "
+                        f"{normalized_pref_name}."
+                    )
+                fields.add(field)
+                applied = True
+                break
+        if not applied:
+            _cli_exit(
+                "ERROR: --set field no longer resolves after successful preflight: "
+                f"{normalized_pref_name}."
+            )
 
-    if any_found:
+    if fields:
         _cli_print("Writing modified preferences to device")
         if len(fields) > 1:
             _cli_print("Using a configuration transaction")
@@ -2004,8 +2072,6 @@ def _handle_set_command(
             node.writeConfig(field)
         if len(fields) > 1:
             node.commitSettingsTransaction()
-    elif last_pref is not None:
-        _print_set_field_choices(node, last_pref[0])
 
 
 def _pace_configure_write(
