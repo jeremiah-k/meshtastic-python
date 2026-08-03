@@ -53,7 +53,8 @@ def test_new_module_sections_build_write_messages(
     message = builder.build_write_message(config_name)
 
     assert message.HasField("set_module_config")
-    assert message.set_module_config.HasField(config_name)
+    populated = {field.name for field, _ in message.set_module_config.ListFields()}
+    assert config_name in populated
     assert getattr(message.set_module_config, config_name) == source_config
 
 
