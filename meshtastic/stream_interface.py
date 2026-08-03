@@ -10,6 +10,7 @@ import time
 from typing import IO, Any, BinaryIO, Callable
 
 import serial  # type: ignore[import-untyped]
+from google.protobuf.message import DecodeError
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
@@ -659,6 +660,10 @@ class StreamInterface(MeshInterface):
                                     bytes(
                                         self._rxBuf[HEADER_LEN : packetlen + HEADER_LEN]
                                     )
+                                )
+                            except DecodeError:
+                                logger.debug(
+                                    "Malformed FromRadio frame was discarded and the reader will resynchronize"
                                 )
                             except Exception:
                                 logger.exception(

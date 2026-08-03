@@ -57,6 +57,14 @@ SERIAL_CONNECT_RETRY_BUDGET_SECONDS = 20.0
 SERIAL_CONNECT_MAX_ATTEMPTS = 12
 """Hard cap on serial connect attempts within the retry window."""
 
+SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD = 2
+"""Malformed bootstrap frames tolerated before restarting the serial handshake."""
+
+SERIAL_BOOTSTRAP_DECODE_ERROR_REASON = (
+    "Corrupt protocol frames during serial connection bootstrap"
+)
+"""Stable error prefix used to classify malformed-frame bootstrap retries."""
+
 SERIAL_PORT_PATH_EMPTY_ERROR = (
     "Serial port path cannot be empty; pass None to auto-detect."
 )
@@ -353,6 +361,19 @@ class SerialInterface(StreamInterface):
         if self.stream is None or not getattr(self.stream, "is_open", True):
             self.stream = self._open_serial_stream()
 
+    def _connect_wait_should_abort(self) -> str | None:
+        """Restart bootstrap after repeated malformed protocol frames."""
+        transport_abort = super()._connect_wait_should_abort()
+        if transport_abort is not None:
+            return transport_abort
+        decode_errors = self._bootstrap_decode_error_count_snapshot()
+        if decode_errors >= SERIAL_BOOTSTRAP_DECODE_ERROR_RETRY_THRESHOLD:
+            return (
+                f"{SERIAL_BOOTSTRAP_DECODE_ERROR_REASON} "
+                f"({decode_errors} decode errors)"
+            )
+        return None
+
     def _is_retryable_connect_error(self, exc: Exception) -> bool:
         """Return True when serial connect failures are likely transient."""
         if isinstance(
@@ -371,6 +392,7 @@ class SerialInterface(StreamInterface):
                 or "Connection lost while waiting for connection completion" in message
                 or "No serial Meshtastic device detected for reconnect." in message
                 or "does not exist (device disconnected)" in message
+                or SERIAL_BOOTSTRAP_DECODE_ERROR_REASON in message
             )
         return False
 

@@ -213,6 +213,30 @@ class ReceivePipeline:
         )
         try:
             from_radio.ParseFromString(from_radio_bytes)
+        except protobuf_message.DecodeError:
+            recorder_name = "_record_bootstrap_decode_error"
+            has_recorder = recorder_name in vars(self._interface) or hasattr(
+                type(self._interface), recorder_name
+            )
+            record_error = (
+                getattr(self._interface, recorder_name, None) if has_recorder else None
+            )
+            bootstrap_error_count = record_error() if callable(record_error) else 0
+            if bootstrap_error_count:
+                logger.warning(
+                    "Discarding malformed FromRadio frame during connection bootstrap "
+                    "(count=%d, len=%d, sha256=%s)",
+                    bootstrap_error_count,
+                    frame_length,
+                    frame_checksum,
+                )
+            else:
+                logger.exception(
+                    "Error while parsing FromRadio frame len=%d sha256=%s",
+                    frame_length,
+                    frame_checksum,
+                )
+            raise
         except Exception:
             logger.exception(
                 "Error while parsing FromRadio frame len=%d sha256=%s",

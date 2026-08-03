@@ -323,7 +323,7 @@ class MeshInterface:  # pylint: disable=R0902
         #   + _response_wait_acks + _active_wait_request_ids
         #   + _retired_wait_request_ids
         # - _heartbeat_lock: _closing, heartbeatTimer, _heartbeat_inflight,
-        #   isConnected
+        #   isConnected, _bootstrap_decode_error_count
         # - _packet_id_lock: currentPacketId generation
         # - _queue_lock: queue + queueStatus
         # - _node_db_lock: nodes/nodesByNum/_localChannels plus myInfo/metadata
@@ -352,6 +352,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
+        self._bootstrap_decode_error_count = 0
         self._timeout: Timeout = Timeout(maxSecs=timeout)
         self._acknowledgment: Acknowledgment = Acknowledgment()
         self.heartbeatTimer: threading.Timer | None = None
@@ -494,6 +495,20 @@ class MeshInterface:  # pylint: disable=R0902
         """
         with self._heartbeat_lock:
             self._closing = False
+            self._bootstrap_decode_error_count = 0
+
+    def _record_bootstrap_decode_error(self) -> int:
+        """Record one malformed protocol frame observed before connection completes."""
+        with self._heartbeat_lock:
+            if self.isConnected.is_set():
+                return 0
+            self._bootstrap_decode_error_count += 1
+            return self._bootstrap_decode_error_count
+
+    def _bootstrap_decode_error_count_snapshot(self) -> int:
+        """Return the current bootstrap decode-error count under the lifecycle lock."""
+        with self._heartbeat_lock:
+            return self._bootstrap_decode_error_count
 
     def close(self) -> None:
         """Shut down the interface and send a disconnect to the radio.
