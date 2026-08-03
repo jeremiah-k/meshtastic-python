@@ -15,6 +15,7 @@ import logging
 import os
 import platform
 import sys
+import textwrap
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -2045,15 +2046,24 @@ def _handle_configure_command(
 def _validate_cli_show_fields(interface: MeshInterface, show_fields: list[str]) -> None:
     """Reject unavailable --show-fields values with a concrete choice list."""
     nodes_by_num = getattr(interface, "nodesByNum", None)
-    if not isinstance(nodes_by_num, dict) or not nodes_by_num:
-        return
-    available = node_data.getKnownFieldPaths(list(nodes_by_num.values()))
+    observed_nodes = (
+        list(nodes_by_num.values()) if isinstance(nodes_by_num, dict) else []
+    )
+    available = node_data.getKnownFieldPaths(observed_nodes)
     available_set = set(available)
     invalid = [field for field in show_fields if field not in available_set]
     if invalid:
+        choices = textwrap.fill(
+            ", ".join(available),
+            width=100,
+            initial_indent="  ",
+            subsequent_indent="  ",
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
         _cli_exit(
             "Unknown --show-fields value(s): "
-            f"{', '.join(invalid)}. Available fields: {', '.join(available)}",
+            f"{', '.join(invalid)}.\nAvailable fields:\n{choices}",
             1,
         )
 
