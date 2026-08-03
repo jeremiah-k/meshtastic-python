@@ -120,6 +120,9 @@ def test_valid_multi_section_batch_still_uses_one_transaction(
 
     assert node.localConfig.bluetooth.enabled is True
     assert node.localConfig.power.ls_secs == 300
+    assert [
+        request.args[0].name for request in node.requestConfig.call_args_list
+    ] == ["bluetooth", "power"]
     node.beginSettingsTransaction.assert_called_once_with()
     assert {call.args[0] for call in node.writeConfig.call_args_list} == {
         "bluetooth",

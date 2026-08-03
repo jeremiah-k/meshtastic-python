@@ -2036,7 +2036,8 @@ def _handle_set_command(
         for config in [node.localConfig, node.moduleConfig]:
             config_type = config.DESCRIPTOR.fields_by_name.get(field)
             if config_type is not None:
-                if len(config.ListFields()) == 0:
+                section = getattr(config, config_type.name)
+                if len(section.ListFields()) == 0:
                     node.requestConfig(config_type)
                 try:
                     found = setPref(config, normalized_pref_name, raw_value)
