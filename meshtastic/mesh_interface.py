@@ -423,6 +423,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         if not to_radio.HasField("packet"):
             return True
+        # Read myInfo without _node_db_lock on purpose. Queue classification can
+        # run while _queue_lock is held, and the lock contract forbids nested
+        # MeshInterface lock acquisition. One attribute snapshot is sufficient.
         my_info = self.myInfo
         if my_info is None:
             return True
