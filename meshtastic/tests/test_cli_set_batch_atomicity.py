@@ -230,3 +230,32 @@ def test_preflight_surfaces_unknown_fields_alongside_fatal_values(
     assert "lora.not_a_field" in out
     assert "lora.hop_limit" in err
     node.writeConfig.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_camel_case_multiword_section_preflights_and_applies_consistently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CamelCase multi-word roots should resolve identically in both phases."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "externalNotification.enabled",
+            "true",
+        ],
+    )
+    interface, node = _interface_with_config_node()
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        main()
+
+    assert node.moduleConfig.external_notification.enabled is True
+    node.writeConfig.assert_called_once_with("external_notification")
+    node.beginSettingsTransaction.assert_not_called()
+    node.commitSettingsTransaction.assert_not_called()

@@ -1859,7 +1859,15 @@ def _handle_ota_update(
 def _print_set_field_choices(
     node: Any, pref_names: str | Sequence[str]
 ) -> None:
-    """Print historical field-not-found guidance for one or more --set names."""
+    """Print historical field-not-found guidance for one or more --set names.
+
+    Parameters
+    ----------
+    node : Any
+        Node whose local and module configuration schemas provide the choices.
+    pref_names : str | Sequence[str]
+        Unknown preference name or names to identify before printing choices.
+    """
     names = [pref_names] if isinstance(pref_names, str) else list(dict.fromkeys(pref_names))
     for pref_name in names:
         print(
@@ -1874,7 +1882,18 @@ def _print_set_field_choices(
 def _normalize_set_entries(
     set_entries: Sequence[Sequence[Any] | None],
 ) -> list[tuple[str, Any]]:
-    """Normalize argparse --set entries into explicit name/value pairs."""
+    """Normalize argparse --set entries into explicit name/value pairs.
+
+    Parameters
+    ----------
+    set_entries : Sequence[Sequence[Any] | None]
+        Parsed ``--set`` entries, each containing at least a field name and value.
+
+    Returns
+    -------
+    list[tuple[str, Any]]
+        Normalized ``(field_name, value)`` pairs with incomplete entries omitted.
+    """
     return [
         (str(item[0]), item[1])
         for item in set_entries
@@ -1885,7 +1904,21 @@ def _normalize_set_entries(
 def _preflight_set_entries(
     node: Any, set_entries: Sequence[tuple[str, Any]]
 ) -> bool:
-    """Validate an entire --set batch on protobuf copies before mutation."""
+    """Validate an entire --set batch on protobuf copies before mutation.
+
+    Parameters
+    ----------
+    node : Any
+        Node providing the current local and module configuration values.
+    set_entries : Sequence[tuple[str, Any]]
+        Normalized preference names and raw values to validate as one batch.
+
+    Returns
+    -------
+    bool
+        ``True`` when every entry can be applied; ``False`` when an unknown
+        field or non-fatal semantic validation rejects the batch.
+    """
     candidates = []
     for source in (node.localConfig, node.moduleConfig):
         candidate = type(source)()
