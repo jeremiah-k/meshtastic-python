@@ -1856,12 +1856,76 @@ def _handle_ota_update(
     _cli_print("\nOTA update completed successfully!")
 
 
+def _print_set_field_choices(node: Any, pref_name: str) -> None:
+    """Print the historical field-not-found guidance for one --set name."""
+    print(
+        f"{node.localConfig.__class__.__name__} and "
+        f"{node.moduleConfig.__class__.__name__} do not have an attribute {pref_name}."
+    )
+    print("Choices are...")
+    printConfig(node.localConfig)
+    printConfig(node.moduleConfig)
+
+
+def _preflight_set_entries(node: Any, set_entries: Sequence[Sequence[Any]]) -> bool:
+    """Validate an entire --set batch on protobuf copies before mutation."""
+    candidates = []
+    for source in (node.localConfig, node.moduleConfig):
+        candidate = type(source)()
+        candidate.CopyFrom(source)
+        candidates.append(candidate)
+
+    fatal_errors: list[str] = []
+    rejected_fields: list[str] = []
+    token = _CONFIGURE_PREFLIGHT_MODE.set(True)
+    try:
+        for item in set_entries:
+            if item is None or len(item) < 2:
+                continue
+            pref_name = _normalize_pref_name(str(item[0]))
+            raw_value = item[1]
+            root_field = meshtastic.util.camel_to_snake(splitCompoundName(pref_name)[0])
+            candidate = next(
+                (
+                    config
+                    for config in candidates
+                    if root_field in config.DESCRIPTOR.fields_by_name
+                ),
+                None,
+            )
+            if candidate is None or not _resolve_pref(candidate, pref_name):
+                rejected_fields.append(pref_name)
+                continue
+
+            try:
+                valid = setPref(candidate, pref_name, raw_value)
+            except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
+                fatal_errors.append(f"{pref_name}: {exc}")
+                continue
+            if not valid:
+                rejected_fields.append(pref_name)
+    finally:
+        _CONFIGURE_PREFLIGHT_MODE.reset(token)
+
+    if fatal_errors:
+        details = "\n".join(f"  - {error}" for error in fatal_errors)
+        _cli_exit(f"ERROR: --set batch rejected before applying changes:\n{details}")
+
+    if rejected_fields:
+        _print_set_field_choices(node, rejected_fields[0])
+        return False
+
+    return True
+
+
 def _handle_set_command(
     interface: MeshInterface,
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> None:
     node = interface.getNode(args.dest, False, **getNode_kwargs)
+    if not _preflight_set_entries(node, args.set):
+        return
 
     last_pref: list[str] | None = None
     fields: set[str] = set()
@@ -1899,12 +1963,7 @@ def _handle_set_command(
         if len(fields) > 1:
             node.commitSettingsTransaction()
     elif last_pref is not None:
-        print(
-            f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
-        )
-        print("Choices are...")
-        printConfig(node.localConfig)
-        printConfig(node.moduleConfig)
+        _print_set_field_choices(node, last_pref[0])
 
 
 def _pace_configure_write(
