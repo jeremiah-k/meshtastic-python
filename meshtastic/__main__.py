@@ -1856,18 +1856,35 @@ def _handle_ota_update(
     _cli_print("\nOTA update completed successfully!")
 
 
-def _print_set_field_choices(node: Any, pref_name: str) -> None:
-    """Print the historical field-not-found guidance for one --set name."""
-    print(
-        f"{node.localConfig.__class__.__name__} and "
-        f"{node.moduleConfig.__class__.__name__} do not have an attribute {pref_name}."
-    )
+def _print_set_field_choices(
+    node: Any, pref_names: str | Sequence[str]
+) -> None:
+    """Print historical field-not-found guidance for one or more --set names."""
+    names = [pref_names] if isinstance(pref_names, str) else list(dict.fromkeys(pref_names))
+    for pref_name in names:
+        print(
+            f"{node.localConfig.__class__.__name__} and "
+            f"{node.moduleConfig.__class__.__name__} do not have an attribute {pref_name}."
+        )
     print("Choices are...")
     printConfig(node.localConfig)
     printConfig(node.moduleConfig)
 
 
-def _preflight_set_entries(node: Any, set_entries: Sequence[Sequence[Any]]) -> bool:
+def _normalize_set_entries(
+    set_entries: Sequence[Sequence[Any] | None],
+) -> list[tuple[str, Any]]:
+    """Normalize argparse --set entries into explicit name/value pairs."""
+    return [
+        (str(item[0]), item[1])
+        for item in set_entries
+        if item is not None and len(item) >= 2
+    ]
+
+
+def _preflight_set_entries(
+    node: Any, set_entries: Sequence[tuple[str, Any]]
+) -> bool:
     """Validate an entire --set batch on protobuf copies before mutation."""
     candidates = []
     for source in (node.localConfig, node.moduleConfig):
@@ -1876,14 +1893,12 @@ def _preflight_set_entries(node: Any, set_entries: Sequence[Sequence[Any]]) -> b
         candidates.append(candidate)
 
     fatal_errors: list[str] = []
-    rejected_fields: list[str] = []
+    unknown_fields: list[str] = []
+    value_rejections: list[str] = []
     token = _CONFIGURE_PREFLIGHT_MODE.set(True)
     try:
-        for item in set_entries:
-            if item is None or len(item) < 2:
-                continue
-            pref_name = _normalize_pref_name(str(item[0]))
-            raw_value = item[1]
+        for raw_pref_name, raw_value in set_entries:
+            pref_name = _normalize_pref_name(raw_pref_name)
             root_field = meshtastic.util.camel_to_snake(splitCompoundName(pref_name)[0])
             candidate = next(
                 (
@@ -1894,7 +1909,7 @@ def _preflight_set_entries(node: Any, set_entries: Sequence[Sequence[Any]]) -> b
                 None,
             )
             if candidate is None or not _resolve_pref(candidate, pref_name):
-                rejected_fields.append(pref_name)
+                unknown_fields.append(pref_name)
                 continue
 
             try:
@@ -1903,19 +1918,18 @@ def _preflight_set_entries(node: Any, set_entries: Sequence[Sequence[Any]]) -> b
                 fatal_errors.append(f"{pref_name}: {exc}")
                 continue
             if not valid:
-                rejected_fields.append(pref_name)
+                value_rejections.append(pref_name)
     finally:
         _CONFIGURE_PREFLIGHT_MODE.reset(token)
+
+    if unknown_fields:
+        _print_set_field_choices(node, unknown_fields)
 
     if fatal_errors:
         details = "\n".join(f"  - {error}" for error in fatal_errors)
         _cli_exit(f"ERROR: --set batch rejected before applying changes:\n{details}")
 
-    if rejected_fields:
-        _print_set_field_choices(node, rejected_fields[0])
-        return False
-
-    return True
+    return not (unknown_fields or value_rejections)
 
 
 def _handle_set_command(
@@ -1924,29 +1938,24 @@ def _handle_set_command(
     getNode_kwargs: dict[str, Any],
 ) -> None:
     node = interface.getNode(args.dest, False, **getNode_kwargs)
-    if not _preflight_set_entries(node, args.set):
+    set_entries = _normalize_set_entries(args.set)
+    if not _preflight_set_entries(node, set_entries):
         return
 
-    last_pref: list[str] | None = None
+    last_pref: tuple[str, Any] | None = None
     fields: set[str] = set()
     any_found = False
-    for pref_item in args.set:
-        if pref_item is None or len(pref_item) < 2:
-            continue
-        last_pref = pref_item
+    for raw_pref_name, raw_value in set_entries:
+        last_pref = (raw_pref_name, raw_value)
         found = False
-        normalized_pref_name = _normalize_pref_name(pref_item[0])
+        normalized_pref_name = _normalize_pref_name(raw_pref_name)
         field = splitCompoundName(normalized_pref_name)[0]
         for config in [node.localConfig, node.moduleConfig]:
             config_type = config.DESCRIPTOR.fields_by_name.get(field)
             if config_type is not None:
                 if len(config.ListFields()) == 0:
                     node.requestConfig(config_type)
-                try:
-                    with _fatal_preference_value_errors():
-                        found = setPref(config, normalized_pref_name, pref_item[1])
-                except _PreferenceValueError as exc:
-                    _cli_exit(str(exc), 1)
+                found = setPref(config, normalized_pref_name, raw_value)
                 if found:
                     any_found = True
                     fields.add(field)

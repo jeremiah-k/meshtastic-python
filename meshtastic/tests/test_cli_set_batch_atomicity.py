@@ -159,4 +159,74 @@ def test_nonfatal_validation_rejection_still_prevents_prior_batch_mutation(
     node.writeConfig.assert_not_called()
     out, err = capsys.readouterr()
     assert "network.wifi_psk must be 8 or more characters" in out
+    assert "do not have an attribute network.wifi_psk" not in out
     assert err == ""
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_preflight_reports_all_unknown_fields_with_choices_once(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A batch should expose every unknown field without repeating the choice dump."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "lora.not_a_field",
+            "1",
+            "--set",
+            "power.also_not_a_field",
+            "2",
+        ],
+    )
+    interface, node = _interface_with_config_node()
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        main()
+
+    out, err = capsys.readouterr()
+    assert "do not have an attribute lora.not_a_field" in out
+    assert "do not have an attribute power.also_not_a_field" in out
+    assert out.count("Choices are...") == 1
+    assert err == ""
+    node.writeConfig.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_preflight_surfaces_unknown_fields_alongside_fatal_values(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mixed invalid batches should expose all independently actionable failures."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--host",
+            "meshtastic.local",
+            "--set",
+            "lora.not_a_field",
+            "1",
+            "--set",
+            "lora.hop_limit",
+            "not_a_number",
+        ],
+    )
+    interface, node = _interface_with_config_node()
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=interface):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    out, err = capsys.readouterr()
+    assert "lora.not_a_field" in out
+    assert "lora.hop_limit" in err
+    node.writeConfig.assert_not_called()
