@@ -311,15 +311,19 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
-def _cli_print(message: str) -> None:
-    """Print a message to stdout unless --quiet is active.
+def _cli_print(message: str, *, force: bool = False) -> None:
+    """Print a CLI message, optionally bypassing ``--quiet`` suppression.
 
-    This helper gates non-essential informational output so that --quiet
-    suppresses ordinary print() calls in addition to lowering the logging
-    level.
+    Parameters
+    ----------
+    message : str
+        User-facing message to print to stdout.
+    force : bool
+        When ``True``, print even if ``--quiet`` is active. Use this for
+        validation output that must remain visible to the user.
     """
     args = mt_config.args
-    if args and getattr(args, "quiet", False):
+    if not force and args and getattr(args, "quiet", False):
         return
     print(message)
 
@@ -1483,7 +1487,18 @@ def _resolve_pref(config: Any, comp_name: str) -> bool:
 
 
 def _protobuf_field_type_label(field: FieldDescriptor) -> str:
-    """Return a concise user-facing type label for a protobuf field."""
+    """Return a concise user-facing type label for a protobuf field.
+
+    Parameters
+    ----------
+    field : FieldDescriptor
+        Protobuf field whose expected CLI value type should be described.
+
+    Returns
+    -------
+    str
+        Concise user-facing label for the field type.
+    """
     if field.type in {
         FieldDescriptor.TYPE_INT32,
         FieldDescriptor.TYPE_INT64,
@@ -1508,6 +1523,30 @@ def _protobuf_field_type_label(field: FieldDescriptor) -> str:
     return "compatible value"
 
 
+
+def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
+    """Print available channel-setting fields after an unknown --ch-set name.
+
+    Parameters
+    ----------
+    settings : Any
+        Channel settings protobuf whose fields should be listed.
+    pref_name : str
+        Unknown preference name supplied to ``--ch-set``.
+    """
+    print(f"{settings.__class__.__name__} does not have an attribute {pref_name}.")
+    print("Choices are...")
+    for field in settings.DESCRIPTOR.fields:
+        if field.name != "module_settings":
+            print(field.name)
+            continue
+
+        print(f"{field.name}:")
+        if field.message_type is None:
+            continue
+        for sub_field in sorted(field.message_type.fields, key=lambda item: item.name):
+            print(f"    {field.name}.{sub_field.name}")
+
 def _assign_scalar_pref_value(
     target: Any,
     field: FieldDescriptor,
@@ -1516,7 +1555,32 @@ def _assign_scalar_pref_value(
     field_path: str,
     raw_value: Any,
 ) -> bool:
-    """Assign one non-repeated protobuf field without leaking conversion errors."""
+    """Assign one non-repeated protobuf field without leaking conversion errors.
+
+    Parameters
+    ----------
+    target : Any
+        Protobuf message instance that owns ``field``.
+    field : FieldDescriptor
+        Descriptor for the scalar field being assigned.
+    value : Any
+        Converted value to assign to the protobuf field.
+    field_path : str
+        Canonical dotted preference path used in diagnostics and redaction.
+    raw_value : Any
+        Original caller-supplied value used for safe diagnostic rendering.
+
+    Returns
+    -------
+    bool
+        ``True`` when assignment succeeds; ``False`` when a non-fatal
+        validation failure is reported.
+
+    Raises
+    ------
+    _PreferenceValueError
+        If assignment fails while fatal preference-value handling is active.
+    """
     try:
         setattr(target, field.name, value)
         return True
@@ -1534,7 +1598,7 @@ def _assign_scalar_pref_value(
     )
     if _SET_PREF_VALUE_ERRORS_FATAL.get():
         raise _PreferenceValueError(message)
-    print(message)
+    _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
     return False
 
 
@@ -2801,39 +2865,32 @@ def onConnected(interface: MeshInterface) -> None:
                 if args.ch_disable:
                     enable = False
 
-            # Handle the channel settings
+            # Validate channel settings on a copy so a later invalid entry cannot
+            # leave earlier values partially mutated in the local cache.
+            pending_settings = type(ch.settings)()
+            pending_settings.CopyFrom(ch.settings)
             for pref in args.ch_set or []:
                 if pref[0] == "psk":
-                    found = True
                     try:
-                        ch.settings.psk = meshtastic.util.fromPSK(pref[1])
+                        pending_settings.psk = meshtastic.util.fromPSK(pref[1])
                     except ValueError as exc:
                         _cli_exit(f"Invalid channel PSK: {exc}", 1)
                 else:
-                    found = setPref(ch.settings, pref[0], pref[1])
-                if not found:
-                    category_settings = ["module_settings"]
-                    print(
-                        f"{ch.settings.__class__.__name__} does not have an attribute {pref[0]}."
-                    )
-                    print("Choices are...")
-                    for field in ch.settings.DESCRIPTOR.fields:
-                        if field.name not in category_settings:
-                            print(f"{field.name}")
-                        else:
-                            print(f"{field.name}:")
-                            config = ch.settings.DESCRIPTOR.fields_by_name.get(
-                                field.name
-                            )
-                            names = []
-                            if config is not None and config.message_type is not None:
-                                for sub_field in config.message_type.fields:
-                                    tmp_name = f"{field.name}.{sub_field.name}"
-                                    names.append(tmp_name)
-                            for temp_name in sorted(names):
-                                print(f"    {temp_name}")
+                    if not _resolve_pref(pending_settings, pref[0]):
+                        _print_channel_field_choices(pending_settings, pref[0])
+                        _cli_exit("Channel setting was not applied.", 1)
+                    try:
+                        with _fatal_preference_value_errors():
+                            found = setPref(pending_settings, pref[0], pref[1])
+                    except _PreferenceValueError as exc:
+                        _cli_exit(str(exc), 1)
+                    if not found:
+                        _cli_exit(f"Invalid value for channel setting {pref[0]}.", 1)
 
                 enable = True  # If we set any pref, assume the user wants to enable the channel
+
+            if args.ch_set:
+                ch.settings.CopyFrom(pending_settings)
 
             if enable:
                 ch.role = (
