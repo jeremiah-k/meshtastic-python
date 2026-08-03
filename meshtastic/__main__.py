@@ -29,7 +29,6 @@ from google.protobuf.message import Message
 from pubsub import pub
 
 import meshtastic.cli.runtime as cli_runtime
-from meshtastic.mesh_interface_runtime import node_data
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
@@ -75,6 +74,7 @@ from meshtastic.lockdown import (
     validate_lockdown_passphrase,
 )
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.mesh_interface_runtime import node_data
 from meshtastic.protobuf import (
     admin_pb2,
     channel_pb2,
@@ -2012,19 +2012,17 @@ def _ensure_set_sections_loaded(
             node.requestConfig(config_type)
 
 
-def _preflight_set_entries(
-    node: Any, set_entries: Sequence[tuple[str, Any]]
-) -> bool:
+def _preflight_set_entries(node: Any, set_entries: Sequence[tuple[str, Any]]) -> bool:
     """
     Validate all --set entries against configuration copies before applying changes.
-    
+
     Parameters
     ----------
     node : Any
         Node providing the current local and module configuration.
     set_entries : Sequence[tuple[str, Any]]
         Preference names and raw values to validate as one batch.
-    
+
     Returns
     -------
     bool
@@ -2054,9 +2052,7 @@ def _preflight_set_entries(
                 continue
 
             validation_messages: list[str] = []
-            reporter_token = _PREF_VALIDATION_REPORTER.set(
-                validation_messages.append
-            )
+            reporter_token = _PREF_VALIDATION_REPORTER.set(validation_messages.append)
             try:
                 try:
                     with _fatal_preference_value_errors():
@@ -2077,9 +2073,7 @@ def _preflight_set_entries(
     if fatal_errors:
         detail_lines = [f"  - {error}" for error in fatal_errors]
         for pref_name, messages in value_rejections:
-            detail_lines.append(
-                f"  - {pref_name}: {_SET_VALUE_REJECTED_MESSAGE}"
-            )
+            detail_lines.append(f"  - {pref_name}: {_SET_VALUE_REJECTED_MESSAGE}")
             detail_lines.extend(f"      {message}" for message in messages)
         details = "\n".join(detail_lines)
         _cli_exit(f"ERROR: --set batch rejected before applying changes:\n{details}")
@@ -2089,9 +2083,7 @@ def _preflight_set_entries(
             for message in messages:
                 _report_pref_validation(message)
         else:
-            _report_pref_validation(
-                f"{pref_name}: {_SET_VALUE_REJECTED_MESSAGE}"
-            )
+            _report_pref_validation(f"{pref_name}: {_SET_VALUE_REJECTED_MESSAGE}")
 
     return not (unknown_fields or value_rejections)
 
@@ -2103,7 +2095,7 @@ def _handle_set_command(
 ) -> None:
     """
     Validate and apply a CLI ``--set`` batch without partial updates.
-    
+
     Parameters
     ----------
     interface : MeshInterface
@@ -2112,7 +2104,7 @@ def _handle_set_command(
         Parsed CLI arguments containing the ``--set`` entries and destination.
     getNode_kwargs : dict[str, Any]
         Additional keyword arguments forwarded to ``interface.getNode``.
-    
+
     Notes
     -----
     Invalid batches are rejected before modifying the device. Valid batches write

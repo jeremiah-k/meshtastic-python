@@ -19,7 +19,9 @@ def _builder() -> tuple[_NodeSettingsMessageBuilder, MagicMock]:
 def _shared_field_names(setter_name: str, source: Message) -> set[str]:
     setter = admin_pb2.AdminMessage.DESCRIPTOR.fields_by_name[setter_name]
     assert setter.message_type is not None
-    return set(setter.message_type.fields_by_name) & set(source.DESCRIPTOR.fields_by_name)
+    return set(setter.message_type.fields_by_name) & set(
+        source.DESCRIPTOR.fields_by_name
+    )
 
 
 @pytest.mark.unit

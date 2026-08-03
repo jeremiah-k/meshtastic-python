@@ -14,7 +14,7 @@ from meshtastic.tcp_interface import TCPInterface
 def _interface_with_config_node() -> tuple[MagicMock, MagicMock]:
     """
     Create a mocked interface and node with empty local and module configurations.
-    
+
     Returns
     -------
     tuple[MagicMock, MagicMock]
@@ -130,9 +130,10 @@ def test_valid_multi_section_batch_still_uses_one_transaction(
 
     assert node.localConfig.bluetooth.enabled is True
     assert node.localConfig.power.ls_secs == 300
-    assert [
-        request.args[0].name for request in node.requestConfig.call_args_list
-    ] == ["bluetooth", "power"]
+    assert [request.args[0].name for request in node.requestConfig.call_args_list] == [
+        "bluetooth",
+        "power",
+    ]
     node.beginSettingsTransaction.assert_called_once_with()
     assert {call.args[0] for call in node.writeConfig.call_args_list} == {
         "bluetooth",
@@ -427,7 +428,6 @@ def test_preflight_exception_redacts_secret_value_across_runtime_messages(
     node.writeConfig.assert_not_called()
     out, err = capsys.readouterr()
     assert (
-        f"bluetooth.fixed_pin: invalid value {_REDACTED_PREF_VALUE} (TypeError)"
-        in err
+        f"bluetooth.fixed_pin: invalid value {_REDACTED_PREF_VALUE} (TypeError)" in err
     )
     assert secret not in out + err

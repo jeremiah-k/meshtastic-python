@@ -15,7 +15,6 @@ from meshtastic.mesh_interface_runtime.queue_send import (
 )
 from meshtastic.protobuf import mesh_pb2
 
-
 LOCAL_NUM = 0x12345678
 REMOTE_NUM = 0x87654321
 
@@ -66,6 +65,7 @@ def _runtime(
     if classifier is not None:
         _selected_classifier = classifier
     else:
+
         def _selected_classifier(message: mesh_pb2.ToRadio) -> bool:
             return message.packet.to != local_num
 

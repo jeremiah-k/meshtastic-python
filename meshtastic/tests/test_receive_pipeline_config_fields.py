@@ -30,7 +30,9 @@ def test_receive_field_lists_follow_active_protobuf_descriptors() -> None:
     "descriptor",
     [config_pb2.Config.DESCRIPTOR, module_config_pb2.ModuleConfig.DESCRIPTOR],
 )
-def test_inbound_config_wrappers_remain_singular_messages(descriptor: Descriptor) -> None:
+def test_inbound_config_wrappers_remain_singular_messages(
+    descriptor: Descriptor,
+) -> None:
     """Receive-copy logic relies on wrapper fields being singular submessages."""
     fields = descriptor.fields
     assert fields
@@ -58,7 +60,9 @@ def _pipeline_with_local_node() -> tuple[ReceivePipeline, SimpleNamespace]:
         & set(localonly_pb2.LocalConfig.DESCRIPTOR.fields_by_name)
     ),
 )
-def test_every_supported_local_config_field_updates_local_cache(field_name: str) -> None:
+def test_every_supported_local_config_field_updates_local_cache(
+    field_name: str,
+) -> None:
     """Every wire config field supported by LocalConfig should be copied."""
     pipeline, local_node = _pipeline_with_local_node()
     incoming = config_pb2.Config()
@@ -87,7 +91,8 @@ def test_wire_only_local_config_fields_are_ignored_safely(field_name: str) -> No
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "field_name", [field.name for field in module_config_pb2.ModuleConfig.DESCRIPTOR.fields]
+    "field_name",
+    [field.name for field in module_config_pb2.ModuleConfig.DESCRIPTOR.fields],
 )
 def test_every_module_config_field_updates_local_cache(field_name: str) -> None:
     """Every module config wrapper field should copy into the local cache."""
