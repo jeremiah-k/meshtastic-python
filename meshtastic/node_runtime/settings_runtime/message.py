@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from google.protobuf.descriptor import FieldDescriptor
+from google.protobuf.message import Message
 
 from meshtastic.protobuf import admin_pb2
 
@@ -46,54 +47,29 @@ class _NodeSettingsMessageBuilder:
             f"Unsupported config descriptor: {config_type.name} in {config_type.containing_type.name}"
         )
 
-    def _write_config_dispatch(self) -> dict[str, tuple[str, Any]]:
-        """Return config-name mapping to (setter oneof, source config message)."""
-        node = self._node
-        dispatch = {
-            "device": ("set_config", node.localConfig.device),
-            "position": ("set_config", node.localConfig.position),
-            "power": ("set_config", node.localConfig.power),
-            "network": ("set_config", node.localConfig.network),
-            "display": ("set_config", node.localConfig.display),
-            "lora": ("set_config", node.localConfig.lora),
-            "bluetooth": ("set_config", node.localConfig.bluetooth),
-            "security": ("set_config", node.localConfig.security),
-            "mqtt": ("set_module_config", node.moduleConfig.mqtt),
-            "serial": ("set_module_config", node.moduleConfig.serial),
-            "external_notification": (
-                "set_module_config",
-                node.moduleConfig.external_notification,
-            ),
-            "store_forward": ("set_module_config", node.moduleConfig.store_forward),
-            "range_test": ("set_module_config", node.moduleConfig.range_test),
-            "telemetry": ("set_module_config", node.moduleConfig.telemetry),
-            "canned_message": ("set_module_config", node.moduleConfig.canned_message),
-            "audio": ("set_module_config", node.moduleConfig.audio),
-            "remote_hardware": (
-                "set_module_config",
-                node.moduleConfig.remote_hardware,
-            ),
-            "neighbor_info": ("set_module_config", node.moduleConfig.neighbor_info),
-            "detection_sensor": (
-                "set_module_config",
-                node.moduleConfig.detection_sensor,
-            ),
-            "ambient_lighting": (
-                "set_module_config",
-                node.moduleConfig.ambient_lighting,
-            ),
-            "paxcounter": ("set_module_config", node.moduleConfig.paxcounter),
-            "statusmessage": ("set_module_config", node.moduleConfig.statusmessage),
-            "traffic_management": (
-                "set_module_config",
-                node.moduleConfig.traffic_management,
-            ),
+    @staticmethod
+    def _write_entries_for(
+        setter_name: str, source_config: Message
+    ) -> dict[str, tuple[str, Any]]:
+        """Return writable fields shared by an admin setter and local cache."""
+        setter_field = admin_pb2.AdminMessage.DESCRIPTOR.fields_by_name[setter_name]
+        setter_message = setter_field.message_type
+        if setter_message is None:
+            raise ValueError(f"Admin setter {setter_name!r} is not a message field")
+
+        source_fields = source_config.DESCRIPTOR.fields_by_name
+        return {
+            field.name: (setter_name, getattr(source_config, field.name))
+            for field in setter_message.fields
+            if field.name in source_fields
         }
-        # Optional fields may appear in some protobuf schema revisions.
-        if hasattr(node.localConfig, "sessionkey"):
-            dispatch["sessionkey"] = ("set_config", node.localConfig.sessionkey)
-        if hasattr(node.localConfig, "device_ui"):
-            dispatch["device_ui"] = ("set_config", node.localConfig.device_ui)
+
+    def _write_config_dispatch(self) -> dict[str, tuple[str, Any]]:
+        """Return schema-driven config-name to admin setter/source mapping."""
+        dispatch = self._write_entries_for("set_config", self._node.localConfig)
+        dispatch.update(
+            self._write_entries_for("set_module_config", self._node.moduleConfig)
+        )
         return dispatch
 
     def get_write_config_entry(self, config_name: str) -> tuple[str, Any] | None:
