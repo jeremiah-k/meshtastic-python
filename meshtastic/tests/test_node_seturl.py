@@ -21,6 +21,7 @@ from ..util import Acknowledgment
 
 from ._node_legacy_support import (
     _DropChannelsOnEnterCountLock,
+    _make_recording_send_admin,
     _decode_channel_set_from_url,
     _encode_channel_set_to_url,
     _get_mock_call_arg,
@@ -217,22 +218,8 @@ def test_setURL_add_only_defers_first_named_admin_write_until_end(
     anode.channels = [primary, disabled1, disabled2]
     anode.localConfig.lora.hop_limit = 3
 
-    operations: list[str] = []
-
-    def _record_send(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int | None = None,
-    ) -> mesh_pb2.MeshPacket:
-        _ = (wantResponse, onResponse, adminIndex)
-        if msg.HasField("set_channel"):
-            operations.append(f"channel:{msg.set_channel.index}")
-        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
-            operations.append("lora")
-        return mesh_pb2.MeshPacket()
-
-    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+    operations: list[tuple[str, int | None]] = []
+    anode._send_admin = _make_recording_send_admin(operations)  # type: ignore[method-assign,assignment]
 
     channel_set = apponly_pb2.ChannelSet()
     first = channel_set.settings.add()
@@ -246,10 +233,13 @@ def test_setURL_add_only_defers_first_named_admin_write_until_end(
 
     anode.setURL(url, addOnly=True)
 
-    assert operations == ["channel:2", "lora", "channel:1"]
+    assert [operation for operation, _ in operations] == [
+        "channel:2",
+        "lora",
+        "channel:1",
+    ]
 
 
-@pytest.mark.unit
 @pytest.mark.unit
 def test_setURL_add_only_is_transactional_when_slots_are_insufficient(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -348,70 +338,12 @@ def test_setURL_add_only_uses_snapshotted_admin_index_and_fails_fast_on_write_fa
         _get_mock_call_arg(call, name="adminIndex", positional_index=0)
         for call in ensure_session_key_spy.call_args_list
     ]
-    assert ensure_session_admin_indexes[0] == 0
-    assert set(ensure_session_admin_indexes) <= {0, 1}
+    assert ensure_session_admin_indexes == [0] * len(ensure_session_admin_indexes)
 
     assert staged_writes == [(2, "new-b", 0), (1, "admin", 0)]
+    assert len(staged_writes) == 2
 
     # Fail-fast: local channel cache is invalidated after partial write failure.
-    assert anode.channels is None
-
-
-@pytest.mark.unit
-def test_setURL_add_only_fails_fast_invalidate_cache_on_deferred_write_failure(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """setURL(addOnly=True) should fail-fast and invalidate channel cache when deferred write fails."""
-    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
-
-    primary = Channel(index=0, role=Channel.Role.PRIMARY)
-    primary.settings.name = "primary"
-    primary.settings.psk = b"\x01"
-    disabled1 = Channel(index=1, role=Channel.Role.DISABLED)
-    disabled2 = Channel(index=2, role=Channel.Role.DISABLED)
-    anode.channels = [primary, disabled1, disabled2]
-    anode.localConfig.lora.hop_limit = 3
-    ensure_session_key_spy = MagicMock(wraps=anode.ensureSessionKey)
-    anode.ensureSessionKey = ensure_session_key_spy  # type: ignore[method-assign]
-
-    send_calls = {"stage_writes": 0}
-
-    def _send_fails_on_second_secondary(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int | None = None,
-    ) -> mesh_pb2.MeshPacket:
-        _ = (wantResponse, onResponse, adminIndex)
-        if msg.HasField("set_channel"):
-            if msg.set_channel.role == Channel.Role.SECONDARY:
-                send_calls["stage_writes"] += 1
-                if send_calls["stage_writes"] == 2:
-                    raise RuntimeError("write failed during addOnly batch")
-        return mesh_pb2.MeshPacket()
-
-    anode._send_admin = _send_fails_on_second_secondary  # type: ignore[method-assign,assignment]
-
-    channel_set = apponly_pb2.ChannelSet()
-    first = channel_set.settings.add()
-    first.name = "admin"
-    first.psk = b"\x03"
-    second = channel_set.settings.add()
-    second.name = "new-b"
-    second.psk = b"\x04"
-    url = _encode_channel_set_to_url(channel_set)
-
-    with pytest.raises(RuntimeError, match="write failed during addOnly batch"):
-        anode.setURL(url, addOnly=True)
-
-    assert ensure_session_key_spy.call_args_list
-    ensure_session_admin_indexes = [
-        _get_mock_call_arg(call, name="adminIndex", positional_index=0)
-        for call in ensure_session_key_spy.call_args_list
-    ]
-    assert ensure_session_admin_indexes[0] == 0
-    assert set(ensure_session_admin_indexes) <= {0, 1}
-    assert send_calls["stage_writes"] == 2
     assert anode.channels is None
 
 
@@ -616,22 +548,8 @@ def test_setURL_replace_defers_first_named_admin_write_until_end(
     anode.channels = [primary, secondary]
     anode.localConfig.lora.hop_limit = 3
 
-    operations: list[str] = []
-
-    def _record_send(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int | None = None,
-    ) -> mesh_pb2.MeshPacket:
-        _ = (wantResponse, onResponse, adminIndex)
-        if msg.HasField("set_channel"):
-            operations.append(f"channel:{msg.set_channel.index}")
-        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
-            operations.append("lora")
-        return mesh_pb2.MeshPacket()
-
-    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+    operations: list[tuple[str, int | None]] = []
+    anode._send_admin = _make_recording_send_admin(operations)  # type: ignore[method-assign,assignment]
 
     channel_set = apponly_pb2.ChannelSet()
     first = channel_set.settings.add()
@@ -645,7 +563,11 @@ def test_setURL_replace_defers_first_named_admin_write_until_end(
 
     anode.setURL(url, addOnly=False)
 
-    assert operations == ["channel:1", "lora", "channel:0"]
+    assert [operation for operation, _ in operations] == [
+        "channel:1",
+        "lora",
+        "channel:0",
+    ]
 
 
 @pytest.mark.unit
@@ -694,21 +616,7 @@ def test_setURL_replace_when_admin_slot_moves_defers_old_slot_cleanup(
     anode.localConfig.lora.hop_limit = 3
 
     operations: list[tuple[str, int | None]] = []
-
-    def _record_send(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int | None = None,
-    ) -> mesh_pb2.MeshPacket:
-        _ = (wantResponse, onResponse)
-        if msg.HasField("set_channel"):
-            operations.append((f"channel:{msg.set_channel.index}", adminIndex))
-        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
-            operations.append(("lora", adminIndex))
-        return mesh_pb2.MeshPacket()
-
-    anode._send_admin = _record_send  # type: ignore[method-assign,assignment]
+    anode._send_admin = _make_recording_send_admin(operations)  # type: ignore[method-assign,assignment]
 
     channel_set = apponly_pb2.ChannelSet()
     moved_admin = channel_set.settings.add()
@@ -788,6 +696,8 @@ def test_setURL_replace_fails_fast_invalidate_cache_after_deferred_failure(
     with pytest.raises(RuntimeError, match="deferred admin write failed"):
         anode.setURL(url, addOnly=False)
 
+    assert deferred_failure_seen["seen"] is True
+    assert forward_writes == [2]
     assert anode.channels is None
 
 
@@ -974,6 +884,7 @@ def test_setURL_replace_raises_if_channels_disappear_during_assignment(
     """SetURL replace-path should recheck channels before assignment in each loop iteration."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
+    # The third acquisition is the per-entry replace assignment recheck.
     anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
         anode, trigger_enter=3
     )
@@ -1029,7 +940,7 @@ def test_fill_channels_handles_none_and_pads_to_limit(
 def test_onResponseRequestChannel_routing_paths(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """OnResponseRequestChannel should expire on routing failure and await ADMIN_APP on routing success."""
+    """Routing failures should terminate the request; success should await ADMIN_APP."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode._request_channel = MagicMock()  # type: ignore[method-assign]
 
@@ -1041,13 +952,18 @@ def test_onResponseRequestChannel_routing_paths(
             }
         }
     )
-    assert anode._request_channel.call_count == 0
+    assert anode._channel_response_runtime.has_channel_request_failed() is True
+    anode._request_channel.assert_not_called()
 
-    ch = Channel(index=3, role=Channel.Role.SECONDARY)
-    anode.partialChannels = [ch]
+    channel = Channel(index=3, role=Channel.Role.SECONDARY)
+    anode.partialChannels = [channel]
+    anode._channel_response_runtime.mark_channel_request_sent(3)
     anode.onResponseRequestChannel(
         {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NONE"}}}
     )
+
+    assert anode._channel_response_runtime.has_channel_request_failed() is False
+    assert anode.partialChannels == [channel]
     anode._request_channel.assert_not_called()
 
 
@@ -1088,40 +1004,60 @@ def test_onResponseRequestChannel_handles_partial_and_final_channel(
 
 
 @pytest.mark.unit
-def test_onAckNak_handles_missing_invalid_and_ack_variants(
+@pytest.mark.parametrize(
+    ("packet", "expected_flags"),
+    [
+        pytest.param(
+            {"decoded": {}},
+            (False, True, False),
+            id="missing-routing",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NO_REPLY"}}},
+            (False, True, False),
+            id="routing-no-reply",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}},
+            (False, True, False),
+            id="missing-source",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}, "from": "abc"},
+            (False, True, False),
+            id="invalid-source",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123},
+            (False, False, True),
+            id="implicit-ack",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}, "from": 124},
+            (True, False, False),
+            id="remote-ack",
+        ),
+    ],
+)
+def test_onAckNak_classifies_ack_nak_variants(
+    packet: dict[str, Any],
+    expected_flags: tuple[bool, bool, bool],
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """OnAckNak should handle malformed payloads and update ACK state for valid variants."""
+    """ACK/NAK variants should set exactly the expected acknowledgment flag."""
     iface = autospec_local_node_iface(MeshInterface)
-    iface._acknowledgment = Acknowledgment()
     iface.localNode.nodeNum = 123
     anode = Node(iface, "!12345678", noProto=True)
-
     iface._acknowledgment = Acknowledgment()
-    anode.onAckNak({"decoded": {}})
-    assert iface._acknowledgment.receivedAck is False
-    assert iface._acknowledgment.receivedNak is True
-    assert iface._acknowledgment.receivedImplAck is False
 
-    iface._acknowledgment = Acknowledgment()
-    anode.onAckNak({"decoded": {"routing": {"errorReason": "NO_REPLY"}}})
-    assert iface._acknowledgment.receivedNak is True
+    anode.onAckNak(packet)
 
-    iface._acknowledgment = Acknowledgment()
-    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}})
-    assert iface._acknowledgment.receivedAck is False
-
-    iface._acknowledgment = Acknowledgment()
-    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": "abc"})
-    assert iface._acknowledgment.receivedNak is True
-
-    iface._acknowledgment = Acknowledgment()
-    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
-    assert iface._acknowledgment.receivedImplAck is True
-
-    iface._acknowledgment = Acknowledgment()
-    anode.onAckNak({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 124})
-    assert iface._acknowledgment.receivedAck is True
+    acknowledgment = iface._acknowledgment
+    assert (
+        acknowledgment.receivedAck,
+        acknowledgment.receivedNak,
+        acknowledgment.receivedImplAck,
+    ) == expected_flags
 
 
 @pytest.mark.unit
@@ -1230,74 +1166,6 @@ def test_get_channels_with_hash_handles_missing_fields(
 
 
 @pytest.mark.unit
-def test_deleteChannel_missing_or_out_of_range_validations(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """DeleteChannel should validate missing channels and invalid indices."""
-    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
-    anode.channels = None
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
-    ):
-        anode.deleteChannel(0)
-
-    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError,
-        match=r"Channel index 5 out of range \(0-0\)",
-    ):
-        anode.deleteChannel(5)
-
-
-@pytest.mark.unit
-def test_deleteChannel_rewrite_uses_snapshot_when_channels_change_after_lock_release(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """DeleteChannel should complete rewrites from a captured snapshot even if channels mutate mid-rewrite."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, "!12345678", noProto=True)
-    iface.localNode = anode
-    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
-    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
-    dropped_channels = False
-
-    def _drop_channels_on_first_send(
-        _msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int | None = None,
-    ) -> mesh_pb2.MeshPacket | None:
-        nonlocal dropped_channels
-        if not dropped_channels:
-            anode.channels = None
-            dropped_channels = True
-        _ = (wantResponse, onResponse, adminIndex)
-        return mesh_pb2.MeshPacket()
-
-    anode._send_admin = MagicMock(side_effect=_drop_channels_on_first_send)  # type: ignore[method-assign]
-
-    anode.deleteChannel(0)
-
-    # Mid-rewrite local cache mutation should not affect sends from the captured
-    # channel snapshot list.
-    assert anode.channels is None
-    assert anode._send_admin.call_count == CHANNEL_LIMIT
-
-
-@pytest.mark.unit
-def test_channel_lookup_helpers_return_none_when_no_match(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Lookup helpers should return no result when entries are absent."""
-    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
-    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
-
-    assert anode.getChannelByName("missing") is None
-    assert anode.getDisabledChannel() is None
-    assert anode._get_admin_channel_index() == 0
-
-
-@pytest.mark.unit
 def test_setURL_reports_decode_and_parse_errors(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
@@ -1339,6 +1207,8 @@ def test_setURL_add_only_rechecks_channels_before_addition(
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
     anode.localConfig.lora.hop_limit = 3
+    # The second acquisition is the add-only mutation recheck after planning.
+    # The second acquisition is the replace-path length/snapshot recheck.
     anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
         anode, trigger_enter=2
     )
@@ -1375,10 +1245,10 @@ def test_setURL_replace_rechecks_channels_before_length_calculation(
 
 
 @pytest.mark.unit
-def test_fixup_channels_locked_returns_immediately_when_channels_none(
+def test_fixup_channels_returns_immediately_when_channels_none(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """_fixup_channels_locked should no-op when channels are unset."""
+    """_fixup_channels should no-op when channels are unset."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = None
 

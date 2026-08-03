@@ -1,7 +1,5 @@
 """Meshtastic unit tests for node.py."""
 
-# pylint: disable=C0302
-
 import logging
 import threading
 from collections.abc import Callable
@@ -13,7 +11,7 @@ from pytest import CaptureFixture, LogCaptureFixture
 
 from .. import node as node_module
 from ..mesh_interface import MeshInterface
-from ..node import MAX_CHANNELS, Node
+from ..node import Node
 from ..protobuf import (
     admin_pb2,
     config_pb2,
@@ -25,8 +23,6 @@ from ._node_legacy_support import (
     _MetadataLockProbeIface,
     _TrackingLock,
 )
-
-CHANNEL_LIMIT = MAX_CHANNELS
 
 
 @pytest.mark.unit
@@ -304,6 +300,7 @@ def test_get_metadata_snapshot_returns_none_for_non_proto_metadata(
 def test_getMetadata_waits_for_redirected_stdout_callback_output(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GetMetadata should keep redirected stdout active until metadata callback emits."""
     iface = autospec_local_node_iface(MeshInterface)
@@ -311,6 +308,8 @@ def test_getMetadata_waits_for_redirected_stdout_callback_output(
     iface.waitForAckNak = MagicMock()
     anode = Node(iface, "!12345678", noProto=True)
     anode._emit_cached_metadata_for_stdout = MagicMock(return_value=True)  # type: ignore[method-assign]
+    monkeypatch.setattr(node_module, "METADATA_STDOUT_COMPAT_WAIT_SECONDS", 0.5)
+    timers: list[threading.Timer] = []
 
     def _fake_send_admin(
         _msg: admin_pb2.AdminMessage,
@@ -342,9 +341,13 @@ def test_getMetadata_waits_for_redirected_stdout_callback_output(
         )
         timer.daemon = True
         timer.start()
+        timers.append(timer)
 
     anode._send_admin = _fake_send_admin  # type: ignore[assignment]
     anode.getMetadata()
+    for timer in timers:
+        timer.join(timeout=1.0)
+        assert not timer.is_alive()
 
     out, _err = capsys.readouterr()
     assert "firmware_version: 2.7.18" in out

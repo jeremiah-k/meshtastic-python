@@ -1,9 +1,8 @@
 """Meshtastic unit tests for node.py."""
 
-# pylint: disable=C0302
-
 import logging
 import re
+import warnings
 from collections.abc import Callable
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -69,7 +68,7 @@ def test_getChannelByChannelIndex(
     assert anode.getChannelByChannelIndex(2) is not None
     # test invalid values
     assert anode.getChannelByChannelIndex(-1) is None
-    assert anode.getChannelByChannelIndex(9) is None
+    assert anode.getChannelByChannelIndex(CHANNEL_LIMIT) is None
 
     copied_primary = anode.getChannelCopyByChannelIndex(0)
     assert copied_primary is not None
@@ -250,92 +249,30 @@ def test_requestChannels_non_localNode_starting_index(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
-def test_set_favorite(
-    favorite: str | int,
+@pytest.mark.parametrize("node_id", ["!1dec0ded", 502009325])
+@pytest.mark.parametrize(
+    ("method_name", "field_name"),
+    [
+        ("setFavorite", "set_favorite_node"),
+        ("removeFavorite", "remove_favorite_node"),
+        ("setIgnored", "set_ignored_node"),
+        ("removeIgnored", "remove_ignored_node"),
+    ],
+)
+def test_favorite_and_ignored_admin_messages(
+    node_id: str | int,
+    method_name: str,
+    field_name: str,
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """Verify setFavorite sends an admin message marking the given node as a favorite and transmits it.
-
-    Parameters
-    ----------
-    favorite : str | int
-        Node ID to mark as favorite.
-    """
+    """Favorite/ignored helpers should resolve IDs and populate the matching admin field."""
     iface = autospec_local_node_iface(SerialInterface)
     node = Node(iface, 12345678)
-    amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
-        node.setFavorite(favorite)
-    assert amesg.set_favorite_node == 502009325
-    iface.sendData.assert_called_once()
+    admin_message = admin_pb2.AdminMessage()
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=admin_message):
+        getattr(node, method_name)(node_id)
 
-
-@pytest.mark.unit
-@pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
-def test_remove_favorite(
-    favorite: str | int,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Verify that removing a favorite node creates an AdminMessage with the expected node ID and sends it via the interface.
-
-    Parameters
-    ----------
-    favorite : str | int
-        Identifier of the favorite node to remove; used to populate the admin message sent to the interface.
-    """
-    iface = autospec_local_node_iface(SerialInterface)
-    node = Node(iface, 12345678)
-    amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
-        node.removeFavorite(favorite)
-
-    assert amesg.remove_favorite_node == 502009325
-    iface.sendData.assert_called_once()
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
-def test_set_ignored(
-    ignored: str | int,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Verify that Node.setIgnored constructs an AdminMessage marking the given node ID as ignored and sends it.
-
-    Parameters
-    ----------
-    ignored : str | int
-        Node identifier passed to setIgnored.
-    """
-    iface = autospec_local_node_iface(SerialInterface)
-    node = Node(iface, 12345678)
-    amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
-        node.setIgnored(ignored)
-    assert amesg.set_ignored_node == 502009325
-    iface.sendData.assert_called_once()
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
-def test_remove_ignored(
-    ignored: str | int,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Verify that calling removeIgnored sends an admin message to remove a node from the ignored list and transmits it.
-
-    Parameters
-    ----------
-    ignored : str | int
-        Node identifier (e.g., node ID or address) that will be encoded into `remove_ignored_node` on the AdminMessage.
-    """
-    iface = autospec_local_node_iface(SerialInterface)
-    node = Node(iface, 12345678)
-    amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
-        node.removeIgnored(ignored)
-
-    assert amesg.remove_ignored_node == 502009325
+    assert getattr(admin_message, field_name) == 502009325
     iface.sendData.assert_called_once()
 
 
@@ -492,7 +429,9 @@ def test_start_ota_local_node_legacy_alias_keywords() -> None:
     )
 
     test_hash = b"\x11\x22\x33" * 8
-    anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        anode.startOTA(ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_hash=test_hash)
 
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.ota_request.reboot_ota_mode == admin_pb2.OTAMode.OTA_WIFI
@@ -520,8 +459,8 @@ def test_requestConfig_with_module_config_descriptor(
 ) -> None:
     """Verify requestConfig sets get_module_config_request for LocalModuleConfig fields.
 
-    Tests line 370: when configType is a field descriptor with containing_type.name
-    != 'LocalConfig', it should set get_module_config_request to the field index.
+    When configType belongs to LocalModuleConfig rather than LocalConfig,
+    requestConfig should set get_module_config_request to the field index.
     """
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     mock_serial_interface.localNode = anode
@@ -800,10 +739,10 @@ def test_deleteChannel_compares_complete_payload_not_only_channel_role(
 
 
 @pytest.mark.unit
-def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
+def test_channel_lookup_helpers_find_live_channels(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """Channel helper lookups should find expected channels under lock."""
+    """Live channel lookups should return the matching cached objects."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     primary = Channel(index=0, role=Channel.Role.PRIMARY)
     primary.settings.name = "main"
@@ -812,39 +751,51 @@ def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, admin_channel, disabled]
 
-    named_channel = anode.getChannelByName("main")
-    assert named_channel is not None
-    assert named_channel is primary
-    assert named_channel.index == primary.index
+    assert anode.getChannelByName("main") is primary
+    assert anode.getDisabledChannel() is disabled
 
-    disabled_channel = anode.getDisabledChannel()
-    assert disabled_channel is not None
-    assert disabled_channel is disabled
-    assert disabled_channel.index == disabled.index
 
-    named_channel_copy = anode.getChannelCopyByName("main")
-    assert named_channel_copy is not None
-    assert named_channel_copy is not primary
-    assert named_channel_copy.index == primary.index
+@pytest.mark.unit
+def test_channel_copy_helpers_return_isolated_snapshots(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Copy lookups should not expose mutable cached Channel instances."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    primary.settings.name = "main"
+    disabled = Channel(index=1, role=Channel.Role.DISABLED)
+    anode.channels = [primary, disabled]
 
-    disabled_channel_copy = anode.getDisabledChannelCopy()
-    assert disabled_channel_copy is not None
-    assert disabled_channel_copy is not disabled
-    assert disabled_channel_copy.index == disabled.index
+    named_copy = anode.getChannelCopyByName("main")
+    disabled_copy = anode.getDisabledChannelCopy()
+    assert named_copy is not None and named_copy is not primary
+    assert disabled_copy is not None and disabled_copy is not disabled
 
-    named_channel.role = Channel.Role.DISABLED
-    assert primary.role == Channel.Role.DISABLED
-    disabled_channel.role = Channel.Role.PRIMARY
-    assert disabled.role == Channel.Role.PRIMARY
-    named_channel_copy.role = Channel.Role.PRIMARY
-    assert primary.role == Channel.Role.DISABLED
-    disabled_channel_copy.role = Channel.Role.DISABLED
-    assert disabled.role == Channel.Role.PRIMARY
+    named_copy.role = Channel.Role.DISABLED
+    disabled_copy.role = Channel.Role.PRIMARY
+    assert primary.role == Channel.Role.PRIMARY
+    assert disabled.role == Channel.Role.DISABLED
+
+
+@pytest.mark.unit
+def test_admin_channel_index_and_none_channel_paths(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Admin lookup should be case-insensitive and helpers should tolerate no cache."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    primary = Channel(index=0, role=Channel.Role.PRIMARY)
+    admin_channel = Channel(index=1, role=Channel.Role.SECONDARY)
+    admin_channel.settings.name = "AdMiN"
+    anode.channels = [primary, admin_channel]
+
     assert anode._get_admin_channel_index() == 1
     assert anode.getAdminChannelIndex() == 1
 
     anode.channels = None
+    assert anode.getChannelByName("main") is None
     assert anode.getDisabledChannel() is None
+    assert anode.getChannelCopyByName("main") is None
+    assert anode.getDisabledChannelCopy() is None
 
 
 @pytest.mark.unit
@@ -862,4 +813,72 @@ def test_get_named_admin_channel_index_ignores_disabled_admin_channels(
     anode.channels = [primary, disabled_admin, secondary]
 
     assert anode._get_named_admin_channel_index() is None
+    assert anode._get_admin_channel_index() == 0
+
+
+@pytest.mark.unit
+def test_deleteChannel_missing_or_out_of_range_validations(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should validate missing channels and invalid indices."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.deleteChannel(0)
+
+    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"Channel index 5 out of range \(0-0\)",
+    ):
+        anode.deleteChannel(5)
+
+
+@pytest.mark.unit
+def test_deleteChannel_rewrite_uses_snapshot_when_channels_change_after_lock_release(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should complete rewrites from a captured snapshot even if channels mutate mid-rewrite."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    dropped_channels = False
+
+    def _drop_channels_on_first_send(
+        _msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+    ) -> mesh_pb2.MeshPacket | None:
+        nonlocal dropped_channels
+        if not dropped_channels:
+            anode.channels = None
+            dropped_channels = True
+        _ = (wantResponse, onResponse, adminIndex)
+        return mesh_pb2.MeshPacket()
+
+    anode._send_admin = MagicMock(side_effect=_drop_channels_on_first_send)  # type: ignore[method-assign]
+
+    anode.deleteChannel(0)
+
+    # Mid-rewrite local cache mutation should not affect sends from the captured
+    # channel snapshot list.
+    assert anode.channels is None
+    assert anode._send_admin.call_count == CHANNEL_LIMIT
+
+
+@pytest.mark.unit
+def test_channel_lookup_helpers_return_none_when_no_match(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Lookup helpers should return no result when entries are absent."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
+
+    assert anode.getChannelByName("missing") is None
+    assert anode.getDisabledChannel() is None
     assert anode._get_admin_channel_index() == 0

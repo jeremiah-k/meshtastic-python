@@ -1,7 +1,5 @@
 """Meshtastic unit tests for node.py."""
 
-# pylint: disable=C0302
-
 import logging
 import re
 from collections.abc import Callable
@@ -32,7 +30,6 @@ from ._node_legacy_support import (
 )
 
 CHANNEL_LIMIT = MAX_CHANNELS
-
 
 
 @pytest.mark.unit
@@ -91,9 +88,10 @@ def test_get_canned_message_requests_and_caches_value(
     sent_messages: list[admin_pb2.AdminMessage] = []
     request_packet = mesh_pb2.MeshPacket()
     response_payload: dict[str, Any] = {"decoded": {"admin": {"raw": response_raw}}}
+    captured: dict[str, object] = {}
     fake_send_admin = _make_fake_send_admin(
         sent_messages=sent_messages,
-        expected_want_response=True,
+        captured=captured,
         response_payload=response_payload,
         return_packet=request_packet,
     )
@@ -103,6 +101,7 @@ def test_get_canned_message_requests_and_caches_value(
     assert anode.cannedPluginMessage == "hello world"
     assert len(sent_messages) == 1
     assert sent_messages[0].get_canned_message_module_messages_request is True
+    assert captured["wantResponse"] is True
 
     # A second call should use cache and avoid another request.
     assert anode.get_canned_message() == "hello world"
@@ -124,7 +123,6 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
     fake_send_admin = _make_fake_send_admin(
         captured=captured,
-        expected_want_response=False,
         return_packet=sent_packet,
     )
     anode._send_admin = fake_send_admin  # type: ignore[method-assign,assignment]
@@ -149,13 +147,14 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
 
 @pytest.mark.unit
 def test_set_canned_message_over_limit_raises(mock_serial_interface: MagicMock) -> None:
-    """set_canned_message should reject messages longer than 200 chars."""
+    """set_canned_message should reject messages above the configured limit."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    limit = node_module.MAX_CANNED_MESSAGE_LENGTH
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
-        match="The canned message must be 200 characters or fewer",
+        match=f"The canned message must be {limit} characters or fewer",
     ):
-        anode.set_canned_message("a" * 201)
+        anode.set_canned_message("a" * (limit + 1))
 
 
 @pytest.mark.unit

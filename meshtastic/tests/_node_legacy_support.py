@@ -90,8 +90,9 @@ class _MetadataLockProbeIface:
         self._metadata = metadata
         self._metadata_read_lock_states = metadata_read_lock_states
         self.metadata_assignment_lock_state: bool | None = None
-        if include_acknowledgment:
-            self._acknowledgment = Acknowledgment()
+        self._acknowledgment: Acknowledgment | None = (
+            Acknowledgment() if include_acknowledgment else None
+        )
 
     @property
     def metadata(self) -> mesh_pb2.DeviceMetadata | None:
@@ -111,7 +112,6 @@ def _make_fake_send_admin(
     *,
     sent_messages: list[admin_pb2.AdminMessage] | None = None,
     captured: dict[str, object] | None = None,
-    expected_want_response: bool | None = None,
     response_payload: dict[str, Any] | None = None,
     return_packet: mesh_pb2.MeshPacket | None = None,
 ) -> _FakeSendAdminProtocol:
@@ -132,14 +132,45 @@ def _make_fake_send_admin(
             captured["onResponse"] = onResponse
             captured["adminIndex"] = adminIndex
             captured["responseWaitAttr"] = responseWaitAttr
-        if expected_want_response is not None:
-            assert wantResponse is expected_want_response
         if response_payload is not None:
             assert onResponse is not None
             onResponse(response_payload)
         return return_packet
 
     return _fake_send_admin
+
+
+def _make_recording_send_admin(
+    operations: list[tuple[str, int | None]],
+) -> _FakeSendAdminProtocol:
+    """Return a ``_send_admin`` fake that records write kind and admin index.
+
+    Parameters
+    ----------
+    operations : list[tuple[str, int | None]]
+        Sink receiving ``(operation, adminIndex)`` for each channel/Lora write.
+
+    Returns
+    -------
+    _FakeSendAdminProtocol
+        Replacement callable for ``Node._send_admin``.
+    """
+
+    def _record_send(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int | None = None,
+        responseWaitAttr: str | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        _ = (wantResponse, onResponse, responseWaitAttr)
+        if msg.HasField("set_channel"):
+            operations.append((f"channel:{msg.set_channel.index}", adminIndex))
+        elif msg.HasField("set_config") and msg.set_config.HasField("lora"):
+            operations.append(("lora", adminIndex))
+        return mesh_pb2.MeshPacket()
+
+    return _record_send
 
 
 class _MockCallLike(Protocol):
