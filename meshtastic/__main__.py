@@ -188,6 +188,10 @@ def _fatal_preference_value_errors() -> Iterator[None]:
         _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
 
 
+_PREF_VALIDATION_REPORTER: contextvars.ContextVar[Callable[[str], None] | None] = (
+    contextvars.ContextVar("pref_validation_reporter", default=None)
+)
+
 # Map dotted preference paths to the protobuf enum that defines their flags.
 # These fields are stored as uint32 bitmasks in the protobuf but have an
 # associated enum that names the individual flags. Add new bitfield-enum
@@ -336,8 +340,16 @@ def _report_pref_validation(message: str) -> None:
     message : str
         User-facing validation diagnostic.
 
-    Configure preflight intentionally suppresses low-level duplicate diagnostics.
+    Notes
+    -----
+    Outside preflight, validation messages retain their historical direct stdout
+    behavior, including visibility under ``--quiet``. Batch preflight installs a
+    reporter so diagnostics can be emitted coherently after all entries are checked.
     """
+    reporter = _PREF_VALIDATION_REPORTER.get()
+    if reporter is not None:
+        reporter(message)
+        return
     _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
 
 
@@ -1199,6 +1211,8 @@ _SECRET_PREF_PATHS: frozenset[str] = frozenset(
         "security.session_passkey",
     }
 )
+_REDACTED_PREF_VALUE = "<redacted>"
+_SET_VALUE_REJECTED_MESSAGE = "value rejected by validation"
 
 
 class _DescriptorLike(Protocol):
@@ -1215,38 +1229,35 @@ class _NamedConfigType(Protocol):
     name: str
 
 
-def _redact_pref_value(name: str, value: str) -> str:
-    """Return a redacted placeholder for secret-bearing preference paths."""
+def _is_secret_pref(name: str) -> bool:
+    """Return whether a preference path is classified as secret-bearing."""
     normalized = _normalize_pref_name(name)
     field_name = normalized.rsplit(".", maxsplit=1)[-1]
-    if normalized in _SECRET_PREF_PATHS or field_name in _SECRET_PREF_FIELDS:
-        return "<redacted>"
-    return value
+    return normalized in _SECRET_PREF_PATHS or field_name in _SECRET_PREF_FIELDS
+
+
+def _redact_pref_value(name: str, value: str) -> str:
+    """Return a redacted placeholder for secret-bearing preference paths."""
+    return _REDACTED_PREF_VALUE if _is_secret_pref(name) else value
 
 
 def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
-    """Retrieve and display a configuration preference or channel field for a node.
-
-    Given a dot-separated preference name (section.field) or a single name (used for
-    both section and field resolution), print any populated local values for that
-    preference; if the field exists but is not populated locally, request the
-    remote node's configuration so the value can be fetched. When a message/section
-    name is provided (e.g., "channel" or "channel.label"), populated
-    subfields are printed.
+    """Retrieve and display a node configuration preference or populated section fields.
 
     Parameters
     ----------
     node : Any
-        Node object exposing `localConfig` and `moduleConfig`.
+        Node exposing local and module configuration data and configuration requests.
     comp_name : str
-        Dot-separated preference path (e.g., "channel.label" or "label").
-        A single name is used for both section and field resolution.
+        Preference path or configuration section name to retrieve.
+    allow_secrets : bool
+        Whether sensitive preference values may be displayed without redaction.
 
     Returns
     -------
     bool
-        `True` if the preference exists and local values were printed or a remote
-        config request was issued, `False` if the preference was not found.
+        ``True`` if the preference exists and values were displayed or requested,
+        ``False`` if it was not found.
     """
 
     def _print_setting(
@@ -1815,6 +1826,17 @@ def _handle_ota_update(
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> None:
+    """Initiate a Wi-Fi OTA update for the directly connected local node.
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        TCP interface connected to the target node.
+    args : Any
+        CLI arguments containing the OTA update path and destination.
+    getNode_kwargs : dict[str, Any]
+        Additional arguments for retrieving the local node.
+    """
     if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
         _cli_exit(
             "Error: OTA update currently requires a TCP connection to the node (use --host)."
@@ -1856,39 +1878,280 @@ def _handle_ota_update(
     _cli_print("\nOTA update completed successfully!")
 
 
+def _print_set_field_choices(node: Any, pref_names: Sequence[str]) -> None:
+    """Print historical field-not-found guidance for one or more --set names.
+
+    Parameters
+    ----------
+    node : Any
+        Node whose local and module configuration schemas provide the choices.
+    pref_names : Sequence[str]
+        Unknown preference names to identify before printing choices.
+    """
+    names = list(dict.fromkeys(pref_names))
+    for pref_name in names:
+        print(
+            f"{node.localConfig.__class__.__name__} and "
+            f"{node.moduleConfig.__class__.__name__} do not have an attribute {pref_name}."
+        )
+    print("Choices are...")
+    printConfig(node.localConfig)
+    printConfig(node.moduleConfig)
+
+
+def _normalize_set_entries(
+    set_entries: Sequence[Sequence[Any] | None],
+) -> list[tuple[str, Any]]:
+    """Normalize argparse --set entries into explicit name/value pairs.
+
+    Parameters
+    ----------
+    set_entries : Sequence[Sequence[Any] | None]
+        Parsed ``--set`` entries, each containing at least a field name and value.
+        Any additional elements are ignored for compatibility with the historical
+        ``item[0]``/``item[1]`` parsing contract.
+
+    Returns
+    -------
+    list[tuple[str, Any]]
+        Normalized ``(field_name, value)`` pairs with incomplete entries omitted.
+    """
+    return [
+        (str(item[0]), item[1])
+        for item in set_entries
+        if item is not None and len(item) >= 2
+    ]
+
+
+def _format_set_preflight_exception(pref_name: str, exc: Exception) -> str:
+    """Format a preflight exception without exposing secret preference values.
+
+    Parameters
+    ----------
+    pref_name : str
+        Canonical preference path whose validation raised ``exc``.
+    exc : Exception
+        Validation exception raised by the protobuf/runtime conversion path.
+
+    Returns
+    -------
+    str
+        Safe error detail suitable for the aggregated CLI failure message.
+    """
+    if isinstance(exc, _PreferenceValueError):
+        return str(exc)
+    if _is_secret_pref(pref_name):
+        return (
+            f"{pref_name}: invalid value {_REDACTED_PREF_VALUE} "
+            f"({type(exc).__name__})"
+        )
+    return f"{pref_name}: {exc}"
+
+
+def _resolve_set_target(
+    configs: Sequence[Any], pref_name: str
+) -> tuple[Any, FieldDescriptor] | None:
+    """Resolve the owning config message and root field for a normalized preference.
+
+    Parameters
+    ----------
+    configs : Sequence[Any]
+        Configuration wrapper messages to search in resolution order.
+    pref_name : str
+        Normalized dotted preference path.
+
+    Returns
+    -------
+    tuple[Any, FieldDescriptor] | None
+        Owning config wrapper and root field descriptor, or ``None`` when the
+        root field does not exist in any supplied configuration.
+    """
+    root_field = splitCompoundName(pref_name)[0]
+    for config in configs:
+        config_type = config.DESCRIPTOR.fields_by_name.get(root_field)
+        if config_type is not None:
+            return config, config_type
+    return None
+
+
+def _ensure_set_sections_loaded(
+    node: Any, set_entries: Sequence[tuple[str, Any]]
+) -> None:
+    """Request missing config sections before creating preflight snapshots.
+
+    Parameters
+    ----------
+    node : Any
+        Target node whose cached local/module configuration will be validated.
+    set_entries : Sequence[tuple[str, Any]]
+        Parsed ``--set`` name/value entries. Names are normalized before resolution.
+
+    Notes
+    -----
+    Requests are deduplicated by config section. Protobuf message presence, not
+    ``ListFields()``, distinguishes an already-loaded default-valued section from
+    a section that has never been received. Unknown preference paths do not
+    trigger device reads.
+    """
+    configs = (node.localConfig, node.moduleConfig)
+    requested_sections: set[tuple[str, str]] = set()
+    for raw_pref_name, _raw_value in set_entries:
+        pref_name = _normalize_pref_name(raw_pref_name)
+        resolved = _resolve_set_target(configs, pref_name)
+        if resolved is None:
+            continue
+        config, config_type = resolved
+        if not _resolve_pref(config, pref_name):
+            continue
+
+        section_key = (config.DESCRIPTOR.full_name, config_type.name)
+        if section_key in requested_sections:
+            continue
+        requested_sections.add(section_key)
+        if not config.HasField(config_type.name):
+            node.requestConfig(config_type)
+
+
+def _preflight_set_entries(
+    node: Any, set_entries: Sequence[tuple[str, Any]]
+) -> bool:
+    """
+    Validate all --set entries against configuration copies before applying changes.
+    
+    Parameters
+    ----------
+    node : Any
+        Node providing the current local and module configuration.
+    set_entries : Sequence[tuple[str, Any]]
+        Preference names and raw values to validate as one batch.
+    
+    Returns
+    -------
+    bool
+        ``True`` if every entry is valid; ``False`` if an unknown field or semantic
+        validation failure rejects the batch.
+    """
+    candidates: list[Any] = []
+    for source in (node.localConfig, node.moduleConfig):
+        candidate = type(source)()
+        candidate.CopyFrom(source)
+        candidates.append(candidate)
+
+    fatal_errors: list[str] = []
+    unknown_fields: list[str] = []
+    value_rejections: list[tuple[str, tuple[str, ...]]] = []
+    token = _CONFIGURE_PREFLIGHT_MODE.set(True)
+    try:
+        for raw_pref_name, raw_value in set_entries:
+            pref_name = _normalize_pref_name(raw_pref_name)
+            resolved = _resolve_set_target(candidates, pref_name)
+            if resolved is None:
+                unknown_fields.append(pref_name)
+                continue
+            candidate, _config_type = resolved
+            if not _resolve_pref(candidate, pref_name):
+                unknown_fields.append(pref_name)
+                continue
+
+            validation_messages: list[str] = []
+            reporter_token = _PREF_VALIDATION_REPORTER.set(
+                validation_messages.append
+            )
+            try:
+                try:
+                    with _fatal_preference_value_errors():
+                        valid = setPref(candidate, pref_name, raw_value)
+                finally:
+                    _PREF_VALIDATION_REPORTER.reset(reporter_token)
+            except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
+                fatal_errors.append(_format_set_preflight_exception(pref_name, exc))
+                continue
+            if not valid:
+                value_rejections.append((pref_name, tuple(validation_messages)))
+    finally:
+        _CONFIGURE_PREFLIGHT_MODE.reset(token)
+
+    if unknown_fields:
+        _print_set_field_choices(node, unknown_fields)
+
+    if fatal_errors:
+        detail_lines = [f"  - {error}" for error in fatal_errors]
+        for pref_name, messages in value_rejections:
+            detail_lines.append(
+                f"  - {pref_name}: {_SET_VALUE_REJECTED_MESSAGE}"
+            )
+            detail_lines.extend(f"      {message}" for message in messages)
+        details = "\n".join(detail_lines)
+        _cli_exit(f"ERROR: --set batch rejected before applying changes:\n{details}")
+
+    for pref_name, messages in value_rejections:
+        if messages:
+            for message in messages:
+                _report_pref_validation(message)
+        else:
+            _report_pref_validation(
+                f"{pref_name}: {_SET_VALUE_REJECTED_MESSAGE}"
+            )
+
+    return not (unknown_fields or value_rejections)
+
+
 def _handle_set_command(
     interface: MeshInterface,
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> None:
+    """
+    Validate and apply a CLI ``--set`` batch without partial updates.
+    
+    Parameters
+    ----------
+    interface : MeshInterface
+        Active interface used to resolve the target node.
+    args : Any
+        Parsed CLI arguments containing the ``--set`` entries and destination.
+    getNode_kwargs : dict[str, Any]
+        Additional keyword arguments forwarded to ``interface.getNode``.
+    
+    Notes
+    -----
+    Invalid batches are rejected before modifying the device. Valid batches write
+    all affected configuration sections and use a transaction when multiple
+    sections are changed.
+    """
     node = interface.getNode(args.dest, False, **getNode_kwargs)
+    set_entries = _normalize_set_entries(args.set)
+    _ensure_set_sections_loaded(node, set_entries)
+    if not _preflight_set_entries(node, set_entries):
+        return
 
-    last_pref: list[str] | None = None
+    live_configs = (node.localConfig, node.moduleConfig)
     fields: set[str] = set()
-    any_found = False
-    for pref_item in args.set:
-        if pref_item is None or len(pref_item) < 2:
-            continue
-        last_pref = pref_item
-        found = False
-        normalized_pref_name = _normalize_pref_name(pref_item[0])
-        field = splitCompoundName(normalized_pref_name)[0]
-        for config in [node.localConfig, node.moduleConfig]:
-            config_type = config.DESCRIPTOR.fields_by_name.get(field)
-            if config_type is not None:
-                if len(config.ListFields()) == 0:
-                    node.requestConfig(config_type)
-                try:
-                    with _fatal_preference_value_errors():
-                        found = setPref(config, normalized_pref_name, pref_item[1])
-                except _PreferenceValueError as exc:
-                    _cli_exit(str(exc), 1)
-                if found:
-                    any_found = True
-                    fields.add(field)
-                    break
+    for raw_pref_name, raw_value in set_entries:
+        normalized_pref_name = _normalize_pref_name(raw_pref_name)
+        resolved = _resolve_set_target(live_configs, normalized_pref_name)
+        if resolved is None:
+            _cli_exit(
+                "ERROR: --set field no longer resolves after successful preflight: "
+                f"{normalized_pref_name}."
+            )
+        config, config_type = resolved
+        try:
+            found = setPref(config, normalized_pref_name, raw_value)
+        except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
+            detail = _format_set_preflight_exception(normalized_pref_name, exc)
+            _cli_exit(
+                "ERROR: --set apply diverged after successful preflight:\n"
+                f"  - {detail}"
+            )
+        if not found:
+            _cli_exit(
+                "ERROR: --set apply diverged after successful preflight for "
+                f"{normalized_pref_name}."
+            )
+        fields.add(config_type.name)
 
-    if any_found:
+    if fields:
         _cli_print("Writing modified preferences to device")
         if len(fields) > 1:
             _cli_print("Using a configuration transaction")
@@ -1898,13 +2161,6 @@ def _handle_set_command(
             node.writeConfig(field)
         if len(fields) > 1:
             node.commitSettingsTransaction()
-    elif last_pref is not None:
-        print(
-            f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
-        )
-        print("Choices are...")
-        printConfig(node.localConfig)
-        printConfig(node.moduleConfig)
 
 
 def _pace_configure_write(
