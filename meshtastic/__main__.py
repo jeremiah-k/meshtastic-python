@@ -25,9 +25,9 @@ from typing import Any, NoReturn, Protocol, cast
 import yaml
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
-from google.protobuf.message import Message
 from pubsub import pub
 
+import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.runtime as cli_runtime
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -3533,48 +3533,19 @@ def onConnected(interface: MeshInterface) -> None:
 
 
 def printConfig(config: Any) -> None:
-    """Print the top-level configuration sections and their fields.
-
-    Skips the "version" section. For each other top-level section, prints the section name
-    followed by its fields in the form "section.field"; field names are converted to
-    camelCase when mt_config.camel_case is true.
-
-    Parameters
-    ----------
-    config : Any
-        A protobuf-like configuration message exposing a DESCRIPTOR with top-level fields.
-    """
-    objDesc = config.DESCRIPTOR
-    for config_section in objDesc.fields:
-        if config_section.name != "version":
-            section_field = objDesc.fields_by_name.get(config_section.name)
-            if section_field is None or section_field.message_type is None:
-                continue
-            print(f"{config_section.name}:")
-            names = []
-            for field in section_field.message_type.fields:
-                tmp_name = f"{config_section.name}.{field.name}"
-                if mt_config.camel_case:
-                    tmp_name = meshtastic.util.snake_to_camel(tmp_name)
-                names.append(tmp_name)
-            for temp_name in sorted(names):
-                print(f"    {temp_name}")
+    """COMPAT_STABLE_SHIM: print config fields through the CLI config I/O runtime."""
+    cli_config_io.print_config(config, camel_case=mt_config.camel_case)
 
 
 def printAvailableConfigFields() -> None:
-    """Print all current config fields from protobuf descriptors plus aliases."""
-    print("Local config fields:")
-    printConfig(localonly_pb2.LocalConfig())
-    print("")
-    print("Module config fields:")
-    printConfig(localonly_pb2.LocalModuleConfig())
-    if _PREFERENCE_FIELD_ALIASES:
-        print("")
-        print("Compatibility aliases:")
-        for alias_name, canonical_name in sorted(_PREFERENCE_FIELD_ALIASES.items()):
-            print(
-                f"    {_display_pref_name(alias_name)} -> {_display_pref_name(canonical_name)}"
-            )
+    """COMPAT_STABLE_SHIM: print config fields and aliases through the runtime."""
+    cli_config_io.print_available_config_fields(
+        camel_case=mt_config.camel_case,
+        aliases=_PREFERENCE_FIELD_ALIASES,
+        display_pref_name=_display_pref_name,
+        local_config_factory=localonly_pb2.LocalConfig,
+        module_config_factory=localonly_pb2.LocalModuleConfig,
+    )
 
 
 def onNode(node: Any) -> None:
@@ -3604,274 +3575,26 @@ def subscribe() -> None:
     # pub.subscribe(onNode, "meshtastic.node")
 
 
-def _is_repeated_field(field_desc: Any) -> bool:
-    """Return True if the protobuf field is repeated.
-
-    Newer protobuf runtimes expose a boolean ``is_repeated`` property, while
-    older generated descriptors require comparing ``label`` to
-    ``LABEL_REPEATED``.
-    """
-    is_repeated = getattr(field_desc, "is_repeated", None)
-    if isinstance(is_repeated, bool):
-        return is_repeated
-
-    label = getattr(field_desc, "label", None)
-    label_repeated = getattr(field_desc, "LABEL_REPEATED", None)
-    return label is not None and label == label_repeated
-
-
-def _set_missing_flags_false(
-    config_dict: dict[str, Any], true_defaults: set[tuple[str, ...]]
-) -> None:
-    """Ensure specific boolean flags exist in a nested configuration dictionary by creating any.
-
-    missing path components and setting missing final keys to False.
-
-    Parameters
-    ----------
-    config_dict : dict[str, Any]
-        Nested configuration dictionary to modify in place.
-    true_defaults : set[tuple[str, ...]]
-        Set of key paths (tuples of keys) whose final key should exist;
-        if a path is missing, intermediate dictionaries are created and the final key is added with value False.
-    """
-    for path in true_defaults:
-        d = config_dict
-        for key in path[:-1]:
-            if key not in d or not isinstance(d[key], dict):
-                d[key] = {}
-            d = d[key]
-        if path[-1] not in d:
-            d[path[-1]] = False
-
-
-def _prefix_base64_bytes_fields(message: Message, values: dict[str, Any]) -> None:
-    """Mark every protobuf bytes field in a ``MessageToDict`` mapping as base64."""
-
-    def _field_key(field: FieldDescriptor, mapping: dict[str, Any]) -> str | None:
-        json_name: str = getattr(field, "json_name", field.name)
-        name: str = field.name
-        for candidate in (json_name, name):
-            if candidate in mapping:
-                return candidate
-        return None
-
-    def _prefix_bytes(value: Any, *, field_path: str) -> Any:
-        if isinstance(value, str):
-            return value if value.startswith("base64:") else f"base64:{value}"
-        if isinstance(value, list):
-            if not all(isinstance(item, str) for item in value):
-                raise TypeError(
-                    f"Expected base64 strings for repeated bytes field {field_path}"
-                )
-            return [
-                item if item.startswith("base64:") else f"base64:{item}"
-                for item in value
-            ]
-        raise TypeError(f"Expected base64 string for bytes field {field_path}")
-
-    def _walk(
-        descriptor: _DescriptorLike, mapping: dict[str, Any], *, path: str = ""
-    ) -> None:
-        for field in descriptor.fields:
-            key = _field_key(field, mapping)
-            if key is None:
-                continue
-            value = mapping[key]
-            field_path = f"{path}.{field.name}" if path else field.name
-            if field.type == FieldDescriptor.TYPE_BYTES:
-                mapping[key] = _prefix_bytes(value, field_path=field_path)
-                continue
-            if field.type != FieldDescriptor.TYPE_MESSAGE:
-                continue
-
-            message_type = field.message_type
-            if message_type.GetOptions().map_entry:
-                value_field = message_type.fields_by_name["value"]
-                if not isinstance(value, dict):
-                    raise TypeError(
-                        f"Expected mapping for protobuf map field {field_path}"
-                    )
-                if value_field.type == FieldDescriptor.TYPE_BYTES:
-                    for map_key, map_value in value.items():
-                        value[map_key] = _prefix_bytes(
-                            map_value, field_path=f"{field_path}[{map_key!r}]"
-                        )
-                elif value_field.type == FieldDescriptor.TYPE_MESSAGE:
-                    for map_key, map_value in value.items():
-                        if not isinstance(map_value, dict):
-                            raise TypeError(
-                                "Expected mapping for protobuf message map value "
-                                f"{field_path}[{map_key!r}]"
-                            )
-                        _walk(
-                            value_field.message_type,
-                            map_value,
-                            path=f"{field_path}[{map_key!r}]",
-                        )
-                continue
-
-            if _is_repeated_field(field):
-                if not isinstance(value, list):
-                    raise TypeError(
-                        f"Expected list for repeated message field {field_path}"
-                    )
-                for index, item in enumerate(value):
-                    if not isinstance(item, dict):
-                        raise TypeError(f"Expected mapping for {field_path}[{index}]")
-                    _walk(message_type, item, path=f"{field_path}[{index}]")
-            else:
-                if not isinstance(value, dict):
-                    raise TypeError(f"Expected mapping for message field {field_path}")
-                _walk(message_type, value, path=field_path)
-
-    _walk(message.DESCRIPTOR, values)
-
-
-def _prefix_base64_key(
-    security: dict[str, Any], normalized_key_map: dict[str, str], camel_name: str
-) -> None:
-    """Prefix a security key value with 'base64:' if it is a string or list of strings.
-
-    This helper normalizes base64-encoded security keys (privateKey, publicKey, adminKey)
-    so they are clearly marked as base64-encoded in exported configuration.
-
-    Parameters
-    ----------
-    security : dict[str, Any]
-        The security configuration dictionary to modify in-place.
-    normalized_key_map : dict[str, str]
-        Mapping from canonical camelCase names to actual keys in security dict.
-    camel_name : str
-        The canonical camelCase name of the key to process (e.g., "privateKey").
-    """
-    key = normalized_key_map.get(camel_name)
-    if not key:
-        return
-    val = security.get(key)
-    if isinstance(val, str):
-        if not val.startswith("base64:"):
-            security[key] = "base64:" + val
-    elif isinstance(val, list):
-        security[key] = [
-            ("base64:" + v if isinstance(v, str) and not v.startswith("base64:") else v)
-            for v in val
-        ]
-
-
-# Boolean flags that default to True in firmware but may be absent from
-# MessageToDict output; set missing values to False to preserve round-trip intent.
-CONFIG_TRUE_DEFAULTS: set[tuple[str, ...]] = {
-    ("bluetooth", "enabled"),
-    ("lora", "sx126xRxBoostedGain"),
-    ("lora", "txEnabled"),
-    ("lora", "usePreset"),
-    ("position", "positionBroadcastSmartEnabled"),
-    ("security", "serialEnabled"),
-}
-
-MODULE_TRUE_DEFAULTS: set[tuple[str, ...]] = {
-    ("mqtt", "encryptionEnabled"),
-}
+# COMPAT_STABLE_SHIM: preserve historical private helper imports.
+_is_repeated_field = cli_config_io.is_repeated_field
+_set_missing_flags_false = cli_config_io.set_missing_flags_false
+_prefix_base64_bytes_fields = cli_config_io.prefix_base64_bytes_fields
+_prefix_base64_key = cli_config_io.prefix_base64_key
+CONFIG_TRUE_DEFAULTS = cli_config_io.CONFIG_TRUE_DEFAULTS
+MODULE_TRUE_DEFAULTS = cli_config_io.MODULE_TRUE_DEFAULTS
 
 
 def exportConfig(interface: MeshInterface) -> str:
-    """Export local node and module configuration as a YAML-formatted Meshtastic configuration string.
-
-    Produces a YAML document containing selected top-level metadata (owner, owner_short, channel
-    URL, canned messages, ringtone, and location) plus `config` and `module_config` sections
-    derived from node's protobuf-backed settings. Key casing in the exported `config` and
-    `module_config` follows mt_config.camel_case. Certain boolean flags are explicitly set to
-    false if missing, and security key fields are normalized to include a "base64:" prefix when
-    appropriate.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        The connected interface whose local node and module configuration will be exported.
-
-    Returns
-    -------
-    str
-        A YAML string (prefixed with a header comment) representing exported configuration.
-    """
-    configObj: dict[str, Any] = {}
-
-    owner = interface.getLongName()
-    owner_short = interface.getShortName()
-    channel_url = interface.localNode.getURL()
-    myinfo = interface.getMyNodeInfo()
-    canned_messages = interface.getCannedMessage()
-    ringtone = interface.getRingtone()
-    pos = myinfo.get("position") if myinfo else None
-    lat = None
-    lon = None
-    alt = None
-    if pos:
-        lat = pos.get("latitude")
-        lon = pos.get("longitude")
-        alt = pos.get("altitude")
-
-    if owner:
-        configObj["owner"] = owner
-    if owner_short:
-        configObj["owner_short"] = owner_short
-    if channel_url:
-        if mt_config.camel_case:
-            configObj["channelUrl"] = channel_url
-        else:
-            configObj["channel_url"] = channel_url
-    if canned_messages:
-        configObj["canned_messages"] = canned_messages
-    if ringtone:
-        configObj["ringtone"] = ringtone
-    # lat and lon don't make much sense without the other (so fill with 0s), and alt isn't meaningful without both
-    if lat is not None or lon is not None:
-        configObj["location"] = {
-            "lat": lat if lat is not None else 0.0,
-            "lon": lon if lon is not None else 0.0,
-        }
-        if alt is not None:
-            configObj["location"]["alt"] = alt
-
-    config = MessageToDict(interface.localNode.localConfig)
-    if config:
-        _prefix_base64_bytes_fields(interface.localNode.localConfig, config)
-        # Ensure explicit false values are present before key conversion.
-        _set_missing_flags_false(config, CONFIG_TRUE_DEFAULTS)
-
-        # Convert inner keys to correct snake/camelCase.
-        prefs = {}
-        for pref, value in config.items():
-            pref_key = (
-                meshtastic.util.snake_to_camel(pref)
-                if mt_config.camel_case
-                else meshtastic.util.camel_to_snake(pref)
-            )
-            prefs[pref_key] = value
-        configObj["config"] = prefs
-
-    module_config = MessageToDict(interface.localNode.moduleConfig)
-    if module_config:
-        _prefix_base64_bytes_fields(interface.localNode.moduleConfig, module_config)
-        # Ensure explicit false values are present before key conversion.
-        _set_missing_flags_false(module_config, MODULE_TRUE_DEFAULTS)
-
-        # Convert inner keys to correct snake/camelCase.
-        prefs = {}
-        for pref, value in module_config.items():
-            pref_key = (
-                meshtastic.util.snake_to_camel(pref)
-                if mt_config.camel_case
-                else meshtastic.util.camel_to_snake(pref)
-            )
-            prefs[pref_key] = value
-        configObj["module_config"] = prefs
-
-    config_txt = "# start of Meshtastic configure yaml\n"
-    # was used as a string here and a Dictionary above
-    config_txt += yaml.dump(configObj)
-    return config_txt
+    """COMPAT_STABLE_SHIM: export configuration through the CLI config I/O runtime."""
+    return cli_config_io.export_config(
+        interface,
+        camel_case=mt_config.camel_case,
+        message_to_dict=MessageToDict,
+        prefix_base64_bytes_fields_fn=_prefix_base64_bytes_fields,
+        set_missing_flags_false_fn=_set_missing_flags_false,
+        config_true_defaults=CONFIG_TRUE_DEFAULTS,
+        module_true_defaults=MODULE_TRUE_DEFAULTS,
+    )
 
 
 # COMPAT_STABLE_SHIM: snake_case alias for exportConfig
