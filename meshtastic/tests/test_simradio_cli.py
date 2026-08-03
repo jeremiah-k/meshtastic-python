@@ -153,13 +153,13 @@ def test_simradio_cli_invalid_settings_report_choices(
 ) -> None:
     """Invalid schema paths should report choices without mutating firmware."""
     cases = (
-        ("--get", "not_a_setting"),
-        ("--set", "not_a_setting", "value"),
-        ("--ch-set", "not_a_setting", "value", "--ch-index", "0"),
+        (("--get", "not_a_setting"), 0),
+        (("--set", "not_a_setting", "value"), 0),
+        (("--ch-set", "not_a_setting", "value", "--ch-index", "0"), 1),
     )
-    for arguments in cases:
+    for arguments, expected_returncode in cases:
         result = run_cli(firmware_node.port, *arguments)
-        assert result.returncode == 0, result.output
+        assert result.returncode == expected_returncode, result.output
         assert "Choices" in result.output
 
 

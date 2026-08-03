@@ -903,11 +903,14 @@ def test_main_ch_set_unknown_pref_prints_module_settings_subfields(
     mt_config.dest = "^local"
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        main()
-        out, _err = capsys.readouterr()
-        assert "module_settings:" in out
-        assert "module_settings.position_precision" in out
-        assert "module_settings.is_muted" in out
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    out, _err = capsys.readouterr()
+    assert "module_settings:" in out
+    assert "module_settings.position_precision" in out
+    assert "module_settings.is_muted" in out
 
 
 @pytest.mark.unit

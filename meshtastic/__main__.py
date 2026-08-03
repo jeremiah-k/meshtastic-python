@@ -169,6 +169,24 @@ logger = logging.getLogger(__name__)
 _CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "configure_preflight_mode", default=False
 )
+_SET_PREF_VALUE_ERRORS_FATAL: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "set_pref_value_errors_fatal", default=False
+)
+
+
+class _PreferenceValueError(ValueError):
+    """Raised internally when CLI preference assignment has an invalid scalar value."""
+
+
+@contextlib.contextmanager
+def _fatal_preference_value_errors() -> Iterator[None]:
+    """Temporarily make scalar preference validation failures fatal to the CLI."""
+    token = _SET_PREF_VALUE_ERRORS_FATAL.set(True)
+    try:
+        yield
+    finally:
+        _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
+
 
 # Map dotted preference paths to the protobuf enum that defines their flags.
 # These fields are stored as uint32 bitmasks in the protobuf but have an
@@ -293,17 +311,34 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
-def _cli_print(message: str) -> None:
-    """Print a message to stdout unless --quiet is active.
+def _cli_print(message: str, *, force: bool = False) -> None:
+    """Print a CLI message, optionally bypassing ``--quiet`` suppression.
 
-    This helper gates non-essential informational output so that --quiet
-    suppresses ordinary print() calls in addition to lowering the logging
-    level.
+    Parameters
+    ----------
+    message : str
+        User-facing message to print to stdout.
+    force : bool
+        When ``True``, print even if ``--quiet`` is active. Use this for
+        validation output that must remain visible to the user.
     """
     args = mt_config.args
-    if args and getattr(args, "quiet", False):
+    if not force and args and getattr(args, "quiet", False):
         return
     print(message)
+
+
+def _report_pref_validation(message: str) -> None:
+    """Print preference validation output through the shared CLI path.
+
+    Parameters
+    ----------
+    message : str
+        User-facing validation diagnostic.
+
+    Configure preflight intentionally suppresses low-level duplicate diagnostics.
+    """
+    _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
 
 
 def supportInfo() -> None:
@@ -1464,6 +1499,154 @@ def _resolve_pref(config: Any, comp_name: str) -> bool:
     return config_type is not None
 
 
+def _protobuf_field_type_label(field: FieldDescriptor) -> str:
+    """Return a concise user-facing type label for a protobuf field.
+
+    Parameters
+    ----------
+    field : FieldDescriptor
+        Protobuf field whose expected CLI value type should be described.
+
+    Returns
+    -------
+    str
+        Concise user-facing label for the field type.
+    """
+    integer_types = {
+        FieldDescriptor.TYPE_INT32,
+        FieldDescriptor.TYPE_INT64,
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_UINT64,
+        FieldDescriptor.TYPE_SINT32,
+        FieldDescriptor.TYPE_SINT64,
+        FieldDescriptor.TYPE_FIXED32,
+        FieldDescriptor.TYPE_FIXED64,
+        FieldDescriptor.TYPE_SFIXED32,
+        FieldDescriptor.TYPE_SFIXED64,
+    }
+    if field.type in integer_types:
+        return "integer"
+
+    type_labels = {
+        FieldDescriptor.TYPE_ENUM: "enum name or integer",
+        FieldDescriptor.TYPE_FLOAT: "number",
+        FieldDescriptor.TYPE_DOUBLE: "number",
+        FieldDescriptor.TYPE_BOOL: "boolean",
+        FieldDescriptor.TYPE_BYTES: "bytes (hex/base64)",
+        FieldDescriptor.TYPE_STRING: "string",
+    }
+    return type_labels.get(field.type, "compatible value")
+
+
+def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
+    """Print available channel-setting fields after an unknown --ch-set name.
+
+    Parameters
+    ----------
+    settings : Any
+        Channel settings protobuf whose fields should be listed.
+    pref_name : str
+        Unknown preference name supplied to ``--ch-set``.
+    """
+    print(f"{settings.__class__.__name__} does not have an attribute {pref_name}.")
+    print("Choices are...")
+    for field in settings.DESCRIPTOR.fields:
+        if field.name != "module_settings":
+            print(field.name)
+            continue
+
+        print(f"{field.name}:")
+        if field.message_type is None:
+            continue
+        for sub_field in sorted(field.message_type.fields, key=lambda item: item.name):
+            print(f"    {field.name}.{sub_field.name}")
+
+
+def _reject_pref_value(
+    field: FieldDescriptor,
+    *,
+    field_path: str,
+    raw_value: Any,
+) -> bool:
+    """Report one invalid preference value without exposing secret input.
+
+    Parameters
+    ----------
+    field : FieldDescriptor
+        Descriptor for the field whose value was rejected.
+    field_path : str
+        Canonical dotted preference path used in diagnostics and redaction.
+    raw_value : Any
+        Original caller-supplied value used for safe diagnostic rendering.
+
+    Returns
+    -------
+    bool
+        Always ``False`` for convenient use from validation branches.
+
+    Raises
+    ------
+    _PreferenceValueError
+        If fatal preference-value handling is active.
+    """
+    display_value = _redact_pref_value(field_path, repr(raw_value))
+    message = (
+        f"Invalid value {display_value} for {field_path}; "
+        f"expected {_protobuf_field_type_label(field)}."
+    )
+    if _SET_PREF_VALUE_ERRORS_FATAL.get():
+        raise _PreferenceValueError(message)
+    _report_pref_validation(message)
+    return False
+
+
+def _assign_scalar_pref_value(
+    target: Any,
+    field: FieldDescriptor,
+    value: Any,
+    *,
+    field_path: str,
+    raw_value: Any,
+) -> bool:
+    """Assign one non-repeated protobuf field without leaking conversion errors.
+
+    Parameters
+    ----------
+    target : Any
+        Protobuf message instance that owns ``field``.
+    field : FieldDescriptor
+        Descriptor for the scalar field being assigned.
+    value : Any
+        Converted value to assign to the protobuf field.
+    field_path : str
+        Canonical dotted preference path used in diagnostics and redaction.
+    raw_value : Any
+        Original caller-supplied value used for safe diagnostic rendering.
+
+    Returns
+    -------
+    bool
+        ``True`` when assignment succeeds; ``False`` when a non-fatal
+        validation failure is reported.
+
+    Raises
+    ------
+    _PreferenceValueError
+        If assignment fails while fatal preference-value handling is active.
+    """
+    try:
+        setattr(target, field.name, value)
+        return True
+    except (TypeError, ValueError, OverflowError):
+        if field.type == FieldDescriptor.TYPE_STRING and not isinstance(value, str):
+            try:
+                setattr(target, field.name, str(value))
+                return True
+            except (TypeError, ValueError, OverflowError):
+                pass
+    return _reject_pref_value(field, field_path=field_path, raw_value=raw_value)
+
+
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     """Set a protobuf configuration or channel field identified by a dot-separated path.
 
@@ -1517,16 +1700,25 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         try:
             val = _parse_bitfield_value(bitfield_enum, raw_val)
         except ValueError as e:
-            print(f"ERROR: {e}")
+            _report_pref_validation(f"ERROR: {e}")
             return False
     elif isinstance(raw_val, str):
-        val = meshtastic.util.fromStr(raw_val)
+        try:
+            val = meshtastic.util.fromStr(raw_val)
+        except (ValueError, binascii.Error):
+            return _reject_pref_value(
+                pref,
+                field_path=comp_name,
+                raw_value=raw_val,
+            )
     else:
         val = raw_val
     logger.debug("val:%s", _redact_pref_value(comp_name, meshtastic.util.toStr(val)))
 
     if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
-        print("Warning: network.wifi_psk must be 8 or more characters.")
+        _report_pref_validation(
+            "Warning: network.wifi_psk must be 8 or more characters."
+        )
         return False
 
     enumType = pref.enum_type
@@ -1536,61 +1728,86 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         if ev:
             val = ev.number
         else:
-            print(
+            _report_pref_validation(
                 f"{name[0]}.{uni_name} does not have an enum called {val}, so you can not set it."
             )
-            print("Choices in sorted order are:")
+            _report_pref_validation("Choices in sorted order are:")
             names = []
             for f in enumType.values:
                 # Note: We must use the value of the enum (regardless if camel or snake case)
                 names.append(f"{f.name}")
             for temp_name in sorted(names):
-                print(f"    {temp_name}")
+                _report_pref_validation(f"    {temp_name}")
             return False
 
     # repeating fields need to be handled with append, not setattr
+    assignment_ok = True
+    print_assignment = True
     if not _is_repeated_field(pref):
-        try:
-            if config_type.message_type is not None:
-                config_values = getattr(config_part, config_type.name)
-                setattr(config_values, pref.name, val)
-            else:
-                setattr(config_part, snake_name, val)
-        except TypeError:
-            # The setter didn't like our arg type guess try again as a string
-            config_values = getattr(config_part, config_type.name)
-            setattr(config_values, pref.name, str(val))
-    elif isinstance(val, list):
-        new_vals = [meshtastic.util.fromStr(x) for x in val]
-        config_values = getattr(config, config_type.name)
-        getattr(config_values, pref.name)[:] = new_vals
+        target = (
+            getattr(config_part, config_type.name)
+            if config_type.message_type is not None
+            else config_part
+        )
+        assignment_ok = _assign_scalar_pref_value(
+            target,
+            pref,
+            val,
+            field_path=comp_name,
+            raw_value=raw_val,
+        )
     else:
-        config_values = getattr(config, config_type.name)
-        if val == 0:
-            # clear values
-            if not _CONFIGURE_PREFLIGHT_MODE.get():
-                _cli_print(f"Clearing {pref.name} list")
-            del getattr(config_values, pref.name)[:]
-        else:
-            display_value = _redact_pref_value(
-                comp_name, meshtastic.util.toStr(raw_val)
+        target = (
+            getattr(config_part, config_type.name)
+            if config_type.message_type is not None
+            else config_part
+        )
+        candidate = type(target)()
+        candidate.CopyFrom(target)
+        candidate_values = getattr(candidate, pref.name)
+        try:
+            if isinstance(val, list):
+                new_vals = [
+                    meshtastic.util.fromStr(item) if isinstance(item, str) else item
+                    for item in val
+                ]
+                candidate_values[:] = new_vals
+            elif val == 0:
+                del candidate_values[:]
+            else:
+                cur_vals = [x for x in candidate_values if x not in [0, "", b""]]
+                if val not in cur_vals:
+                    cur_vals.append(val)
+                candidate_values[:] = cur_vals
+        except (TypeError, ValueError, OverflowError, binascii.Error):
+            assignment_ok = _reject_pref_value(
+                pref,
+                field_path=comp_name,
+                raw_value=raw_val,
             )
-            if not _CONFIGURE_PREFLIGHT_MODE.get():
-                _cli_print(f"Adding '{display_value}' to the {pref.name} list")
-            cur_vals = [
-                x for x in getattr(config_values, pref.name) if x not in [0, "", b""]
-            ]
-            if val not in cur_vals:
-                cur_vals.append(val)
-            getattr(config_values, pref.name)[:] = cur_vals
-        return True
+        else:
+            target.CopyFrom(candidate)
+            if not isinstance(val, list):
+                if val == 0:
+                    if not _CONFIGURE_PREFLIGHT_MODE.get():
+                        _cli_print(f"Clearing {pref.name} list")
+                else:
+                    display_value = _redact_pref_value(
+                        comp_name, meshtastic.util.toStr(raw_val)
+                    )
+                    if not _CONFIGURE_PREFLIGHT_MODE.get():
+                        _cli_print(f"Adding '{display_value}' to the {pref.name} list")
+                print_assignment = False
 
-    prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
-    if not _CONFIGURE_PREFLIGHT_MODE.get():
-        _cli_print(f"Set {prefix}{uni_name} to {display_value}")
+    if assignment_ok and print_assignment:
+        prefix = (
+            f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
+        )
+        display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
+        if not _CONFIGURE_PREFLIGHT_MODE.get():
+            _cli_print(f"Set {prefix}{uni_name} to {display_value}")
 
-    return True
+    return assignment_ok
 
 
 def _handle_ota_update(
@@ -1661,7 +1878,11 @@ def _handle_set_command(
             if config_type is not None:
                 if len(config.ListFields()) == 0:
                     node.requestConfig(config_type)
-                found = setPref(config, normalized_pref_name, pref_item[1])
+                try:
+                    with _fatal_preference_value_errors():
+                        found = setPref(config, normalized_pref_name, pref_item[1])
+                except _PreferenceValueError as exc:
+                    _cli_exit(str(exc), 1)
                 if found:
                     any_found = True
                     fields.add(field)
@@ -2716,48 +2937,52 @@ def onConnected(interface: MeshInterface) -> None:
                 if args.ch_disable:
                     enable = False
 
-            # Handle the channel settings
+            # Validate channel settings on a copy so a later invalid entry cannot
+            # leave earlier values partially mutated in the local cache.
+            pending_settings = type(ch.settings)()
+            pending_settings.CopyFrom(ch.settings)
+            channel_update_valid = True
             for pref in args.ch_set or []:
                 if pref[0] == "psk":
-                    found = True
-                    ch.settings.psk = meshtastic.util.fromPSK(pref[1])
+                    try:
+                        pending_settings.psk = meshtastic.util.fromPSK(pref[1])
+                    except ValueError as exc:
+                        _cli_exit(f"Invalid channel PSK: {exc}", 1)
                 else:
-                    found = setPref(ch.settings, pref[0], pref[1])
-                if not found:
-                    category_settings = ["module_settings"]
-                    print(
-                        f"{ch.settings.__class__.__name__} does not have an attribute {pref[0]}."
-                    )
-                    print("Choices are...")
-                    for field in ch.settings.DESCRIPTOR.fields:
-                        if field.name not in category_settings:
-                            print(f"{field.name}")
-                        else:
-                            print(f"{field.name}:")
-                            config = ch.settings.DESCRIPTOR.fields_by_name.get(
-                                field.name
-                            )
-                            names = []
-                            if config is not None and config.message_type is not None:
-                                for sub_field in config.message_type.fields:
-                                    tmp_name = f"{field.name}.{sub_field.name}"
-                                    names.append(tmp_name)
-                            for temp_name in sorted(names):
-                                print(f"    {temp_name}")
+                    if not _resolve_pref(pending_settings, pref[0]):
+                        _print_channel_field_choices(pending_settings, pref[0])
+                        channel_update_valid = False
+                        continue
+                    try:
+                        with _fatal_preference_value_errors():
+                            found = setPref(pending_settings, pref[0], pref[1])
+                    except _PreferenceValueError as exc:
+                        _cli_exit(str(exc), 1)
+                    if not found:
+                        _cli_exit(f"Invalid value for channel setting {pref[0]}.", 1)
 
                 enable = True  # If we set any pref, assume the user wants to enable the channel
 
-            if enable:
-                ch.role = (
-                    channel_pb2.Channel.Role.PRIMARY
-                    if (_idx == 0)
-                    else channel_pb2.Channel.Role.SECONDARY
-                )
-            else:
-                ch.role = channel_pb2.Channel.Role.DISABLED
+            if channel_update_valid:
+                if args.ch_set:
+                    ch.settings.CopyFrom(pending_settings)
 
-            _cli_print("Writing modified channels to device")
-            node.writeChannel(_idx)
+                if enable:
+                    ch.role = (
+                        channel_pb2.Channel.Role.PRIMARY
+                        if (_idx == 0)
+                        else channel_pb2.Channel.Role.SECONDARY
+                    )
+                else:
+                    ch.role = channel_pb2.Channel.Role.DISABLED
+
+                _cli_print("Writing modified channels to device")
+                node.writeChannel(_idx)
+            else:
+                _cli_exit(
+                    "Warning: Unknown channel setting name. No changes were made.",
+                    1,
+                )
 
         if args.get_canned_message:
             closeNow = True
