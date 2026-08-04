@@ -6,12 +6,16 @@ import ast
 import inspect
 import pickle
 from pathlib import Path
+import typing
+
+import pytest
 
 import meshtastic
-from meshtastic import _core_constants, _response_types
+from meshtastic import _core_constants, _protocol_runtime, _response_types
 
 
 ROOT = Path(__file__).resolve().parents[2]
+pytestmark = pytest.mark.unit
 
 
 def _meshtastic_root_references(path: Path) -> set[str]:
@@ -71,7 +75,11 @@ def test_public_response_types_are_leaf_module_identities() -> None:
 
 def test_production_consumers_do_not_reference_moved_primitives_from_package_root() -> None:
     """Production internals should consume leaf-owned primitives directly."""
-    moved_names = set(_core_constants.__all__) | set(_response_types.__all__)
+    moved_names = (
+        set(_core_constants.__all__)
+        | set(_response_types.__all__)
+        | set(_protocol_runtime.PACKAGE_ROOT_COMPAT_EXPORTS)
+    )
     for path in _production_python_modules():
         assert _meshtastic_root_references(path).isdisjoint(moved_names), path
 
@@ -115,42 +123,51 @@ def test_core_owner_modules_do_not_import_package_root() -> None:
 
 def test_public_protocol_runtime_objects_preserve_identity() -> None:
     """Package-root protocol objects should be exact internal runtime re-exports."""
-    from meshtastic import _protocol_runtime
-
-    assert meshtastic.ProtobufFactory is _protocol_runtime.ProtobufFactory
-    assert meshtastic.OnReceive is _protocol_runtime.OnReceive
-    assert meshtastic.KnownProtocol is _protocol_runtime.KnownProtocol
-    assert meshtastic.protocols is _protocol_runtime.protocols
-    assert meshtastic.REDACTED_TEXT is _protocol_runtime.REDACTED_TEXT
-    assert meshtastic.REDACTED_BYTES is _protocol_runtime.REDACTED_BYTES
+    for name in _protocol_runtime.PACKAGE_ROOT_COMPAT_EXPORTS:
+        assert getattr(meshtastic, name) is getattr(_protocol_runtime, name), name
 
 
 def test_receive_pipeline_imports_protocol_registry_from_internal_runtime() -> None:
     """Receive processing should not route protocol-registry access through package root."""
     path = ROOT / "meshtastic/mesh_interface_runtime/receive_pipeline.py"
-    assert "protocols" not in _imports_from_meshtastic_root(path)
+    assert "protocols" not in _meshtastic_root_references(path)
 
 
 def test_public_known_protocol_metadata_and_pickle_contract_are_preserved() -> None:
     """Moving KnownProtocol must not change its historical public metadata."""
-    known_protocol = meshtastic.KnownProtocol("test")
     assert meshtastic.KnownProtocol.__module__ == "meshtastic"
+    assert meshtastic.KnownProtocol.__qualname__ == "KnownProtocol"
+    assert meshtastic.KnownProtocol._fields == ("name", "protobufFactory", "onReceive")
+    assert meshtastic.KnownProtocol._field_defaults == {
+        "protobufFactory": None,
+        "onReceive": None,
+    }
+
+    known_protocol = meshtastic.KnownProtocol("test")
     assert pickle.loads(pickle.dumps(known_protocol)) == known_protocol
-    assert str(inspect.signature(meshtastic.KnownProtocol)) == (
-        "(name: str, protobufFactory: Optional[Callable[[], Any]] = None, "
-        "onReceive: Optional[Callable[[Any, dict[str, Any]], NoneType]] = None)"
-    )
+
+    signature = inspect.signature(meshtastic.KnownProtocol)
+    assert tuple(signature.parameters) == ("name", "protobufFactory", "onReceive")
+    assert signature.parameters["name"].default is inspect.Signature.empty
+    assert signature.parameters["protobufFactory"].default is None
+    assert signature.parameters["onReceive"].default is None
+    assert signature.return_annotation is inspect.Signature.empty
+
+    hints = typing.get_type_hints(meshtastic.KnownProtocol)
+    assert hints == {
+        "name": str,
+        "protobufFactory": meshtastic.ProtobufFactory | None,
+        "onReceive": meshtastic.OnReceive | None,
+    }
 
 
 def test_protocol_runtime_uses_historical_package_logger() -> None:
     """Handler extraction should not change the logger name or logger object."""
-    from meshtastic import _protocol_runtime
-
     assert _protocol_runtime.logger is meshtastic.logger
 
 
 def test_protocol_owner_module_does_not_import_package_root() -> None:
     """The protocol runtime should remain below the package facade."""
-    path = ROOT / "meshtastic/_protocol_runtime.py"
-    assert _imports_from_meshtastic_root(path) == set()
->>>>>>> 77cf3dcf (Extract protocol registry runtime)
+    assert _protocol_runtime.__file__ is not None
+    path = Path(_protocol_runtime.__file__).resolve()
+    assert _meshtastic_root_references(path) == set()

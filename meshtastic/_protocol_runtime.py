@@ -34,6 +34,32 @@ REDACTED_BYTES = b"<redacted>"
 ProtobufFactory = _Callable[[], _Any]
 OnReceive = _Callable[[_Any, dict[str, _Any]], None]
 
+# Package-root names owned by this module.  The private module remains an internal
+# implementation detail; this inventory keeps compatibility aliases and dependency
+# boundary tests synchronized as the protocol runtime evolves.
+__all__ = (
+    "KnownProtocol",
+    "OnReceive",
+    "ProtobufFactory",
+    "REDACTED_BYTES",
+    "REDACTED_TEXT",
+    "protocols",
+)
+
+# Complete protocol-owned alias inventory kept at the historical package root.
+# The public-looking names above also define this private module's ``__all__``; the
+# underscored handlers remain compatibility aliases without becoming star exports.
+PACKAGE_ROOT_COMPAT_EXPORTS = __all__ + (
+    "_packet_debug_summary",
+    "_sanitize_last_received",
+    "_on_text_receive",
+    "_on_position_receive",
+    "_on_node_info_receive",
+    "_on_telemetry_receive",
+    "_receive_info_update",
+    "_on_admin_receive",
+)
+
 
 class KnownProtocol(_NamedTuple):
     """Used to automatically decode known protocol payloads."""
@@ -77,8 +103,11 @@ def _packet_debug_summary(as_dict: dict[str, _Any]) -> dict[str, _Any]:
 def _sanitize_last_received(as_dict: dict[str, _Any]) -> dict[str, _Any]:
     """Return a node-cache-safe packet copy for ``node['lastReceived']``.
 
-    Keeps historical packet structure for compatibility while redacting only
-    ``decoded.admin.raw.session_passkey`` when present.
+    Keeps historical packet structure for compatibility while redacting
+    ``decoded.admin.raw.session_passkey`` when the admin payload is a mapping. If
+    ``decoded.admin`` has an unknown non-mapping shape, the whole admin payload is
+    replaced with :data:`REDACTED_TEXT` rather than caching potentially sensitive
+    data.
     """
     sanitized = dict(as_dict)
     decoded = sanitized.get("decoded")
@@ -193,7 +222,8 @@ def _on_text_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
     #
     # Usually btw this problem is caused by apps sending binary data but setting the payload type to
     # text.
-    logger.debug("in _on_text_receive() %s", _packet_debug_summary(as_dict))
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("in _on_text_receive() %s", _packet_debug_summary(as_dict))
     try:
         as_bytes = as_dict["decoded"]["payload"]
         as_dict["decoded"]["text"] = as_bytes.decode("utf-8")
@@ -216,7 +246,8 @@ def _on_position_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
         Packet dictionary expected to contain
         "from" and "decoded"->"position".
     """
-    logger.debug("in _on_position_receive() %s", _packet_debug_summary(as_dict))
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("in _on_position_receive() %s", _packet_debug_summary(as_dict))
     packet_guard = _extract_sender_and_decoded(as_dict)
     if packet_guard is None:
         return
@@ -261,7 +292,8 @@ def _on_node_info_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
         Received packet dictionary; expected to contain
         `"decoded" -> "user"` and `"from"`.
     """
-    logger.debug("in _on_node_info_receive() %s", _packet_debug_summary(as_dict))
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("in _on_node_info_receive() %s", _packet_debug_summary(as_dict))
     packet_guard = _extract_sender_and_decoded(as_dict)
     if packet_guard is None:
         return
@@ -288,7 +320,7 @@ def _on_node_info_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
         with iface._node_db_lock:
             n["user"] = p
             # We now have a node ID, make sure it is up-to-date in that table
-            node_id = p.get("id") if isinstance(p, dict) else None
+            node_id = p.get("id")
             nodes_by_id = iface.nodes
             if isinstance(node_id, str) and node_id and isinstance(nodes_by_id, dict):
                 nodes_by_id[node_id] = n
@@ -310,7 +342,8 @@ def _on_telemetry_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
         Received packet dictionary; expected to include
         a `from` key and may include `decoded.telemetry`.
     """
-    logger.debug("in _on_telemetry_receive() %s", _packet_debug_summary(as_dict))
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("in _on_telemetry_receive() %s", _packet_debug_summary(as_dict))
     packet_guard = _extract_sender_and_decoded(as_dict)
     if packet_guard is None:
         return
@@ -322,8 +355,14 @@ def _on_telemetry_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
     if not isinstance(telemetry, dict):
         logger.debug(
             "Skipping telemetry update from=%s: unexpected telemetry payload type %s",
-            as_dict.get("from"),
+            sender,
             type(telemetry).__name__,
+        )
+        return
+    if DECODE_ERROR_KEY in telemetry:
+        logger.debug(
+            "Skipping telemetry state update from=%s due to decode error payload",
+            sender,
         )
         return
     if "deviceMetrics" in telemetry:
@@ -424,7 +463,7 @@ def _on_admin_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
     if session_passkey is None and isinstance(raw_admin, dict):
         session_passkey = raw_admin.get("session_passkey")
 
-    if session_passkey is None:
+    if not session_passkey:
         logger.debug(
             "Admin session passkey not extracted from admin packet from=%s",
             sender,

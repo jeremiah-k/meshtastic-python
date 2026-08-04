@@ -182,6 +182,9 @@ callbacks are serialized on the worker thread.
 
 logger = logging.getLogger(__name__)
 
+# COMPAT_STABLE_SHIM: preserve historical package-root runtime names after moving
+# their implementations to internal owner modules. These aliases must remain
+# available without deprecation warnings.
 REDACTED_TEXT = _protocol_runtime.REDACTED_TEXT
 REDACTED_BYTES = _protocol_runtime.REDACTED_BYTES
 DECODE_ERROR_KEY = _DECODE_ERROR_KEY
