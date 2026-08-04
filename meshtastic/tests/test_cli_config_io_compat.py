@@ -93,6 +93,10 @@ def test_is_repeated_field_supports_legacy_descriptor_labels() -> None:
     singular = SimpleNamespace(label=1, LABEL_REPEATED=3)
     missing_label = SimpleNamespace(LABEL_REPEATED=3)
 
-    assert main_module.cli_config_io.is_repeated_field(repeated) is True
-    assert main_module.cli_config_io.is_repeated_field(singular) is False
-    assert main_module.cli_config_io.is_repeated_field(missing_label) is False
+    for descriptor, expected in (
+        (repeated, True),
+        (singular, False),
+        (missing_label, False),
+    ):
+        assert main_module.cli_config_io.is_repeated_field(descriptor) is expected
+        assert main_module._is_repeated_field(descriptor) is expected

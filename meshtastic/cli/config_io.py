@@ -343,15 +343,15 @@ def export_config(
             config_obj["location"]["alt"] = altitude
 
     config = message_to_dict(interface.localNode.localConfig)
+    prefix_base64_bytes_fields_fn(interface.localNode.localConfig, config)
+    set_missing_flags_false_fn(config, config_true_defaults)
     if config:
-        prefix_base64_bytes_fields_fn(interface.localNode.localConfig, config)
-        set_missing_flags_false_fn(config, config_true_defaults)
         config_obj["config"] = _converted_section_keys(config, camel_case=camel_case)
 
     module_config = message_to_dict(interface.localNode.moduleConfig)
+    prefix_base64_bytes_fields_fn(interface.localNode.moduleConfig, module_config)
+    set_missing_flags_false_fn(module_config, module_true_defaults)
     if module_config:
-        prefix_base64_bytes_fields_fn(interface.localNode.moduleConfig, module_config)
-        set_missing_flags_false_fn(module_config, module_true_defaults)
         config_obj["module_config"] = _converted_section_keys(
             module_config, camel_case=camel_case
         )
