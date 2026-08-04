@@ -18,6 +18,7 @@ from types import ModuleType
 import pytest
 
 
+
 @pytest.mark.unit
 class TestCoreModuleImports:
     """Test core Meshtastic module imports that should remain stable."""
@@ -238,6 +239,7 @@ class TestTopLevelModuleImports:
 class TestBackwardCompatAliases:
     """Test backward compatibility aliases that are maintained but may warn."""
 
+    @pytest.mark.usefixtures("isolated_dotdict_deprecation_state")
     def test_util_dotdict_deprecated_import(self) -> None:
         """Test that dotdict can still be imported from meshtastic.util.
 

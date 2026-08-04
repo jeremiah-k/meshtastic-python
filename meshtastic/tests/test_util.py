@@ -1878,17 +1878,9 @@ def test_dotdict_missing_attr_returns_none() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("isolated_dotdict_deprecation_state")
 def test_dotdict_deprecated_warns() -> None:
-    """Test dotdict deprecated alias warns once per process."""
-    # Clear warn-once state to ensure we get a warning
-    from meshtastic.util import (  # pylint: disable=import-outside-toplevel
-        _warned_deprecations,
-        _warned_deprecations_lock,
-    )
-
-    with _warned_deprecations_lock:
-        _warned_deprecations.discard("dotdict")
-
+    """Test dotdict deprecated alias warns once per isolated process state."""
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always", DeprecationWarning)
         dd = dotdict()  # pyright: ignore[reportDeprecated]

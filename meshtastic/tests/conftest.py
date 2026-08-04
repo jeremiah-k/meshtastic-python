@@ -22,6 +22,7 @@ import pytest
 
 from meshtastic import mt_config, publishingThread
 from meshtastic.powermon import power_supply as power_supply_module
+import meshtastic.util as util_module
 from meshtastic.util import DeferredExecution
 
 from ..mesh_interface import MeshInterface
@@ -45,6 +46,20 @@ if TYPE_CHECKING:
 
 SINGLE_NODE_PORT_OFFSET = 100
 _SINGLE_NODE_PORT_SEQUENCE = itertools.count()
+
+
+@pytest.fixture(name="isolated_dotdict_deprecation_state")
+def _isolated_dotdict_deprecation_state() -> Generator[None, None, None]:
+    """Isolate the process-wide warn-once state used by the deprecated dotdict alias."""
+    with util_module._warned_deprecations_lock:  # noqa: SLF001 - test isolation seam
+        previous = set(util_module._warned_deprecations)  # noqa: SLF001
+        util_module._warned_deprecations.discard("dotdict")  # noqa: SLF001
+    try:
+        yield
+    finally:
+        with util_module._warned_deprecations_lock:  # noqa: SLF001
+            util_module._warned_deprecations.clear()  # noqa: SLF001
+            util_module._warned_deprecations.update(previous)  # noqa: SLF001
 
 
 def _skip_simradio_if_unavailable() -> None:
