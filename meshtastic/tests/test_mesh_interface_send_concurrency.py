@@ -37,9 +37,10 @@ from ..protobuf import (
 # from ..config import Config
 
 from ._mesh_interface_legacy_support import (
-    start_wait_thread as _start_wait_thread,
-    wait_for_scoped_wait_registration as _wait_for_scoped_wait_registration,
+    _start_wait_thread,
+    _wait_for_scoped_wait_registration,
 )
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -48,7 +49,7 @@ def test_concurrent_node_database_access() -> None:
     with MeshInterface(noProto=True) as iface:
         iface.nodes = {}
         iface.nodesByNum = {}
-        errors = []
+        errors: list[BaseException] = []
         errors_lock = threading.Lock()
 
         def update_nodes(node_num: int) -> None:
@@ -81,7 +82,7 @@ def test_concurrent_queue_operations() -> None:
     """Test that queue operations are thread-safe."""
     with MeshInterface(noProto=True) as iface:
         iface.queue = OrderedDict()
-        errors = []
+        errors: list[BaseException] = []
         errors_lock = threading.Lock()
 
         def add_to_queue(start_id: int) -> None:
@@ -124,8 +125,8 @@ def test_concurrent_response_handler_registration() -> None:
     """Test that response handler registration is thread-safe."""
     with MeshInterface(noProto=True) as iface:
         iface.responseHandlers = {}
-        errors = []
-        added_ids = []
+        errors: list[BaseException] = []
+        added_ids: list[int] = []
         added_ids_lock = threading.Lock()
         errors_lock = threading.Lock()
 
@@ -158,7 +159,7 @@ def test_concurrent_response_handler_registration() -> None:
 @pytest.mark.unit
 def test_concurrent_close_with_packet_id_generation() -> None:
     """Test that close() properly handles concurrent packet ID generation."""
-    errors = []
+    errors: list[BaseException] = []
     stop_flag = threading.Event()
     started = threading.Event()
     errors_lock = threading.Lock()
@@ -208,7 +209,7 @@ def test_concurrent_showNodes() -> None:
         iface.myInfo = MagicMock()
         iface.myInfo.my_node_num = 0
 
-        errors = []
+        errors: list[BaseException] = []
         errors_lock = threading.Lock()
 
         def call_show_nodes() -> None:
@@ -235,7 +236,7 @@ def test_concurrent_getNode() -> None:
         iface.nodesByNum = {
             i: {"num": i, "user": {"id": f"!{i:08x}"}} for i in range(100)
         }
-        errors = []
+        errors: list[BaseException] = []
         errors_lock = threading.Lock()
 
         def get_nodes() -> None:
@@ -287,7 +288,7 @@ def test_concurrent_sendText_with_queue() -> None:
         iface.myInfo = MagicMock()
         iface.myInfo.my_node_num = 12345
         iface._localChannels = [channel_pb2.Channel(index=0)]
-        errors = []
+        errors: list[BaseException] = []
         errors_lock = threading.Lock()
 
         def send_texts() -> None:
@@ -335,14 +336,19 @@ def test_init_subscribes_log_line_when_debug_output_enabled(
 def test_exit_close_failure_paths(caplog: pytest.LogCaptureFixture) -> None:
     """__exit__ should suppress close() failures only while unwinding another exception."""
     iface = MeshInterface(noProto=True)
+    real_close = iface.close
     iface.close = MagicMock(side_effect=RuntimeError("close failed"))  # type: ignore[method-assign]
 
-    with caplog.at_level(logging.WARNING):
-        iface.__exit__(ValueError, ValueError("inner"), None)
-    assert "close() failed while unwinding an existing exception." in caplog.text
+    try:
+        with caplog.at_level(logging.WARNING):
+            iface.__exit__(ValueError, ValueError("inner"), None)
+        assert "close() failed while unwinding an existing exception." in caplog.text
 
-    with pytest.raises(RuntimeError, match="close failed"):
-        iface.__exit__(None, None, None)
+        with pytest.raises(RuntimeError, match="close failed"):
+            iface.__exit__(None, None, None)
+    finally:
+        iface.close = real_close  # type: ignore[method-assign]
+        iface.close()
 
 
 @pytest.mark.unit
@@ -560,6 +566,58 @@ def test_send_position_waits_when_response_requested(
         wait_for_position.assert_called_once_with(request_id=77)
 
 
+def _assert_position_response_log(
+    iface: MeshInterface,
+    caplog: pytest.LogCaptureFixture,
+    *,
+    request_id: int,
+    position: mesh_pb2.Position,
+    expected: tuple[str, ...],
+) -> None:
+    """Drive one position response and assert its waiter and log output.
+
+    Parameters
+    ----------
+    iface : MeshInterface
+        Interface receiving the position response.
+    caplog : pytest.LogCaptureFixture
+        Log capture fixture used to inspect the position summary.
+    request_id : int
+        Scoped request identifier for the response.
+    position : mesh_pb2.Position
+        Position payload delivered to the response handler.
+    expected : tuple[str, ...]
+        Log substrings expected after the response is processed.
+    """
+    iface._clear_wait_error(WAIT_ATTR_POSITION, request_id=request_id)
+    wait_thread, wait_errors = _start_wait_thread(
+        lambda: iface.waitForPosition(request_id=request_id)
+    )
+    _wait_for_scoped_wait_registration(
+        iface,
+        acknowledgment_attr=WAIT_ATTR_POSITION,
+        request_id=request_id,
+    )
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=flows_module.__name__):
+        iface.onResponsePosition(
+            {
+                "decoded": {
+                    "requestId": request_id,
+                    "portnum": portnums_pb2.PortNum.Name(
+                        portnums_pb2.PortNum.POSITION_APP
+                    ),
+                    "payload": position.SerializeToString(),
+                }
+            }
+        )
+    wait_thread.join(timeout=1.0)
+    assert not wait_errors
+    assert not wait_thread.is_alive()
+    for text in expected:
+        assert text in caplog.text
+
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_on_response_position_success_and_routing_error(
@@ -572,91 +630,33 @@ def test_on_response_position_success_and_routing_error(
         position.longitude_i = -971234567
         position.altitude = 250
         position.precision_bits = 32
-        iface._clear_wait_error(WAIT_ATTR_POSITION, request_id=1001)
-        wait_thread, wait_errors = _start_wait_thread(
-            lambda: iface.waitForPosition(request_id=1001)
-        )
-        _wait_for_scoped_wait_registration(
+        _assert_position_response_log(
             iface,
-            acknowledgment_attr=WAIT_ATTR_POSITION,
+            caplog,
             request_id=1001,
+            position=position,
+            expected=("Position received:", "full precision"),
         )
-        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
-            iface.onResponsePosition(
-                {
-                    "decoded": {
-                        "requestId": 1001,
-                        "portnum": portnums_pb2.PortNum.Name(
-                            portnums_pb2.PortNum.POSITION_APP
-                        ),
-                        "payload": position.SerializeToString(),
-                    }
-                }
-            )
-        wait_thread.join(timeout=1.0)
-        assert not wait_errors
-        assert not wait_thread.is_alive()
-        assert "Position received:" in caplog.text
-        assert "full precision" in caplog.text
 
         unknown_position = mesh_pb2.Position()
         unknown_position.precision_bits = 5
-        iface._clear_wait_error(WAIT_ATTR_POSITION, request_id=1002)
-        wait_thread, wait_errors = _start_wait_thread(
-            lambda: iface.waitForPosition(request_id=1002)
-        )
-        _wait_for_scoped_wait_registration(
+        _assert_position_response_log(
             iface,
-            acknowledgment_attr=WAIT_ATTR_POSITION,
+            caplog,
             request_id=1002,
+            position=unknown_position,
+            expected=("(unknown)", "precision:5"),
         )
-        caplog.clear()
-        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
-            iface.onResponsePosition(
-                {
-                    "decoded": {
-                        "requestId": 1002,
-                        "portnum": portnums_pb2.PortNum.Name(
-                            portnums_pb2.PortNum.POSITION_APP
-                        ),
-                        "payload": unknown_position.SerializeToString(),
-                    }
-                }
-            )
-        wait_thread.join(timeout=1.0)
-        assert not wait_errors
-        assert not wait_thread.is_alive()
-        assert "(unknown)" in caplog.text
-        assert "precision:5" in caplog.text
 
         disabled_position = mesh_pb2.Position()
         disabled_position.precision_bits = 0
-        iface._clear_wait_error(WAIT_ATTR_POSITION, request_id=1003)
-        wait_thread, wait_errors = _start_wait_thread(
-            lambda: iface.waitForPosition(request_id=1003)
-        )
-        _wait_for_scoped_wait_registration(
+        _assert_position_response_log(
             iface,
-            acknowledgment_attr=WAIT_ATTR_POSITION,
+            caplog,
             request_id=1003,
+            position=disabled_position,
+            expected=("position disabled",),
         )
-        caplog.clear()
-        with caplog.at_level(logging.INFO, logger=flows_module.__name__):
-            iface.onResponsePosition(
-                {
-                    "decoded": {
-                        "requestId": 1003,
-                        "portnum": portnums_pb2.PortNum.Name(
-                            portnums_pb2.PortNum.POSITION_APP
-                        ),
-                        "payload": disabled_position.SerializeToString(),
-                    }
-                }
-            )
-        wait_thread.join(timeout=1.0)
-        assert not wait_errors
-        assert not wait_thread.is_alive()
-        assert "position disabled" in caplog.text
 
     with MeshInterface(noProto=True) as iface:
         iface._clear_wait_error(WAIT_ATTR_POSITION, request_id=1004)

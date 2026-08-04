@@ -382,13 +382,14 @@ def test_getNode_not_local_timeout(
 def test_sendPosition_default_path_delegates_empty_position_payload() -> None:
     """Default position sends should use POSITION_APP without inventing coordinates."""
     sent_packet = mesh_pb2.MeshPacket(id=123)
-    with MeshInterface(noProto=True) as iface:
-        iface._send_data_with_wait = MagicMock(return_value=sent_packet)
-
+    with (
+        MeshInterface(noProto=True) as iface,
+        patch.object(iface, "_send_data_with_wait", return_value=sent_packet) as send_mock,
+    ):
         result = iface.sendPosition()
 
         assert result is sent_packet
-        send_call = iface._send_data_with_wait.call_args
+        send_call = send_mock.call_args
         assert send_call is not None
         position = send_call.args[0]
         assert isinstance(position, mesh_pb2.Position)
@@ -686,35 +687,6 @@ def test_disconnected_publishes_lost_once_per_connection(
         iface._disconnected()
         assert len(queued_callbacks) == 2
 
-
-# TODO
-# @pytest.mark.unit
-# @pytest.mark.usefixtures("reset_mt_config")
-# def test_close_with_heartbeatTimer(caplog):
-#    """Test close() with heartbeatTimer"""
-#    iface = MeshInterface(noProto=True)
-#    anode = Node('foo', 'bar')
-#    aconfig = Config()
-#    aonfig.preferences.phone_timeout_secs = 10
-#    anode.config = aconfig
-#    iface.localNode = anode
-#    assert iface.heartbeatTimer is None
-#    with caplog.at_level(logging.DEBUG):
-#        iface._start_heartbeat()
-#        assert iface.heartbeatTimer is not None
-#        iface.close()
-
-
-# TODO
-# @pytest.mark.unit
-# @pytest.mark.usefixtures("reset_mt_config")
-# def test_handleFromRadio_empty_payload(caplog):
-#    """Test _handle_from_radio"""
-#    iface = MeshInterface(noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        iface._handle_from_radio(b'')
-#    iface.close()
-#    assert re.search(r'Unexpected FromRadio payload', caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
@@ -1064,7 +1036,8 @@ def test_sendPacket_raises_when_node_record_lacks_numeric_num(
 ) -> None:
     """_send_packet should reject DB node records that do not provide an integer num."""
     iface = iface_with_nodes
-    iface.nodes = {"bad": {"user": {"id": "bad"}}}
+    with iface._node_db_lock:
+        iface.nodes = {"bad": {"user": {"id": "bad"}}}
     mesh_packet = mesh_pb2.MeshPacket()
     with pytest.raises(
         MeshInterface.MeshInterfaceError,
@@ -1080,7 +1053,8 @@ def test_sendPacket_uses_numeric_num_from_node_record(
 ) -> None:
     """_send_packet should use node['num'] when destination resolves via DB lookup."""
     iface = iface_with_nodes
-    iface.nodes = {"dst": {"num": 4242}}
+    with iface._node_db_lock:
+        iface.nodes = {"dst": {"num": 4242}}
     mesh_packet = mesh_pb2.MeshPacket()
 
     sent = iface._send_packet(mesh_packet, destinationId="dst")

@@ -21,6 +21,7 @@ from meshtastic.mesh_interface_runtime import (
 from meshtastic.mesh_interface_runtime.request_wait import (
     UNSCOPED_WAIT_REQUEST_ID,
     WAIT_ATTR_NAK,
+    WAIT_ATTR_POSITION,
     WAIT_ATTR_TELEMETRY,
 )
 
@@ -39,13 +40,16 @@ from ..protobuf import (
 from ..util import Acknowledgment, Timeout
 
 from ._mesh_interface_legacy_support import (
-    inline_queue_work as _inline_queue_work,
-    install_protocol_stub as _install_protocol_stub,
-    make_decoded_packet as _make_decoded_packet,
-    patch_message_to_dict_position_failure as _patch_message_to_dict_position_failure,
-    register_response_capture as _register_response_capture,
-    wait_for_scoped_wait_registration as _wait_for_scoped_wait_registration,
+    _inline_queue_work,
+    _install_protocol_stub,
+    _make_decoded_packet,
+    _patch_message_to_dict_position_failure,
+    _register_response_capture,
+    _wait_for_scoped_wait_registration,
 )
+
+WAIT_ATTR_ACK = "receivedAck"
+
 
 @pytest.fixture(name="decode_failure_iface")
 def _decode_failure_iface_fixture(
@@ -106,7 +110,7 @@ def test_waitForAckNak_raises_pending_received_nak_wait_error() -> None:
 def test_wait_errors_ignore_stale_request_ids() -> None:
     """Routing errors from stale requestIds must not poison active wait state."""
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error("receivedTelemetry", request_id=101)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=101)
 
         iface.onResponseTelemetry(
             {
@@ -121,7 +125,7 @@ def test_wait_errors_ignore_stale_request_ids() -> None:
         )
 
         assert iface._acknowledgment.receivedTelemetry is False
-        iface._raise_wait_error_if_present("receivedTelemetry", request_id=101)
+        iface._raise_wait_error_if_present(WAIT_ATTR_TELEMETRY, request_id=101)
 
         iface.onResponseTelemetry(
             {
@@ -136,7 +140,7 @@ def test_wait_errors_ignore_stale_request_ids() -> None:
         )
 
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface._raise_wait_error_if_present("receivedTelemetry", request_id=101)
+            iface._raise_wait_error_if_present(WAIT_ATTR_TELEMETRY, request_id=101)
 
 
 @pytest.mark.unit
@@ -157,7 +161,7 @@ def test_wait_timeout_retires_response_handler_for_request_id(
             b"ping",
             wantResponse=True,
             onResponse=lambda _packet: None,
-            response_wait_attr="receivedTelemetry",
+            response_wait_attr=WAIT_ATTR_TELEMETRY,
         )
         request_id = packet.id
         assert request_id in iface.responseHandlers
@@ -173,21 +177,21 @@ def test_wait_timeout_retires_response_handler_for_request_id(
 def test_request_scoped_wait_state_supports_multiple_active_request_ids() -> None:
     """Multiple same-type waits should keep independent request-scoped error state."""
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error("receivedTelemetry", request_id=101)
-        iface._clear_wait_error("receivedTelemetry", request_id=202)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=101)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=202)
 
         iface._record_routing_wait_error(
-            acknowledgment_attr="receivedTelemetry",
+            acknowledgment_attr=WAIT_ATTR_TELEMETRY,
             routing_error_reason="NO_RESPONSE",
             request_id=101,
         )
 
-        iface._raise_wait_error_if_present("receivedTelemetry", request_id=202)
+        iface._raise_wait_error_if_present(WAIT_ATTR_TELEMETRY, request_id=202)
         with pytest.raises(MeshInterface.MeshInterfaceError, match="No response"):
-            iface._raise_wait_error_if_present("receivedTelemetry", request_id=101)
+            iface._raise_wait_error_if_present(WAIT_ATTR_TELEMETRY, request_id=101)
 
-        iface._retire_wait_request("receivedTelemetry", request_id=101)
-        iface._retire_wait_request("receivedTelemetry", request_id=202)
+        iface._retire_wait_request(WAIT_ATTR_TELEMETRY, request_id=101)
+        iface._retire_wait_request(WAIT_ATTR_TELEMETRY, request_id=202)
 
 
 @pytest.mark.unit
@@ -218,16 +222,16 @@ def test_send_data_rolls_back_wait_state_when_send_packet_raises(
                 b"ping",
                 wantResponse=True,
                 onResponse=lambda _packet: None,
-                response_wait_attr="receivedTelemetry",
+                response_wait_attr=WAIT_ATTR_TELEMETRY,
             )
 
         assert len(observed_request_ids) == 1
         request_id = observed_request_ids[0]
         with iface._response_handlers_lock:
             assert request_id not in iface.responseHandlers
-            assert ("receivedTelemetry", request_id) not in iface._response_wait_errors
-            assert ("receivedTelemetry", request_id) not in iface._response_wait_acks
-            assert not iface._active_wait_request_ids.get("receivedTelemetry")
+            assert (WAIT_ATTR_TELEMETRY, request_id) not in iface._response_wait_errors
+            assert (WAIT_ATTR_TELEMETRY, request_id) not in iface._response_wait_acks
+            assert not iface._active_wait_request_ids.get(WAIT_ATTR_TELEMETRY)
 
 
 @pytest.mark.unit
@@ -252,11 +256,11 @@ def test_send_data_finalizes_non_zero_packet_id_before_registration(
         packet = iface._send_data_with_wait(
             b"ping",
             wantResponse=True,
-            response_wait_attr="receivedTelemetry",
+            response_wait_attr=WAIT_ATTR_TELEMETRY,
         )
         assert packet.id == 123456
         with iface._response_handlers_lock:
-            assert 123456 in iface._active_wait_request_ids["receivedTelemetry"]
+            assert 123456 in iface._active_wait_request_ids[WAIT_ATTR_TELEMETRY]
 
 
 @pytest.mark.unit
@@ -366,43 +370,61 @@ def test_send_methods_pass_request_id_to_wait_helpers(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_wait_state_helpers_cover_request_resolution_branches() -> None:
-    """Wait-state helpers should resolve scoped/unscoped request bookkeeping correctly."""
+def test_wait_state_unscoped_updates_resolve_active_scoped_wait() -> None:
+    """Unscoped callbacks should resolve the active scoped telemetry waiter."""
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error("receivedTelemetry", request_id=501)
-        iface._set_wait_error("receivedTelemetry", "scoped-error")
-        iface._raise_wait_error_if_present("receivedTelemetry")
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=501)
+        iface._set_wait_error(WAIT_ATTR_TELEMETRY, "scoped-error")
+        iface._raise_wait_error_if_present(WAIT_ATTR_TELEMETRY)
 
-        iface._clear_wait_error("receivedTelemetry", request_id=501)
-        iface._mark_wait_acknowledged("receivedTelemetry")
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=501)
+        iface._mark_wait_acknowledged(WAIT_ATTR_TELEMETRY)
         with iface._response_handlers_lock:
-            assert ("receivedTelemetry", 501) not in iface._response_wait_acks
+            assert (WAIT_ATTR_TELEMETRY, 501) not in iface._response_wait_acks
 
-        iface._mark_wait_acknowledged("receivedTelemetry", request_id=999)
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_wait_state_retired_or_unknown_scoped_ack_does_not_leak() -> None:
+    """Unknown scoped acknowledgments should not create persistent wait state."""
+    with MeshInterface(noProto=True) as iface:
+        iface._mark_wait_acknowledged(WAIT_ATTR_TELEMETRY, request_id=999)
         with iface._response_handlers_lock:
-            assert ("receivedTelemetry", 999) not in iface._response_wait_acks
+            assert (WAIT_ATTR_TELEMETRY, 999) not in iface._response_wait_acks
 
-        iface._clear_wait_error("receivedTelemetry")
+        iface._clear_wait_error(WAIT_ATTR_POSITION)
+        iface._mark_wait_acknowledged(WAIT_ATTR_POSITION, request_id=888)
+        with iface._response_handlers_lock:
+            assert (
+                WAIT_ATTR_POSITION,
+                UNSCOPED_WAIT_REQUEST_ID,
+            ) in iface._response_wait_acks
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_wait_state_unscoped_error_fallback_targets_requested_id() -> None:
+    """Legacy unscoped errors should remain visible to a requested waiter."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY)
         iface._set_wait_error(
-            "receivedTelemetry",
+            WAIT_ATTR_TELEMETRY,
             "legacy-unscoped-error",
             request_id=777,
         )
         with pytest.raises(
             MeshInterface.MeshInterfaceError, match="legacy-unscoped-error"
         ):
-            iface._raise_wait_error_if_present("receivedTelemetry", request_id=777)
+            iface._raise_wait_error_if_present(WAIT_ATTR_TELEMETRY, request_id=777)
 
-        iface._clear_wait_error("receivedPosition")
-        iface._mark_wait_acknowledged("receivedPosition", request_id=888)
-        with iface._response_handlers_lock:
-            assert (
-                "receivedPosition",
-                UNSCOPED_WAIT_REQUEST_ID,
-            ) in iface._response_wait_acks
 
-        iface._clear_wait_error("receivedTelemetry", request_id=601)
-        iface._clear_wait_error("receivedTelemetry", request_id=602)
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_retire_wait_request_without_id_clears_all_scoped_state() -> None:
+    """Bulk wait retirement should clear handlers, errors, and acknowledgments."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=601)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=602)
         with iface._response_handlers_lock:
             iface.responseHandlers[601] = ResponseHandler(
                 callback=lambda _packet: None, ackPermitted=False
@@ -410,39 +432,57 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
             iface.responseHandlers[602] = ResponseHandler(
                 callback=lambda _packet: None, ackPermitted=False
             )
-            iface._response_wait_errors[("receivedTelemetry", 601)] = "err-a"
-            iface._response_wait_errors[("receivedTelemetry", 602)] = "err-b"
-            iface._response_wait_acks.add(("receivedTelemetry", 601))
-            iface._response_wait_acks.add(("receivedTelemetry", 602))
-        iface._retire_wait_request("receivedTelemetry")
+            iface._response_wait_errors[(WAIT_ATTR_TELEMETRY, 601)] = "err-a"
+            iface._response_wait_errors[(WAIT_ATTR_TELEMETRY, 602)] = "err-b"
+            iface._response_wait_acks.add((WAIT_ATTR_TELEMETRY, 601))
+            iface._response_wait_acks.add((WAIT_ATTR_TELEMETRY, 602))
+
+        iface._retire_wait_request(WAIT_ATTR_TELEMETRY)
+
         with iface._response_handlers_lock:
             assert 601 not in iface.responseHandlers
             assert 602 not in iface.responseHandlers
-            assert ("receivedTelemetry", 601) not in iface._response_wait_errors
-            assert ("receivedTelemetry", 602) not in iface._response_wait_errors
-            assert ("receivedTelemetry", 601) not in iface._response_wait_acks
-            assert ("receivedTelemetry", 602) not in iface._response_wait_acks
+            assert (WAIT_ATTR_TELEMETRY, 601) not in iface._response_wait_errors
+            assert (WAIT_ATTR_TELEMETRY, 602) not in iface._response_wait_errors
+            assert (WAIT_ATTR_TELEMETRY, 601) not in iface._response_wait_acks
+            assert (WAIT_ATTR_TELEMETRY, 602) not in iface._response_wait_acks
 
-        iface._clear_wait_error("receivedPosition", request_id=700)
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_scoped_wait_ignores_unscoped_ack() -> None:
+    """A scoped request wait should not consume a legacy unscoped acknowledgment."""
+    with MeshInterface(noProto=True) as iface:
+        iface._clear_wait_error(WAIT_ATTR_POSITION, request_id=700)
         with iface._response_handlers_lock:
             iface._response_wait_acks.add(
-                ("receivedPosition", UNSCOPED_WAIT_REQUEST_ID)
+                (WAIT_ATTR_POSITION, UNSCOPED_WAIT_REQUEST_ID)
             )
+
         assert not iface._wait_for_request_ack(
-            "receivedPosition", 700, timeout_seconds=0.05
+            WAIT_ATTR_POSITION, 700, timeout_seconds=0.05
         )
+
         with iface._response_handlers_lock:
             assert (
-                "receivedPosition",
+                WAIT_ATTR_POSITION,
                 UNSCOPED_WAIT_REQUEST_ID,
             ) in iface._response_wait_acks
 
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_clear_wait_error_without_id_only_clears_matching_attribute() -> None:
+    """Unscoped cleanup should preserve wait state owned by another attribute."""
+    with MeshInterface(noProto=True) as iface:
         with iface._response_handlers_lock:
-            iface._response_wait_acks.add(("receivedPosition", 1))
+            iface._response_wait_acks.add((WAIT_ATTR_POSITION, 1))
             iface._response_wait_acks.add(("otherAttr", 2))
-        iface._clear_wait_error("receivedPosition")
+
+        iface._clear_wait_error(WAIT_ATTR_POSITION)
+
         with iface._response_handlers_lock:
-            assert ("receivedPosition", 1) not in iface._response_wait_acks
+            assert (WAIT_ATTR_POSITION, 1) not in iface._response_wait_acks
             assert ("otherAttr", 2) in iface._response_wait_acks
 
 
@@ -451,26 +491,26 @@ def test_wait_state_helpers_cover_request_resolution_branches() -> None:
 def test_retired_scoped_wait_ids_do_not_clobber_unscoped_wait_state() -> None:
     """Late callbacks for retired scoped waits should not write into unscoped state."""
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error("receivedTelemetry", request_id=321)
-        iface._retire_wait_request("receivedTelemetry", request_id=321)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=321)
+        iface._retire_wait_request(WAIT_ATTR_TELEMETRY, request_id=321)
 
-        iface._mark_wait_acknowledged("receivedTelemetry", request_id=321)
+        iface._mark_wait_acknowledged(WAIT_ATTR_TELEMETRY, request_id=321)
         iface._set_wait_error(
-            "receivedTelemetry",
+            WAIT_ATTR_TELEMETRY,
             "stale-scoped-error",
             request_id=321,
         )
         with iface._response_handlers_lock:
             assert (
-                "receivedTelemetry",
+                WAIT_ATTR_TELEMETRY,
                 UNSCOPED_WAIT_REQUEST_ID,
             ) not in iface._response_wait_acks
             assert (
-                "receivedTelemetry",
+                WAIT_ATTR_TELEMETRY,
                 UNSCOPED_WAIT_REQUEST_ID,
             ) not in iface._response_wait_errors
 
-        iface._mark_wait_acknowledged("receivedTelemetry")
+        iface._mark_wait_acknowledged(WAIT_ATTR_TELEMETRY)
         assert iface._acknowledgment.receivedTelemetry is True
 
 
@@ -479,13 +519,13 @@ def test_retired_scoped_wait_ids_do_not_clobber_unscoped_wait_state() -> None:
 def test_record_routing_wait_error_ignores_none_like_reason() -> None:
     """Routing wait-error recorder should no-op for None/NONE reasons."""
     with MeshInterface(noProto=True) as iface:
-        iface._clear_wait_error("receivedTelemetry", request_id=801)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=801)
         iface._record_routing_wait_error(
-            acknowledgment_attr="receivedTelemetry",
+            acknowledgment_attr=WAIT_ATTR_TELEMETRY,
             routing_error_reason="NONE",
             request_id=801,
         )
-        iface._raise_wait_error_if_present("receivedTelemetry", request_id=801)
+        iface._raise_wait_error_if_present(WAIT_ATTR_TELEMETRY, request_id=801)
 
 
 @pytest.mark.unit
@@ -542,7 +582,7 @@ def test_wait_helpers_use_request_scoped_waiter_path(
         iface.waitForWaypoint(request_id=33)
 
         assert wait_calls[0][0:2] == ("receivedTraceRoute", 11)
-        assert wait_calls[1][0:2] == ("receivedPosition", 22)
+        assert wait_calls[1][0:2] == (WAIT_ATTR_POSITION, 22)
         assert wait_calls[2][0:2] == ("receivedWaypoint", 33)
 
 
@@ -553,8 +593,8 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
     with MeshInterface(noProto=True) as iface:
         iface._timeout = Timeout(maxSecs=0.5)
         iface._timeout.sleepInterval = 0.001
-        iface._clear_wait_error("receivedTelemetry", request_id=11)
-        iface._clear_wait_error("receivedTelemetry", request_id=22)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=11)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=22)
         errors: list[BaseException] = []
         wait_started = {11: threading.Event(), 22: threading.Event()}
         release_waits = threading.Event()
@@ -584,8 +624,8 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
             acknowledgment_attr=WAIT_ATTR_TELEMETRY,
             request_id=22,
         )
-        iface._mark_wait_acknowledged("receivedTelemetry", request_id=11)
-        iface._mark_wait_acknowledged("receivedTelemetry", request_id=22)
+        iface._mark_wait_acknowledged(WAIT_ATTR_TELEMETRY, request_id=11)
+        iface._mark_wait_acknowledged(WAIT_ATTR_TELEMETRY, request_id=22)
         wait_11.join(timeout=1.0)
         wait_22.join(timeout=1.0)
 
@@ -593,7 +633,7 @@ def test_wait_for_request_ack_supports_overlapping_same_type_waits() -> None:
         assert not wait_11.is_alive()
         assert not wait_22.is_alive()
         with iface._response_handlers_lock:
-            assert not iface._active_wait_request_ids.get("receivedTelemetry")
+            assert not iface._active_wait_request_ids.get(WAIT_ATTR_TELEMETRY)
 
 
 @pytest.mark.unit
@@ -604,9 +644,9 @@ def test_request_scoped_wait_wakes_immediately_on_recorded_error() -> None:
         iface._timeout = Timeout(maxSecs=5.0)
         iface._timeout.sleepInterval = 0.001
         request_id = 303
-        iface._clear_wait_error("receivedTelemetry", request_id=request_id)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=request_id)
         iface._record_routing_wait_error(
-            acknowledgment_attr="receivedTelemetry",
+            acknowledgment_attr=WAIT_ATTR_TELEMETRY,
             routing_error_reason="NO_ROUTE",
             request_id=request_id,
         )
@@ -630,10 +670,10 @@ def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_wai
         iface._timeout.sleepInterval = 0.001
         request_a = 411
         request_b = 422
-        iface._clear_wait_error("receivedTelemetry", request_id=request_a)
-        iface._clear_wait_error("receivedTelemetry", request_id=request_b)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=request_a)
+        iface._clear_wait_error(WAIT_ATTR_TELEMETRY, request_id=request_b)
         iface._record_routing_wait_error(
-            acknowledgment_attr="receivedTelemetry",
+            acknowledgment_attr=WAIT_ATTR_TELEMETRY,
             routing_error_reason="NO_ROUTE",
         )
 
@@ -649,9 +689,9 @@ def test_request_scoped_wait_times_out_for_unscoped_error_across_overlapping_wai
             iface.waitForTelemetry(request_id=request_b)
 
         with iface._response_handlers_lock:
-            assert not iface._active_wait_request_ids.get("receivedTelemetry")
+            assert not iface._active_wait_request_ids.get(WAIT_ATTR_TELEMETRY)
             assert (
-                "receivedTelemetry",
+                WAIT_ATTR_TELEMETRY,
                 UNSCOPED_WAIT_REQUEST_ID,
             ) not in iface._response_wait_errors
 
@@ -767,11 +807,9 @@ def test_send_to_radio_waits_resends_and_tracks_requeue(
             assert iface.queueStatus is not None
             iface.queueStatus.free = 10
 
-        monkeypatch.setattr(
-            mesh_interface_module.time,  # type: ignore[attr-defined]
-            "sleep",
-            _sleep_and_free,
-        )
+        fake_time = types.SimpleNamespace(**vars(time))
+        fake_time.sleep = _sleep_and_free
+        monkeypatch.setattr(mesh_interface_module, "time", fake_time)
 
         with caplog.at_level(logging.DEBUG):
             iface._send_to_radio(incoming)
@@ -798,23 +836,16 @@ def test_send_to_radio_waits_resends_and_tracks_requeue(
         packet.packet.id = 123
         incoming = mesh_pb2.ToRadio()
         incoming.packet.id = 999
-        monkeypatch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
         pops = iter([(123, packet), None])
-        original_pop = iface._queue_send_runtime._pop_for_send
-        monkeypatch.setattr(
-            iface._queue_send_runtime,
-            "_pop_for_send",
-            lambda: next(pops),
-        )
-        try:
-            iface._send_to_radio(incoming)
-            assert 123 in iface.queue
-        finally:
-            monkeypatch.setattr(
+        with monkeypatch.context() as send_patch:
+            send_patch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
+            send_patch.setattr(
                 iface._queue_send_runtime,
                 "_pop_for_send",
-                original_pop,
+                lambda: next(pops),
             )
+            iface._send_to_radio(incoming)
+        assert 123 in iface.queue
 
 
 @pytest.mark.unit
@@ -840,24 +871,17 @@ def test_send_to_radio_successful_missing_entry_is_not_immediately_requeued(
         def _send_impl(msg: mesh_pb2.ToRadio) -> None:
             sent_ids.append(msg.packet.id if msg.HasField("packet") else -1)
 
-        monkeypatch.setattr(iface, "_send_to_radio_impl", _send_impl)
         pops = iter([(123, packet), None])
-        original_pop = iface._queue_send_runtime._pop_for_send
-        monkeypatch.setattr(
-            iface._queue_send_runtime,
-            "_pop_for_send",
-            lambda: next(pops),
-        )
-        try:
-            iface._send_to_radio(incoming)
-            assert 123 in sent_ids
-            assert 123 not in iface.queue
-        finally:
-            monkeypatch.setattr(
+        with monkeypatch.context() as send_patch:
+            send_patch.setattr(iface, "_send_to_radio_impl", _send_impl)
+            send_patch.setattr(
                 iface._queue_send_runtime,
                 "_pop_for_send",
-                original_pop,
+                lambda: next(pops),
             )
+            iface._send_to_radio(incoming)
+        assert 123 in sent_ids
+        assert 123 not in iface.queue
 
 
 @pytest.mark.unit
@@ -882,26 +906,17 @@ def test_send_to_radio_requeues_packet_when_send_impl_raises(
         def _failing_send(_msg: mesh_pb2.ToRadio) -> None:
             raise _SendImplFailure()
 
-        monkeypatch.setattr(iface, "_send_to_radio_impl", _failing_send)
         pops = iter([(123, packet), None])
-        original_pop = iface._queue_send_runtime._pop_for_send
-        monkeypatch.setattr(
-            iface._queue_send_runtime,
-            "_pop_for_send",
-            lambda: next(pops),
-        )
-        try:
-            with pytest.raises(_SendImplFailure, match="send failed"):
-                iface._send_to_radio(incoming)
-            assert 123 in iface.queue
-        finally:
-            monkeypatch.setattr(
+        with monkeypatch.context() as send_patch:
+            send_patch.setattr(iface, "_send_to_radio_impl", _failing_send)
+            send_patch.setattr(
                 iface._queue_send_runtime,
                 "_pop_for_send",
-                original_pop,
+                lambda: next(pops),
             )
-            # Keep context-manager shutdown path from triggering the intentional send failure.
-            monkeypatch.setattr(iface, "_send_to_radio_impl", lambda _msg: None)
+            with pytest.raises(_SendImplFailure, match="send failed"):
+                iface._send_to_radio(incoming)
+        assert 123 in iface.queue
 
 
 @pytest.mark.unit
@@ -1624,14 +1639,14 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
             """Simulate waitForAckNak for request A."""
             wait_a_started.set()
             assert release_waits.wait(timeout=1.0)
-            result = timeout.waitForAckNak(ack, attrs=("receivedAck", "receivedNak"))
+            result = timeout.waitForAckNak(ack, attrs=(WAIT_ATTR_ACK, WAIT_ATTR_NAK))
             wait_a_result.append(result)
 
         def simulate_wait_b() -> None:
             """Simulate waitForAckNak for request B."""
             wait_b_started.set()
             assert release_waits.wait(timeout=1.0)
-            result = timeout.waitForAckNak(ack, attrs=("receivedAck", "receivedNak"))
+            result = timeout.waitForAckNak(ack, attrs=(WAIT_ATTR_ACK, WAIT_ATTR_NAK))
             wait_b_result.append(result)
 
         # Start both waits concurrently
@@ -1705,8 +1720,8 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
             request_b = 200
 
             # Clear any existing state
-            iface._clear_wait_error("receivedAck", request_id=request_a)
-            iface._clear_wait_error("receivedAck", request_id=request_b)
+            iface._clear_wait_error(WAIT_ATTR_ACK, request_id=request_a)
+            iface._clear_wait_error(WAIT_ATTR_ACK, request_id=request_b)
 
             # Track completion
             wait_a_result: list[bool] = []
@@ -1719,7 +1734,7 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
                 wait_a_started.set()
                 assert release_waits.wait(timeout=1.0)
                 result = iface._wait_for_request_ack(
-                    "receivedAck", request_a, timeout_seconds=0.5
+                    WAIT_ATTR_ACK, request_a, timeout_seconds=0.5
                 )
                 wait_a_result.append(result)
 
@@ -1727,7 +1742,7 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
                 wait_b_started.set()
                 assert release_waits.wait(timeout=1.0)
                 result = iface._wait_for_request_ack(
-                    "receivedAck", request_b, timeout_seconds=0.5
+                    WAIT_ATTR_ACK, request_b, timeout_seconds=0.5
                 )
                 wait_b_result.append(result)
 
@@ -1745,7 +1760,7 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
             # Register both request IDs as active
             with iface._response_handlers_lock:
                 active_ids = iface._active_wait_request_ids.setdefault(
-                    "receivedAck", set()
+                    WAIT_ATTR_ACK, set()
                 )
                 active_ids.add(request_a)
                 active_ids.add(request_b)
@@ -1753,7 +1768,7 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
             release_waits.set()
 
             # Mark only request A as acknowledged (scoped)
-            iface._mark_wait_acknowledged("receivedAck", request_id=request_a)
+            iface._mark_wait_acknowledged(WAIT_ATTR_ACK, request_id=request_a)
 
             # Wait for completion
             thread_a.join(timeout=1.0)
@@ -1950,18 +1965,20 @@ def test_queue_wait_abort_reason_allows_connected_interface() -> None:
 
 @pytest.mark.unit
 def test_connection_probe_overrides_are_normalized() -> None:
-    iface = MeshInterface(noProto=True)
-    iface.__dict__["_probe_timeout"] = -2.5
-    assert iface._connection_timeout_override("_probe_timeout") == 0.0
-    iface.__dict__["_probe_timeout"] = True
-    assert iface._connection_timeout_override("_probe_timeout", 3.0) == 3.0
-    iface.__dict__["_probe_timeout"] = "invalid"
-    assert iface._connection_timeout_override("_probe_timeout") is None
+    """Connection timeout overrides should normalize invalid probe values."""
+    with MeshInterface(noProto=True) as iface:
+        iface.__dict__["_probe_timeout"] = -2.5
+        assert iface._connection_timeout_override("_probe_timeout") == 0.0
+        iface.__dict__["_probe_timeout"] = True
+        assert iface._connection_timeout_override("_probe_timeout", 3.0) == 3.0
+        iface.__dict__["_probe_timeout"] = "invalid"
+        assert iface._connection_timeout_override("_probe_timeout") is None
 
 
 @pytest.mark.unit
 def test_connect_failure_log_level_respects_quiet_probe_mode() -> None:
-    iface = MeshInterface(noProto=True)
-    assert iface._connect_failure_log_level() == logging.ERROR
-    iface._suppress_connect_failure_logging = True
-    assert iface._connect_failure_log_level() == logging.DEBUG
+    """Quiet connection probes should lower expected failure logs to DEBUG."""
+    with MeshInterface(noProto=True) as iface:
+        assert iface._connect_failure_log_level() == logging.ERROR
+        iface._suppress_connect_failure_logging = True
+        assert iface._connect_failure_log_level() == logging.DEBUG

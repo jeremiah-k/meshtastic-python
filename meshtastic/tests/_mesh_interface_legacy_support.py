@@ -19,10 +19,21 @@ from meshtastic.protobuf import mesh_pb2, portnums_pb2
 from .. import ResponseHandler
 
 
-def start_wait_thread(
+def _start_wait_thread(
     wait_call: Callable[[], None],
 ) -> tuple[threading.Thread, list[BaseException]]:
-    """Start a waiter in a background thread and capture any raised exception."""
+    """Start a waiter in a background thread and capture raised exceptions.
+
+    Parameters
+    ----------
+    wait_call : Callable[[], None]
+        Blocking waiter to run in the background thread.
+
+    Returns
+    -------
+    tuple[threading.Thread, list[BaseException]]
+        Started daemon thread and the mutable exception collector populated by it.
+    """
     errors: list[BaseException] = []
 
     def _run_wait() -> None:
@@ -36,14 +47,31 @@ def start_wait_thread(
     return thread, errors
 
 
-def wait_for_scoped_wait_registration(
+def _wait_for_scoped_wait_registration(
     iface: MeshInterface,
     *,
     acknowledgment_attr: str,
     request_id: int,
     timeout_seconds: float = 1.0,
 ) -> None:
-    """Wait until a request-scoped waiter is registered for an acknowledgment."""
+    """Wait until a request-scoped acknowledgment waiter is registered.
+
+    Parameters
+    ----------
+    iface : MeshInterface
+        Interface whose request-wait registry is inspected.
+    acknowledgment_attr : str
+        Acknowledgment state attribute associated with the waiter.
+    request_id : int
+        Request identifier expected in the active-wait registry.
+    timeout_seconds : float
+        Maximum registration wait in seconds.
+
+    Raises
+    ------
+    Failed
+        If the request-scoped waiter is not registered before the deadline.
+    """
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         with iface._response_handlers_lock:  # noqa: SLF001
@@ -58,8 +86,14 @@ def wait_for_scoped_wait_registration(
     )
 
 
-def inline_queue_work(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Execute queued publish callbacks inline for deterministic packet tests."""
+def _inline_queue_work(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute queued publish callbacks inline for deterministic packet tests.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Patch fixture used to replace the publishing queue hook.
+    """
     monkeypatch.setattr(
         mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
         "queueWork",
@@ -67,7 +101,7 @@ def inline_queue_work(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def install_protocol_stub(
+def _install_protocol_stub(
     monkeypatch: pytest.MonkeyPatch,
     *,
     portnum: portnums_pb2.PortNum.ValueType,
@@ -75,7 +109,21 @@ def install_protocol_stub(
     protobuf_factory: object,
     on_receive: Callable[[MeshInterface, dict[str, Any]], None] | MagicMock,
 ) -> None:
-    """Install a single protocol stub for a decode-failure test case."""
+    """Install a protocol stub for a decode-failure test case.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Patch fixture used to replace the protocol registry.
+    portnum : portnums_pb2.PortNum.ValueType
+        Port number mapped to the protocol stub.
+    name : str
+        Human-readable protocol name.
+    protobuf_factory : object
+        Factory or sentinel exposed by the protocol stub.
+    on_receive : Callable[[MeshInterface, dict[str, Any]], None] | MagicMock
+        Receive callback exposed by the protocol stub.
+    """
     fake_protocol = types.SimpleNamespace(
         name=name,
         protobufFactory=protobuf_factory,
@@ -88,7 +136,7 @@ def install_protocol_stub(
     )
 
 
-def make_decoded_packet(
+def _make_decoded_packet(
     *,
     from_node: int = 1,
     to_node: int = 2,
@@ -96,7 +144,26 @@ def make_decoded_packet(
     request_id: int,
     payload: bytes,
 ) -> mesh_pb2.MeshPacket:
-    """Build a MeshPacket with decoded payload fields pre-populated."""
+    """Build a mesh packet with decoded payload fields pre-populated.
+
+    Parameters
+    ----------
+    from_node : int
+        Source node number.
+    to_node : int
+        Destination node number.
+    portnum : portnums_pb2.PortNum.ValueType
+        Decoded application port number.
+    request_id : int
+        Request identifier stored in the decoded payload.
+    payload : bytes
+        Serialized decoded payload.
+
+    Returns
+    -------
+    mesh_pb2.MeshPacket
+        Packet containing the requested decoded fields.
+    """
     packet = mesh_pb2.MeshPacket()
     setattr(packet, "from", from_node)
     packet.to = to_node
@@ -106,10 +173,23 @@ def make_decoded_packet(
     return packet
 
 
-def register_response_capture(
+def _register_response_capture(
     iface: MeshInterface, request_id: int
 ) -> list[dict[str, Any]]:
-    """Register a response handler that appends callback packets to a list."""
+    """Register a response handler that captures callback packets.
+
+    Parameters
+    ----------
+    iface : MeshInterface
+        Interface receiving the response handler.
+    request_id : int
+        Request identifier mapped to the handler.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Mutable list populated whenever the callback is invoked.
+    """
     callback_calls: list[dict[str, Any]] = []
 
     def _response_callback(packet: dict[str, Any]) -> None:
@@ -122,8 +202,14 @@ def register_response_capture(
     return callback_calls
 
 
-def patch_message_to_dict_position_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make MessageToDict fail for Position messages to simulate conversion errors."""
+def _patch_message_to_dict_position_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``MessageToDict`` fail for position messages.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Patch fixture used to install the conversion failure shim.
+    """
     original_message_to_dict = google.protobuf.json_format.MessageToDict
 
     def _message_to_dict_with_position_failure(
