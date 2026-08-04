@@ -681,7 +681,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
         Raises
         ------
-        AssertionError
+        MeshInterfaceError
             If channels have not been loaded (no channels to write).
         TypeError
             If unexpected keyword arguments are provided.
@@ -1666,9 +1666,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
     def _fixup_channels(self) -> None:
         """Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
 
-        If `channels` is None this is a no-op. Otherwise this method sets each channel's `index`
-        field to its position in the list (starting at 0) and then appends disabled channels as
-        needed so the channel list reaches the required length.
+        If `channels` is None this is a no-op. Otherwise this method truncates channel lists
+        that exceed the device limit, sets each remaining channel's `index` field to its position
+        in the list (starting at 0), and appends disabled channels as needed so the channel list
+        reaches the required length.
         """
         self._channel_normalization_runtime._fixup_channels()
 
