@@ -83,12 +83,12 @@ lint:
 
 # lint tests with the canonical Ruff version (same scope as CI)
 lint-tests:
-	@set -a; . ./tools/quality_versions.env; set +a; \
-		python bin/check_quality_tool_versions.py; \
+	@set -eu; \
+		expected=$$(python bin/check_quality_tool_versions.py --print-ruff-version); \
 		actual=$$(ruff --version | awk '{print $$2}'); \
-		if [ "$$actual" != "$$RUFF_VERSION" ]; then \
-			echo "error: ruff $$actual installed; expected $$RUFF_VERSION" >&2; \
-			echo "install with: python -m pip install ruff==$$RUFF_VERSION" >&2; \
+		if [ "$$actual" != "$$expected" ]; then \
+			echo "error: ruff $$actual installed; expected $$expected" >&2; \
+			echo "install with: python -m pip install ruff==$$expected" >&2; \
 			exit 2; \
 		fi; \
 		ruff check meshtastic/tests tests
