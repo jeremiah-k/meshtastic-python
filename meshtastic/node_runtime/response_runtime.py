@@ -4,9 +4,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from meshtastic.node_runtime.admin_wait import (
-    _extract_request_id_from_response,
-    _mark_admin_wait_acknowledged,
-    _set_admin_wait_error,
+    _mark_admin_wait_acknowledged_for_packet,
+    _record_admin_wait_error_for_packet,
 )
 from meshtastic.node_runtime.shared import ERROR_REASON_NONE, MAX_CHANNELS
 from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
@@ -36,21 +35,6 @@ class _NodeMetadataResponseRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
-    def _record_wait_error(self, packet: dict[str, Any], message: str) -> None:
-        """Record one request-scoped metadata-response failure."""
-        _set_admin_wait_error(
-            self._node,
-            message,
-            request_id=_extract_request_id_from_response(self._node, packet),
-        )
-
-    def _mark_wait_acknowledged(self, packet: dict[str, Any]) -> None:
-        """Mark one request-scoped metadata response complete."""
-        _mark_admin_wait_acknowledged(
-            self._node,
-            _extract_request_id_from_response(self._node, packet),
-        )
-
     def _handle_routing_portnum(
         self, decoded: dict[str, Any], packet: dict[str, Any] | None = None
     ) -> bool:
@@ -65,6 +49,11 @@ class _NodeMetadataResponseRuntime:
                 "Received malformed metadata response (missing routing): %s",
                 decoded,
             )
+            self._node.iface._acknowledgment.receivedNak = True
+            if packet is not None:
+                _record_admin_wait_error_for_packet(
+                    self._node, packet, "Received malformed metadata response (missing routing)."
+                )
             self._node._signal_metadata_stdout_event()
             return True
         error_reason = routing.get("errorReason")
@@ -73,6 +62,13 @@ class _NodeMetadataResponseRuntime:
                 "Received malformed metadata response (invalid routing.errorReason): %s",
                 decoded,
             )
+            self._node.iface._acknowledgment.receivedNak = True
+            if packet is not None:
+                _record_admin_wait_error_for_packet(
+                    self._node,
+                    packet,
+                    "Received malformed metadata response (invalid routing.errorReason).",
+                )
             self._node._signal_metadata_stdout_event()
             return True
         if error_reason != ERROR_REASON_NONE:
@@ -82,8 +78,8 @@ class _NodeMetadataResponseRuntime:
             )
             self._node.iface._acknowledgment.receivedNak = True
             if packet is not None:
-                self._record_wait_error(
-                    packet, f"Routing error on response: {error_reason}"
+                _record_admin_wait_error_for_packet(
+                    self._node, packet, f"Routing error on response: {error_reason}"
                 )
             self._node._signal_metadata_stdout_event()
             return True
@@ -105,14 +101,21 @@ class _NodeMetadataResponseRuntime:
                 "Received malformed metadata response (invalid routing.errorReason): %s",
                 decoded,
             )
+            self._node.iface._acknowledgment.receivedNak = True
+            if packet is not None:
+                _record_admin_wait_error_for_packet(
+                    self._node,
+                    packet,
+                    "Received malformed metadata response (invalid routing.errorReason).",
+                )
             self._node._signal_metadata_stdout_event()
             return True
         if error_reason != ERROR_REASON_NONE:
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
             if packet is not None:
-                self._record_wait_error(
-                    packet, f"Routing error on response: {error_reason}"
+                _record_admin_wait_error_for_packet(
+                    self._node, packet, f"Routing error on response: {error_reason}"
                 )
             self._node._signal_metadata_stdout_event()
             return True
@@ -165,6 +168,10 @@ class _NodeMetadataResponseRuntime:
                 "Received malformed metadata response (missing decoded): %s",
                 packet,
             )
+            self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(
+                self._node, packet, "Received malformed metadata response (missing decoded)."
+            )
             self._node._signal_metadata_stdout_event()
             return
         if self._handle_routing_portnum(decoded, packet):
@@ -178,6 +185,10 @@ class _NodeMetadataResponseRuntime:
                 "Received malformed metadata response (missing admin): %s",
                 packet,
             )
+            self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(
+                self._node, packet, "Received malformed metadata response (missing admin)."
+            )
             self._node._signal_metadata_stdout_event()
             return
         raw_admin = admin_message.get("raw")
@@ -188,13 +199,17 @@ class _NodeMetadataResponseRuntime:
                 "Received malformed metadata response (missing admin.raw): %s",
                 packet,
             )
+            self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(
+                self._node, packet, "Received malformed metadata response (missing admin.raw)."
+            )
             self._node._signal_metadata_stdout_event()
             return
         metadata_response = raw_admin.get_device_metadata_response
         metadata_snapshot = mesh_pb2.DeviceMetadata()
         metadata_snapshot.CopyFrom(metadata_response)
         self._node.iface._acknowledgment.receivedAck = True
-        self._mark_wait_acknowledged(packet)
+        _mark_admin_wait_acknowledged_for_packet(self._node, packet)
         self._node._set_metadata_snapshot(metadata_snapshot)
         self._node._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(metadata_response))

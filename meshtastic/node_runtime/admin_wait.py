@@ -72,6 +72,27 @@ def _set_admin_wait_error(
         set_wait_error(WAIT_ATTR_NAK, message, request_id=request_id)
 
 
+def _record_admin_wait_error_for_packet(
+    node: "Node", packet: dict[str, Any], message: str
+) -> None:
+    """Record one request-scoped admin failure from a response packet."""
+    _set_admin_wait_error(
+        node,
+        message,
+        request_id=_extract_request_id_from_response(node, packet),
+    )
+
+
+def _mark_admin_wait_acknowledged_for_packet(
+    node: "Node", packet: dict[str, Any]
+) -> None:
+    """Mark one request-scoped admin wait complete from a response packet."""
+    _mark_admin_wait_acknowledged(
+        node,
+        _extract_request_id_from_response(node, packet),
+    )
+
+
 def _accepts_response_wait_attr(send_admin: Callable[..., Any]) -> bool:
     """Return whether a bound admin sender accepts the private wait keyword."""
     try:
@@ -133,11 +154,11 @@ def _wait_for_admin_ack(
     """
     request_id = _extract_request_id_from_sent_packet(node, request)
     scoped_wait = _get_bound_interface_helper(node, "_wait_for_ack_nak")
-    active_waits = getattr(node.iface, "_active_wait_request_ids", None)
+    has_active_wait = _get_bound_interface_helper(node, "_has_active_wait_request")
     request_is_scoped = (
         request_id is not None
-        and isinstance(active_waits, dict)
-        and request_id in active_waits.get(WAIT_ATTR_NAK, set())
+        and has_active_wait is not None
+        and bool(has_active_wait(WAIT_ATTR_NAK, request_id))
     )
     if request_is_scoped and scoped_wait is not None:
         scoped_wait(request_id)

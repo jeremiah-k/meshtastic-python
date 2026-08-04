@@ -394,6 +394,16 @@ class _RequestWaitRuntime:
         if request_id is None:
             setattr(self._get_acknowledgment(), acknowledgment_attr, False)
 
+    def has_active_wait_request(
+        self, acknowledgment_attr: str, request_id: int
+    ) -> bool:
+        """Return whether one request id is active for an acknowledgment scope."""
+        with self._lock:
+            active_request_ids = self._get_active_wait_request_ids().get(
+                acknowledgment_attr
+            )
+            return active_request_ids is not None and request_id in active_request_ids
+
     def wait_for_request_ack(
         self,
         acknowledgment_attr: str,

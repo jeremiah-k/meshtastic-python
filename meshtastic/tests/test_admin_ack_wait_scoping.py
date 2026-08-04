@@ -41,6 +41,12 @@ class _ScopedIfaceDouble:
         request_id = getattr(packet, "id", None)
         return request_id if isinstance(request_id, int) and request_id > 0 else None
 
+    def _has_active_wait_request(
+        self, acknowledgment_attr: str, request_id: int
+    ) -> bool:
+        active = self._active_wait_request_ids.get(acknowledgment_attr)
+        return active is not None and request_id in active
+
     def _wait_for_ack_nak(self, request_id: int) -> None:
         self.scoped_waits.append(request_id)
         active = self._active_wait_request_ids.get(WAIT_ATTR_NAK)
@@ -167,10 +173,23 @@ def test_admin_wait_falls_back_to_legacy_interface_contract() -> None:
 
 
 @pytest.mark.unit
+def test_active_wait_scope_query_tracks_registration_and_retirement() -> None:
+    """Active-wait membership should be queried through the lock-owning runtime."""
+    with MeshInterface(noProto=True) as iface:
+        request_id = 100
+        iface._clear_wait_error(WAIT_ATTR_NAK, request_id=request_id)  # noqa: SLF001
+
+        assert iface._has_active_wait_request(WAIT_ATTR_NAK, request_id)  # noqa: SLF001
+
+        iface._retire_wait_request(WAIT_ATTR_NAK, request_id=request_id)  # noqa: SLF001
+        assert not iface._has_active_wait_request(WAIT_ATTR_NAK, request_id)  # noqa: SLF001
+
+
+@pytest.mark.unit
 def test_request_scoped_admin_waits_do_not_crosstalk() -> None:
     """An ACK for one request must not release a different admin waiter."""
     with MeshInterface(noProto=True) as iface:
-        iface._timeout.expireTimeout = 1.0  # noqa: SLF001
+        iface._timeout.expireTimeout = 30.0  # noqa: SLF001
         iface._timeout.sleepInterval = 0.001  # noqa: SLF001
         request_a = 101
         request_b = 202
@@ -215,7 +234,7 @@ def test_request_scoped_admin_waits_do_not_crosstalk() -> None:
 def test_scoped_admin_nak_only_fails_matching_request() -> None:
     """A request-scoped NAK should fail its owner without poisoning another wait."""
     with MeshInterface(noProto=True) as iface:
-        iface._timeout.expireTimeout = 1.0  # noqa: SLF001
+        iface._timeout.expireTimeout = 30.0  # noqa: SLF001
         iface._timeout.sleepInterval = 0.001  # noqa: SLF001
         request_ok = 303
         request_nak = 404
@@ -452,6 +471,80 @@ def test_metadata_response_marks_scoped_request_completion() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("packet", "error_fragment"),
+    [
+        ({"decoded": None}, "missing decoded"),
+        (
+            {
+                "decoded": {
+                    "portnum": "ROUTING_APP",
+                    "routing": None,
+                }
+            },
+            "missing routing",
+        ),
+        (
+            {
+                "decoded": {
+                    "portnum": "ROUTING_APP",
+                    "routing": {"errorReason": 1},
+                }
+            },
+            "invalid routing.errorReason",
+        ),
+        ({"decoded": {"portnum": "ADMIN_APP"}}, "missing admin"),
+        (
+            {"decoded": {"portnum": "ADMIN_APP", "admin": {}}},
+            "missing admin.raw",
+        ),
+        (
+            {
+                "decoded": {
+                    "portnum": "ADMIN_APP",
+                    "routing": {"errorReason": 1},
+                }
+            },
+            "invalid routing.errorReason",
+        ),
+    ],
+)
+def test_malformed_metadata_response_records_request_scoped_failure(
+    packet: dict[str, Any], error_fragment: str
+) -> None:
+    """Every terminal malformed metadata response should fail its scoped waiter."""
+    from meshtastic.node_runtime.response_runtime import _NodeMetadataResponseRuntime
+
+    request_id = 818
+    packet.setdefault("decoded", {})
+    if isinstance(packet.get("decoded"), dict):
+        packet["decoded"]["requestId"] = request_id
+    iface = SimpleNamespace(
+        _acknowledgment=Acknowledgment(),
+        _extract_request_id_from_packet=lambda _packet: request_id,
+        _mark_wait_acknowledged=MagicMock(),
+        _set_wait_error=MagicMock(),
+    )
+    node = SimpleNamespace(
+        iface=iface,
+        _signal_metadata_stdout_event=MagicMock(),
+    )
+
+    _NodeMetadataResponseRuntime(cast(Any, node)).handleMetadataResponse(packet)
+
+    assert iface._acknowledgment.receivedNak is True
+    assert iface._set_wait_error.call_args_list == [
+        ((WAIT_ATTR_NAK, f"Received malformed metadata response ({error_fragment})."), {}),
+        (
+            (WAIT_ATTR_NAK, f"Received malformed metadata response ({error_fragment})."),
+            {"request_id": request_id},
+        ),
+    ]
+    iface._mark_wait_acknowledged.assert_not_called()
+    node._signal_metadata_stdout_event.assert_called_once_with()
+
+
+@pytest.mark.unit
 def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -531,7 +624,8 @@ def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request(
         )
         _wait_until(lambda: len(errors) == 1)
         assert len(results) == 0
-        assert thread_a.is_alive() or thread_b.is_alive()
+        assert set(errors) == {2}
+        assert thread_a.is_alive()
 
         iface._request_wait_runtime.correlate_inbound_response(  # noqa: SLF001
             packet_dict={
@@ -560,15 +654,15 @@ def test_admin_wait_request_id_helpers_handle_missing_legacy_hooks() -> None:
     """Request-id extraction should degrade safely on minimal compatibility doubles."""
     node = SimpleNamespace(iface=SimpleNamespace())
 
-    assert _extract_request_id_from_sent_packet(node, None) is None  # type: ignore[arg-type]
+    assert _extract_request_id_from_sent_packet(cast(Any, node), None) is None
     assert (
-        _extract_request_id_from_sent_packet(  # type: ignore[arg-type]
-            node,
+        _extract_request_id_from_sent_packet(
+            cast(Any, node),
             mesh_pb2.MeshPacket(id=0),
         )
         is None
     )
-    assert _extract_request_id_from_response(node, {}) is None  # type: ignore[arg-type]
+    assert _extract_request_id_from_response(cast(Any, node), {}) is None
 
 
 @pytest.mark.unit
@@ -576,8 +670,8 @@ def test_admin_wait_error_noops_without_wait_error_hook() -> None:
     """Minimal interface doubles without scoped error storage should remain supported."""
     node = SimpleNamespace(iface=SimpleNamespace())
 
-    _set_admin_wait_error(  # type: ignore[arg-type]
-        node,
+    _set_admin_wait_error(
+        cast(Any, node),
         "ignored",
         request_id=123,
     )

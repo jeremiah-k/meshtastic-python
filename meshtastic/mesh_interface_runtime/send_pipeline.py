@@ -469,6 +469,14 @@ class SendPipeline:
             request_id=request_id,
         )
 
+    def _has_active_wait_request(
+        self, acknowledgment_attr: str, request_id: int
+    ) -> bool:
+        """Return whether one request is active in the given wait scope."""
+        return self._request_wait_runtime.has_active_wait_request(
+            acknowledgment_attr, request_id
+        )
+
     def _wait_for_request_ack(
         self,
         acknowledgment_attr: str,
