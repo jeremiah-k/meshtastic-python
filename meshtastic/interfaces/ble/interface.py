@@ -79,7 +79,7 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
     logger,
 )
-from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
+from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryManager,
     _looks_like_ble_address,
@@ -118,6 +118,10 @@ from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.session_state import (
+    BLESessionState,
+    _BLESessionStateCompatMixin,
+)
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
     _is_unconfigured_mock_member,
@@ -187,7 +191,7 @@ ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE: str = (
 )
 
 
-class BLEInterface(MeshInterface):
+class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     """MeshInterface using BLE to connect to Meshtastic devices.
 
     This class provides a complete BLE interface for Meshtastic communication,
@@ -287,10 +291,8 @@ class BLEInterface(MeshInterface):
         #     only one connection attempt can be in the critical section at a time.
         #     This prevents race conditions when checking existing_client and
         #     managing the connection state machine.
-        self._state_manager = BLEStateManager()  # Centralized state tracking
-        self._state_lock = (
-            self._state_manager.lock
-        )  # `lock` returns the shared RLock instance
+        self._state_manager = BLEStateManager()  # Centralized connection state
+        self._session_state = BLESessionState(lock=self._state_manager.lock)
         self._connect_lock = threading.RLock()  # Serializes connection attempts
         self._management_lock = (
             threading.RLock()
@@ -298,9 +300,6 @@ class BLEInterface(MeshInterface):
         self._management_idle_condition = threading.Condition(self._management_lock)
         self._management_inflight = 0  # Tracks end-to-end management operations.
         self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
-        self._closed: bool = (
-            False  # Tracks completion of shutdown for idempotent close()
-        )
         self._exit_handler: Any | None = None
         self.address = address
         self._last_connection_request: str | None = sanitize_address(address)
@@ -308,18 +307,6 @@ class BLEInterface(MeshInterface):
         if not isinstance(pair_on_connect, bool):
             raise self.BLEError(ERROR_PAIR_ON_CONNECT_BOOL)
         self.pair_on_connect = pair_on_connect
-        self._disconnect_notified = False  # Prevents duplicate disconnect events
-        self._client_publish_pending: bool = False  # Hide provisional clients.
-        self._connected_publish_inflight_client: BLEClient | None = None
-        self._client_replacement_pending = False
-        self._last_disconnect_source: str = (
-            ""  # Set by _handle_disconnect on each disconnect
-        )
-        self._connection_alias_key: str | None = None  # Track alias for cleanup
-        self._prior_publish_was_reconnect = False
-        self._last_connect_pair_override: bool | None = None
-        self._last_connect_timeout_override: float | None = None
-        self._publishing_thread_override: object | None = None
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -377,16 +364,8 @@ class BLEInterface(MeshInterface):
         # Whether FROMNUM notifications were successfully registered for the
         # active connection. When false, receive loop falls back to periodic
         # FROMRADIO polling.
-        self._fromnum_notify_enabled = False
-        self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
-        self._ever_connected = (
-            False  # Track first successful connection to tune logging
-        )
         # Monotonic session counter used to suppress stale disconnect side effects.
-        self._connection_session_epoch = 0
         # Recovery throttling to prevent tight crash→spawn loops
-        self._receive_recovery_attempts = 0
-        self._last_recovery_time = 0.0  # monotonic clock
 
         # Initialize parent interface
         super().__init__(
@@ -397,19 +376,11 @@ class BLEInterface(MeshInterface):
         # Policies are immutable presets; cache instances to avoid churn in hot loops.
         self._empty_read_policy = RetryPolicy._empty_read()
         self._transient_read_policy = RetryPolicy._transient_error()
-        self._read_retry_count = 0
-        self._last_empty_read_warning = 0.0
-        self._suppressed_empty_read_warnings = 0
 
         self.client: BLEClient | None = None
 
         # Start background receive thread for inbound packet processing
         logger.debug("Threads starting")
-        with self._state_lock:
-            self._want_receive = True
-            self._receive_start_pending = False
-            self._receive_start_pending_since: float | None = None
-        self._receiveThread: ThreadLike | None = None
         self._start_receive_thread(name="BLEReceive")
         logger.debug("Threads running")
         try:

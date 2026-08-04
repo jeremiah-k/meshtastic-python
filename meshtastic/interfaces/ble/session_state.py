@@ -1,0 +1,266 @@
+"""Owned mutable lifecycle state for a BLE interface session."""
+
+from dataclasses import dataclass
+import threading
+from threading import RLock
+from typing import TYPE_CHECKING, Any
+
+from meshtastic.interfaces.ble.coordination import ThreadLike
+
+if TYPE_CHECKING:
+    from meshtastic.interfaces.ble.client import BLEClient
+
+
+@dataclass(slots=True)
+class BLESessionState:  # pylint: disable=too-many-instance-attributes
+    """Own mutable BLE lifecycle flags and per-session bookkeeping.
+
+    Synchronization policy
+    ----------------------
+    ``lock`` is the same reentrant lock used by ``BLEStateManager``. Callers that
+    perform check-and-act sequences across these fields and connection-state
+    transitions must hold this lock. Simple fields intentionally remain plain
+    attributes so existing lifecycle code can migrate incrementally without
+    introducing nested-lock behavior.
+    """
+
+    lock: RLock
+    closed: bool = False
+    disconnect_notified: bool = False
+    client_publish_pending: bool = False
+    connected_publish_inflight_client: "BLEClient | None" = None
+    client_replacement_pending: bool = False
+    last_disconnect_source: str = ""
+    connection_alias_key: str | None = None
+    prior_publish_was_reconnect: bool = False
+    last_connect_pair_override: bool | None = None
+    last_connect_timeout_override: float | None = None
+    publishing_thread_override: object | None = None
+    ever_connected: bool = False
+    connection_session_epoch: int = 0
+    receive_recovery_attempts: int = 0
+    last_recovery_time: float = 0.0
+    read_retry_count: int = 0
+    last_empty_read_warning: float = 0.0
+    suppressed_empty_read_warnings: int = 0
+    want_receive: bool = True
+    receive_start_pending: bool = False
+    receive_start_pending_since: float | None = None
+    receive_thread: ThreadLike | None = None
+
+    def reset_receive_retry_state(self) -> None:
+        """Reset transient read retry and warning counters."""
+        self.read_retry_count = 0
+        self.last_empty_read_warning = 0.0
+        self.suppressed_empty_read_warnings = 0
+
+    def reset_recovery_state(self) -> None:
+        """Reset receive-recovery attempt bookkeeping."""
+        self.receive_recovery_attempts = 0
+        self.last_recovery_time = 0.0
+
+
+class _BLESessionStateCompatMixin:
+    """Preserve historical private lifecycle attributes over owned session state."""
+
+    _state_manager: Any
+    _session_state: BLESessionState
+
+    def _get_session_state(self) -> BLESessionState:
+        """Return owned lifecycle state, lazily supporting partial interfaces."""
+        state = self.__dict__.get("_session_state")
+        if isinstance(state, BLESessionState):
+            return state
+        state_manager = self.__dict__.get("_state_manager")
+        lock = getattr(state_manager, "lock", None)
+        if not hasattr(lock, "acquire") or not hasattr(lock, "release"):
+            lock = threading.RLock()
+        state = BLESessionState(lock=lock)
+        self.__dict__["_session_state"] = state
+        return state
+
+    @property
+    def _state_lock(self) -> threading.RLock:
+        """Compatibility view of the owned lifecycle lock."""
+        return self._get_session_state().lock
+
+    @_state_lock.setter
+    def _state_lock(self, value: threading.RLock) -> None:
+        self._get_session_state().lock = value
+
+    @property
+    def _closed(self) -> bool:
+        """Compatibility view of the owned session closed flag."""
+        return self._get_session_state().closed
+
+    @_closed.setter
+    def _closed(self, value: bool) -> None:
+        self._get_session_state().closed = value
+
+    @property
+    def _disconnect_notified(self) -> bool:
+        return self._get_session_state().disconnect_notified
+
+    @_disconnect_notified.setter
+    def _disconnect_notified(self, value: bool) -> None:
+        self._get_session_state().disconnect_notified = value
+
+    @property
+    def _client_publish_pending(self) -> bool:
+        return self._get_session_state().client_publish_pending
+
+    @_client_publish_pending.setter
+    def _client_publish_pending(self, value: bool) -> None:
+        self._get_session_state().client_publish_pending = value
+
+    @property
+    def _connected_publish_inflight_client(self) -> "BLEClient | None":
+        return self._get_session_state().connected_publish_inflight_client
+
+    @_connected_publish_inflight_client.setter
+    def _connected_publish_inflight_client(self, value: "BLEClient | None") -> None:
+        self._get_session_state().connected_publish_inflight_client = value
+
+    @property
+    def _client_replacement_pending(self) -> bool:
+        return self._get_session_state().client_replacement_pending
+
+    @_client_replacement_pending.setter
+    def _client_replacement_pending(self, value: bool) -> None:
+        self._get_session_state().client_replacement_pending = value
+
+    @property
+    def _last_disconnect_source(self) -> str:
+        return self._get_session_state().last_disconnect_source
+
+    @_last_disconnect_source.setter
+    def _last_disconnect_source(self, value: str) -> None:
+        self._get_session_state().last_disconnect_source = value
+
+    @property
+    def _connection_alias_key(self) -> str | None:
+        return self._get_session_state().connection_alias_key
+
+    @_connection_alias_key.setter
+    def _connection_alias_key(self, value: str | None) -> None:
+        self._get_session_state().connection_alias_key = value
+
+    @property
+    def _prior_publish_was_reconnect(self) -> bool:
+        return self._get_session_state().prior_publish_was_reconnect
+
+    @_prior_publish_was_reconnect.setter
+    def _prior_publish_was_reconnect(self, value: bool) -> None:
+        self._get_session_state().prior_publish_was_reconnect = value
+
+    @property
+    def _last_connect_pair_override(self) -> bool | None:
+        return self._get_session_state().last_connect_pair_override
+
+    @_last_connect_pair_override.setter
+    def _last_connect_pair_override(self, value: bool | None) -> None:
+        self._get_session_state().last_connect_pair_override = value
+
+    @property
+    def _last_connect_timeout_override(self) -> float | None:
+        return self._get_session_state().last_connect_timeout_override
+
+    @_last_connect_timeout_override.setter
+    def _last_connect_timeout_override(self, value: float | None) -> None:
+        self._get_session_state().last_connect_timeout_override = value
+
+    @property
+    def _publishing_thread_override(self) -> object | None:
+        return self._get_session_state().publishing_thread_override
+
+    @_publishing_thread_override.setter
+    def _publishing_thread_override(self, value: object | None) -> None:
+        self._get_session_state().publishing_thread_override = value
+
+    @property
+    def _ever_connected(self) -> bool:
+        return self._get_session_state().ever_connected
+
+    @_ever_connected.setter
+    def _ever_connected(self, value: bool) -> None:
+        self._get_session_state().ever_connected = value
+
+    @property
+    def _connection_session_epoch(self) -> int:
+        return self._get_session_state().connection_session_epoch
+
+    @_connection_session_epoch.setter
+    def _connection_session_epoch(self, value: int) -> None:
+        self._get_session_state().connection_session_epoch = value
+
+    @property
+    def _receive_recovery_attempts(self) -> int:
+        return self._get_session_state().receive_recovery_attempts
+
+    @_receive_recovery_attempts.setter
+    def _receive_recovery_attempts(self, value: int) -> None:
+        self._get_session_state().receive_recovery_attempts = value
+
+    @property
+    def _last_recovery_time(self) -> float:
+        return self._get_session_state().last_recovery_time
+
+    @_last_recovery_time.setter
+    def _last_recovery_time(self, value: float) -> None:
+        self._get_session_state().last_recovery_time = value
+
+    @property
+    def _read_retry_count(self) -> int:
+        return self._get_session_state().read_retry_count
+
+    @_read_retry_count.setter
+    def _read_retry_count(self, value: int) -> None:
+        self._get_session_state().read_retry_count = value
+
+    @property
+    def _last_empty_read_warning(self) -> float:
+        return self._get_session_state().last_empty_read_warning
+
+    @_last_empty_read_warning.setter
+    def _last_empty_read_warning(self, value: float) -> None:
+        self._get_session_state().last_empty_read_warning = value
+
+    @property
+    def _suppressed_empty_read_warnings(self) -> int:
+        return self._get_session_state().suppressed_empty_read_warnings
+
+    @_suppressed_empty_read_warnings.setter
+    def _suppressed_empty_read_warnings(self, value: int) -> None:
+        self._get_session_state().suppressed_empty_read_warnings = value
+
+    @property
+    def _want_receive(self) -> bool:
+        return self._get_session_state().want_receive
+
+    @_want_receive.setter
+    def _want_receive(self, value: bool) -> None:
+        self._get_session_state().want_receive = value
+
+    @property
+    def _receive_start_pending(self) -> bool:
+        return self._get_session_state().receive_start_pending
+
+    @_receive_start_pending.setter
+    def _receive_start_pending(self, value: bool) -> None:
+        self._get_session_state().receive_start_pending = value
+
+    @property
+    def _receive_start_pending_since(self) -> float | None:
+        return self._get_session_state().receive_start_pending_since
+
+    @_receive_start_pending_since.setter
+    def _receive_start_pending_since(self, value: float | None) -> None:
+        self._get_session_state().receive_start_pending_since = value
+
+    @property
+    def _receiveThread(self) -> ThreadLike | None:  # noqa: N802 - compatibility name
+        return self._get_session_state().receive_thread
+
+    @_receiveThread.setter
+    def _receiveThread(self, value: ThreadLike | None) -> None:  # noqa: N802
+        self._get_session_state().receive_thread = value
