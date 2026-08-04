@@ -145,7 +145,7 @@ Alternatively, run each check individually:
 ```bash
 poetry run pytest --cov=meshtastic --cov-report=xml
 poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
-ruff check meshtastic/tests
+ruff check meshtastic/tests tests
 poetry run mypy meshtastic/
 ```
 

@@ -224,7 +224,7 @@ Current `COMPAT_DEPRECATE` methods:
 
 - CI `pylint` intentionally targets production/library paths (`meshtastic`,
   `examples`) and excludes `meshtastic/tests/**`.
-- Test linting is enforced by `ruff check meshtastic/tests` (CI `Ruff Tests`
+- Test linting is enforced by `ruff check meshtastic/tests tests` (CI `Ruff Tests`
   job and local `make lint-tests` / `make ci`).
 
 ## Baseline Generation
