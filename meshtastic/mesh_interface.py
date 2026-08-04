@@ -573,6 +573,10 @@ class MeshInterface:  # pylint: disable=R0902
                         "Failed to send disconnect during interpreter finalization; continuing shutdown.",
                         exc_info=True,
                     )
+        request_wait_runtime = getattr(self, "_request_wait_runtime", None)
+        if request_wait_runtime is not None:
+            request_wait_runtime.clear_response_handlers()
+
         # debugOut is caller-owned (often shared via outer context managers);
         # do not close it here. Only clear our reference on shutdown.
         if hasattr(self, "debugOut"):

@@ -39,6 +39,9 @@ DECODE_ERROR_KEY: str = "error"
 DECODE_FAILED_PREFIX: str = "decode-failed: "
 # Placeholder for legacy unscoped wait attribute mapping (currently unused)
 RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0
+# Generic asynchronous callbacks are bounded independently of short ACK waits.
+# Active scoped waits are exempt from this TTL until their normal retirement path.
+RESPONSE_HANDLER_TTL_SECONDS: float = 3600.0
 
 
 class _RequestWaitRuntime:
@@ -70,6 +73,8 @@ class _RequestWaitRuntime:
         Factory that returns the shared timeout configuration object.
     retired_wait_ttl_seconds : float
         Time-to-live in seconds for retired request IDs before pruning.
+    response_handler_ttl_seconds : float
+        Time-to-live in seconds for managed response callbacks before pruning.
     """
 
     def __init__(
@@ -84,6 +89,7 @@ class _RequestWaitRuntime:
         get_acknowledgment: Callable[[], Acknowledgment],
         get_timeout: Callable[[], Timeout],
         retired_wait_ttl_seconds: float,
+        response_handler_ttl_seconds: float = RESPONSE_HANDLER_TTL_SECONDS,
     ) -> None:
         self._lock = lock
         self._get_response_handlers = get_response_handlers
@@ -94,8 +100,11 @@ class _RequestWaitRuntime:
         self._get_acknowledgment = get_acknowledgment
         self._get_timeout = get_timeout
         self._retired_wait_ttl_seconds = retired_wait_ttl_seconds
+        self._response_handler_ttl_seconds = response_handler_ttl_seconds
         self._ack_nak_handlers: dict[int, bool] = {}
         self._response_matchers: dict[int, Callable[[dict[str, Any]], bool]] = {}
+        self._response_handler_registered_at: dict[int, float] = {}
+        self._managed_response_handlers: dict[int, ResponseHandler] = {}
 
     def mark_ack_nak_handler(self, request_id: int, *, flag: bool = True) -> None:
         """Mark or unmark a request_id as an ACK/NAK handler."""
@@ -114,23 +123,98 @@ class _RequestWaitRuntime:
         is_ack_nak_handler: bool = False,
         matcher: Callable[[dict[str, Any]], bool] | None = None,
     ) -> None:
-        """Register a response callback for a request id."""
+        """Register a managed response callback for a request id."""
+        now = time.monotonic()
         with self._lock:
-            self._get_response_handlers()[request_id] = ResponseHandler(
+            self._prune_stale_response_handlers_locked(now=now)
+            response_handler = ResponseHandler(
                 callback=callback,
                 ackPermitted=ack_permitted,
             )
+            self._get_response_handlers()[request_id] = response_handler
+            self._managed_response_handlers[request_id] = response_handler
+            self._response_handler_registered_at[request_id] = now
             if is_ack_nak_handler:
                 self._ack_nak_handlers[request_id] = True
+            else:
+                self._ack_nak_handlers.pop(request_id, None)
             if matcher is not None:
                 self._response_matchers[request_id] = matcher
+            else:
+                self._response_matchers.pop(request_id, None)
 
     def drop_response_handler(self, request_id: int) -> None:
         """Remove a response callback registration if present."""
         with self._lock:
-            self._get_response_handlers().pop(request_id, None)
-            self._ack_nak_handlers.pop(request_id, None)
-            self._response_matchers.pop(request_id, None)
+            self._remove_response_handler_locked(request_id)
+
+    def clear_response_handlers(self) -> None:
+        """Remove all response callbacks and associated managed metadata."""
+        with self._lock:
+            self._get_response_handlers().clear()
+            self._ack_nak_handlers.clear()
+            self._response_matchers.clear()
+            self._response_handler_registered_at.clear()
+            self._managed_response_handlers.clear()
+
+    def prune_stale_response_handlers(self, *, now: float | None = None) -> list[int]:
+        """Remove expired managed callbacks that are not part of an active wait."""
+        prune_time = time.monotonic() if now is None else now
+        with self._lock:
+            return self._prune_stale_response_handlers_locked(now=prune_time)
+
+    def _prune_stale_response_handlers_locked(self, *, now: float) -> list[int]:
+        """Prune expired managed callbacks while the response-state lock is held."""
+        response_handlers = self._get_response_handlers()
+        for request_id, managed_handler in list(self._managed_response_handlers.items()):
+            if response_handlers.get(request_id) is not managed_handler:
+                self._clear_managed_response_metadata_locked(request_id)
+
+        cutoff = now - self._response_handler_ttl_seconds
+        active_request_ids = {
+            request_id
+            for request_ids in self._get_active_wait_request_ids().values()
+            for request_id in request_ids
+        }
+        stale_request_ids = [
+            request_id
+            for request_id, registered_at in self._response_handler_registered_at.items()
+            if registered_at <= cutoff and request_id not in active_request_ids
+        ]
+        for request_id in stale_request_ids:
+            self._remove_response_handler_locked(request_id)
+        if stale_request_ids:
+            logger.debug(
+                "Pruned %d stale response handler(s): %s",
+                len(stale_request_ids),
+                stale_request_ids,
+            )
+        return stale_request_ids
+
+    def _response_handler_is_stale_locked(self, request_id: int, *, now: float) -> bool:
+        """Return whether one managed callback is expired and not actively awaited."""
+        registered_at = self._response_handler_registered_at.get(request_id)
+        if registered_at is None:
+            return False
+        active_request_ids = self._get_active_wait_request_ids()
+        if any(request_id in ids for ids in active_request_ids.values()):
+            return False
+        return now - registered_at > self._response_handler_ttl_seconds
+
+    def _clear_managed_response_metadata_locked(self, request_id: int) -> None:
+        """Forget runtime-owned metadata without touching a legacy replacement."""
+        self._ack_nak_handlers.pop(request_id, None)
+        self._response_matchers.pop(request_id, None)
+        self._response_handler_registered_at.pop(request_id, None)
+        self._managed_response_handlers.pop(request_id, None)
+
+    def _remove_response_handler_locked(
+        self, request_id: int
+    ) -> ResponseHandler | None:
+        """Remove one response registration while the response-state lock is held."""
+        response_handler = self._get_response_handlers().pop(request_id, None)
+        self._clear_managed_response_metadata_locked(request_id)
+        return response_handler
 
     def clear_wait_error(
         self,
@@ -345,7 +429,6 @@ class _RequestWaitRuntime:
     ) -> None:
         """Retire response handlers and scoped wait state after completion/timeout."""
         with self._lock:
-            response_handlers = self._get_response_handlers()
             wait_errors = self._get_wait_errors()
             wait_acks = self._get_wait_acks()
             active_wait_request_ids = self._get_active_wait_request_ids()
@@ -371,17 +454,13 @@ class _RequestWaitRuntime:
                         active_wait_request_ids[acknowledgment_attr] = (
                             active_request_ids
                         )
-                response_handlers.pop(request_id, None)
-                self._ack_nak_handlers.pop(request_id, None)
-                self._response_matchers.pop(request_id, None)
+                self._remove_response_handler_locked(request_id)
                 wait_errors.pop((acknowledgment_attr, request_id), None)
                 wait_acks.discard((acknowledgment_attr, request_id))
             else:
                 if acknowledgment_attr in active_wait_request_ids:
                     for active_request_id in active_request_ids:
-                        response_handlers.pop(active_request_id, None)
-                        self._ack_nak_handlers.pop(active_request_id, None)
-                        self._response_matchers.pop(active_request_id, None)
+                        self._remove_response_handler_locked(active_request_id)
                         wait_errors.pop((acknowledgment_attr, active_request_id), None)
                         wait_acks.discard((acknowledgment_attr, active_request_id))
                     active_wait_request_ids.pop(acknowledgment_attr, None)
@@ -502,6 +581,14 @@ class _RequestWaitRuntime:
             response_handlers = self._get_response_handlers()
             candidate = response_handlers.get(request_id, None)
             if candidate is not None:
+                managed_handler = self._managed_response_handlers.get(request_id)
+                if managed_handler is not None and candidate is not managed_handler:
+                    self._clear_managed_response_metadata_locked(request_id)
+                elif managed_handler is candidate and self._response_handler_is_stale_locked(
+                    request_id, now=time.monotonic()
+                ):
+                    self._remove_response_handler_locked(request_id)
+                    return None, False
                 matcher = self._response_matchers.get(request_id)
                 if not is_ack and matcher is not None:
                     try:
@@ -523,14 +610,10 @@ class _RequestWaitRuntime:
                     or not candidate.ackPermitted
                 )
                 if skip_response_callback_for_decode_failure and not is_ack_nak_handler:
-                    response_handlers.pop(request_id, None)
-                    self._ack_nak_handlers.pop(request_id, None)
-                    self._response_matchers.pop(request_id, None)
+                    self._remove_response_handler_locked(request_id)
                     dropped_due_to_decode_failure = True
                 elif (not is_ack) or is_ack_nak_handler or candidate.ackPermitted:
-                    response_handler = response_handlers.pop(request_id, None)
-                    self._ack_nak_handlers.pop(request_id, None)
-                    self._response_matchers.pop(request_id, None)
+                    response_handler = self._remove_response_handler_locked(request_id)
         return response_handler, dropped_due_to_decode_failure
 
     def _apply_admin_decode_failure_wait_state(

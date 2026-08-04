@@ -190,7 +190,8 @@ class ResponseHandler(_NamedTuple):
     callback: ResponseCallback
     #: Whether ACKs and NAKs should be passed to this handler
     ackPermitted: bool = False
-    # FIXME, add timestamp and age out old requests
+    # Registration timestamps are intentionally tracked out-of-band by the
+    # request runtime so this historical two-field tuple remains compatible.
 
 
 class KnownProtocol(_NamedTuple):
