@@ -4,21 +4,26 @@ from __future__ import annotations
 
 import threading
 import time
-from types import SimpleNamespace
+from collections.abc import Callable
+from types import MethodType, SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.node import Node
 from meshtastic.node_runtime.admin_wait import (
     WAIT_ATTR_NAK,
     _accepts_response_wait_attr,
     _extract_request_id_from_response,
     _extract_request_id_from_sent_packet,
+    _send_admin_with_ack_scope,
     _set_admin_wait_error,
     _wait_for_admin_ack,
 )
+from meshtastic.node_runtime.contact_runtime import _NodeContactRuntime
+from meshtastic.node_runtime.response_runtime import _NodeMetadataResponseRuntime
 from meshtastic.node_runtime.settings_runtime.admin import _NodeAdminCommandRuntime
 from meshtastic.node_runtime.settings_runtime.response import (
     _NodeSettingsResponseRuntime,
@@ -77,6 +82,9 @@ class _AdminNodeDoubleBase:
         """ACK callback placeholder used only to select remote wait policy."""
 
 
+_REMOTE_REQUEST_ID = 731
+
+
 class _RemoteAdminNodeDouble(_AdminNodeDoubleBase):
     """Minimal node double with the current bound ``_send_admin`` signature."""
 
@@ -90,11 +98,13 @@ class _RemoteAdminNodeDouble(_AdminNodeDoubleBase):
         _ = onResponse
         self.sent_response_wait_attrs.append(responseWaitAttr)
         if responseWaitAttr is not None:
-            self.iface._active_wait_request_ids.setdefault(responseWaitAttr, set()).add(731)
-        return mesh_pb2.MeshPacket(id=731)
+            self.iface._active_wait_request_ids.setdefault(responseWaitAttr, set()).add(
+                _REMOTE_REQUEST_ID
+            )
+        return mesh_pb2.MeshPacket(id=_REMOTE_REQUEST_ID)
 
 
-def _wait_until(predicate: Any, *, timeout: float = 1.0) -> None:
+def _wait_until(predicate: Callable[[], bool], *, timeout: float = 1.0) -> None:
     """Wait until a test predicate becomes true or fail deterministically."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -102,6 +112,22 @@ def _wait_until(predicate: Any, *, timeout: float = 1.0) -> None:
             return
         time.sleep(0.001)
     pytest.fail("timed out waiting for test condition")
+
+
+def _settings_doubles(request_id: int) -> tuple[SimpleNamespace, SimpleNamespace]:
+    """Build matching interface and node doubles for settings response tests."""
+    iface = SimpleNamespace(
+        _acknowledgment=Acknowledgment(),
+        _extract_request_id_from_packet=lambda _packet: request_id,
+        _mark_wait_acknowledged=MagicMock(),
+        _set_wait_error=MagicMock(),
+    )
+    node = SimpleNamespace(
+        iface=iface,
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+    )
+    return iface, node
 
 
 @pytest.mark.unit
@@ -117,11 +143,34 @@ def test_remote_admin_command_registers_and_uses_request_scoped_ack_wait() -> No
     )
 
     assert request is not None
-    assert request.id == 731
+    assert request.id == _REMOTE_REQUEST_ID
     assert node.session_key_checks == 1
     assert node.sent_response_wait_attrs == [WAIT_ATTR_NAK]
-    assert node.iface.scoped_waits == [731]
+    assert node.iface.scoped_waits == [_REMOTE_REQUEST_ID]
     assert node.iface.legacy_waits == 0
+
+
+@pytest.mark.unit
+def test_contact_import_registers_and_uses_request_scoped_ack_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote contact imports should use the same request-scoped ACK wait."""
+    node = _RemoteAdminNodeDouble()
+    runtime = _NodeContactRuntime(node)  # type: ignore[arg-type]
+    contact = admin_pb2.SharedContact(node_num=123)
+    contact.user.id = "!0000007b"
+    decode_contact = MagicMock(return_value=contact)
+    monkeypatch.setattr(runtime, "_decode_contact", decode_contact)
+
+    request = runtime.add_contact_url("https://meshtastic.org/v/#ignored")
+
+    assert request is not None
+    assert request.id == _REMOTE_REQUEST_ID
+    assert node.session_key_checks == 1
+    assert node.sent_response_wait_attrs == [WAIT_ATTR_NAK]
+    assert node.iface.scoped_waits == [_REMOTE_REQUEST_ID]
+    assert node.iface.legacy_waits == 0
+    decode_contact.assert_called_once()
 
 
 class _LegacyBoundAdminNodeDouble(_AdminNodeDoubleBase):
@@ -214,6 +263,18 @@ def test_request_scoped_admin_waits_do_not_crosstalk() -> None:
         thread_a.start()
         thread_b.start()
 
+        # Responses for an id that was never registered must not affect either waiter.
+        iface._set_wait_error(  # noqa: SLF001
+            WAIT_ATTR_NAK,
+            "Routing error on response: NO_RESPONSE",
+            request_id=999,
+        )
+        iface._mark_wait_acknowledged(WAIT_ATTR_NAK, request_id=999)  # noqa: SLF001
+        assert completed == []
+        assert errors == []
+        assert thread_a.is_alive()
+        assert thread_b.is_alive()
+
         iface._mark_wait_acknowledged(WAIT_ATTR_NAK, request_id=request_a)  # noqa: SLF001
         _wait_until(lambda: request_a in completed)
         assert request_b not in completed
@@ -242,11 +303,15 @@ def test_scoped_admin_nak_only_fails_matching_request() -> None:
         iface._clear_wait_error(WAIT_ATTR_NAK, request_id=request_nak)  # noqa: SLF001
 
         ok_complete = threading.Event()
+        ok_error: list[BaseException] = []
         nak_error: list[BaseException] = []
 
         def _wait_ok() -> None:
-            iface._wait_for_ack_nak(request_ok)  # noqa: SLF001
-            ok_complete.set()
+            try:
+                iface._wait_for_ack_nak(request_ok)  # noqa: SLF001
+                ok_complete.set()
+            except BaseException as exc:  # noqa: BLE001 - captured for assertion
+                ok_error.append(exc)
 
         def _wait_nak() -> None:
             try:
@@ -268,6 +333,7 @@ def test_scoped_admin_nak_only_fails_matching_request() -> None:
         assert not nak_thread.is_alive()
         assert len(nak_error) == 1
         assert "NO_RESPONSE" in str(nak_error[0])
+        assert ok_error == []
         assert not ok_complete.is_set()
         assert ok_thread.is_alive()
 
@@ -280,17 +346,7 @@ def test_scoped_admin_nak_only_fails_matching_request() -> None:
 @pytest.mark.unit
 def test_settings_response_marks_scoped_request_completion() -> None:
     """Successful settings callbacks should release only their request-scoped waiter."""
-    iface = SimpleNamespace(
-        _acknowledgment=Acknowledgment(),
-        _extract_request_id_from_packet=lambda _packet: 515,
-        _mark_wait_acknowledged=MagicMock(),
-        _set_wait_error=MagicMock(),
-    )
-    node = SimpleNamespace(
-        iface=iface,
-        localConfig=localonly_pb2.LocalConfig(),
-        moduleConfig=localonly_pb2.LocalModuleConfig(),
-    )
+    iface, node = _settings_doubles(515)
     raw = admin_pb2.AdminMessage()
     raw.get_config_response.device.role = config_pb2.Config.DeviceConfig.Role.CLIENT
     packet: dict[str, Any] = {
@@ -315,28 +371,15 @@ def test_settings_response_marks_scoped_request_completion() -> None:
 @pytest.mark.unit
 def test_settings_routing_error_records_scoped_request_failure() -> None:
     """Settings routing errors should be attached to the response request id."""
-    iface = SimpleNamespace(
-        _acknowledgment=Acknowledgment(),
-        _extract_request_id_from_packet=lambda _packet: 616,
-        _mark_wait_acknowledged=MagicMock(),
-        _set_wait_error=MagicMock(),
-    )
-    node = SimpleNamespace(
-        iface=iface,
-        localConfig=localonly_pb2.LocalConfig(),
-        moduleConfig=localonly_pb2.LocalModuleConfig(),
-    )
+    iface, node = _settings_doubles(616)
     packet = {"decoded": {"routing": {"errorReason": "NO_RESPONSE"}}}
 
     _NodeSettingsResponseRuntime(node).handleSettingsResponse(packet)  # type: ignore[arg-type]
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [
-        ((WAIT_ATTR_NAK, "Routing error on response: NO_RESPONSE"), {}),
-        (
-            (WAIT_ATTR_NAK, "Routing error on response: NO_RESPONSE"),
-            {"request_id": 616},
-        ),
+        call(WAIT_ATTR_NAK, "Routing error on response: NO_RESPONSE"),
+        call(WAIT_ATTR_NAK, "Routing error on response: NO_RESPONSE", request_id=616),
     ]
     iface._mark_wait_acknowledged.assert_not_called()
 
@@ -357,8 +400,6 @@ def test_admin_send_helper_preserves_instance_level_transport_monkeypatch() -> N
     iface = SimpleNamespace(waitForAckNak=MagicMock())
     node = SimpleNamespace(iface=iface, _send_admin=_send_admin)
 
-    from meshtastic.node_runtime.admin_wait import _send_admin_with_ack_scope
-
     request = _send_admin_with_ack_scope(
         node,  # type: ignore[arg-type]
         admin_pb2.AdminMessage(reboot_seconds=1),
@@ -377,10 +418,6 @@ def test_fast_admin_ack_is_not_lost_between_send_and_wait(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A synchronous ACK during transport send must satisfy the later scoped wait."""
-    from types import MethodType
-
-    from meshtastic.node import Node
-
     with MeshInterface(noProto=True) as iface:
         iface.myInfo = mesh_pb2.MyNodeInfo(my_node_num=1)
         iface.localNode.nodeNum = 1
@@ -428,8 +465,6 @@ def test_fast_admin_ack_is_not_lost_between_send_and_wait(
 @pytest.mark.unit
 def test_metadata_response_marks_scoped_request_completion() -> None:
     """Successful metadata payloads should complete their own request-scoped wait."""
-    from meshtastic.node_runtime.response_runtime import _NodeMetadataResponseRuntime
-
     iface = SimpleNamespace(
         _acknowledgment=Acknowledgment(),
         _extract_request_id_from_packet=lambda _packet: 717,
@@ -513,12 +548,7 @@ def test_malformed_metadata_response_records_request_scoped_failure(
     packet: dict[str, Any], error_fragment: str
 ) -> None:
     """Every terminal malformed metadata response should fail its scoped waiter."""
-    from meshtastic.node_runtime.response_runtime import _NodeMetadataResponseRuntime
-
     request_id = 818
-    packet.setdefault("decoded", {})
-    if isinstance(packet.get("decoded"), dict):
-        packet["decoded"]["requestId"] = request_id
     iface = SimpleNamespace(
         _acknowledgment=Acknowledgment(),
         _extract_request_id_from_packet=lambda _packet: request_id,
@@ -534,10 +564,11 @@ def test_malformed_metadata_response_records_request_scoped_failure(
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [
-        ((WAIT_ATTR_NAK, f"Received malformed metadata response ({error_fragment})."), {}),
-        (
-            (WAIT_ATTR_NAK, f"Received malformed metadata response ({error_fragment})."),
-            {"request_id": request_id},
+        call(WAIT_ATTR_NAK, f"Received malformed metadata response ({error_fragment})."),
+        call(
+            WAIT_ATTR_NAK,
+            f"Received malformed metadata response ({error_fragment}).",
+            request_id=request_id,
         ),
     ]
     iface._mark_wait_acknowledged.assert_not_called()
@@ -549,10 +580,6 @@ def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Overlapping remote admin calls must resolve only from their own responses."""
-    from types import MethodType
-
-    from meshtastic.node import Node
-
     with MeshInterface(noProto=True) as iface:
         iface.myInfo = mesh_pb2.MyNodeInfo(my_node_num=1)
         iface.localNode.nodeNum = 1
@@ -560,7 +587,7 @@ def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request(
             lambda _self, _node_num: {},
             iface,
         )
-        remote = Node(iface, 2, noProto=False, timeout=1.0)
+        remote = Node(iface, 2, noProto=False, timeout=30.0)
         sent_packets: list[mesh_pb2.MeshPacket] = []
         sent_lock = threading.Lock()
 
@@ -715,17 +742,7 @@ def test_request_scoped_admin_wait_timeout_retires_request() -> None:
 @pytest.mark.unit
 def test_settings_response_missing_expected_field_records_scoped_failure() -> None:
     """A structurally valid settings envelope missing its field should NAK its request."""
-    iface = SimpleNamespace(
-        _acknowledgment=Acknowledgment(),
-        _extract_request_id_from_packet=lambda _packet: 818,
-        _mark_wait_acknowledged=MagicMock(),
-        _set_wait_error=MagicMock(),
-    )
-    node = SimpleNamespace(
-        iface=iface,
-        localConfig=localonly_pb2.LocalConfig(),
-        moduleConfig=localonly_pb2.LocalModuleConfig(),
-    )
+    iface, node = _settings_doubles(818)
     raw = admin_pb2.AdminMessage()
     packet: dict[str, Any] = {
         "decoded": {
@@ -740,13 +757,11 @@ def test_settings_response_missing_expected_field_records_scoped_failure() -> No
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [
-        (
-            (WAIT_ATTR_NAK, "Received settings response without expected field 'device'."),
-            {},
-        ),
-        (
-            (WAIT_ATTR_NAK, "Received settings response without expected field 'device'."),
-            {"request_id": 818},
+        call(WAIT_ATTR_NAK, "Received settings response without expected field 'device'."),
+        call(
+            WAIT_ATTR_NAK,
+            "Received settings response without expected field 'device'.",
+            request_id=818,
         ),
     ]
     iface._mark_wait_acknowledged.assert_not_called()

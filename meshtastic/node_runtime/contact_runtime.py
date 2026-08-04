@@ -10,6 +10,10 @@ from urllib.parse import urlparse
 
 import google.protobuf.message
 
+from meshtastic.node_runtime.admin_wait import (
+    _send_admin_with_ack_scope,
+    _wait_for_admin_ack,
+)
 from meshtastic.protobuf import admin_pb2, config_pb2, mesh_pb2
 from meshtastic.util import toNodeNum
 
@@ -212,10 +216,12 @@ class _NodeContactRuntime:
         on_response = (
             self._node.onAckNak if self._node != self._node.iface.localNode else None
         )
-        request = self._node._send_admin(  # noqa: SLF001
+        request = _send_admin_with_ack_scope(
+            self._node,
             message,
+            scope_ack=on_response is not None,
             onResponse=on_response,
         )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+            _wait_for_admin_ack(self._node, request)
         return request
