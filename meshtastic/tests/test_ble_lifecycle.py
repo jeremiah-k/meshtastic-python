@@ -35,22 +35,14 @@ from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import _thread_start_probe
 
+from ._ble_runtime_fakes import (
+    _FakeConnectedClient,
+    _FakeStateManager,
+    _FakeThreadCoordinator,
+)
+
 # pylint: disable=too-many-lines
 
-
-def configured_mock(return_value: Any = None, side_effect: Any = None) -> MagicMock:
-    """Create a configured MagicMock that won't be detected as unconfigured.
-
-    The _is_unconfigured_mock_callable function checks if a mock has default
-    return value and no side_effect. This helper ensures mocks are properly
-    configured to avoid being skipped.
-    """
-    mock = MagicMock()
-    if side_effect is not None:
-        mock.side_effect = side_effect
-    else:
-        mock.return_value = return_value
-    return mock
 
 
 class _ImmediateThread:
@@ -132,9 +124,9 @@ class TestClientIsConnectedCompat:
 
     def test_client_is_connected_via_callable(self) -> None:
         """Test getting connected state via callable isConnected."""
-        client = MagicMock()
-        client.isConnected = MagicMock(return_value=True)
+        client = _FakeConnectedClient(connected=True)
         assert _client_is_connected_compat(client) is True
+        assert client.probe_calls == 1
 
     def test_client_is_connected_via_is_connected_callable(self) -> None:
         """Test getting connected state via callable is_connected."""
@@ -154,8 +146,7 @@ class TestClientIsConnectedCompat:
 
     def test_client_is_connected_via_bool_attribute(self) -> None:
         """Test getting connected state via boolean attribute."""
-        client = MagicMock()
-        client.isConnected = False
+        client = type("Client", (), {"isConnected": False})()
         assert _client_is_connected_compat(client) is False
 
     def test_client_is_connected_via_is_connected_bool(self) -> None:
@@ -195,14 +186,12 @@ class TestLifecycleStateAccess:
     """Test _LifecycleStateAccess class."""
 
     @pytest.fixture
-    def mock_iface(self) -> MagicMock:
-        """Create a mock BLEInterface with state manager."""
-        iface = MagicMock()
-        iface._state_manager = MagicMock()
-        return iface
+    def mock_iface(self) -> Any:
+        """Create an interface double with an explicit state-manager fake."""
+        return type("Iface", (), {"_state_manager": _FakeStateManager()})()
 
     @pytest.fixture
-    def state_access(self, mock_iface: MagicMock) -> _LifecycleStateAccess:
+    def state_access(self, mock_iface: Any) -> _LifecycleStateAccess:
         """Create _LifecycleStateAccess instance."""
         return _LifecycleStateAccess(mock_iface)
 
@@ -210,7 +199,7 @@ class TestLifecycleStateAccess:
         self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
     ) -> None:
         """Test is_connected via public callable."""
-        mock_iface._state_manager.is_connected = MagicMock(return_value=True)
+        mock_iface._state_manager.connected = True
         assert state_access.is_connected() is True
 
     def test_is_connected_via_public_bool(
@@ -270,9 +259,7 @@ class TestLifecycleStateAccess:
         self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
     ) -> None:
         """Test current_state via public callable."""
-        mock_iface._state_manager.current_state = MagicMock(
-            return_value=ConnectionState.CONNECTED
-        )
+        mock_iface._state_manager.state = ConnectionState.CONNECTED
         assert state_access.current_state() == ConnectionState.CONNECTED
 
     def test_current_state_via_public_attribute(
@@ -325,8 +312,8 @@ class TestLifecycleStateAccess:
         self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
     ) -> None:
         """Test transition_to via public callable."""
-        mock_iface._state_manager.transition_to = MagicMock(return_value=True)
         assert state_access.transition_to(ConnectionState.CONNECTED) is True
+        assert mock_iface._state_manager.transition_calls == [ConnectionState.CONNECTED]
 
     def test_transition_to_via_legacy_callable(
         self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
@@ -359,8 +346,9 @@ class TestLifecycleStateAccess:
         self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
     ) -> None:
         """Test reset_to_disconnected via public callable."""
-        mock_iface._state_manager.reset_to_disconnected = MagicMock(return_value=True)
+        mock_iface._state_manager.state = ConnectionState.CONNECTED
         assert state_access.reset_to_disconnected() is True
+        assert mock_iface._state_manager.reset_calls == 1
 
     def test_reset_to_disconnected_via_legacy_callable(
         self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
@@ -393,7 +381,7 @@ class TestLifecycleStateAccess:
         self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
     ) -> None:
         """Test is_closing via public callable."""
-        mock_iface._state_manager.is_closing = MagicMock(return_value=True)
+        mock_iface._state_manager.closing = True
         assert state_access.is_closing() is True
 
     def test_is_closing_via_public_bool(
@@ -452,19 +440,12 @@ class TestLifecycleThreadAccess:
     """Test _LifecycleThreadAccess class."""
 
     @pytest.fixture
-    def mock_iface(self) -> MagicMock:
-        """Create a mock BLEInterface with properly configured thread coordinator."""
-        iface = MagicMock()
-        # Configure thread_coordinator mock so it's not detected as unconfigured
-        # The _is_unconfigured_mock_member checks for DEFAULT return_value, no side_effect, and no calls
-        coordinator = MagicMock()
-        # Set a simple return value to mark it as "configured"
-        coordinator.return_value = True
-        iface.thread_coordinator = coordinator
-        return iface
+    def mock_iface(self) -> Any:
+        """Create an interface double with an explicit thread coordinator fake."""
+        return type("Iface", (), {"thread_coordinator": _FakeThreadCoordinator()})()
 
     @pytest.fixture
-    def thread_access(self, mock_iface: MagicMock) -> _LifecycleThreadAccess:
+    def thread_access(self, mock_iface: Any) -> _LifecycleThreadAccess:
         """Create _LifecycleThreadAccess instance."""
         return _LifecycleThreadAccess(mock_iface)
 
