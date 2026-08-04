@@ -8,7 +8,7 @@ import time
 import types
 from collections import OrderedDict
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import Any, NoReturn, cast
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -37,10 +37,6 @@ from ..protobuf import (
 # TODO
 # from ..config import Config
 from ..util import Acknowledgment, Timeout
-
-if TYPE_CHECKING:
-    pass
-
 
 from ._mesh_interface_legacy_support import (
     inline_queue_work as _inline_queue_work,
@@ -1578,30 +1574,19 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
             # Typical case: reset() was called before the second thread read
             failed_waiter = "B" if wait_a_result[0] else "A"
             # This documents the core issue: one waiter times out incorrectly
-            print(
-                f"REGRESSION: Waiter {failed_waiter} timed out despite waiting. "
+            logging.getLogger(__name__).info(
+                "REGRESSION: Waiter %s timed out despite waiting. "
                 "Unscoped waits cannot distinguish between ACKs for different "
-                "overlapping requests."
+                "overlapping requests.",
+                failed_waiter,
             )
         else:
             # Race condition: both read before reset
-            print(
+            logging.getLogger(__name__).info(
                 "RACE CONDITION: Both waiters saw the ACK before reset() was called. "
                 "This is unpredictable behavior from unscoped waits."
             )
 
-        # The fundamental issue: with unscoped waits, we cannot properly
-        # attribute a single ACK to the correct request when multiple requests
-        # are in flight. Either:
-        # 1. One request times out incorrectly (most common with tight reset)
-        # 2. Both requests appear to succeed (if they both read before reset)
-        # Neither is correct - each request should only succeed when ITS ACK arrives.
-        assert True, (  # Always pass - this test documents behavior, not asserts it
-            "Test documents unscoped waitForAckNak behavior with overlapping requests. "
-            f"Success count: {success_count}/2. With unscoped waits, overlapping "
-            "commands create unpredictable cross-talk where one or both waiters may "
-            "consume a single ACK."
-        )
 
     @pytest.mark.unit
     @pytest.mark.usefixtures("reset_mt_config")
@@ -1689,12 +1674,13 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
         # a single NAK to the correct request
         if success_count == 1:
             failed_waiter = "B" if wait_a_result[0] else "A"
-            print(
-                f"REGRESSION: Waiter {failed_waiter} timed out despite waiting. "
-                "Unscoped waits cannot distinguish between NAKs for different requests."
+            logging.getLogger(__name__).info(
+                "REGRESSION: Waiter %s timed out despite waiting. "
+                "Unscoped waits cannot distinguish between NAKs for different requests.",
+                failed_waiter,
             )
         else:
-            print(
+            logging.getLogger(__name__).info(
                 "RACE CONDITION: Both waiters saw the NAK before reset() was called. "
                 "This is unpredictable behavior from unscoped waits."
             )

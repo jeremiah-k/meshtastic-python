@@ -9,7 +9,6 @@ import logging
 import re
 import sys
 import threading
-from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, create_autospec, patch
@@ -36,21 +35,6 @@ from ..util import Timeout
 
 if TYPE_CHECKING:
     from .conftest import FakeTimer
-
-
-from ._mesh_interface_legacy_support import (
-    inline_queue_work as _inline_queue_work,
-)
-
-@pytest.fixture(name="decode_failure_iface")
-def _decode_failure_iface_fixture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[MeshInterface]:
-    """Provide a MeshInterface with inline queueWork for decode-failure tests."""
-    _inline_queue_work(monkeypatch)
-    with MeshInterface(noProto=True) as iface:
-        yield iface
-
 
 
 @pytest.mark.unit
@@ -395,16 +379,30 @@ def test_getNode_not_local_timeout(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPosition(caplog: pytest.LogCaptureFixture) -> None:
-    """Verify that MeshInterface.sendPosition() executes without error and emits position-related debug logs.
-
-    Creates a MeshInterface(noProto=True), calls sendPosition() while capturing DEBUG logs, and then closes the interface.
-
-    """
+def test_sendPosition_default_path_delegates_empty_position_payload() -> None:
+    """Default position sends should use POSITION_APP without inventing coordinates."""
+    sent_packet = mesh_pb2.MeshPacket(id=123)
     with MeshInterface(noProto=True) as iface:
-        with caplog.at_level(logging.DEBUG):
-            iface.sendPosition()
-    # assert re.search(r"p.time:", caplog.text, re.MULTILINE)
+        iface._send_data_with_wait = MagicMock(return_value=sent_packet)
+
+        result = iface.sendPosition()
+
+        assert result is sent_packet
+        send_call = iface._send_data_with_wait.call_args
+        assert send_call is not None
+        position = send_call.args[0]
+        assert isinstance(position, mesh_pb2.Position)
+        assert position.ListFields() == []
+        assert send_call.args[1] == BROADCAST_ADDR
+        assert send_call.kwargs == {
+            "portNum": portnums_pb2.PortNum.POSITION_APP,
+            "wantAck": False,
+            "wantResponse": False,
+            "onResponse": None,
+            "channelIndex": 0,
+            "hopLimit": None,
+            "response_wait_attr": None,
+        }
 
 
 @pytest.mark.unit
@@ -1472,8 +1470,8 @@ def test_timeago_fuzz(seconds: int) -> None:
 def test_concurrent_packet_id_generation() -> None:
     """Test that packet ID generation is thread-safe."""
     with MeshInterface(noProto=True) as iface:
-        packet_ids = []
-        errors = []
+        packet_ids: list[int] = []
+        errors: list[Exception] = []
         packet_ids_lock = threading.Lock()
         errors_lock = threading.Lock()
 

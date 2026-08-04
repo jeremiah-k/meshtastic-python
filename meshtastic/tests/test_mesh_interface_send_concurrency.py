@@ -9,8 +9,8 @@ import threading
 import time
 import types
 from collections import OrderedDict
-from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Callable
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,26 +36,10 @@ from ..protobuf import (
 # TODO
 # from ..config import Config
 
-if TYPE_CHECKING:
-    pass
-
-
 from ._mesh_interface_legacy_support import (
-    inline_queue_work as _inline_queue_work,
     start_wait_thread as _start_wait_thread,
     wait_for_scoped_wait_registration as _wait_for_scoped_wait_registration,
 )
-
-@pytest.fixture(name="decode_failure_iface")
-def _decode_failure_iface_fixture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[MeshInterface]:
-    """Provide a MeshInterface with inline queueWork for decode-failure tests."""
-    _inline_queue_work(monkeypatch)
-    with MeshInterface(noProto=True) as iface:
-        yield iface
-
-
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -275,26 +259,25 @@ def test_concurrent_getNode() -> None:
 
 
 @pytest.mark.unit
-def test_packet_id_no_collision_after_many_generations(
+@pytest.mark.usefixtures("reset_mt_config")
+def test_packet_id_counter_prevents_collision_until_counter_wrap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test that packet IDs don't collide after many generations."""
-    next_random = iter(range(1_000_000))
+    """A fixed random prefix should leave the 10-bit counter unique until wrap."""
+    random_prefix = 0x15555
     monkeypatch.setattr(
         "meshtastic.mesh_interface.random.randint",
-        lambda _a, _b: next(next_random),
+        lambda _a, _b: random_prefix,
     )
+
     with MeshInterface(noProto=True) as iface:
-        packet_ids = set()
+        iface.currentPacketId = 0
+        packet_ids = [iface._generate_packet_id() for _ in range(1 << 10)]
+        wrapped_packet_id = iface._generate_packet_id()
 
-        # Generate many packet IDs
-        for _ in range(10000):
-            packet_id = iface._generate_packet_id()
-            assert packet_id not in packet_ids
-            packet_ids.add(packet_id)
-
-        # Verify all are unique
-        assert len(packet_ids) == 10000
+    assert len(set(packet_ids)) == 1 << 10
+    assert wrapped_packet_id == packet_ids[0]
+    assert all(packet_id >> 10 == random_prefix for packet_id in packet_ids)
 
 
 @pytest.mark.unit
