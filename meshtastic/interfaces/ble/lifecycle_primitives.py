@@ -207,7 +207,7 @@ class _LifecycleThreadAccess:
     to legacy hook names before logging a missing-hook message.
     """
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(self, iface: "BLEInterface | object") -> None:
         """Bind thread-coordinator access to a specific interface."""
         self._iface = iface
 
