@@ -1064,6 +1064,14 @@ class MeshInterface:  # pylint: disable=R0902
             request_id=request_id,
         )
 
+    def _has_active_wait_request(
+        self, acknowledgment_attr: str, request_id: int
+    ) -> bool:
+        """Return whether one request is active in the given wait scope."""
+        return self._send_pipeline._has_active_wait_request(
+            acknowledgment_attr, request_id
+        )
+
     def _wait_for_request_ack(
         self,
         acknowledgment_attr: str,
@@ -1359,6 +1367,10 @@ class MeshInterface:  # pylint: disable=R0902
             If the configuration is not received before the interface timeout.
         """
         self._send_pipeline.waitForConfig()
+
+    def _wait_for_ack_nak(self, request_id: int) -> None:
+        """Wait for the ACK/NAK correlated to one internal request id."""
+        self._send_pipeline._wait_for_ack_nak(request_id)
 
     def waitForAckNak(self) -> None:
         """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out.

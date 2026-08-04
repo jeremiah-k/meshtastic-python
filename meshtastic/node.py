@@ -20,6 +20,10 @@ from meshtastic.node_runtime.channel_presentation_runtime import (
     _NodeChannelPresentationRuntime,
 )
 from meshtastic.node_runtime.channel_request_runtime import _NodeChannelRequestRuntime
+from meshtastic.node_runtime.admin_wait import (
+    _send_admin_with_ack_scope,
+    _wait_for_admin_ack,
+)
 from meshtastic.node_runtime import contact_runtime
 from meshtastic.node_runtime.settings_runtime import (
     _NodeAdminCommandRuntime,
@@ -1333,8 +1337,14 @@ class Node:  # pylint: disable=too-many-instance-attributes
         with self._metadata_stdout_event_lock:
             self._metadata_stdout_event = metadata_stdout_event
         try:
-            self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
-            self.iface.waitForAckNak()
+            request = _send_admin_with_ack_scope(
+                self,
+                p,
+                scope_ack=True,
+                wantResponse=True,
+                onResponse=self.onRequestGetMetadata,
+            )
+            _wait_for_admin_ack(self, request)
             if sys.stdout is not sys.__stdout__:
                 callback_completed = metadata_stdout_event.wait(
                     METADATA_STDOUT_COMPAT_WAIT_SECONDS

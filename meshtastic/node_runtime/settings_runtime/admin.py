@@ -4,6 +4,11 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.admin_wait import (
+    WAIT_ATTR_NAK,
+    _send_admin_with_ack_scope,
+    _wait_for_admin_ack,
+)
 from meshtastic.protobuf import admin_pb2, mesh_pb2
 from meshtastic.util import toNodeNum
 
@@ -11,8 +16,6 @@ if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
-
-WAIT_ATTR_NAK = "receivedNak"
 
 
 class _NodeAdminCommandRuntime:
@@ -40,11 +43,14 @@ class _NodeAdminCommandRuntime:
         on_response = (
             self._select_remote_ack_callback() if use_remote_ack_callback else None
         )
-        request = self._node._send_admin(message, onResponse=on_response)
+        request = _send_admin_with_ack_scope(
+            self._node,
+            message,
+            scope_ack=on_response is not None,
+            onResponse=on_response,
+        )
         if on_response is not None and request is not None:
-            # Remote admin command callbacks still signal ACK/NAK via legacy
-            # shared acknowledgment flags.
-            self._node.iface.waitForAckNak()
+            _wait_for_admin_ack(self._node, request)
         return request
 
     def sendOwnerMessage(

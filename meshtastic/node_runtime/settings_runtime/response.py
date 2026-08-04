@@ -3,6 +3,10 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.admin_wait import (
+    _mark_admin_wait_acknowledged_for_packet,
+    _record_admin_wait_error_for_packet,
+)
 from meshtastic.node_runtime.shared import ERROR_REASON_NONE
 from meshtastic.protobuf import admin_pb2
 from meshtastic.util import camel_to_snake
@@ -96,8 +100,10 @@ class _NodeSettingsResponseRuntime:
         logger.debug("handleSettingsResponse() response received")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
-            logger.warning("Received malformed settings response (missing decoded).")
+            message = "Received malformed settings response (missing decoded)."
+            logger.warning(message)
             self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(self._node, packet, message)
             return
         routing = decoded.get("routing")
         if isinstance(routing, dict):
@@ -108,23 +114,35 @@ class _NodeSettingsResponseRuntime:
                     error_reason,
                 )
                 self._node.iface._acknowledgment.receivedNak = True
+                _record_admin_wait_error_for_packet(
+                    self._node, packet, f"Routing error on response: {error_reason}"
+                )
                 return
 
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
-            logger.warning("Received malformed settings response (missing admin).")
+            message = "Received malformed settings response (missing admin)."
+            logger.warning(message)
             self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(self._node, packet, message)
             return
         target = self._resolve_config_target(admin_message)
         if target is None:
             self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(
+                self._node,
+                packet,
+                "Received settings response without a recognized config field.",
+            )
             return
 
         oneof, field_name, config_values = target
         raw_admin = admin_message.get("raw")
         if not isinstance(raw_admin, admin_pb2.AdminMessage):
-            logger.warning("Received malformed settings response (invalid admin.raw).")
+            message = "Received malformed settings response (invalid admin.raw)."
+            logger.warning(message)
             self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(self._node, packet, message)
             return
         parent_config = getattr(raw_admin, oneof)
         if not parent_config.HasField(field_name):
@@ -133,8 +151,14 @@ class _NodeSettingsResponseRuntime:
                 field_name,
             )
             self._node.iface._acknowledgment.receivedNak = True
+            _record_admin_wait_error_for_packet(
+                self._node,
+                packet,
+                f"Received settings response without expected field '{field_name}'.",
+            )
             return
         raw_config = getattr(parent_config, field_name)
         config_values.CopyFrom(raw_config)
         self._node.iface._acknowledgment.receivedAck = True
+        _mark_admin_wait_acknowledged_for_packet(self._node, packet)
         logger.info("Received settings block: %s", field_name)

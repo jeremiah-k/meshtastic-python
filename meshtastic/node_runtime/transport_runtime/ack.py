@@ -1,16 +1,19 @@
 """ACK/NAK payload classification and acknowledgment flag mutation."""
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.admin_wait import (
+    _extract_request_id_from_response,
+    _mark_admin_wait_acknowledged,
+    _set_admin_wait_error,
+)
 from meshtastic.node_runtime.shared import ERROR_REASON_NONE
 
 if TYPE_CHECKING:
     from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
-
-WAIT_ATTR_NAK = "receivedNak"
 
 
 class _NodeAckNakRuntime:
@@ -20,15 +23,8 @@ class _NodeAckNakRuntime:
         self._node = node
 
     def _extract_request_id(self, packet: dict[str, Any]) -> int | None:
-        """Extract request id from packet when interface helper is available."""
-        extract_request_id = getattr(
-            self._node.iface,
-            "_extract_request_id_from_packet",
-            None,
-        )
-        if not callable(extract_request_id):
-            return None
-        return cast(int | None, extract_request_id(packet))
+        """Extract the request id used for ACK/NAK correlation."""
+        return _extract_request_id_from_response(self._node, packet)
 
     def _set_wait_nak_error(
         self,
@@ -37,22 +33,15 @@ class _NodeAckNakRuntime:
         request_id: int | None,
     ) -> None:
         """Record scoped/unscoped wait errors for ACK/NAK waits when supported."""
-        set_wait_error = getattr(self._node.iface, "_set_wait_error", None)
-        if not callable(set_wait_error):
-            return
-        set_wait_error(WAIT_ATTR_NAK, message)
-        if request_id is not None:
-            set_wait_error(WAIT_ATTR_NAK, message, request_id=request_id)
+        _set_admin_wait_error(
+            self._node,
+            message,
+            request_id=request_id,
+        )
 
     def _mark_wait_acknowledged(self, request_id: int | None) -> None:
         """Mark ACK wait completion for request-scoped waiters when supported."""
-        mark_wait_acknowledged = getattr(
-            self._node.iface,
-            "_mark_wait_acknowledged",
-            None,
-        )
-        if callable(mark_wait_acknowledged):
-            mark_wait_acknowledged(WAIT_ATTR_NAK, request_id=request_id)
+        _mark_admin_wait_acknowledged(self._node, request_id)
 
     # pylint: disable=too-many-return-statements
     def _handle_ack_nak(self, packet: dict[str, Any]) -> None:

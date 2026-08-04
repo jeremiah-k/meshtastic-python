@@ -469,6 +469,14 @@ class SendPipeline:
             request_id=request_id,
         )
 
+    def _has_active_wait_request(
+        self, acknowledgment_attr: str, request_id: int
+    ) -> bool:
+        """Return whether one request is active in the given wait scope."""
+        return self._request_wait_runtime.has_active_wait_request(
+            acknowledgment_attr, request_id
+        )
+
     def _wait_for_request_ack(
         self,
         acknowledgment_attr: str,
@@ -777,6 +785,22 @@ class SendPipeline:
             raise self._interface.MeshInterfaceError(
                 "Timed out waiting for interface config"
             )
+
+    def _wait_for_ack_nak(self, request_id: int) -> None:
+        """Wait for one request-scoped admin ACK/NAK response."""
+        try:
+            success = self._wait_for_request_ack(
+                WAIT_ATTR_NAK,
+                request_id,
+                timeout_seconds=self._timeout.expireTimeout,
+            )
+            self._raise_wait_error_if_present(WAIT_ATTR_NAK, request_id=request_id)
+            if not success:
+                raise self._interface.MeshInterfaceError(
+                    "Timed out waiting for an acknowledgment"
+                )
+        finally:
+            self._retire_wait_request(WAIT_ATTR_NAK, request_id=request_id)
 
     def waitForAckNak(self) -> None:
         """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out."""

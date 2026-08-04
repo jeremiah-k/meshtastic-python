@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 from google.protobuf.descriptor import FieldDescriptor
 
+from meshtastic.node_runtime.admin_wait import (
+    _send_admin_with_ack_scope,
+    _wait_for_admin_ack,
+)
 from meshtastic.node_runtime.settings_runtime.message import (  # pylint: disable=no-name-in-module
     _NodeSettingsMessageBuilder,
 )
@@ -44,8 +48,10 @@ class _NodeSettingsRuntime:
             )
 
         message = self._message_builder.build_request_message(config_type)
-        request = self._node._send_admin(  # noqa: SLF001
+        request = _send_admin_with_ack_scope(
+            self._node,
             message,
+            scope_ack=on_response is not None,
             wantResponse=True,
             onResponse=on_response,
             adminIndex=admin_index,
@@ -56,7 +62,7 @@ class _NodeSettingsRuntime:
                 f"requestConfig failed: admin message not started (admin_index={admin_index})"
             )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+            _wait_for_admin_ack(self._node, request)
 
     def _validate_write_configs_loaded(self, config_name: str) -> None:
         """Preserve historical writeConfig loaded-state behavior.
@@ -98,8 +104,11 @@ class _NodeSettingsRuntime:
         on_response = (
             None if self._node is self._node.iface.localNode else self._node.onAckNak
         )
-        request = self._node._send_admin(  # noqa: SLF001
-            message, onResponse=on_response
+        request = _send_admin_with_ack_scope(
+            self._node,
+            message,
+            scope_ack=on_response is not None,
+            onResponse=on_response,
         )
         # In noProto mode, _send_admin legitimately returns None (no actual sending)
         if request is None and not getattr(self._node, "noProto", False):
@@ -107,5 +116,5 @@ class _NodeSettingsRuntime:
                 f"writeConfig failed: admin message not started (config_name={config_name})"
             )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+            _wait_for_admin_ack(self._node, request)
         logger.debug("Config write completed: %s", config_name)
