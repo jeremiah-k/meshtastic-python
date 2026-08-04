@@ -1620,6 +1620,62 @@ def test_deferred_execution_runs_closure() -> None:
 
 
 @pytest.mark.unit
+def test_deferred_execution_stop_drains_previously_queued_work() -> None:
+    """stop() should drain work accepted before the shutdown sentinel."""
+    first_started = threading.Event()
+    release_first = threading.Event()
+    second_completed = threading.Event()
+    first_wait_timed_out = threading.Event()
+    execution_order: list[str] = []
+    de = DeferredExecution(name="test_drain_thread")
+
+    def first() -> None:
+        execution_order.append("first")
+        first_started.set()
+        if not release_first.wait(timeout=1.0):
+            first_wait_timed_out.set()
+
+    def second() -> None:
+        execution_order.append("second")
+        second_completed.set()
+
+    de.queueWork(first)
+    assert first_started.wait(timeout=1.0)
+    de.queueWork(second)
+    de.stop()
+    release_first.set()
+
+    assert de.join(timeout=1.0)
+    assert second_completed.is_set()
+    assert not first_wait_timed_out.is_set()
+    assert execution_order == ["first", "second"]
+
+
+@pytest.mark.unit
+def test_deferred_execution_ignores_work_submitted_after_stop() -> None:
+    """queueWork() should preserve non-raising behavior after shutdown starts."""
+    called = threading.Event()
+    de = DeferredExecution(name="test_post_stop_thread")
+
+    de.stop()
+    de.queueWork(called.set)
+
+    assert de.join(timeout=1.0)
+    assert not called.is_set()
+
+
+@pytest.mark.unit
+def test_deferred_execution_stop_is_idempotent() -> None:
+    """Repeated stop() calls should enqueue only one effective shutdown boundary."""
+    de = DeferredExecution(name="test_repeated_stop_thread")
+
+    de.stop()
+    de.stop()
+
+    assert de.join(timeout=1.0)
+
+
+@pytest.mark.unit
 def test_deferred_execution_handles_exceptions(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
