@@ -23,6 +23,7 @@ component_management:
       name: Core Interfaces
       paths:
         - meshtastic/mesh_interface.py
+        - meshtastic/mesh_interface_runtime/**
         - meshtastic/serial_interface.py
         - meshtastic/tcp_interface.py
         - meshtastic/stream_interface.py
@@ -49,6 +50,7 @@ component_management:
       name: Node Management
       paths:
         - meshtastic/node.py
+        - meshtastic/node_runtime/**
       statuses:
         - type: project
           target: 70%
@@ -60,6 +62,8 @@ component_management:
       name: CLI
       paths:
         - meshtastic/__main__.py
+        - meshtastic/cli/**
+        - meshtastic/configure_verify.py
       statuses:
         - type: project
           target: 60%
@@ -74,6 +78,7 @@ component_management:
         - meshtastic/mt_config.py
         - meshtastic/version.py
         - meshtastic/supported_device.py
+        - meshtastic/_port_discovery.py
       statuses:
         - type: project
           target: 60%
