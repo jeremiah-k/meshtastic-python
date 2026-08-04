@@ -33,7 +33,8 @@ import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic import BROADCAST_ADDR, LOCAL_ADDR, mt_config, remote_hardware
+from meshtastic import mt_config, remote_hardware
+from meshtastic._core_constants import BROADCAST_ADDR, LOCAL_ADDR
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import

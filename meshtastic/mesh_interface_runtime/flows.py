@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
 
-from meshtastic import BROADCAST_ADDR
+from meshtastic._core_constants import BROADCAST_ADDR
 from meshtastic.mesh_interface_runtime.request_wait import (
     RESPONSE_WAIT_REQID_ERROR,
     WAIT_ATTR_POSITION,
