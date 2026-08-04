@@ -1503,6 +1503,34 @@ def test_compat_dispatch_callable_ignores_synthesized_preferred_name() -> None:
     assert result == "legacy-result"
 
 
+def test_lifecycle_wrapper_ignores_synthesized_private_hook() -> None:
+    """Lifecycle wrappers should fall through to a declared public hook."""
+    calls: list[str] = []
+
+    class _DynamicLifecycleController:
+        def __getattr__(self, _name: str) -> object:
+            return lambda *_args, **_kwargs: False
+
+        def handle_disconnect(
+            self,
+            source: str,
+            *,
+            client: object | None = None,
+            bleak_client: object | None = None,
+        ) -> bool:
+            del client, bleak_client
+            calls.append(source)
+            return True
+
+    iface = _build_minimal_interface()
+    iface._get_lifecycle_controller = (  # type: ignore[method-assign]
+        lambda: _DynamicLifecycleController()
+    )
+
+    assert iface._handle_disconnect("declared-fallback") is True
+    assert calls == ["declared-fallback"]
+
+
 def test_compat_dispatch_callable_falls_back_to_legacy() -> None:
     """_compat_dispatch_callable should fall back to legacy name."""
     target = MagicMock()

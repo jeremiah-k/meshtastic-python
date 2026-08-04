@@ -634,12 +634,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             are unavailable on compatibility doubles.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        handle_disconnect = getattr(
-            lifecycle_controller,
-            "_handle_disconnect",
-            getattr(lifecycle_controller, "handle_disconnect", None),
+        handle_disconnect = _resolve_declared_callable(
+            lifecycle_controller, "_handle_disconnect", "handle_disconnect"
         )
-        if callable(handle_disconnect):
+        if handle_disconnect is not None:
             result = handle_disconnect(
                 source,
                 client=client,
@@ -657,12 +655,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             The Bleak client instance that disconnected.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        on_ble_disconnect = getattr(
-            lifecycle_controller,
-            "_on_ble_disconnect",
-            getattr(lifecycle_controller, "on_ble_disconnect", None),
+        on_ble_disconnect = _resolve_declared_callable(
+            lifecycle_controller, "_on_ble_disconnect", "on_ble_disconnect"
         )
-        if callable(on_ble_disconnect):
+        if on_ble_disconnect is not None:
             on_ble_disconnect(client)
 
     def _schedule_auto_reconnect(self) -> None:
@@ -671,33 +667,19 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         Does nothing if automatic reconnection is disabled or the interface is closing or already closed.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        schedule_auto_reconnect = getattr(
-            lifecycle_controller,
-            "_schedule_auto_reconnect",
-            getattr(lifecycle_controller, "schedule_auto_reconnect", None),
+        schedule_auto_reconnect = _resolve_declared_callable(
+            lifecycle_controller, "_schedule_auto_reconnect", "schedule_auto_reconnect"
         )
-        if callable(schedule_auto_reconnect):
+        if schedule_auto_reconnect is not None:
             schedule_auto_reconnect()
 
     @staticmethod
     def _resolve_thread_event_dispatcher(
         coordinator: object,
     ) -> Callable[[str], None] | None:
-        """Resolve set-event hook with instance-override compatibility behavior."""
-        instance_set_event = getattr(coordinator, "__dict__", {}).get("set_event")
-        if callable(instance_set_event):
-            return cast(Callable[[str], None], instance_set_event)
-        class_set_event = getattr(type(coordinator), "set_event", None)
-        if callable(class_set_event):
-
-            def _dispatch_class_event(event_name: str) -> None:
-                class_set_event(coordinator, event_name)
-
-            return _dispatch_class_event
-        legacy_set_event = getattr(coordinator, "_set_event", None)
-        if callable(legacy_set_event):
-            return cast(Callable[[str], None], legacy_set_event)
-        return None
+        """Resolve a declared current/legacy set-event hook in precedence order."""
+        set_event = _resolve_declared_callable(coordinator, "set_event", "_set_event")
+        return cast(Callable[[str], None], set_event) if set_event is not None else None
 
     def _set_thread_event(self, event_name: str) -> None:
         """Set thread-coordinator event via public-first compatibility dispatch."""
@@ -2673,12 +2655,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> None:
         """Publish `_connected()` only if ownership is still valid at publish time."""
         lifecycle_controller = self._get_lifecycle_controller()
-        verify_and_publish_connected = getattr(
+        verify_and_publish_connected = _resolve_declared_callable(
             lifecycle_controller,
             "_verify_and_publish_connected",
-            getattr(lifecycle_controller, "verify_and_publish_connected", None),
+            "verify_and_publish_connected",
         )
-        if callable(verify_and_publish_connected):
+        if verify_and_publish_connected is not None:
             verify_and_publish_connected(
                 connected_client,
                 connected_device_key,
@@ -2692,16 +2674,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> None:
         """Emit reconnect signaling/logging only after verified connect publish."""
         lifecycle_controller = self._get_lifecycle_controller()
-        emit_verified_connection_side_effects = getattr(
+        emit_verified_connection_side_effects = _resolve_declared_callable(
             lifecycle_controller,
             "_emit_verified_connection_side_effects",
-            getattr(
-                lifecycle_controller,
-                "emit_verified_connection_side_effects",
-                None,
-            ),
+            "emit_verified_connection_side_effects",
         )
-        if callable(emit_verified_connection_side_effects):
+        if emit_verified_connection_side_effects is not None:
             emit_verified_connection_side_effects(connected_client)
 
     def _discard_invalidated_connected_client(
@@ -2726,16 +2704,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             is discarded before ownership is finalized.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        discard_invalidated_connected_client = getattr(
+        discard_invalidated_connected_client = _resolve_declared_callable(
             lifecycle_controller,
             "_discard_invalidated_connected_client",
-            getattr(
-                lifecycle_controller,
-                "discard_invalidated_connected_client",
-                None,
-            ),
+            "discard_invalidated_connected_client",
         )
-        if callable(discard_invalidated_connected_client):
+        if discard_invalidated_connected_client is not None:
             discard_invalidated_connected_client(
                 client,
                 restore_address=restore_address,
@@ -2762,12 +2736,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             Optional alias key used when claiming connection gates, or `None` if not used.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        finalize_connection_gates = getattr(
-            lifecycle_controller,
-            "_finalize_connection_gates",
-            getattr(lifecycle_controller, "finalize_connection_gates", None),
+        finalize_connection_gates = _resolve_declared_callable(
+            lifecycle_controller, "_finalize_connection_gates", "finalize_connection_gates"
         )
-        if callable(finalize_connection_gates):
+        if finalize_connection_gates is not None:
             finalize_connection_gates(
                 connected_client,
                 connected_device_key,
@@ -2789,12 +2761,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             and the state machine reports CONNECTED.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        is_owned_connected_client = getattr(
-            lifecycle_controller,
-            "_is_owned_connected_client",
-            getattr(lifecycle_controller, "is_owned_connected_client", None),
+        is_owned_connected_client = _resolve_declared_callable(
+            lifecycle_controller, "_is_owned_connected_client", "is_owned_connected_client"
         )
-        if callable(is_owned_connected_client):
+        if is_owned_connected_client is not None:
             result = is_owned_connected_client(client)
             return result if isinstance(result, bool) else False
         return False
@@ -3219,10 +3189,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
                     exc_info=True,
                 )
         lifecycle_controller = self._get_lifecycle_controller()
-        close = getattr(
-            lifecycle_controller, "_close", getattr(lifecycle_controller, "close", None)
-        )
-        if callable(close):
+        close = _resolve_declared_callable(lifecycle_controller, "_close", "close")
+        if close is not None:
             close_kwargs: dict[str, float | None] = {
                 "management_shutdown_wait_timeout": _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
                 "management_wait_poll_seconds": _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
@@ -3272,12 +3240,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             BLE client to disconnect and close; operation is idempotent and safe to call on already-closed clients.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        disconnect_and_close_client = getattr(
+        disconnect_and_close_client = _resolve_declared_callable(
             lifecycle_controller,
             "_disconnect_and_close_client",
-            getattr(lifecycle_controller, "disconnect_and_close_client", None),
+            "disconnect_and_close_client",
         )
-        if callable(disconnect_and_close_client):
+        if disconnect_and_close_client is not None:
             try:
                 disconnect_and_close_client(client, timeout=timeout)
             except TypeError as exc:
