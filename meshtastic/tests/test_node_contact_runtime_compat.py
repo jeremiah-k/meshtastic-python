@@ -66,7 +66,9 @@ def test_decode_node_bytes_field_preserves_raw_bytes() -> None:
 def test_get_contact_url_rejects_malformed_node_db_byte_fields(field_name: str) -> None:
     """Malformed NodeDB byte fields should fail with field-specific diagnostics."""
     target = _node_with_contact(0x12345678)
-    target.iface.nodesByNum[0x12345678]["user"][field_name] = "not-base64!"
+    nodes_by_num = target.iface.nodesByNum
+    assert nodes_by_num is not None
+    nodes_by_num[0x12345678]["user"][field_name] = "not-base64!"
 
     with pytest.raises(MeshInterface.MeshInterfaceError, match=f"Invalid {field_name}"):
         target.getContactURL(0x12345678)
@@ -76,7 +78,9 @@ def test_get_contact_url_rejects_malformed_node_db_byte_fields(field_name: str) 
 def test_get_contact_url_accepts_numeric_enum_values() -> None:
     """Numeric hardware-model and role values should survive contact export."""
     target = _node_with_contact(0x12345678)
-    user = target.iface.nodesByNum[0x12345678]["user"]
+    nodes_by_num = target.iface.nodesByNum
+    assert nodes_by_num is not None
+    user = nodes_by_num[0x12345678]["user"]
     user["hwModel"] = 1
     user["role"] = 1
 
