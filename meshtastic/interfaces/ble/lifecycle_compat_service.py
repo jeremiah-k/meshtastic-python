@@ -934,7 +934,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(iface).is_connected()
+        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).is_connected()
 
     @staticmethod
     def _state_manager_current_state(iface: "BLEInterface") -> ConnectionState:
@@ -959,7 +959,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(iface).current_state()
+        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).current_state()
 
     @staticmethod
     def _state_manager_transition_to(
@@ -988,7 +988,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(iface).transition_to(new_state)
+        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).transition_to(new_state)
 
     @staticmethod
     def _state_manager_reset_to_disconnected(iface: "BLEInterface") -> bool:
@@ -1013,7 +1013,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(iface).reset_to_disconnected()
+        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).reset_to_disconnected()
 
     @staticmethod
     def _state_manager_is_closing(iface: "BLEInterface") -> bool:
@@ -1034,7 +1034,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(iface).is_closing()
+        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).is_closing()
 
     @staticmethod
     def _client_is_connected(client: "BLEClient") -> bool:

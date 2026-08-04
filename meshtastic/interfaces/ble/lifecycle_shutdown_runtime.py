@@ -9,6 +9,8 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
     NOTIFICATION_START_TIMEOUT,
@@ -47,7 +49,9 @@ class BLEShutdownLifecycleCoordinator:
         by this collaborator.
     """
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(
+        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+    ) -> None:
         """Bind shutdown ownership to a specific interface.
 
         Parameters
@@ -61,7 +65,8 @@ class BLEShutdownLifecycleCoordinator:
             Initializes bound shutdown-collaborator state.
         """
         self._iface = iface
-        self._state_access = _LifecycleStateAccess(iface)
+        self._session = _session_state_for(iface, session_state)
+        self._state_access = _LifecycleStateAccess(getattr(iface, "_state_manager", iface))
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
         self._bounded_cleanup_thread: threading.Thread | None = None
@@ -77,9 +82,8 @@ class BLEShutdownLifecycleCoordinator:
             ``True`` when the interface is in closing/closed state; otherwise
             ``False``.
         """
-        iface = self._iface
-        with iface._state_lock:
-            return self._state_access.is_closing() or iface._closed
+        with self._session.lock:
+            return self._state_access.is_closing() or self._session.closed
 
     def _cleanup_thread_coordinator(
         self,
@@ -225,20 +229,20 @@ class BLEShutdownLifecycleCoordinator:
         disconnect_alias_key: str | None = None
         management_wait_started = time.monotonic()
         with iface._management_lock:
-            with iface._state_lock:
-                if iface._closed:
+            with self._session.lock:
+                if self._session.closed:
                     logger.debug(
                         "BLEInterface.close called on already closed interface; ignoring"
                     )
                     return None
                 was_closing = get_is_closing()
-                iface._closed = True
+                self._session.closed = True
                 if was_closing:
                     logger.debug(
                         "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                     )
                 current_state = get_current_state()
-                disconnect_alias_key = iface._connection_alias_key
+                disconnect_alias_key = self._session.connection_alias_key
                 should_transition_to_disconnecting = current_state not in (
                     ConnectionState.DISCONNECTED,
                     ConnectionState.DISCONNECTING,
@@ -327,7 +331,6 @@ class BLEShutdownLifecycleCoordinator:
         None
             Always returns ``None``.
         """
-        iface = self._iface
         wake_waiters = wake_waiting_threads or self._thread_access.wake_waiting_threads
         if join_thread is None:
             join_runtime_thread = self._thread_access.join_thread
@@ -363,7 +366,7 @@ class BLEShutdownLifecycleCoordinator:
                 "Error waking BLE receive-thread waiters during close",
                 exc_info=True,
             )
-        receive_thread = iface._receiveThread
+        receive_thread = self._session.receive_thread
         if receive_thread is None:
             return
         thread_ident, thread_is_alive = _thread_start_probe(receive_thread)
@@ -391,11 +394,11 @@ class BLEShutdownLifecycleCoordinator:
             elif _explicitly_not_alive(receive_thread):
                 start_failure_confirmed = True
             if start_failure_confirmed:
-                with iface._state_lock:
-                    if iface._receiveThread is receive_thread:
-                        iface._receiveThread = None
-                        iface._receive_start_pending = False
-                        iface._receive_start_pending_since = None
+                with self._session.lock:
+                    if self._session.receive_thread is receive_thread:
+                        self._session.receive_thread = None
+                        self._session.receive_start_pending = False
+                        self._session.receive_start_pending_since = None
                 logger.debug(
                     "Skipping receive thread join during close: worker never started."
                 )
@@ -424,16 +427,16 @@ class BLEShutdownLifecycleCoordinator:
                 )
             thread_ident = post_join_ident
             thread_is_alive = post_join_is_alive
-        with iface._state_lock:
+        with self._session.lock:
             probe_confirms_stopped = not thread_is_alive
             if not probe_confirms_stopped:
                 probe_confirms_stopped = _explicitly_not_alive(receive_thread)
-            if iface._receiveThread is receive_thread and (
+            if self._session.receive_thread is receive_thread and (
                 start_failure_confirmed or probe_confirms_stopped
             ):
-                iface._receiveThread = None
-                iface._receive_start_pending = False
-                iface._receive_start_pending_since = None
+                self._session.receive_thread = None
+                self._session.receive_start_pending = False
+                self._session.receive_start_pending_since = None
 
     def _close_mesh_interface(
         self,
@@ -529,9 +532,9 @@ class BLEShutdownLifecycleCoordinator:
             Detached client plus the publish-pending flag captured at detach.
         """
         iface = self._iface
-        with iface._state_lock:
+        with self._session.lock:
             client = iface.client
-            publish_pending = iface._client_publish_pending
+            publish_pending = self._session.client_publish_pending
             if client is not None:
                 iface.client = None
         return client, publish_pending
@@ -540,23 +543,23 @@ class BLEShutdownLifecycleCoordinator:
         """Consume publish flags and decide disconnect notification emission."""
         iface = self._iface
         notify = False
-        with iface._state_lock:
-            if iface._client_publish_pending:
-                replacement_pending = iface._client_replacement_pending
-                iface._client_publish_pending = False
-                iface._client_replacement_pending = False
-                if replacement_pending and not iface._disconnect_notified:
-                    iface._disconnect_notified = True
+        with self._session.lock:
+            if self._session.client_publish_pending:
+                replacement_pending = self._session.client_replacement_pending
+                self._session.client_publish_pending = False
+                self._session.client_replacement_pending = False
+                if replacement_pending and not self._session.disconnect_notified:
+                    self._session.disconnect_notified = True
                     notify = True
                 else:
-                    iface._disconnect_notified = True
-            elif iface._client_replacement_pending:
-                iface._client_replacement_pending = False
-                if not iface._disconnect_notified:
-                    iface._disconnect_notified = True
+                    self._session.disconnect_notified = True
+            elif self._session.client_replacement_pending:
+                self._session.client_replacement_pending = False
+                if not self._session.disconnect_notified:
+                    self._session.disconnect_notified = True
                     notify = True
-            elif not iface._disconnect_notified:
-                iface._disconnect_notified = True
+            elif not self._session.disconnect_notified:
+                self._session.disconnect_notified = True
                 raw_ever_connected = getattr(iface, "_ever_connected", False)
                 if _is_unconfigured_mock_member(raw_ever_connected):
                     notify = False
@@ -754,9 +757,9 @@ class BLEShutdownLifecycleCoordinator:
             reset_to_disconnected or self._state_access.reset_to_disconnected
         )
         alias_key: str | None = None
-        with iface._state_lock:
-            alias_key = iface._connection_alias_key
-            iface._connection_alias_key = None
+        with self._session.lock:
+            alias_key = self._session.connection_alias_key
+            self._session.connection_alias_key = None
         # Record final state as DISCONNECTED for observers; instance remains closed.
         if not do_transition_to(ConnectionState.DISCONNECTED):
             current_state = get_current_state()

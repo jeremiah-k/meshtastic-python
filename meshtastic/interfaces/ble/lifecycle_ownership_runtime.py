@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import RECONNECTED_EVENT, logger
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleErrorAccess,
@@ -39,7 +41,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         coordinated by this collaborator.
     """
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(
+        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+    ) -> None:
         """Bind connection ownership coordination to a specific interface.
 
         Parameters
@@ -53,7 +57,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             Initializes bound collaborator state.
         """
         self._iface = iface
-        self._state_access = _LifecycleStateAccess(iface)
+        self._session = _session_state_for(iface, session_state)
+        self._state_access = _LifecycleStateAccess(getattr(iface, "_state_manager", iface))
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
 
@@ -98,8 +103,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 "is_closing",
                 "_is_closing",
             )
-        is_closing = is_closing or iface._closed
-        if iface._closed or iface.client is not client:
+        is_closing = is_closing or self._session.closed
+        if self._session.closed or iface.client is not client:
             return False, is_closing
         if state_connected_getter is not None:
             state_connected_result = state_connected_getter()
@@ -190,7 +195,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         tuple[bool, bool]
             ``(is_owned, is_closing)`` for ``client``.
         """
-        with self._iface._state_lock:
+        with self._session.lock:
             return self._get_connected_client_status_locked(
                 client,
                 is_closing_getter=is_closing_getter,
@@ -235,7 +240,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             connected_device_key,
             connection_alias_key,
         )
-        with iface._state_lock:
+        with self._session.lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
             prior_ever_connected = self._has_ever_connected_session()
         return _OwnershipSnapshot(
@@ -269,9 +274,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         """
         iface = self._iface
         coordinator = getattr(iface, "thread_coordinator", None)
-        with iface._state_lock:
-            should_emit_reconnected = bool(iface._prior_publish_was_reconnect)
-            iface._prior_publish_was_reconnect = False
+        with self._session.lock:
+            should_emit_reconnected = bool(self._session.prior_publish_was_reconnect)
+            self._session.prior_publish_was_reconnect = False
         if should_emit_reconnected and coordinator is not None:
             self._thread_access.set_event(RECONNECTED_EVENT)
         normalized_device_address = sanitize_address(
@@ -296,8 +301,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             getattr(connected_client, "address", "unknown"),
         )
 
-    @staticmethod
     def _apply_owned_client_invalidation(
+        self,
         iface: "BLEInterface",
         *,
         get_is_closing: Callable[[], bool],
@@ -316,24 +321,24 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             whether a disconnect event should be emitted, and ``is_closing``
             indicates whether shutdown is active.
         """
-        replacement_pending = bool(getattr(iface, "_client_replacement_pending", False))
-        already_notified = bool(getattr(iface, "_disconnect_notified", False))
-        is_closing = get_is_closing() or iface._closed
+        replacement_pending = bool(self._session.client_replacement_pending)
+        already_notified = bool(self._session.disconnect_notified)
+        is_closing = get_is_closing() or self._session.closed
         iface.client = None
-        iface._client_publish_pending = False
-        iface._client_replacement_pending = False
-        iface._disconnect_notified = True
+        self._session.client_publish_pending = False
+        self._session.client_replacement_pending = False
+        self._session.disconnect_notified = True
         should_publish_disconnect = replacement_pending and not already_notified
         if not is_closing:
             iface.address = restored_address
             iface._last_connection_request = restore_last_connection_request
-            iface._connection_alias_key = None
+            self._session.connection_alias_key = None
             return True, should_publish_disconnect, is_closing
         iface._last_connection_request = None
         return False, should_publish_disconnect, is_closing
 
-    @staticmethod
     def _apply_publish_pending_invalidation(
+        self,
         iface: "BLEInterface",
         *,
         get_is_closing: Callable[[], bool],
@@ -348,25 +353,24 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             ``(should_reset_state, should_publish_disconnect, is_closing)``
             using the same semantics as `_apply_owned_client_invalidation`.
         """
-        replacement_pending = bool(getattr(iface, "_client_replacement_pending", False))
-        already_notified = bool(getattr(iface, "_disconnect_notified", False))
-        iface._client_publish_pending = False
-        iface._client_replacement_pending = False
+        replacement_pending = bool(self._session.client_replacement_pending)
+        already_notified = bool(self._session.disconnect_notified)
+        self._session.client_publish_pending = False
+        self._session.client_replacement_pending = False
         should_publish_disconnect = replacement_pending and not already_notified
         if should_publish_disconnect:
-            iface._disconnect_notified = True
-        is_closing = get_is_closing() or iface._closed
+            self._session.disconnect_notified = True
+        is_closing = get_is_closing() or self._session.closed
         if not is_closing:
             iface.address = restored_address
             iface._last_connection_request = restore_last_connection_request
-            iface._connection_alias_key = None
+            self._session.connection_alias_key = None
             return True, should_publish_disconnect, is_closing
         iface._last_connection_request = None
         return False, should_publish_disconnect, is_closing
 
-    @staticmethod
     def _apply_post_cleanup_state_correction(
-        iface: "BLEInterface",
+        self,
         *,
         should_reset_state: bool,
         do_reset_to_disconnected: Callable[[], bool],
@@ -377,8 +381,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
         Parameters
         ----------
-        iface : BLEInterface
-            Interface whose state manager is being corrected.
         should_reset_state : bool
             Whether state correction should be attempted.
         do_reset_to_disconnected : Callable[[], bool]
@@ -399,7 +401,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             current_state = get_current_state()
             logger.error(
                 "Failed to reset state after invalidated connect result (alias=%s current=%s); forcing transition to %s.",
-                iface._connection_alias_key,
+                self._session.connection_alias_key,
                 getattr(current_state, "value", current_state),
                 ConnectionState.DISCONNECTED.value,
             )
@@ -408,7 +410,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 logger.error(
                     "Failed forced transition to %s after invalidated connect result (alias=%s current=%s).",
                     ConnectionState.DISCONNECTED.value,
-                    iface._connection_alias_key,
+                    self._session.connection_alias_key,
                     getattr(fallback_state, "value", fallback_state),
                 )
 
@@ -469,12 +471,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         should_publish_disconnect = False
         is_closing = False
         disconnect_session_epoch = 0
-        with iface._state_lock:
+        with self._session.lock:
             disconnect_session_epoch = getattr(iface, "_connection_session_epoch", 0)
             inflight_client = getattr(iface, "_connected_publish_inflight_client", None)
             if iface.client is client:
                 if inflight_client is client:
-                    iface._connected_publish_inflight_client = None
+                    self._session.connected_publish_inflight_client = None
                 (
                     should_reset_state,
                     should_publish_disconnect,
@@ -490,7 +492,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 and bool(getattr(iface, "_client_publish_pending", False))
                 and inflight_client is client
             ):
-                iface._connected_publish_inflight_client = None
+                self._session.connected_publish_inflight_client = None
                 (
                     should_reset_state,
                     should_publish_disconnect,
@@ -508,21 +510,20 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 "BLE client close for invalidated connection result",
             )
         finally:
-            with iface._state_lock:
+            with self._session.lock:
                 same_session = (
                     getattr(iface, "_connection_session_epoch", 0)
                     == disconnect_session_epoch
                 )
             if same_session:
                 self._apply_post_cleanup_state_correction(
-                    iface,
                     should_reset_state=should_reset_state,
                     do_reset_to_disconnected=do_reset_to_disconnected,
                     get_current_state=get_current_state,
                     do_transition_to_disconnected=do_transition_to_disconnected,
                 )
         if should_publish_disconnect and not is_closing:
-            with iface._state_lock:
+            with self._session.lock:
                 publish_disconnect = (
                     getattr(iface, "_connection_session_epoch", 0)
                     == disconnect_session_epoch
@@ -611,7 +612,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         should_publish_connected = False
         publish_claimed = False
         duplicate_publish_request = False
-        with iface._state_lock:
+        with self._session.lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
             if still_owned and not is_closing:
                 publish_pending = bool(getattr(iface, "_client_publish_pending", False))
@@ -619,14 +620,14 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     iface, "_connected_publish_inflight_client", None
                 )
                 if not publish_pending:
-                    iface._client_publish_pending = True
-                    iface._connected_publish_inflight_client = connected_client
+                    self._session.client_publish_pending = True
+                    self._session.connected_publish_inflight_client = connected_client
                     publish_claimed = True
                     should_publish_connected = True
                 elif iface.client is connected_client and inflight_client is None:
                     # The connect flow may have already claimed publish-pending
                     # for this exact client before reaching verification.
-                    iface._connected_publish_inflight_client = connected_client
+                    self._session.connected_publish_inflight_client = connected_client
                     publish_claimed = True
                     should_publish_connected = True
                 elif (
@@ -648,7 +649,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             _raise_invalidated(snapshot)
         publish_committed = False
         if should_publish_connected:
-            with iface._state_lock:
+            with self._session.lock:
                 still_owned, is_closing = get_connected_status_locked(connected_client)
                 if (
                     publish_claimed
@@ -672,12 +673,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 return
 
         if publish_claimed:
-            with iface._state_lock:
+            with self._session.lock:
                 if (
                     getattr(iface, "_connected_publish_inflight_client", None)
                     is connected_client
                 ):
-                    iface._connected_publish_inflight_client = None
+                    self._session.connected_publish_inflight_client = None
         post_check_snapshot = snapshot_provider(
             connected_client,
             connected_device_key,
@@ -741,7 +742,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             ):
                 raise_invalidated(post_commit_snapshot)
             publish_allowed = False
-            with iface._state_lock:
+            with self._session.lock:
                 published_session_epoch = getattr(iface, "_connection_session_epoch", 0)
                 publish_allowed = iface.client is connected_client
             if not publish_allowed:
@@ -751,7 +752,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     connection_alias_key,
                 )
                 raise_invalidated(stale_snapshot)
-            with iface._state_lock:
+            with self._session.lock:
                 publish_allowed = (
                     iface.client is connected_client
                     and getattr(iface, "_connection_session_epoch", 0)
@@ -774,7 +775,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     or "expected_session_epoch" not in error_message
                 ):
                     raise
-                with iface._state_lock:
+                with self._session.lock:
                     fallback_allowed = (
                         iface.client is connected_client
                         and getattr(iface, "_connection_session_epoch", 0)
@@ -788,32 +789,32 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     )
                     raise_invalidated(stale_snapshot)
                 connected_notifier()
-            with iface._state_lock:
+            with self._session.lock:
                 publish_completed = (
                     iface.client is connected_client
                     and getattr(iface, "_connection_session_epoch", 0)
                     == published_session_epoch
                 )
                 if publish_completed:
-                    iface._ever_connected = True
-                    iface._prior_publish_was_reconnect = prior_ever_connected
+                    self._session.ever_connected = True
+                    self._session.prior_publish_was_reconnect = prior_ever_connected
             if publish_completed:
                 self._emit_verified_connection_side_effects(connected_client)
         finally:
-            with iface._state_lock:
+            with self._session.lock:
                 if (
                     getattr(iface, "_connected_publish_inflight_client", None)
                     is connected_client
                 ):
-                    iface._connected_publish_inflight_client = None
+                    self._session.connected_publish_inflight_client = None
                 if iface.client is connected_client:
-                    iface._client_publish_pending = False
+                    self._session.client_publish_pending = False
                     if publish_completed:
-                        iface._client_replacement_pending = False
+                        self._session.client_replacement_pending = False
                 still_owned_after, is_closing_after = get_connected_status_locked(
                     connected_client
                 )
-                disconnect_notified = iface._disconnect_notified
+                disconnect_notified = self._session.disconnect_notified
         if (
             publish_completed
             and not still_owned_after
@@ -823,7 +824,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             logger.debug(
                 "Connected publication raced with disconnect; emitting compensating disconnect event."
             )
-            with iface._state_lock:
+            with self._session.lock:
                 same_session = (
                     getattr(iface, "_connection_session_epoch", 0)
                     == published_session_epoch
@@ -874,18 +875,18 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
         if still_active:
             should_clear_gate_keys = False
-            with iface._state_lock:
+            with self._session.lock:
                 still_active, is_closing = get_status_locked(connected_client)
                 if still_active:
-                    iface._connection_alias_key = connection_alias_key
+                    self._session.connection_alias_key = connection_alias_key
                 else:
                     active_client = iface.client
-                    owns_alias = iface._connection_alias_key == connection_alias_key
+                    owns_alias = self._session.connection_alias_key == connection_alias_key
                     should_clear_gate_keys = owns_alias and (
                         active_client is connected_client or active_client is None
                     )
                     if should_clear_gate_keys:
-                        iface._connection_alias_key = None
+                        self._session.connection_alias_key = None
             if not still_active:
                 self._log_gate_cleanup(connected_client, is_closing=is_closing)
                 if should_clear_gate_keys:
@@ -899,17 +900,17 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             )
             needs_cleanup = False
             should_clear_gate_keys = False
-            with iface._state_lock:
+            with self._session.lock:
                 still_active, is_closing = get_status_locked(connected_client)
                 if not still_active:
                     self._log_gate_cleanup(connected_client, is_closing=is_closing)
                     active_client = iface.client
-                    owns_alias = iface._connection_alias_key == connection_alias_key
+                    owns_alias = self._session.connection_alias_key == connection_alias_key
                     should_clear_gate_keys = owns_alias and (
                         active_client is connected_client or active_client is None
                     )
                     if should_clear_gate_keys:
-                        iface._connection_alias_key = None
+                        self._session.connection_alias_key = None
                     needs_cleanup = True
             if needs_cleanup and should_clear_gate_keys:
                 iface._mark_address_keys_disconnected(

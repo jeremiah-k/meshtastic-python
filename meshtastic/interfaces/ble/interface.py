@@ -341,7 +341,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             self,
         )
         self._lifecycle_controller = BLELifecycleController(self)
-        self._receive_recovery_controller = BLEReceiveRecoveryController(self)
+        self._receive_recovery_controller = BLEReceiveRecoveryController(
+            self, session_state=self._session_state
+        )
         self._compatibility_publisher = BLECompatibilityEventPublisher(
             self,
             publishing_thread_provider=self._get_publishing_thread,
@@ -1749,11 +1751,11 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
 
     def _state_manager_current_state(self) -> ConnectionState:
         """Read current state through lifecycle state-access compatibility dispatch."""
-        return _LifecycleStateAccess(self).current_state()
+        return _LifecycleStateAccess(self._state_manager).current_state()
 
     def _state_manager_is_closing(self) -> bool:
         """Read closing-state flag through lifecycle state-access compatibility dispatch."""
-        return _LifecycleStateAccess(self).is_closing()
+        return _LifecycleStateAccess(self._state_manager).is_closing()
 
     def _validator_check_existing_client(
         self,

@@ -26,6 +26,7 @@ from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
 from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
@@ -74,10 +75,13 @@ class BLELifecycleController:
             Initializes bound controller collaborators.
         """
         self._iface = iface
-        self._receive = BLEReceiveLifecycleCoordinator(iface)
-        self._disconnect = BLEDisconnectLifecycleCoordinator(iface)
-        self._connection_ownership = BLEConnectionOwnershipLifecycleCoordinator(iface)
-        self._shutdown = BLEShutdownLifecycleCoordinator(iface)
+        session = _session_state_for(iface)
+        self._receive = BLEReceiveLifecycleCoordinator(iface, session_state=session)
+        self._disconnect = BLEDisconnectLifecycleCoordinator(iface, session_state=session)
+        self._connection_ownership = BLEConnectionOwnershipLifecycleCoordinator(
+            iface, session_state=session
+        )
+        self._shutdown = BLEShutdownLifecycleCoordinator(iface, session_state=session)
 
     def _set_receive_wanted(self, *, want_receive: bool) -> None:
         """Request or clear the receive loop on the bound interface."""

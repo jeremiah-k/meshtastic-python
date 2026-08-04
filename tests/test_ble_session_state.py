@@ -1,6 +1,7 @@
 """Tests for owned BLE session-state compatibility views."""
 
 from meshtastic.interfaces.ble.interface import BLEInterface
+from meshtastic.interfaces.ble.lifecycle_controller_runtime import BLELifecycleController
 from meshtastic.interfaces.ble.session_state import BLESessionState
 from meshtastic.interfaces.ble.state import BLEStateManager
 
@@ -56,3 +57,15 @@ def test_session_state_retry_reset_helpers() -> None:
     assert state.suppressed_empty_read_warnings == 0
     assert state.receive_recovery_attempts == 0
     assert state.last_recovery_time == 0.0
+
+
+def test_lifecycle_controller_shares_owned_session_state() -> None:
+    """Lifecycle coordinators should share the interface's single state owner."""
+    iface = _bare_interface()
+
+    controller = BLELifecycleController(iface)
+
+    assert controller._receive._session is iface._session_state
+    assert controller._disconnect._session is iface._session_state
+    assert controller._connection_ownership._session is iface._session_state
+    assert controller._shutdown._session is iface._session_state

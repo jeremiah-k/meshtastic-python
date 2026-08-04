@@ -3,9 +3,10 @@
 from dataclasses import dataclass
 import threading
 from threading import RLock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from meshtastic.interfaces.ble.coordination import ThreadLike
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -264,3 +265,62 @@ class _BLESessionStateCompatMixin:
     @_receiveThread.setter
     def _receiveThread(self, value: ThreadLike | None) -> None:  # noqa: N802
         self._get_session_state().receive_thread = value
+
+
+class _LegacyBLESessionStateAdapter:
+    """Adapt historical interface-private fields to the session-state port."""
+
+    __slots__ = ("_iface",)
+    _FIELD_MAP = {
+        "lock": "_state_lock",
+        "closed": "_closed",
+        "disconnect_notified": "_disconnect_notified",
+        "client_publish_pending": "_client_publish_pending",
+        "connected_publish_inflight_client": "_connected_publish_inflight_client",
+        "client_replacement_pending": "_client_replacement_pending",
+        "last_disconnect_source": "_last_disconnect_source",
+        "connection_alias_key": "_connection_alias_key",
+        "prior_publish_was_reconnect": "_prior_publish_was_reconnect",
+        "last_connect_pair_override": "_last_connect_pair_override",
+        "last_connect_timeout_override": "_last_connect_timeout_override",
+        "publishing_thread_override": "_publishing_thread_override",
+        "ever_connected": "_ever_connected",
+        "connection_session_epoch": "_connection_session_epoch",
+        "receive_recovery_attempts": "_receive_recovery_attempts",
+        "last_recovery_time": "_last_recovery_time",
+        "read_retry_count": "_read_retry_count",
+        "last_empty_read_warning": "_last_empty_read_warning",
+        "suppressed_empty_read_warnings": "_suppressed_empty_read_warnings",
+        "want_receive": "_want_receive",
+        "receive_start_pending": "_receive_start_pending",
+        "receive_start_pending_since": "_receive_start_pending_since",
+        "receive_thread": "_receiveThread",
+    }
+
+    def __init__(self, iface: object) -> None:
+        object.__setattr__(self, "_iface", iface)
+
+    def __getattr__(self, name: str) -> Any:
+        mapped = self._FIELD_MAP.get(name)
+        if mapped is None:
+            raise AttributeError(name)
+        return getattr(self._iface, mapped)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        mapped = self._FIELD_MAP.get(name)
+        if mapped is None:
+            raise AttributeError(name)
+        setattr(self._iface, mapped, value)
+
+
+def _session_state_for(
+    iface: object, explicit: _BLESessionStatePort | None = None
+) -> _BLESessionStatePort:
+    """Return explicit/owned session state or a legacy interface adapter."""
+    if explicit is not None:
+        return explicit
+    instance_dict = getattr(iface, "__dict__", {})
+    state = instance_dict.get("_session_state") if isinstance(instance_dict, dict) else None
+    if isinstance(state, BLESessionState):
+        return state
+    return cast(_BLESessionStatePort, _LegacyBLESessionStateAdapter(iface))

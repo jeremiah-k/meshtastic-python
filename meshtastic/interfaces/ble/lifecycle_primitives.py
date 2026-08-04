@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
+from meshtastic.interfaces.ble.ports import _BLEStateManagerPort
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unconfigured_mock_callable,
@@ -91,13 +92,13 @@ def _client_is_connected_compat(client: "BLEClient") -> bool:
 class _LifecycleStateAccess:
     """Runtime state-manager access owned by lifecycle collaborators."""
 
-    def __init__(self, iface: "BLEInterface") -> None:
-        """Bind state-manager access to a specific interface."""
-        self._iface = iface
+    def __init__(self, target: _BLEStateManagerPort | object) -> None:
+        """Bind compatibility access to a state manager or legacy interface."""
+        self._state_manager = getattr(target, "_state_manager", target)
 
     def is_connected(self) -> bool:
         """Return connected-state flag from public-first state-manager members."""
-        public_is_connected = getattr(self._iface._state_manager, "is_connected", None)
+        public_is_connected = getattr(self._state_manager, "is_connected", None)
         if callable(public_is_connected) and not _is_unconfigured_mock_callable(
             public_is_connected
         ):
@@ -115,7 +116,7 @@ class _LifecycleStateAccess:
             public_is_connected, bool
         ):
             return public_is_connected
-        legacy_is_connected = getattr(self._iface._state_manager, "_is_connected", None)
+        legacy_is_connected = getattr(self._state_manager, "_is_connected", None)
         if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
             legacy_is_connected
         ):
@@ -137,7 +138,7 @@ class _LifecycleStateAccess:
 
     def current_state(self) -> ConnectionState:
         """Return current connection state from public-first state-manager members."""
-        public_state = getattr(self._iface._state_manager, "current_state", None)
+        public_state = getattr(self._state_manager, "current_state", None)
         if callable(public_state) and not _is_unconfigured_mock_callable(public_state):
             try:
                 result = public_state()
@@ -153,7 +154,7 @@ class _LifecycleStateAccess:
             public_state, ConnectionState
         ):
             return public_state
-        legacy_state = getattr(self._iface._state_manager, "_current_state", None)
+        legacy_state = getattr(self._state_manager, "_current_state", None)
         if callable(legacy_state) and not _is_unconfigured_mock_callable(legacy_state):
             try:
                 result = legacy_state()
@@ -173,7 +174,7 @@ class _LifecycleStateAccess:
 
     def transition_to(self, new_state: ConnectionState) -> bool:
         """Transition state manager using public-first compatibility dispatch."""
-        public_transition = getattr(self._iface._state_manager, "transition_to", None)
+        public_transition = getattr(self._state_manager, "transition_to", None)
         if callable(public_transition) and not _is_unconfigured_mock_callable(
             public_transition
         ):
@@ -187,7 +188,7 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, bool):
                     return result
-        legacy_transition = getattr(self._iface._state_manager, "_transition_to", None)
+        legacy_transition = getattr(self._state_manager, "_transition_to", None)
         if callable(legacy_transition) and not _is_unconfigured_mock_callable(
             legacy_transition
         ):
@@ -206,7 +207,7 @@ class _LifecycleStateAccess:
     def reset_to_disconnected(self) -> bool:
         """Reset state manager to disconnected using public-first dispatch."""
         public_reset = getattr(
-            self._iface._state_manager, "reset_to_disconnected", None
+            self._state_manager, "reset_to_disconnected", None
         )
         if callable(public_reset) and not _is_unconfigured_mock_callable(public_reset):
             try:
@@ -220,7 +221,7 @@ class _LifecycleStateAccess:
                 if isinstance(result, bool):
                     return result
         legacy_reset = getattr(
-            self._iface._state_manager, "_reset_to_disconnected", None
+            self._state_manager, "_reset_to_disconnected", None
         )
         if callable(legacy_reset) and not _is_unconfigured_mock_callable(legacy_reset):
             try:
@@ -237,7 +238,7 @@ class _LifecycleStateAccess:
 
     def is_closing(self) -> bool:
         """Return closing-state flag from public-first state-manager members."""
-        public_is_closing = getattr(self._iface._state_manager, "is_closing", None)
+        public_is_closing = getattr(self._state_manager, "is_closing", None)
         if callable(public_is_closing) and not _is_unconfigured_mock_callable(
             public_is_closing
         ):
@@ -255,7 +256,7 @@ class _LifecycleStateAccess:
             public_is_closing, bool
         ):
             return public_is_closing
-        legacy_is_closing = getattr(self._iface._state_manager, "_is_closing", None)
+        legacy_is_closing = getattr(self._state_manager, "_is_closing", None)
         if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
             legacy_is_closing
         ):

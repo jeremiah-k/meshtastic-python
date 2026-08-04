@@ -5,6 +5,8 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleThreadAccess
@@ -26,7 +28,9 @@ class BLEReceiveLifecycleCoordinator:
         this collaborator.
     """
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(
+        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+    ) -> None:
         """Bind receive lifecycle ownership to a specific interface.
 
         Parameters
@@ -40,6 +44,7 @@ class BLEReceiveLifecycleCoordinator:
             Initializes bound collaborator state.
         """
         self._iface = iface
+        self._session = _session_state_for(iface, session_state)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._deferred_restart_lock = threading.Lock()
         self._deferred_restart_inflight = False
@@ -82,7 +87,6 @@ class BLEReceiveLifecycleCoordinator:
         deferred thread to unwind (or for the wait window to elapse), then
         re-enters ``start_receive_thread``.
         """
-        iface = self._iface
         with self._deferred_restart_lock:
             if self._deferred_restart_inflight:
                 return
@@ -93,10 +97,10 @@ class BLEReceiveLifecycleCoordinator:
             try:
                 wait_deadline = time.monotonic() + RECEIVE_START_PENDING_TIMEOUT_SECONDS
                 while True:
-                    with iface._state_lock:
-                        if iface._closed or not iface._want_receive:
+                    with self._session.lock:
+                        if self._session.closed or not self._session.want_receive:
                             return
-                        current = iface._receiveThread
+                        current = self._session.receive_thread
                     if enforce_pending_timeout and time.monotonic() < wait_deadline:
                         time.sleep(0.01)
                         continue
@@ -107,10 +111,10 @@ class BLEReceiveLifecycleCoordinator:
                     _, current_is_alive = _thread_start_probe(existing_thread)
                     if clear_pending_if_alive:
                         if current_is_alive:
-                            with iface._state_lock:
-                                if iface._receiveThread is existing_thread:
-                                    iface._receive_start_pending = False
-                                    iface._receive_start_pending_since = None
+                            with self._session.lock:
+                                if self._session.receive_thread is existing_thread:
+                                    self._session.receive_start_pending = False
+                                    self._session.receive_start_pending_since = None
                             return
                         if time.monotonic() >= wait_deadline:
                             break
@@ -168,13 +172,13 @@ class BLEReceiveLifecycleCoordinator:
 
     def set_receive_wanted(self, *, want_receive: bool) -> None:
         """Request or clear receive-loop intent."""
-        with self._iface._state_lock:
-            self._iface._want_receive = want_receive
+        with self._session.lock:
+            self._session.want_receive = want_receive
 
     def should_run_receive_loop(self) -> bool:
         """Return whether receive loop should continue running."""
-        with self._iface._state_lock:
-            return self._iface._want_receive and not self._iface._closed
+        with self._session.lock:
+            return self._session.want_receive and not self._session.closed
 
     @staticmethod
     def _is_thread_start_failure_confirmed(thread: ThreadLike) -> bool:
@@ -219,14 +223,14 @@ class BLEReceiveLifecycleCoordinator:
         deferred_current_thread: ThreadLike | None = None
         deferred_current_thread_waiting = False
         schedule_deferred_restart_for: ThreadLike | None = None
-        with iface._state_lock:
-            if iface._closed or not iface._want_receive:
+        with self._session.lock:
+            if self._session.closed or not self._session.want_receive:
                 logger.debug(
                     "Skipping receive thread start (%s): interface is closing/stopped.",
                     name,
                 )
                 return None, None
-            existing = iface._receiveThread
+            existing = self._session.receive_thread
             existing_start_pending = bool(
                 getattr(iface, "_receive_start_pending", False)
             )
@@ -244,8 +248,8 @@ class BLEReceiveLifecycleCoordinator:
                 else:
                     pending_age = now - float(pending_since)
                     if pending_age >= RECEIVE_START_PENDING_TIMEOUT_SECONDS:
-                        iface._receive_start_pending = False
-                        iface._receive_start_pending_since = None
+                        self._session.receive_start_pending = False
+                        self._session.receive_start_pending_since = None
                         deferred_current_thread = existing
                         logger.debug(
                             "Receive-thread deferral timeout reached (%s): scheduling deferred restart.",
@@ -253,9 +257,9 @@ class BLEReceiveLifecycleCoordinator:
                         )
                 if deferred_current_thread is None:
                     deferred_current_thread_waiting = True
-                    iface._receive_start_pending = True
+                    self._session.receive_start_pending = True
                     if not isinstance(pending_since, (float, int)):
-                        iface._receive_start_pending_since = now
+                        self._session.receive_start_pending_since = now
                         schedule_deferred_restart_for = existing
                     elif not existing_start_pending:
                         schedule_deferred_restart_for = existing
@@ -278,8 +282,8 @@ class BLEReceiveLifecycleCoordinator:
                     )
             if existing is not None and not self._is_current_receive_thread(existing):
                 if existing_is_alive:
-                    iface._receive_start_pending = False
-                    iface._receive_start_pending_since = None
+                    self._session.receive_start_pending = False
+                    self._session.receive_start_pending_since = None
                     logger.debug(
                         "Skipping receive thread start (%s): %s is already running.",
                         name,
@@ -295,17 +299,17 @@ class BLEReceiveLifecycleCoordinator:
                             "Replacing stale pending receive-thread start reference for %s: worker is no longer alive.",
                             getattr(existing, "name", repr(existing)),
                         )
-                        iface._receiveThread = None
+                        self._session.receive_thread = None
                         existing = None
-                        iface._receive_start_pending = False
-                        iface._receive_start_pending_since = None
+                        self._session.receive_start_pending = False
+                        self._session.receive_start_pending_since = None
                     else:
                         pending_since = getattr(
                             iface, "_receive_start_pending_since", None
                         )
                         now = time.monotonic()
                         if not isinstance(pending_since, (float, int)):
-                            iface._receive_start_pending_since = now
+                            self._session.receive_start_pending_since = now
                             pending_age = 0.0
                         else:
                             pending_age = now - float(pending_since)
@@ -321,25 +325,25 @@ class BLEReceiveLifecycleCoordinator:
                             existing.name,
                             pending_age,
                         )
-                        iface._receive_start_pending = False
-                        iface._receive_start_pending_since = None
+                        self._session.receive_start_pending = False
+                        self._session.receive_start_pending_since = None
                 else:
                     if existing_ident is not None:
                         logger.debug(
                             "Replacing dead receive thread reference for %s before restart.",
                             getattr(existing, "name", repr(existing)),
                         )
-                        iface._receiveThread = None
+                        self._session.receive_thread = None
                         existing = None
-                        iface._receive_start_pending = False
-                        iface._receive_start_pending_since = None
+                        self._session.receive_start_pending = False
+                        self._session.receive_start_pending_since = None
                     elif not self._is_thread_start_failure_confirmed(existing):
                         pending_since = getattr(
                             iface, "_receive_start_pending_since", None
                         )
                         if not isinstance(pending_since, (float, int)):
-                            iface._receive_start_pending_since = time.monotonic()
-                        iface._receive_start_pending = True
+                            self._session.receive_start_pending_since = time.monotonic()
+                        self._session.receive_start_pending = True
                         self._schedule_deferred_receive_restart(
                             existing_thread=existing,
                             name=name,
@@ -352,12 +356,12 @@ class BLEReceiveLifecycleCoordinator:
                             existing.name,
                         )
                         return None, None
-                    iface._receive_start_pending = False
-                    iface._receive_start_pending_since = None
+                    self._session.receive_start_pending = False
+                    self._session.receive_start_pending_since = None
             if deferred_current_thread is None:
                 expected_existing = existing
                 recovery_attempts_before_start = (
-                    iface._receive_recovery_attempts if reset_recovery else None
+                    self._session.receive_recovery_attempts if reset_recovery else None
                 )
         if deferred_current_thread_waiting:
             if schedule_deferred_restart_for is not None:
@@ -379,10 +383,10 @@ class BLEReceiveLifecycleCoordinator:
             name=name,
             daemon=True,
         )
-        with iface._state_lock:
-            if iface._closed or not iface._want_receive:
+        with self._session.lock:
+            if self._session.closed or not self._session.want_receive:
                 return None, None
-            if iface._receiveThread is not expected_existing:
+            if self._session.receive_thread is not expected_existing:
                 logger.debug(
                     "Skipping receive thread publish (%s): receive thread reference changed concurrently.",
                     name,
@@ -392,16 +396,16 @@ class BLEReceiveLifecycleCoordinator:
                 expected_existing is not None
                 and _thread_start_probe(expected_existing)[1]
             ):
-                iface._receive_start_pending = False
-                iface._receive_start_pending_since = None
+                self._session.receive_start_pending = False
+                self._session.receive_start_pending_since = None
                 logger.debug(
                     "Skipping receive thread start (%s): existing thread became active while staging replacement.",
                     name,
                 )
                 return None, None
-            iface._receiveThread = thread
-            iface._receive_start_pending = True
-            iface._receive_start_pending_since = time.monotonic()
+            self._session.receive_thread = thread
+            self._session.receive_start_pending = True
+            self._session.receive_start_pending_since = time.monotonic()
             return thread, recovery_attempts_before_start
 
     def _create_and_start_receive_thread(
@@ -411,29 +415,28 @@ class BLEReceiveLifecycleCoordinator:
         start_runtime_thread: Callable[[ThreadLike], None],
     ) -> bool:
         """Start staged receive thread and clear stale reference on failure."""
-        iface = self._iface
-        with iface._state_lock:
-            if iface._receiveThread is not thread:
+        with self._session.lock:
+            if self._session.receive_thread is not thread:
                 return False
-            if iface._closed or not iface._want_receive:
+            if self._session.closed or not self._session.want_receive:
                 return False
         try:
             start_runtime_thread(thread)
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receiveThread = None
-                    iface._receive_start_pending = False
-                    iface._receive_start_pending_since = None
+            with self._session.lock:
+                if self._session.receive_thread is thread:
+                    self._session.receive_thread = None
+                    self._session.receive_start_pending = False
+                    self._session.receive_start_pending_since = None
             raise
         except (
             Exception
         ):  # noqa: BLE001 - start failure must clear stale thread reference
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receiveThread = None
-                    iface._receive_start_pending = False
-                    iface._receive_start_pending_since = None
+            with self._session.lock:
+                if self._session.receive_thread is thread:
+                    self._session.receive_thread = None
+                    self._session.receive_start_pending = False
+                    self._session.receive_start_pending_since = None
             raise
         return True
 
@@ -448,30 +451,30 @@ class BLEReceiveLifecycleCoordinator:
         iface = self._iface
         _, thread_is_alive = _thread_start_probe(thread)
         if thread_is_alive:
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receive_start_pending = False
-                    iface._receive_start_pending_since = None
+            with self._session.lock:
+                if self._session.receive_thread is thread:
+                    self._session.receive_start_pending = False
+                    self._session.receive_start_pending_since = None
             return True
         start_failure_confirmed = self._is_thread_start_failure_confirmed(thread)
 
         if start_failure_confirmed:
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receiveThread = None
-                    iface._receive_start_pending = False
-                    iface._receive_start_pending_since = None
+            with self._session.lock:
+                if self._session.receive_thread is thread:
+                    self._session.receive_thread = None
+                    self._session.receive_start_pending = False
+                    self._session.receive_start_pending_since = None
             logger.debug(
                 "Receive thread %s did not start; cleared stale thread reference.",
                 name,
             )
         else:
-            with iface._state_lock:
-                if iface._receiveThread is thread:
-                    iface._receive_start_pending = True
+            with self._session.lock:
+                if self._session.receive_thread is thread:
+                    self._session.receive_start_pending = True
                     pending_since = getattr(iface, "_receive_start_pending_since", None)
                     if not isinstance(pending_since, (float, int)):
-                        iface._receive_start_pending_since = time.monotonic()
+                        self._session.receive_start_pending_since = time.monotonic()
             logger.debug(
                 "Receive thread %s start probe inconclusive; keeping thread reference.",
                 name,
@@ -492,16 +495,15 @@ class BLEReceiveLifecycleCoordinator:
         recovery_attempts_before_start: int | None,
     ) -> None:
         """Reset recovery attempts after successful start when still applicable."""
-        iface = self._iface
         if recovery_attempts_before_start is None:
             return
-        with iface._state_lock:
+        with self._session.lock:
             if (
-                iface._receiveThread is thread
-                and iface._receive_recovery_attempts == recovery_attempts_before_start
+                self._session.receive_thread is thread
+                and self._session.receive_recovery_attempts == recovery_attempts_before_start
                 and _thread_start_probe(thread)[1]
             ):
-                iface._receive_recovery_attempts = 0
+                self._session.receive_recovery_attempts = 0
 
     def start_receive_thread(
         self,

@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakDBusError, BleakError, BleakGATTProtocolError
 
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     ERROR_READING_BLE,
@@ -65,7 +67,9 @@ class BLEReceiveRecoveryController:
         Per-thread recursion guard storage for interface receive-hook overrides.
     """
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(
+        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+    ) -> None:
         """Bind receive/recovery helpers to a specific interface instance.
 
         Parameters
@@ -79,6 +83,7 @@ class BLEReceiveRecoveryController:
             Initializes bound controller state.
         """
         self._iface = iface
+        self._session = _session_state_for(iface, session_state)
         self._dispatching_iface_receive_hooks = threading.local()
 
     def _dispatching_hooks(self) -> set[str]:
@@ -271,8 +276,7 @@ class BLEReceiveRecoveryController:
                     )
                 else:
                     return result if isinstance(result, bool) else False
-        iface = self._iface
-        with iface._state_lock:
+        with self._session.lock:
             return self._is_connection_closing_locked()
 
     @staticmethod
@@ -563,7 +567,6 @@ class BLEReceiveRecoveryController:
         self, error_message: str, previous_client: BLEClient
     ) -> bool:
         """Handle read-loop disconnect logic for the bound interface."""
-        iface = self._iface
         override_handle_read_loop_disconnect = (
             self._resolve_iface_receive_hook_override("_handle_read_loop_disconnect")
         )
@@ -585,7 +588,7 @@ class BLEReceiveRecoveryController:
             f"read_loop: {error_message}",
             client=previous_client,
         )
-        iface._read_retry_count = 0
+        self._session.read_retry_count = 0
         if not should_continue:
             self._set_receive_wanted(want_receive=False)
         return should_continue
@@ -593,7 +596,7 @@ class BLEReceiveRecoveryController:
     def _should_poll_without_notify(self) -> bool:
         """Return whether fallback polling is allowed without notify callbacks."""
         iface = self._iface
-        with iface._state_lock:
+        with self._session.lock:
             notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
             is_unconfigured_member = getattr(
                 iface, "_is_unconfigured_mock_member", None
@@ -708,7 +711,7 @@ class BLEReceiveRecoveryController:
     def _snapshot_client_state(self) -> tuple[BLEClient | None, bool, bool, bool]:
         """Snapshot client and gating flags needed by the read loop."""
         iface = self._iface
-        with iface._state_lock:
+        with self._session.lock:
             client = iface.client
             state_is_connecting = getattr(iface._state_manager, "is_connecting", None)
             if callable(state_is_connecting) and not _is_unconfigured_mock_callable(
@@ -763,7 +766,7 @@ class BLEReceiveRecoveryController:
                     is_connecting = legacy_is_connecting
                 else:
                     is_connecting = False
-            publish_pending = iface._client_publish_pending
+            publish_pending = self._session.client_publish_pending
             is_closing = self._is_connection_closing_locked()
         return client, is_connecting, publish_pending, is_closing
 
@@ -820,19 +823,18 @@ class BLEReceiveRecoveryController:
 
     def _reset_recovery_after_stability(self) -> None:
         """Reset recovery-attempt counter after sustained stable reads."""
-        iface = self._iface
         now = time.monotonic()
-        with iface._state_lock:
+        with self._session.lock:
             if (
-                iface._receive_recovery_attempts > 0
-                and now - iface._last_recovery_time
+                self._session.receive_recovery_attempts > 0
+                and now - self._session.last_recovery_time
                 >= RECEIVE_RECOVERY_STABILITY_RESET_SEC
             ):
                 logger.debug(
                     "Resetting receive recovery attempts after %.1fs of stability.",
-                    now - iface._last_recovery_time,
+                    now - self._session.last_recovery_time,
                 )
-                iface._receive_recovery_attempts = 0
+                self._session.receive_recovery_attempts = 0
 
     def _read_and_handle_payload(
         self,
@@ -847,17 +849,17 @@ class BLEReceiveRecoveryController:
             retry_on_empty=not poll_without_notify,
         )
         if not payload:
-            iface._read_retry_count = 0
+            self._session.read_retry_count = 0
             return False
         logger.debug("FROMRADIO read: %s", payload.hex())
         try:
             iface._handle_from_radio(payload)
         except DecodeError as exc:
             logger.warning("Failed to parse FromRadio packet, discarding: %s", exc)
-            iface._read_retry_count = 0
+            self._session.read_retry_count = 0
             return True
         self._reset_recovery_after_stability()
-        iface._read_retry_count = 0
+        self._session.read_retry_count = 0
         return True
 
     def _handle_payload_read(
@@ -977,7 +979,7 @@ class BLEReceiveRecoveryController:
         iface = self._iface
         if self._is_connection_closing():
             return
-        with iface._state_lock:
+        with self._session.lock:
             current_client = iface.client
         should_continue = self._handle_disconnect(
             disconnect_reason,
@@ -987,10 +989,10 @@ class BLEReceiveRecoveryController:
             self._set_receive_wanted(want_receive=False)
             return
         now = time.monotonic()
-        with iface._state_lock:
-            iface._receive_recovery_attempts += 1
-            attempts = iface._receive_recovery_attempts
-            last_recovery = iface._last_recovery_time
+        with self._session.lock:
+            self._session.receive_recovery_attempts += 1
+            attempts = self._session.receive_recovery_attempts
+            last_recovery = self._session.last_recovery_time
         logger.debug(
             "BLE receive recovery attempt scheduled: attempts=%d last_recovery_time=%.3f",
             attempts,
@@ -1029,10 +1031,10 @@ class BLEReceiveRecoveryController:
                     "BLE receive recovery backoff wait elapsed; retrying restart (attempt %d)",
                     attempts,
                 )
-        with iface._state_lock:
-            iface._last_recovery_time = time.monotonic()
-            updated_last_recovery_time = iface._last_recovery_time
-        iface._read_retry_count = 0
+        with self._session.lock:
+            self._session.last_recovery_time = time.monotonic()
+            updated_last_recovery_time = self._session.last_recovery_time
+        self._session.read_retry_count = 0
         logger.debug(
             "BLE receive recovery timestamp updated: attempts=%d last_recovery_time=%.3f",
             attempts,
@@ -1085,7 +1087,7 @@ class BLEReceiveRecoveryController:
         for attempt in range(max_retries + 1):
             payload = client.read_gatt_char(FROMRADIO_UUID, timeout=read_timeout)
             if payload:
-                iface._suppressed_empty_read_warnings = 0
+                self._session.suppressed_empty_read_warnings = 0
                 return payload
             if attempt < max_retries:
                 _sleep(iface._retry_policy_get_delay(iface._empty_read_policy, attempt))
@@ -1105,17 +1107,17 @@ class BLEReceiveRecoveryController:
             override_handle_transient_read_error(error)
             return
         transient_policy = iface._transient_read_policy
-        if iface._retry_policy_should_retry(transient_policy, iface._read_retry_count):
-            attempt_index = iface._read_retry_count
-            iface._read_retry_count += 1
+        if iface._retry_policy_should_retry(transient_policy, self._session.read_retry_count):
+            attempt_index = self._session.read_retry_count
+            self._session.read_retry_count += 1
             logger.debug(
                 "Transient BLE read error, retrying (%d/%d)",
-                iface._read_retry_count,
+                self._session.read_retry_count,
                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
             )
             _sleep(iface._retry_policy_get_delay(transient_policy, attempt_index))
             return
-        iface._read_retry_count = 0
+        self._session.read_retry_count = 0
         raise iface.BLEError(ERROR_READING_BLE) from error
 
     def log_empty_read_warning(self) -> None:
@@ -1135,8 +1137,8 @@ class BLEReceiveRecoveryController:
             if _is_unconfigured_mock_member(raw_notify_enabled)
             else bool(raw_notify_enabled)
         )
-        if now - iface._last_empty_read_warning >= cooldown:
-            suppressed = iface._suppressed_empty_read_warnings
+        if now - self._session.last_empty_read_warning >= cooldown:
+            suppressed = self._session.suppressed_empty_read_warnings
             message = f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}"
             if suppressed:
                 message = (
@@ -1150,14 +1152,14 @@ class BLEReceiveRecoveryController:
                     "%s (polling mode without FROMNUM notifications)",
                     message,
                 )
-            iface._last_empty_read_warning = now
-            iface._suppressed_empty_read_warnings = 0
+            self._session.last_empty_read_warning = now
+            self._session.suppressed_empty_read_warnings = 0
             return
 
-        iface._suppressed_empty_read_warnings += 1
+        self._session.suppressed_empty_read_warnings += 1
         logger.debug(
             "Suppressed repeated empty BLE read warning (%d within %.0fs window)",
-            iface._suppressed_empty_read_warnings,
+            self._session.suppressed_empty_read_warnings,
             cooldown,
         )
 

@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
 
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
     READ_TRIGGER_EVENT,
     RECONNECTED_EVENT,
@@ -37,10 +39,13 @@ CLOSE_THREAD_START_PROBE_DELAY_SEC = 0.001
 class BLEDisconnectLifecycleCoordinator:
     """Own disconnect orchestration and reconnect scheduling behavior."""
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(
+        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+    ) -> None:
         """Bind disconnect orchestration ownership to a specific interface."""
         self._iface = iface
-        self._state_access = _LifecycleStateAccess(iface)
+        self._session = _session_state_for(iface, session_state)
+        self._state_access = _LifecycleStateAccess(getattr(iface, "_state_manager", iface))
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
 
@@ -52,10 +57,10 @@ class BLEDisconnectLifecycleCoordinator:
         """Schedule background auto-reconnect work when reconnect is enabled."""
         iface = self._iface
         get_is_closing = is_closing_getter or self._state_access.is_closing
-        with iface._state_lock:
+        with self._session.lock:
             if not iface.auto_reconnect:
                 return
-            if iface._closed:
+            if self._session.closed:
                 logger.debug(
                     "Skipping auto-reconnect scheduling because interface is closed."
                 )
@@ -115,7 +120,7 @@ class BLEDisconnectLifecycleCoordinator:
     ) -> tuple[list[str], bool]:
         """Compute disconnect registry keys and reconnect scheduling intent."""
         iface = self._iface
-        should_schedule_reconnect = should_reconnect and not iface._closed
+        should_schedule_reconnect = should_reconnect and not self._session.closed
         if should_reconnect:
             if previous_client is not None:
                 previous_address = (
@@ -176,12 +181,12 @@ class BLEDisconnectLifecycleCoordinator:
             self._state_access.reset_to_disconnected
         )
         target_client = client
-        with iface._state_lock:
+        with self._session.lock:
             current_state = get_current_state()
             current_client = iface.client
-            is_closing = get_is_closing() or iface._closed
-            was_publish_pending = iface._client_publish_pending
-            was_replacement_pending = iface._client_replacement_pending
+            is_closing = get_is_closing() or self._session.closed
+            was_publish_pending = self._session.client_publish_pending
+            was_replacement_pending = self._session.client_replacement_pending
 
             if current_state == ConnectionState.CONNECTING:
                 disconnect_from_owned_client = current_client is not None and (
@@ -232,18 +237,18 @@ class BLEDisconnectLifecycleCoordinator:
                 logger.debug("Ignoring stale disconnect from %s.", source)
                 return _DisconnectPlan(early_return=True)
 
-            if iface._disconnect_notified:
+            if self._session.disconnect_notified:
                 logger.debug("Ignoring duplicate disconnect from %s.", source)
                 return _DisconnectPlan(early_return=True)
 
             previous_client = current_client
             client_at_start = current_client
-            alias_key = iface._connection_alias_key
+            alias_key = self._session.connection_alias_key
             iface.client = None
-            iface._client_publish_pending = False
-            iface._client_replacement_pending = False
-            iface._disconnect_notified = True
-            iface._connection_alias_key = None
+            self._session.client_publish_pending = False
+            self._session.client_replacement_pending = False
+            self._session.disconnect_notified = True
+            self._session.connection_alias_key = None
             if not do_transition_to_disconnected():
                 logger.error(
                     "Failed state transition to %s during disconnect target resolution (alias=%s current=%s); forcing reset.",
@@ -386,7 +391,7 @@ class BLEDisconnectLifecycleCoordinator:
             active_keys = set(
                 iface._sorted_address_keys(
                     _addr_key(active_address) if active_address else None,
-                    iface._connection_alias_key,
+                    self._session.connection_alias_key,
                 )
             )
             return (
@@ -411,7 +416,7 @@ class BLEDisconnectLifecycleCoordinator:
         clear_runtime_events = clear_events or self._thread_access.clear_events
         disconnect_keys = list(plan.disconnect_keys)
         skip_side_effects = False
-        with iface._state_lock:
+        with self._session.lock:
             active_client = iface.client
             active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
             if active_session_epoch != plan.session_epoch or (
@@ -423,7 +428,7 @@ class BLEDisconnectLifecycleCoordinator:
             stale_disconnect_keys: list[str] = []
             close_stale_client = False
             still_stale = False
-            with iface._state_lock:
+            with self._session.lock:
                 active_client = iface.client
                 active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
                 still_stale = active_session_epoch != plan.session_epoch or (
@@ -451,11 +456,11 @@ class BLEDisconnectLifecycleCoordinator:
                 return True
 
         logger.debug("BLE client %s disconnected (source: %s).", plan.address, source)
-        iface._last_disconnect_source = f"ble.{source}"
+        self._session.last_disconnect_source = f"ble.{source}"
 
         close_previous(plan.previous_client)
         stale_after_close = False
-        with iface._state_lock:
+        with self._session.lock:
             active_client = iface.client
             active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
             stale_after_close = active_session_epoch != plan.session_epoch or (
@@ -464,7 +469,7 @@ class BLEDisconnectLifecycleCoordinator:
         if stale_after_close:
             still_stale_after_close = False
             rechecked_stale_disconnect_keys_after_close: list[str] = []
-            with iface._state_lock:
+            with self._session.lock:
                 active_client = iface.client
                 active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
                 still_stale_after_close = (
@@ -532,16 +537,16 @@ class BLEDisconnectLifecycleCoordinator:
                 "Disconnect from %s skipped: another disconnect handler is active.",
                 source,
             )
-            with iface._state_lock:
+            with self._session.lock:
                 return (
-                    not iface._closed
+                    not self._session.closed
                     and not get_is_closing()
                     and (
                         iface.auto_reconnect
-                        or iface._want_receive
+                        or self._session.want_receive
                         or iface.client is not None
-                        or iface._client_publish_pending
-                        or iface._client_replacement_pending
+                        or self._session.client_publish_pending
+                        or self._session.client_replacement_pending
                     )
                 )
 
