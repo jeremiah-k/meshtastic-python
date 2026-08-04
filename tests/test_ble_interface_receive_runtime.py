@@ -357,45 +357,48 @@ def test_start_receive_thread_skips_when_interface_closed(
 ) -> None:
     """Receive thread creation should run while open and stop after close()."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
-    monkeypatch.setattr(
-        type(iface),
-        "_start_receive_thread",
-        BLEInterface._start_receive_thread,
-        raising=True,
-    )
-    create_calls: list[dict[str, object]] = []
-    thread_like = SimpleNamespace(
-        name="BLEReceivePositiveControl",
-        ident=123,
-        is_alive=lambda: True,
-    )
+    try:
+        monkeypatch.setattr(
+            type(iface),
+            "_start_receive_thread",
+            BLEInterface._start_receive_thread,
+            raising=True,
+        )
+        create_calls: list[dict[str, object]] = []
+        thread_like = SimpleNamespace(
+            name="BLEReceivePositiveControl",
+            ident=123,
+            is_alive=lambda: True,
+        )
 
-    def _create_thread(**kwargs: object) -> object:
-        create_calls.append(dict(kwargs))
-        return thread_like
+        def _create_thread(**kwargs: object) -> object:
+            create_calls.append(dict(kwargs))
+            return thread_like
 
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_create_thread",
-        _create_thread,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        iface.thread_coordinator,
-        "_start_thread",
-        lambda _thread: None,
-        raising=True,
-    )
-    with iface._state_lock:
-        iface._want_receive = True
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_create_thread",
+            _create_thread,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            iface.thread_coordinator,
+            "_start_thread",
+            lambda _thread: None,
+            raising=True,
+        )
+        with iface._state_lock:
+            iface._want_receive = True
 
-    iface._start_receive_thread(name="BLEReceiveWhileOpen")
-    assert [call["name"] for call in create_calls] == ["BLEReceiveWhileOpen"]
+        iface._start_receive_thread(name="BLEReceiveWhileOpen")
+        assert [call["name"] for call in create_calls] == ["BLEReceiveWhileOpen"]
 
-    iface.close()
-    create_calls.clear()
-    iface._start_receive_thread(name="BLEReceiveAfterClose")
-    assert create_calls == []
+        iface.close()
+        create_calls.clear()
+        iface._start_receive_thread(name="BLEReceiveAfterClose")
+        assert create_calls == []
+    finally:
+        iface.close()
 
 
 @pytest.mark.parametrize(

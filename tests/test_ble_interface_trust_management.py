@@ -721,6 +721,10 @@ def test_ble_interface_close_skips_management_gate_after_wait_timeout(
         iface._management_inflight = 1
 
     monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS",
+        0.0,
+    )
+    monkeypatch.setattr(
         iface._management_idle_condition,
         "wait",
         lambda timeout=None: False,

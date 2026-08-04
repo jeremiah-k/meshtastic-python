@@ -36,7 +36,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_concurrent_connect_and_disconnect_do_not_deadlock(
-    monkeypatch: pytest.MonkeyPatch, clear_registry: Any
+    monkeypatch: pytest.MonkeyPatch, clear_registry: None
 ) -> None:
     """Concurrent connect/disconnect should complete without deadlocking under address-lock contention.
 
@@ -453,7 +453,7 @@ def test_connect_marks_provisional_claims_before_gate_release(
 
 def test_connect_name_target_reserves_requested_and_resolved_keys(
     monkeypatch: pytest.MonkeyPatch,
-    clear_registry: Any,
+    clear_registry: None,
 ) -> None:
     """Name-based connect should reserve both alias and resolved concrete keys."""
     _ = clear_registry
