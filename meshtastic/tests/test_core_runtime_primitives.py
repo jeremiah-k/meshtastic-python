@@ -11,7 +11,7 @@ import typing
 import pytest
 
 import meshtastic
-from meshtastic import _core_constants, _protocol_runtime, _response_types
+from meshtastic import _core_constants, _protocol_runtime, _publishing, _response_types
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -170,4 +170,22 @@ def test_protocol_owner_module_does_not_import_package_root() -> None:
     """The protocol runtime should remain below the package facade."""
     assert _protocol_runtime.__file__ is not None
     path = Path(_protocol_runtime.__file__).resolve()
+    assert _meshtastic_root_references(path) == set()
+
+
+def test_public_publishing_thread_is_internal_owner_identity() -> None:
+    """Historical publishingThread should alias the internal singleton exactly."""
+    assert meshtastic.publishingThread is _publishing.publishing_thread
+
+
+def test_production_consumers_do_not_import_publishing_worker_from_package_root() -> None:
+    """Production modules should depend on the internal publishing owner directly."""
+    for path in _production_python_modules():
+        assert "publishingThread" not in _meshtastic_root_references(path), path
+
+
+def test_publishing_owner_module_does_not_import_package_root() -> None:
+    """Publishing ownership should remain below the package facade."""
+    assert _publishing.__file__ is not None
+    path = Path(_publishing.__file__).resolve()
     assert _meshtastic_root_references(path) == set()

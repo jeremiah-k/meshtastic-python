@@ -21,7 +21,7 @@ except ImportError:
 from pubsub import pub
 
 import meshtastic.node
-from meshtastic import publishingThread
+from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic._core_constants import BROADCAST_ADDR, NODELESS_WANT_CONFIG_ID
 from meshtastic._response_types import ResponseHandler
 from meshtastic.mesh_interface_runtime.flows import (
