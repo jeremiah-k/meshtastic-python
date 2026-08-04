@@ -4,12 +4,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_member,
+    _iter_declared_callables,
+    _iter_declared_members,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.ports import _BLEStateManagerPort
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_member,
     _is_unexpected_keyword_error,
 )
 
@@ -66,8 +71,9 @@ class _OwnershipSnapshot:
 
 def _client_is_connected_compat(client: "BLEClient") -> bool:
     """Return connected-state flag from public/legacy BLEClient members."""
-    for candidate_name in ("isConnected", "is_connected", "_is_connected"):
-        candidate = _get_declared_member(client, candidate_name)
+    for candidate_name, candidate in _iter_declared_members(
+        client, "isConnected", "is_connected", "_is_connected"
+    ):
         if callable(candidate):
             try:
                 connected = candidate()
@@ -78,11 +84,10 @@ def _client_is_connected_compat(client: "BLEClient") -> bool:
                     exc_info=True,
                 )
                 continue
-            if isinstance(connected, bool):
-                return connected
-            continue
-        if isinstance(candidate, bool):
-            return candidate
+        else:
+            connected = candidate
+        if isinstance(connected, bool):
+            return connected
     raise AttributeError(CLIENT_MISSING_CONNECTED_MSG)
 
 
@@ -91,195 +96,154 @@ class _LifecycleStateAccess:
 
     def __init__(self, target: _BLEStateManagerPort | object) -> None:
         """Bind compatibility access to a state manager or legacy interface."""
-        self._state_manager = getattr(target, "_state_manager", target)
+        self._state_manager = _get_declared_member(target, "_state_manager", target)
+
+    def _read_typed(
+        self,
+        expected_type: type[object],
+        *names: str,
+    ) -> object:
+        """Read a typed value from public/legacy members in precedence order."""
+        for member_name, candidate in _iter_declared_members(
+            self._state_manager, *names
+        ):
+            if callable(candidate):
+                try:
+                    result = candidate()
+                except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                    logger.debug(
+                        "Error probing state manager %s()",
+                        member_name,
+                        exc_info=True,
+                    )
+                    continue
+            else:
+                result = candidate
+            if isinstance(result, expected_type):
+                return result
+        raise AttributeError
+
+    def _call_bool(
+        self, missing_message: str, names: tuple[str, ...], *args: object
+    ) -> bool:
+        """Call public/legacy state-manager members until one returns ``bool``."""
+        for member_name, candidate in _iter_declared_callables(
+            self._state_manager, *names
+        ):
+            try:
+                result = candidate(*args)
+            except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                logger.debug(
+                    "Error calling state manager %s()",
+                    member_name,
+                    exc_info=True,
+                )
+                continue
+            if isinstance(result, bool):
+                return result
+        raise AttributeError(missing_message)
 
     def is_connected(self) -> bool:
         """Return connected-state flag from public-first state-manager members."""
-        public_is_connected = _get_declared_member(self._state_manager, "is_connected")
-        if callable(public_is_connected):
-            try:
-                result = public_is_connected()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error probing state manager is_connected()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        if isinstance(
-            public_is_connected, bool
-        ):
-            return public_is_connected
-        legacy_is_connected = _get_declared_member(self._state_manager, "_is_connected")
-        if callable(legacy_is_connected):
-            try:
-                result = legacy_is_connected()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error probing state manager _is_connected()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        if isinstance(
-            legacy_is_connected, bool
-        ):
-            return legacy_is_connected
-        raise AttributeError(STATE_MANAGER_MISSING_CONNECTED_MSG)
+        try:
+            return cast(bool, self._read_typed(bool, "is_connected", "_is_connected"))
+        except AttributeError as exc:
+            raise AttributeError(STATE_MANAGER_MISSING_CONNECTED_MSG) from exc
 
     def current_state(self) -> ConnectionState:
         """Return current connection state from public-first state-manager members."""
-        public_state = _get_declared_member(self._state_manager, "current_state")
-        if callable(public_state):
-            try:
-                result = public_state()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error probing state manager current_state()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, ConnectionState):
-                    return result
-        if isinstance(
-            public_state, ConnectionState
-        ):
-            return public_state
-        legacy_state = _get_declared_member(self._state_manager, "_current_state")
-        if callable(legacy_state):
-            try:
-                result = legacy_state()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error probing state manager _current_state()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, ConnectionState):
-                    return result
-        if isinstance(
-            legacy_state, ConnectionState
-        ):
-            return legacy_state
-        raise AttributeError(STATE_MANAGER_MISSING_CURRENT_STATE_MSG)
+        try:
+            return cast(
+                ConnectionState,
+                self._read_typed(ConnectionState, "current_state", "_current_state"),
+            )
+        except AttributeError as exc:
+            raise AttributeError(STATE_MANAGER_MISSING_CURRENT_STATE_MSG) from exc
 
     def transition_to(self, new_state: ConnectionState) -> bool:
         """Transition state manager using public-first compatibility dispatch."""
-        public_transition = _get_declared_member(self._state_manager, "transition_to")
-        if callable(public_transition):
-            try:
-                result = public_transition(new_state)
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error calling state manager transition_to()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        legacy_transition = _get_declared_member(self._state_manager, "_transition_to")
-        if callable(legacy_transition):
-            try:
-                result = legacy_transition(new_state)
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error calling state manager _transition_to()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        raise AttributeError(STATE_MANAGER_MISSING_TRANSITION_MSG)
+        return self._call_bool(
+            STATE_MANAGER_MISSING_TRANSITION_MSG,
+            ("transition_to", "_transition_to"),
+            new_state,
+        )
 
     def reset_to_disconnected(self) -> bool:
         """Reset state manager to disconnected using public-first dispatch."""
-        public_reset = getattr(
-            self._state_manager, "reset_to_disconnected", None
+        return self._call_bool(
+            STATE_MANAGER_MISSING_RESET_MSG,
+            ("reset_to_disconnected", "_reset_to_disconnected"),
         )
-        if callable(public_reset):
-            try:
-                result = public_reset()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error calling state manager reset_to_disconnected()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        legacy_reset = getattr(
-            self._state_manager, "_reset_to_disconnected", None
-        )
-        if callable(legacy_reset):
-            try:
-                result = legacy_reset()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error calling state manager _reset_to_disconnected()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        raise AttributeError(STATE_MANAGER_MISSING_RESET_MSG)
 
     def is_closing(self) -> bool:
         """Return closing-state flag from public-first state-manager members."""
-        public_is_closing = _get_declared_member(self._state_manager, "is_closing")
-        if callable(public_is_closing):
-            try:
-                result = public_is_closing()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error probing state manager is_closing()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        if isinstance(
-            public_is_closing, bool
-        ):
-            return public_is_closing
-        legacy_is_closing = _get_declared_member(self._state_manager, "_is_closing")
-        if callable(legacy_is_closing):
-            try:
-                result = legacy_is_closing()
-            except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
-                    "Error probing state manager _is_closing()",
-                    exc_info=True,
-                )
-            else:
-                if isinstance(result, bool):
-                    return result
-        if isinstance(
-            legacy_is_closing, bool
-        ):
-            return legacy_is_closing
-        # Deliberate graceful-degradation asymmetry: close/shutdown paths should
-        # not raise when optional state-manager hooks are absent.
-        return False
+        try:
+            return cast(bool, self._read_typed(bool, "is_closing", "_is_closing"))
+        except AttributeError:
+            # Close/shutdown paths deliberately degrade when optional state hooks
+            # are absent on legacy or partial collaborators.
+            return False
 
     def client_is_connected(self, client: "BLEClient") -> bool:
-        """Return connected-state flag from public/legacy BLEClient members."""
+        """Return client connectivity using compatibility member probing."""
         return _client_is_connected_compat(client)
 
 
 class _LifecycleThreadAccess:
     """Thread/event compatibility access owned by lifecycle collaborators.
 
-    Contract: critical operations (`create_thread`, `start_thread`) raise
-    `AttributeError` when required hooks are missing; non-critical operations
-    (`join_thread`, `set_event`, `clear_events`, `wake_waiting_threads`) log and
-    return to keep shutdown/recovery paths best effort.
+    Critical operations (thread creation/start) propagate collaborator failures.
+    Shutdown/recovery operations are best effort and fall through from current
+    to legacy hook names before logging a missing-hook message.
     """
 
     def __init__(self, iface: "BLEInterface") -> None:
         """Bind thread-coordinator access to a specific interface."""
         self._iface = iface
+
+    def _coordinator(self) -> object | None:
+        """Return the explicitly declared thread coordinator when available."""
+        return _get_declared_member(self._iface, "thread_coordinator")
+
+    def _required_callable(
+        self, public_name: str, legacy_name: str
+    ) -> Callable[..., object]:
+        """Resolve a required current/legacy coordinator callable."""
+        coordinator = self._coordinator()
+        resolved = _resolve_declared_callable(
+            coordinator, public_name, legacy_name
+        )
+        if resolved is None:
+            raise AttributeError(
+                THREAD_COORDINATOR_MISSING_FMT % (public_name, legacy_name)
+            )
+        return cast(Callable[..., object], resolved)
+
+    def _best_effort_call(
+        self,
+        public_name: str,
+        legacy_name: str,
+        *args: object,
+        **kwargs: object,
+    ) -> bool:
+        """Try current/legacy coordinator hooks, logging and falling through."""
+        coordinator = self._coordinator()
+        if coordinator is None:
+            return False
+        for member_name, hook in _iter_declared_callables(
+            coordinator, public_name, legacy_name
+        ):
+            try:
+                hook(*args, **kwargs)
+            except Exception:  # noqa: BLE001 - non-critical lifecycle hook
+                logger.debug(
+                    "Error in thread_coordinator.%s",
+                    member_name,
+                    exc_info=True,
+                )
+                continue
+            return True
+        return False
 
     def create_thread(
         self,
@@ -290,91 +254,31 @@ class _LifecycleThreadAccess:
         args: tuple[object, ...] = (),
         kwargs: dict[str, object] | None = None,
     ) -> ThreadLike:
-        """Create thread via public-first coordinator compatibility dispatch."""
-        coordinator = _get_declared_member(self._iface, "thread_coordinator")
-        if coordinator is None:
-            raise AttributeError(
-                THREAD_COORDINATOR_MISSING_FMT % ("create_thread", "_create_thread")
-            )
-        create_thread = _get_declared_member(coordinator, "create_thread")
-        if callable(create_thread):
-            return cast(
-                ThreadLike,
-                create_thread(
-                    target=target,
-                    name=name,
-                    daemon=daemon,
-                    args=args,
-                    kwargs=kwargs,
-                ),
-            )
-        legacy_create_thread = _get_declared_member(coordinator, "_create_thread")
-        if callable(legacy_create_thread):
-            return cast(
-                ThreadLike,
-                legacy_create_thread(
-                    target=target,
-                    name=name,
-                    daemon=daemon,
-                    args=args,
-                    kwargs=kwargs,
-                ),
-            )
-        raise AttributeError(
-            THREAD_COORDINATOR_MISSING_FMT % ("create_thread", "_create_thread")
+        """Create a thread through the current/legacy coordinator contract."""
+        create_thread = self._required_callable("create_thread", "_create_thread")
+        return cast(
+            ThreadLike,
+            create_thread(
+                target=target,
+                name=name,
+                daemon=daemon,
+                args=args,
+                kwargs=kwargs,
+            ),
         )
 
     def start_thread(self, thread: object) -> None:
-        """Start thread via public-first coordinator compatibility dispatch."""
-        coordinator = _get_declared_member(self._iface, "thread_coordinator")
-        if coordinator is None:
-            raise AttributeError(
-                THREAD_COORDINATOR_MISSING_FMT % ("start_thread", "_start_thread")
-            )
-        start_thread = _get_declared_member(coordinator, "start_thread")
-        if callable(start_thread):
-            start_thread(thread)
-            return
-        legacy_start_thread = _get_declared_member(coordinator, "_start_thread")
-        if callable(legacy_start_thread):
-            legacy_start_thread(thread)
-            return
-        raise AttributeError(
-            THREAD_COORDINATOR_MISSING_FMT % ("start_thread", "_start_thread")
-        )
+        """Start a thread through the current/legacy coordinator contract."""
+        self._required_callable("start_thread", "_start_thread")(thread)
 
     def join_thread(self, thread: object, *, timeout: float | None) -> None:
-        """Join thread via public-first coordinator compatibility dispatch."""
-        coordinator = _get_declared_member(self._iface, "thread_coordinator")
-        if coordinator is None:
-            logger.debug("Thread coordinator is missing join_thread/_join_thread")
-        else:
-            join_thread = _get_declared_member(coordinator, "join_thread")
-            if callable(join_thread):
-                try:
-                    join_thread(thread, timeout=timeout)
-                except Exception:  # noqa: BLE001 - non-critical join stays best effort
-                    logger.debug(
-                        "Error in thread_coordinator.join_thread for %r",
-                        thread,
-                        exc_info=True,
-                    )
-                else:
-                    return
-            legacy_join_thread = _get_declared_member(coordinator, "_join_thread")
-            if callable(legacy_join_thread):
-                try:
-                    legacy_join_thread(thread, timeout=timeout)
-                except Exception:  # noqa: BLE001 - non-critical join stays best effort
-                    logger.debug(
-                        "Error in thread_coordinator._join_thread for %r",
-                        thread,
-                        exc_info=True,
-                    )
-                else:
-                    return
-        thread_join = getattr(thread, "join", None)
-        if callable(thread_join):
+        """Join a thread through coordinator hooks with direct-thread fallback."""
+        if self._best_effort_call(
+            "join_thread", "_join_thread", thread, timeout=timeout
+        ):
+            return
+        thread_join = _resolve_declared_callable(thread, "join")
+        if thread_join is not None:
             try:
                 thread_join(timeout=timeout)
             except Exception:  # noqa: BLE001 - non-critical join stays best effort
@@ -383,132 +287,47 @@ class _LifecycleThreadAccess:
         logger.debug("Thread coordinator is missing join_thread/_join_thread")
 
     def set_event(self, event_name: str) -> None:
-        """Set event via public-first coordinator compatibility dispatch."""
-        coordinator = _get_declared_member(self._iface, "thread_coordinator")
-        if coordinator is None:
+        """Set a coordinator event using current/legacy hooks."""
+        if not self._best_effort_call("set_event", "_set_event", event_name):
             logger.debug("Thread coordinator is missing set_event/_set_event")
-            return
-        set_event = _get_declared_member(coordinator, "set_event")
-        if callable(set_event):
-            try:
-                set_event(event_name)
-            except Exception:  # noqa: BLE001 - non-critical event set stays best effort
-                logger.debug(
-                    "Error in thread_coordinator.set_event for %s",
-                    event_name,
-                    exc_info=True,
-                )
-            else:
-                return
-        legacy_set_event = _get_declared_member(coordinator, "_set_event")
-        if callable(legacy_set_event):
-            try:
-                legacy_set_event(event_name)
-            except Exception:  # noqa: BLE001 - non-critical event set stays best effort
-                logger.debug(
-                    "Error in thread_coordinator._set_event for %s",
-                    event_name,
-                    exc_info=True,
-                )
-            else:
-                return
-        logger.debug("Thread coordinator is missing set_event/_set_event")
 
     def clear_events(self, *event_names: str) -> None:
-        """Clear events via public-first coordinator compatibility dispatch."""
-        coordinator = _get_declared_member(self._iface, "thread_coordinator")
-        if coordinator is None:
+        """Clear coordinator events using current/legacy hooks."""
+        if not self._best_effort_call("clear_events", "_clear_events", *event_names):
             logger.debug("Thread coordinator is missing clear_events/_clear_events")
-            return
-        clear_events = _get_declared_member(coordinator, "clear_events")
-        if callable(clear_events):
-            try:
-                clear_events(*event_names)
-            except Exception:  # noqa: BLE001 - non-critical clear stays best effort
-                logger.debug(
-                    "Error in thread_coordinator.clear_events for %s",
-                    event_names,
-                    exc_info=True,
-                )
-            else:
-                return
-        legacy_clear_events = _get_declared_member(coordinator, "_clear_events")
-        if callable(legacy_clear_events):
-            try:
-                legacy_clear_events(*event_names)
-            except Exception:  # noqa: BLE001 - non-critical clear stays best effort
-                logger.debug(
-                    "Error in thread_coordinator._clear_events for %s",
-                    event_names,
-                    exc_info=True,
-                )
-            else:
-                return
-        logger.debug("Thread coordinator is missing clear_events/_clear_events")
 
     def wake_waiting_threads(self, *event_names: str) -> None:
-        """Wake waiters via public-first coordinator compatibility dispatch."""
-        coordinator = _get_declared_member(self._iface, "thread_coordinator")
+        """Wake waiters with bulk hooks, then fall back to per-event hooks."""
+        coordinator = self._coordinator()
         if coordinator is None:
             logger.debug(
                 "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
             )
             return
-        wake_waiting_threads = _get_declared_member(coordinator, "wake_waiting_threads")
-        if callable(wake_waiting_threads):
-            try:
-                wake_waiting_threads(*event_names)
-                return
-            except Exception:  # noqa: BLE001 - non-critical wake stays best effort
-                logger.debug(
-                    "Error in thread_coordinator.wake_waiting_threads for %s",
-                    event_names,
-                    exc_info=True,
-                )
-        legacy_wake_waiting_threads = getattr(
-            coordinator, "_wake_waiting_threads", None
-        )
-        if callable(legacy_wake_waiting_threads):
-            try:
-                legacy_wake_waiting_threads(*event_names)
-                return
-            except Exception:  # noqa: BLE001 - non-critical wake stays best effort
-                logger.debug(
-                    "Error in thread_coordinator._wake_waiting_threads for %s",
-                    event_names,
-                    exc_info=True,
-                )
-        set_event = _get_declared_member(coordinator, "set_event")
-        if callable(set_event):
-            failed_events: list[str] = []
-            for event_name in event_names:
+        if self._best_effort_call(
+            "wake_waiting_threads", "_wake_waiting_threads", *event_names
+        ):
+            return
+
+        remaining = list(event_names)
+        for member_name, set_event in _iter_declared_callables(
+            coordinator, "set_event", "_set_event"
+        ):
+            failed: list[str] = []
+            for event_name in remaining:
                 try:
                     set_event(event_name)
                 except Exception:  # noqa: BLE001 - non-critical wake stays best effort
                     logger.debug(
-                        "Error in thread_coordinator.set_event fallback for %s",
+                        "Error in thread_coordinator.%s fallback for %s",
+                        member_name,
                         event_name,
                         exc_info=True,
                     )
-                    failed_events.append(event_name)
-            if not failed_events:
+                    failed.append(event_name)
+            if not failed:
                 return
-            event_names = tuple(failed_events)
-        legacy_set_event = _get_declared_member(coordinator, "_set_event")
-        if callable(legacy_set_event):
-            failed_events = []
-            for event_name in event_names:
-                try:
-                    legacy_set_event(event_name)
-                except Exception:  # noqa: BLE001 - non-critical wake stays best effort
-                    logger.debug(
-                        "Error in thread_coordinator._set_event fallback for %s",
-                        event_name,
-                        exc_info=True,
-                    )
-                    failed_events.append(event_name)
-            if not failed_events:
-                return
+            remaining = failed
         logger.debug(
             "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
         )
@@ -526,13 +345,8 @@ class _LifecycleErrorAccess:
     ) -> Callable[..., object] | None:
         """Resolve an error-handler hook with public-first fallback behavior."""
         error_handler = _get_declared_member(self._iface, "error_handler")
-        hook = _get_declared_member(error_handler, public_name)
-        if callable(hook):
-            return cast(Callable[..., object], hook)
-        legacy_hook = _get_declared_member(error_handler, legacy_name)
-        if callable(legacy_hook):
-            return cast(Callable[..., object], legacy_hook)
-        return None
+        hook = _resolve_declared_callable(error_handler, public_name, legacy_name)
+        return cast(Callable[..., object], hook) if hook is not None else None
 
     def safe_cleanup(self, cleanup: Callable[[], object], operation_name: str) -> None:
         """Run cleanup via resolved error-handler hook with best-effort fallback."""

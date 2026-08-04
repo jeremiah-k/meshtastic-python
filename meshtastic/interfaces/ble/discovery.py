@@ -13,6 +13,7 @@ from typing import Any, Callable, Protocol, cast, runtime_checkable
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     SERVICE_UUID,
@@ -20,7 +21,6 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_callable,
     _call_factory_with_optional_kwarg,
     _is_unexpected_keyword_error,
     resolve_ble_module,

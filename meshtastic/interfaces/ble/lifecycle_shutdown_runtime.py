@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
@@ -27,7 +28,6 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_callable,
     _is_unexpected_keyword_error,
     _thread_start_probe,
 )

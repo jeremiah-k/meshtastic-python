@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakDBusError, BleakError, BleakGATTProtocolError
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_member)
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.client import BLEClient
@@ -26,7 +27,6 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_member,
     _sleep,
 )
 

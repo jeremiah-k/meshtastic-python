@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING
 
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_member,
+    _iter_declared_members,
+)
 from meshtastic.interfaces.ble.constants import RECONNECTED_EVENT, logger
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleErrorAccess,
@@ -56,7 +60,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         """
         self._iface = iface
         self._session = _session_state_for(iface, session_state)
-        self._state_access = _LifecycleStateAccess(getattr(iface, "_state_manager", iface))
+        self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
 
@@ -89,7 +93,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             close/shutdown state.
         """
         iface = self._iface
-        state_manager = getattr(iface, "_state_manager", None)
+        state_manager = _get_declared_member(iface, "_state_manager")
         if is_closing_getter is not None:
             is_closing_result = is_closing_getter()
             is_closing = (
@@ -151,20 +155,16 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         bool
             First authoritative bool probe result; otherwise ``False``.
         """
-        if owner is None:
-            return False
-        for member_name in member_names:
-            member = getattr(owner, member_name, None)
+        for _member_name, member in _iter_declared_members(owner, *member_names):
             if callable(member):
                 try:
                     result = member()
                 except Exception:  # noqa: BLE001 - probe remains best effort
                     continue
-                if isinstance(result, bool):
-                    return result
-                continue
-            if isinstance(member, bool):
-                return member
+            else:
+                result = member
+            if isinstance(result, bool):
+                return result
         return False
 
     def _get_connected_client_status(
@@ -268,7 +268,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             Always returns ``None``.
         """
         iface = self._iface
-        coordinator = getattr(iface, "thread_coordinator", None)
+        coordinator = _get_declared_member(iface, "thread_coordinator")
         with self._session.lock:
             should_emit_reconnected = bool(self._session.prior_publish_was_reconnect)
             self._session.prior_publish_was_reconnect = False

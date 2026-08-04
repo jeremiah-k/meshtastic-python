@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from bleak.exc import BleakDBusError, BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED,
@@ -22,7 +23,6 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_callable,
     _is_unexpected_keyword_error,
     _sleep,
 )

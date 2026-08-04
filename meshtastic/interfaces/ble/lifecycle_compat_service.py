@@ -7,6 +7,11 @@ from typing import TYPE_CHECKING, NoReturn, cast
 
 from bleak import BleakClient as BleakRootClient
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+    _resolve_declared_member,
+)
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
@@ -31,7 +36,6 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 
-from meshtastic.interfaces.ble.utils import _get_declared_callable
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -80,8 +84,7 @@ class BLELifecycleService:
             "start_receive_thread",
         )
         for method_name in required_methods:
-            method = getattr(candidate, method_name, None)
-            if not callable(method):
+            if _get_declared_callable(candidate, method_name) is None:
                 return False
         return True
 
@@ -91,8 +94,7 @@ class BLELifecycleService:
         expected_method: str,
     ) -> bool:
         """Return whether candidate exposes a specific receive-lifecycle method."""
-        method = getattr(candidate, expected_method, None)
-        return callable(method)
+        return _get_declared_callable(candidate, expected_method) is not None
 
     @staticmethod
     def _receive_lifecycle_coordinator(
@@ -132,26 +134,26 @@ class BLELifecycleService:
                 )
             )
 
-        get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
-        if callable(get_lifecycle_controller):
+        get_lifecycle_controller = _get_declared_callable(iface, "_get_lifecycle_controller")
+        if get_lifecycle_controller is not None:
             lifecycle_controller = get_lifecycle_controller()
             if lifecycle_controller is not None:
-                for attr_name in (
+                receive_coordinator = _resolve_declared_member(
+                    lifecycle_controller,
                     "_receive",
                     "receive_lifecycle_coordinator",
                     "_receive_lifecycle_coordinator",
+                )
+                if (
+                    receive_coordinator is not None
+                    and _matches_receive_candidate(receive_coordinator)
                 ):
-                    receive_coordinator = getattr(lifecycle_controller, attr_name, None)
-                    if (
-                        receive_coordinator is not None
-                        and _matches_receive_candidate(receive_coordinator)
-                    ):
-                        return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
+                    return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
                 if _matches_receive_candidate(lifecycle_controller):
                     return cast(BLEReceiveLifecycleCoordinator, lifecycle_controller)
 
         get_or_create = _get_declared_callable(iface, "_get_or_create_collaborator")
-        if callable(get_or_create):
+        if get_or_create is not None:
             try:
                 signature(get_or_create).bind(
                     "_ble_receive_lifecycle_coordinator",
@@ -200,7 +202,7 @@ class BLELifecycleService:
     ) -> BLEShutdownLifecycleCoordinator:
         """Return the shared shutdown lifecycle coordinator when available."""
         get_or_create = _get_declared_callable(iface, "_get_or_create_collaborator")
-        if callable(get_or_create):
+        if get_or_create is not None:
             try:
                 signature(get_or_create).bind(
                     "_ble_shutdown_lifecycle_coordinator",
@@ -920,7 +922,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).is_connected()
+        return _LifecycleStateAccess(_get_declared_member(iface, "_state_manager", iface)).is_connected()
 
     @staticmethod
     def _state_manager_current_state(iface: "BLEInterface") -> ConnectionState:
@@ -945,7 +947,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).current_state()
+        return _LifecycleStateAccess(_get_declared_member(iface, "_state_manager", iface)).current_state()
 
     @staticmethod
     def _state_manager_transition_to(
@@ -974,7 +976,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).transition_to(new_state)
+        return _LifecycleStateAccess(_get_declared_member(iface, "_state_manager", iface)).transition_to(new_state)
 
     @staticmethod
     def _state_manager_reset_to_disconnected(iface: "BLEInterface") -> bool:
@@ -999,7 +1001,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).reset_to_disconnected()
+        return _LifecycleStateAccess(_get_declared_member(iface, "_state_manager", iface)).reset_to_disconnected()
 
     @staticmethod
     def _state_manager_is_closing(iface: "BLEInterface") -> bool:
@@ -1020,7 +1022,7 @@ class BLELifecycleService:
         -----
         Dispatches through ``_LifecycleStateAccess``.
         """
-        return _LifecycleStateAccess(getattr(iface, "_state_manager", iface)).is_closing()
+        return _LifecycleStateAccess(_get_declared_member(iface, "_state_manager", iface)).is_closing()
 
     @staticmethod
     def _client_is_connected(client: "BLEClient") -> bool:

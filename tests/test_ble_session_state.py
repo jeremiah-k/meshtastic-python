@@ -69,3 +69,27 @@ def test_lifecycle_controller_shares_owned_session_state() -> None:
     assert controller._disconnect._session is iface._session_state
     assert controller._connection_ownership._session is iface._session_state
     assert controller._shutdown._session is iface._session_state
+
+
+def test_lazy_session_state_ignores_dynamically_synthesized_lock() -> None:
+    """Lazy state creation should only reuse an explicitly declared state lock."""
+
+    class DynamicStateManager:
+        def __getattr__(self, _name: str) -> object:
+            return self
+
+        def acquire(self) -> None:
+            raise AssertionError("dynamic lock should not be used")
+
+        def release(self) -> None:
+            raise AssertionError("dynamic lock should not be used")
+
+    iface = BLEInterface.__new__(BLEInterface)
+    dynamic_manager = DynamicStateManager()
+    iface._state_manager = dynamic_manager
+
+    state = iface._get_session_state()
+
+    assert state.lock is not dynamic_manager
+    assert state.lock.acquire(blocking=False)
+    state.lock.release()

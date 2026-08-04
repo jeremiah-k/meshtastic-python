@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 from bleak.exc import BleakError
 
-from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.utils import (
+from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_member,
 )
+from meshtastic.interfaces.ble.client import BLEClient
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.coordination import ThreadCoordinator
@@ -139,7 +139,7 @@ class BLEReceiveRecoveryService:
         """
         controller_cls = BLEReceiveRecoveryService._controller_class()
         get_controller = _get_declared_callable(iface, "_get_receive_recovery_controller")
-        if callable(get_controller):
+        if get_controller is not None:
             with contextlib.suppress(
                 Exception
             ):  # noqa: BLE001 - shim resolution stays best effort
@@ -225,7 +225,7 @@ class BLEReceiveRecoveryService:
             otherwise ``False``.
         """
         with iface._state_lock:
-            notify_enabled = getattr(iface, "_fromnum_notify_enabled", False)
+            notify_enabled = _get_declared_member(iface, "_fromnum_notify_enabled", False)
             return not (notify_enabled if isinstance(notify_enabled, bool) else False)
 
     @staticmethod

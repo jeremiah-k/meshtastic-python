@@ -19,6 +19,7 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable, _get_declared_member)
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_OPERATION_FAILED,
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
@@ -49,8 +50,6 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_callable,
-    _get_declared_member,
     _is_unexpected_keyword_error,
     _safe_execute_through_adapter,
     with_timeout,

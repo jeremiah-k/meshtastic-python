@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
 from meshtastic.interfaces.ble.lifecycle_compat_service import (
     _ORIGINAL_FINALIZE_CONNECTION_GATES,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
@@ -28,7 +29,6 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
 )
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import _get_declared_callable
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient

@@ -7,6 +7,7 @@ import sys as sys_stdlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable, _get_declared_member)
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
@@ -18,10 +19,6 @@ from meshtastic.interfaces.ble.management_runtime import (
     BLEManagementCommandHandler,
     T,
     _ManagementStartContext,
-)
-from meshtastic.interfaces.ble.utils import (
-    _get_declared_callable,
-    _get_declared_member,
 )
 
 if TYPE_CHECKING:
@@ -40,8 +37,8 @@ class BLEManagementCommandsService:
         """Return whether ``candidate`` exposes usable shim entrypoint(s).
 
         When ``expected_method`` is provided, this requires that specific
-        delegated method to be callable/non-mock. Otherwise, it returns ``True``
-        as soon as it finds any callable/non-mock method from the compatibility
+        delegated method to be explicitly declared callable. Otherwise, it returns ``True``
+        as soon as it finds any explicitly declared callable method from the compatibility
         entrypoint list.
         """
         if expected_method is not None:

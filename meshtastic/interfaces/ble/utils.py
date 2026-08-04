@@ -8,6 +8,10 @@ from collections.abc import Awaitable, Callable
 from types import ModuleType
 from typing import Any, TypeVar, cast
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+)
 from meshtastic.interfaces.ble.constants import logger
 
 T = TypeVar("T")
@@ -15,43 +19,6 @@ _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 _POSITIONAL_ONLY_KEYWORD_FRAGMENT = (
     "positional-only arguments passed as keyword arguments"
 )
-
-
-_MISSING = object()
-
-
-def _get_declared_member(
-    target: object | None,
-    name: str,
-    default: T | None = None,
-) -> object | T | None:
-    """Return an explicitly declared member without invoking dynamic fallback.
-
-    ``MagicMock`` and other dynamic proxies synthesize arbitrary attributes via
-    ``__getattr__``. BLE compatibility dispatch should only consider members
-    that an object explicitly defines on the instance or its type. Using
-    ``inspect.getattr_static`` enforces that rule without making production code
-    aware of any test-double implementation.
-    """
-    if target is None:
-        return default
-    try:
-        inspect.getattr_static(target, name)
-    except AttributeError:
-        return default
-    try:
-        return getattr(target, name)
-    except AttributeError:
-        return default
-
-
-def _get_declared_callable(
-    target: object | None,
-    name: str,
-) -> Callable[..., Any] | None:
-    """Return an explicitly declared callable member when available."""
-    candidate = _get_declared_member(target, name)
-    return cast(Callable[..., Any], candidate) if callable(candidate) else None
 
 
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:

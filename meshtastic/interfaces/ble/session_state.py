@@ -5,6 +5,7 @@ import threading
 from threading import RLock
 from typing import TYPE_CHECKING, Any, cast
 
+from meshtastic.interfaces.ble.compat_adapter import _get_declared_member
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 
@@ -73,7 +74,7 @@ class _BLESessionStateCompatMixin:
         if isinstance(state, BLESessionState):
             return state
         state_manager = self.__dict__.get("_state_manager")
-        lock = getattr(state_manager, "lock", None)
+        lock = _get_declared_member(state_manager, "lock")
         if not hasattr(lock, "acquire") or not hasattr(lock, "release"):
             lock = threading.RLock()
         state = BLESessionState(lock=lock)
@@ -319,7 +320,7 @@ def _session_state_for(
     """Return explicit/owned session state or a legacy interface adapter."""
     if explicit is not None:
         return explicit
-    instance_dict = getattr(iface, "__dict__", {})
+    instance_dict = _get_declared_member(iface, "__dict__", {})
     state = instance_dict.get("_session_state") if isinstance(instance_dict, dict) else None
     if isinstance(state, BLESessionState):
         return state

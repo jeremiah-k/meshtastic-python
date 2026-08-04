@@ -42,6 +42,10 @@ from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+)
 from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic.interfaces.ble import constants as _ble_constants
 from meshtastic.interfaces.ble.client import BLEClient
@@ -122,8 +126,6 @@ from meshtastic.interfaces.ble.session_state import (
     _BLESessionStateCompatMixin,
 )
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_callable,
-    _get_declared_member,
     _is_unexpected_keyword_error,
     _sleep,
     sanitize_address,
@@ -448,12 +450,16 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             True to request the receive loop to run, False to stop it.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        set_receive_wanted = _get_declared_callable(lifecycle_controller, "_set_receive_wanted")
+        set_receive_wanted = _get_declared_callable(
+            lifecycle_controller, "_set_receive_wanted"
+        )
         if set_receive_wanted is None:
-            set_receive_wanted = getattr(
+            legacy_set_receive_wanted = getattr(
                 lifecycle_controller, "set_receive_wanted", None
             )
-        if callable(set_receive_wanted):
+            if callable(legacy_set_receive_wanted):
+                set_receive_wanted = legacy_set_receive_wanted
+        if set_receive_wanted is not None:
             set_receive_wanted(want_receive=want_receive)
 
     def _should_run_receive_loop(self) -> bool:

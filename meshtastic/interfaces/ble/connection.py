@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, cast
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable, _get_declared_member)
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     AWAIT_TIMEOUT_BUFFER_SECONDS,
@@ -41,8 +42,6 @@ from meshtastic.interfaces.ble.errors import (
 )
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _get_declared_callable,
-    _get_declared_member,
     _is_unexpected_keyword_error,
     _thread_start_probe,
     sanitize_address,
