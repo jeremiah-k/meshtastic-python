@@ -96,7 +96,7 @@ MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
 
 # COMPAT_STABLE_SHIM: private contact helpers remain importable from meshtastic.node.
 _MAX_CONTACT_URL_PAYLOAD = contact_runtime.MAX_CONTACT_URL_PAYLOAD
-_decode_node_bytes_field = contact_runtime.decode_node_bytes_field
+_decode_node_bytes_field = contact_runtime._decode_node_bytes_field
 
 
 class Node:  # pylint: disable=too-many-instance-attributes

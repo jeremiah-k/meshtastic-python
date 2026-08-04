@@ -8,7 +8,7 @@ import pytest
 import meshtastic.node as node_module
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import Node
-from meshtastic.node_runtime.contact_runtime import decode_node_bytes_field
+from meshtastic.node_runtime.contact_runtime import _decode_node_bytes_field
 from meshtastic.protobuf import admin_pb2
 
 
@@ -58,7 +58,7 @@ def test_decode_node_bytes_field_preserves_raw_bytes() -> None:
     """Raw NodeDB bytes should pass through without base64 decoding."""
     raw = b"\x00\x01contact"
 
-    assert decode_node_bytes_field(raw) is raw
+    assert _decode_node_bytes_field(raw) is raw
 
 
 @pytest.mark.unit

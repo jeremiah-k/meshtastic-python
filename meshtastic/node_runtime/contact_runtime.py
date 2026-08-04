@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 MAX_CONTACT_URL_PAYLOAD = 4096
 
 
-def decode_node_bytes_field(value: str | bytes) -> bytes:
+def _decode_node_bytes_field(value: str | bytes) -> bytes:
     """Decode a NodeDB byte field stored as base64 text or raw bytes.
 
     Parameters
@@ -70,7 +70,7 @@ class _NodeContactRuntime:
         *,
         should_ignore: bool = False,
         manually_verified: bool = False,
-        decode_bytes_field: Callable[[str | bytes], bytes] = decode_node_bytes_field,
+        decode_bytes_field: Callable[[str | bytes], bytes] = _decode_node_bytes_field,
     ) -> str:
         """Build a shareable contact URL from the current NodeDB snapshot."""
         node_num = toNodeNum(node_id)
