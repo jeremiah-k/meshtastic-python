@@ -15,6 +15,8 @@ from types import ModuleType
 
 import pytest
 
+import meshtastic.util as util_module
+
 
 @pytest.mark.unit
 class TestCoreModuleImports:
@@ -236,13 +238,19 @@ class TestTopLevelModuleImports:
 class TestBackwardCompatAliases:
     """Test backward compatibility aliases that are maintained but may warn."""
 
-    def test_util_dotdict_deprecated_import(self) -> None:
+    def test_util_dotdict_deprecated_import(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that dotdict can still be imported from meshtastic.util.
 
         This is a COMPAT_DEPRECATE alias that emits a warn-once DeprecationWarning.
         The canonical name is DotDict.
         """
         import warnings  # pylint: disable=import-outside-toplevel
+
+        # Warn-once state is process-wide. Isolate this test from whichever
+        # compatibility test happened to instantiate the alias first.
+        monkeypatch.setattr(util_module, "_warned_deprecations", set())
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
