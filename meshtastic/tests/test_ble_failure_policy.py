@@ -11,6 +11,9 @@ from meshtastic.interfaces.ble.failure_policy import (
     _BLEFailureDisposition,
     _log_ble_failure,
 )
+from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
+    BLEConnectionOwnershipLifecycleCoordinator,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -44,3 +47,29 @@ def test_failure_dispositions_are_stable_diagnostic_values() -> None:
         "retryable",
         "terminal",
     }
+
+
+def test_ownership_probe_failure_logs_compatibility_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed preferred ownership probe should log before legacy fallback."""
+
+    class _Owner:
+        def current_probe(self) -> bool:
+            raise RuntimeError("probe failed")
+
+        legacy_probe = True
+
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        result = BLEConnectionOwnershipLifecycleCoordinator._probe_bool_member(
+            _Owner(), "current_probe", "legacy_probe"
+        )
+
+    assert result is True
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "Error probing ownership member current_probe()"
+    )
+    assert record.ble_failure_disposition == "compatibility_fallback"  # type: ignore[attr-defined]
+    assert record.exc_info is not None

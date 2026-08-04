@@ -738,6 +738,13 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     }
 
     class UnderscoreDiscoveryClient:
+        def __getattr__(self, name: str) -> object:
+            if name == "discover":
+                return lambda **_kwargs: (_ for _ in ()).throw(
+                    AssertionError("dynamic discover hook must be ignored")
+                )
+            raise AttributeError(name)
+
         @staticmethod
         def _discover(**_kwargs: object) -> dict[str, Any]:
             return discover_result
@@ -780,6 +787,42 @@ def test_discovery_manager_prefers_configured_underscore_discover_when_public_mi
     devices = manager.discover_devices(address=None)
     assert devices == [filtered_device]
     client._discover.assert_called_once()
+
+
+def test_discovery_manager_ignores_synthesized_await_bridge() -> None:
+    """Declared legacy await bridges should beat synthesized preferred members."""
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+
+    async def _discover() -> dict[str, Any]:
+        return discover_result
+
+    class _LegacyAwaitBridgeClient:
+        def __getattr__(self, name: str) -> object:
+            if name == "async_await":
+                return lambda _awaitable: (_ for _ in ()).throw(
+                    AssertionError("dynamic await bridge must be ignored")
+                )
+            raise AttributeError(name)
+
+        @staticmethod
+        def discover(**_kwargs: object) -> Any:
+            return _discover()
+
+        @staticmethod
+        def _async_await(awaitable: Any) -> dict[str, Any]:
+            return asyncio.run(awaitable)
+
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: _LegacyAwaitBridgeClient()
+    )
+
+    assert manager._discover_devices(address=None) == [filtered_device]
 
 
 def test_discovery_manager_discards_cached_client_on_non_kwarg_typeerror(

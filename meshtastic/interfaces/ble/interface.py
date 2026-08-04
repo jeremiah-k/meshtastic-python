@@ -44,7 +44,9 @@ from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
-    _get_declared_member,
+    _get_declared_lock,
+    _iter_declared_members,
+    _resolve_declared_callable,
 )
 from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic.interfaces.ble import constants as _ble_constants
@@ -87,6 +89,10 @@ from meshtastic.interfaces.ble.discovery import (
     DiscoveryManager,
     _looks_like_ble_address,
     _parse_scan_response,
+)
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
 )
 from meshtastic.interfaces.ble.errors import (
     BLEConnectionSuppressedError,
@@ -450,15 +456,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             True to request the receive loop to run, False to stop it.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        set_receive_wanted = _get_declared_callable(
-            lifecycle_controller, "_set_receive_wanted"
+        set_receive_wanted = _resolve_declared_callable(
+            lifecycle_controller, "_set_receive_wanted", "set_receive_wanted"
         )
-        if set_receive_wanted is None:
-            legacy_set_receive_wanted = getattr(
-                lifecycle_controller, "set_receive_wanted", None
-            )
-            if callable(legacy_set_receive_wanted):
-                set_receive_wanted = legacy_set_receive_wanted
         if set_receive_wanted is not None:
             set_receive_wanted(want_receive=want_receive)
 
@@ -471,14 +471,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             `True` if the receive loop is desired and the interface is not closed, `False` otherwise.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        should_run_receive_loop = getattr(
-            lifecycle_controller, "_should_run_receive_loop", None
+        should_run_receive_loop = _resolve_declared_callable(
+            lifecycle_controller,
+            "_should_run_receive_loop",
+            "should_run_receive_loop",
         )
-        if should_run_receive_loop is None:
-            should_run_receive_loop = getattr(
-                lifecycle_controller, "should_run_receive_loop", None
-            )
-        if callable(should_run_receive_loop):
+        if should_run_receive_loop is not None:
             result = should_run_receive_loop()
             return result if isinstance(result, bool) else False
         return False
@@ -496,14 +494,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             backoff tracking. Defaults to True.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        start_receive_thread = getattr(
-            lifecycle_controller, "_start_receive_thread", None
+        start_receive_thread = _resolve_declared_callable(
+            lifecycle_controller, "_start_receive_thread", "start_receive_thread"
         )
-        if start_receive_thread is None:
-            start_receive_thread = getattr(
-                lifecycle_controller, "start_receive_thread", None
-            )
-        if callable(start_receive_thread):
+        if start_receive_thread is not None:
             start_receive_thread(
                 name=name,
                 reset_recovery=reset_recovery,
@@ -1087,7 +1081,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> BLEClient | None:
         """Return available management client via management collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = _get_declared_member(self, "_state_lock")
+        state_lock = _get_declared_lock(self, "_state_lock")
         if state_lock is None:
             return handler.get_management_client_if_available(address)
         lock_is_owned = _get_declared_callable(state_lock, "_is_owned")
@@ -1119,7 +1113,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> BLEClient | None:
         """Return reusable target-matching management client via collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = _get_declared_member(self, "_state_lock")
+        state_lock = _get_declared_lock(self, "_state_lock")
         if state_lock is None:
             return handler.get_management_client_for_target(
                 target_address,
@@ -1205,7 +1199,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         collaborator = getattr(self, attr_name, None)
         if collaborator is not None:
             return cast(T, collaborator)
-        state_lock = _get_declared_member(self, "_state_lock")
+        state_lock = _get_declared_lock(self, "_state_lock")
         if state_lock is None:
             collaborator = getattr(self, attr_name, None)
             if collaborator is None:
@@ -1579,18 +1573,15 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> object:
         """Dispatch a callable through public/legacy/fallback compatibility names."""
         kwargs = {} if kwargs is None else kwargs
-        public_member = getattr(target, public_name, None)
-        if callable(public_member):
-            return public_member(*args, **kwargs)
-        legacy_member = getattr(target, legacy_name, None)
-        if callable(legacy_member):
-            return legacy_member(*args, **kwargs)
-        if fallback_attr_name is None:
+        names = (
+            (public_name, legacy_name)
+            if fallback_attr_name is None
+            else (public_name, legacy_name, fallback_attr_name)
+        )
+        member = _resolve_declared_callable(target, *names)
+        if member is None:
             raise AttributeError(error_message)
-        fallback_member = getattr(target, fallback_attr_name, None)
-        if not callable(fallback_member):
-            raise AttributeError(error_message)
-        return fallback_member(*args, **kwargs)
+        return member(*args, **kwargs)
 
     @staticmethod
     def _compat_get_bool_member(
@@ -1602,38 +1593,26 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         error_message: str,
     ) -> bool:
         """Resolve bool members via public/legacy/fallback compatibility names."""
-        public_member = getattr(target, public_name, None)
-        if callable(public_member):
-            try:
-                resolved_public = public_member()
-            except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
-                resolved_public = None
-            if isinstance(resolved_public, bool):
-                return resolved_public
-        if isinstance(public_member, bool):
-            return public_member
-        legacy_member = getattr(target, legacy_name, None)
-        if callable(legacy_member):
-            try:
-                resolved_legacy = legacy_member()
-            except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
-                resolved_legacy = None
-            if isinstance(resolved_legacy, bool):
-                return resolved_legacy
-        if isinstance(legacy_member, bool):
-            return legacy_member
-        if fallback_attr_name is None:
-            raise AttributeError(error_message)
-        fallback_member = getattr(target, fallback_attr_name, None)
-        if callable(fallback_member):
-            try:
-                resolved_fallback = fallback_member()
-            except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
-                resolved_fallback = None
-            if isinstance(resolved_fallback, bool):
-                return resolved_fallback
-        if isinstance(fallback_member, bool):
-            return fallback_member
+        names = (
+            (public_name, legacy_name)
+            if fallback_attr_name is None
+            else (public_name, legacy_name, fallback_attr_name)
+        )
+        for member_name, member in _iter_declared_members(target, *names):
+            if callable(member):
+                try:
+                    resolved = member()
+                except Exception:  # noqa: BLE001 - probe dispatch stays best effort
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "Error probing BLE compatibility member %s()",
+                        member_name,
+                    )
+                    continue
+            else:
+                resolved = member
+            if isinstance(resolved, bool):
+                return resolved
         raise AttributeError(error_message)
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:

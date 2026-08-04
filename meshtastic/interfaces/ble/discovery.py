@@ -13,7 +13,10 @@ from typing import Any, Callable, Protocol, cast, runtime_checkable
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     SERVICE_UUID,
@@ -652,12 +655,8 @@ class DiscoveryManager:
             if not target_identifier:
                 discover_kwargs["service_uuids"] = [SERVICE_UUID]
 
-            discover = _get_declared_callable(client, "discover")
-            if not callable(discover):
-                # Compatibility for minimal test doubles that still expose
-                # underscore-prefixed discover helpers.
-                discover = getattr(client, "_discover", None)
-            if not callable(discover):
+            discover = _resolve_declared_callable(client, "discover", "_discover")
+            if discover is None:
                 self._invalidate_cached_client_if_same(client)
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
@@ -694,10 +693,10 @@ class DiscoveryManager:
                     ["discover", "_discover"],
                 ) from exc
             if inspect.isawaitable(response):
-                await_bridge = getattr(client, "async_await", None)
-                if not callable(await_bridge):
-                    await_bridge = getattr(client, "_async_await", None)
-                if callable(await_bridge):
+                await_bridge = _resolve_declared_callable(
+                    client, "async_await", "_async_await"
+                )
+                if await_bridge is not None:
                     response = await_bridge(response)
                 if inspect.isawaitable(response):
                     if inspect.iscoroutine(response):

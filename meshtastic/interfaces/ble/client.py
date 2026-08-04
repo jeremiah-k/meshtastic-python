@@ -611,7 +611,7 @@ class BLEClient:
 
         def operation() -> Coroutine[Any, Any, object]:
             bleak_client = self._require_bleak_client(not_initialized_error)
-            method = getattr(bleak_client, method_name, None)
+            method = _get_declared_member(bleak_client, method_name)
             if not callable(method):
                 raise self.BLEError(unsupported_error)
             return cast(Coroutine[Any, Any, object], method(**(call_kwargs or {})))

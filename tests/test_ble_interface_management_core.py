@@ -897,3 +897,25 @@ def test_dummy_client_management_rejects_cleared_backend(
     else:
         with pytest.raises(BLEClient.BLEError, match=re.escape(expected_error)):
             client.unpair()
+
+
+def test_ble_client_management_ignores_synthesized_optional_method() -> None:
+    """Optional management operations should require a declared backend method."""
+
+    class _DynamicBleakClient:
+        def __getattr__(self, _name: str) -> object:
+            async def _dynamic(**_kwargs: object) -> None:
+                return None
+
+            return _dynamic
+
+    client = BLEClient.__new__(BLEClient)
+    client.bleak_client = _DynamicBleakClient()  # type: ignore[assignment]
+
+    with pytest.raises(BLEClient.BLEError, match="pair"):
+        client._run_optional_management_method(  # noqa: SLF001
+            method_name="pair",
+            await_timeout=1.0,
+            not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+            unsupported_error="pair unsupported",
+        )

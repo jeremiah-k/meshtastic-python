@@ -12,6 +12,8 @@ import inspect
 from collections.abc import Callable, Iterator
 from typing import Any, TypeVar, cast
 
+from meshtastic.interfaces.ble.ports import _LockPort
+
 T = TypeVar("T")
 _MISSING = object()
 
@@ -68,7 +70,6 @@ def _get_declared_callable(
     return cast(Callable[..., Any], candidate) if callable(candidate) else None
 
 
-
 def _iter_declared_members(
     target: object | None,
     *names: str,
@@ -88,6 +89,7 @@ def _iter_declared_callables(
     for name, candidate in _iter_declared_members(target, *names):
         if callable(candidate):
             yield name, cast(Callable[..., Any], candidate)
+
 
 def _resolve_declared_member(
     target: object | None,
@@ -110,10 +112,8 @@ def _resolve_declared_member(
     object | T | None
         First declared non-``None`` member or ``default``.
     """
-    for name in names:
-        candidate = _get_declared_member(target, name, _MISSING)
-        if candidate is not _MISSING and candidate is not None:
-            return candidate
+    for _name, candidate in _iter_declared_members(target, *names):
+        return candidate
     return default
 
 
@@ -122,8 +122,22 @@ def _resolve_declared_callable(
     *names: str,
 ) -> Callable[..., Any] | None:
     """Resolve the first explicitly declared callable in precedence order."""
-    for name in names:
-        candidate = _get_declared_callable(target, name)
-        if candidate is not None:
-            return candidate
+    for _name, candidate in _iter_declared_callables(target, *names):
+        return candidate
     return None
+
+
+def _get_declared_lock(
+    target: object | None,
+    name: str,
+) -> _LockPort | None:
+    """Return a declared context-manager lock member when available."""
+    candidate = _get_declared_member(target, name)
+    if candidate is None:
+        return None
+    if (
+        _get_declared_callable(candidate, "__enter__") is None
+        or _get_declared_callable(candidate, "__exit__") is None
+    ):
+        return None
+    return cast(_LockPort, candidate)

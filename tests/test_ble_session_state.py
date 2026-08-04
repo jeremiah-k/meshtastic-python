@@ -1,8 +1,11 @@
 """Tests for owned BLE session-state compatibility views."""
 
+import threading
+from types import SimpleNamespace
+
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.interfaces.ble.lifecycle_controller_runtime import BLELifecycleController
-from meshtastic.interfaces.ble.session_state import BLESessionState
+from meshtastic.interfaces.ble.session_state import BLESessionState, _session_state_for
 from meshtastic.interfaces.ble.state import BLEStateManager
 
 
@@ -93,3 +96,80 @@ def test_lazy_session_state_ignores_dynamically_synthesized_lock() -> None:
     assert state.lock is not dynamic_manager
     assert state.lock.acquire(blocking=False)
     state.lock.release()
+
+
+def test_legacy_session_state_adapter_implements_reset_contract() -> None:
+    """Legacy interfaces should satisfy the complete session-state reset port."""
+    legacy = SimpleNamespace(
+        _state_lock=threading.RLock(),
+        _read_retry_count=5,
+        _last_empty_read_warning=7.5,
+        _suppressed_empty_read_warnings=3,
+        _receive_recovery_attempts=4,
+        _last_recovery_time=12.0,
+    )
+
+    state = _session_state_for(legacy)
+    assert _session_state_for(legacy) is state
+    assert state.lock is state.lock
+
+    state.reset_read_retry_count()
+    assert legacy._read_retry_count == 0
+
+    legacy._read_retry_count = 2
+    state.reset_receive_retry_state()
+    assert legacy._read_retry_count == 0
+    assert legacy._last_empty_read_warning == 0.0
+    assert legacy._suppressed_empty_read_warnings == 0
+
+    state.reset_recovery_state()
+    assert legacy._receive_recovery_attempts == 0
+    assert legacy._last_recovery_time == 0.0
+
+
+def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
+    """Explicit session state must govern stale/pending receive-start decisions."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
+    )
+
+    state_manager = BLEStateManager()
+    state = BLESessionState(lock=state_manager.lock)
+    pending_thread = SimpleNamespace(name="PendingReceive", ident=None, is_alive=lambda: False)
+    state.receive_thread = pending_thread
+    state.receive_start_pending = True
+    state.receive_start_pending_since = 10**12  # safely in the future for this probe
+
+    # Deliberately contradictory legacy fields prove the coordinator reads the
+    # explicit session owner rather than compatibility fields on the interface.
+    iface = SimpleNamespace(
+        _receive_start_pending=False,
+        _receive_start_pending_since=None,
+    )
+    coordinator = BLEReceiveLifecycleCoordinator(iface, session_state=state)  # type: ignore[arg-type]
+
+    def _unexpected_create(**_kwargs: object) -> object:
+        raise AssertionError("pending session state should suppress thread creation")
+
+    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
+        name="PendingReceive",
+        reset_recovery=False,
+        create_runtime_thread=_unexpected_create,  # type: ignore[arg-type]
+    )
+
+    assert created is None
+    assert recovery_attempts is None
+    assert state.receive_start_pending is True
+
+
+def test_receive_controller_reads_ever_connected_from_explicit_session() -> None:
+    """Receive reconnect detection should use the shared session owner."""
+    from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+
+    state_manager = BLEStateManager()
+    state = BLESessionState(lock=state_manager.lock, ever_connected=True)
+    iface = SimpleNamespace(_ever_connected=False)
+
+    controller = BLEReceiveRecoveryController(iface, session_state=state)  # type: ignore[arg-type]
+
+    assert controller._has_ever_connected_session() is True  # noqa: SLF001

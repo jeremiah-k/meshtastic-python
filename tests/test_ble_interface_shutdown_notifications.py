@@ -511,12 +511,10 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_miss
     client = _ClientWithCallbacks()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
     errors: list[str] = []
-    safe_execute = MagicMock()
-    legacy_safe_execute = MagicMock()
     try:
         iface.error_handler = SimpleNamespace(
-            safe_execute=safe_execute,
-            _safe_execute=legacy_safe_execute,
+            safe_execute=None,
+            _safe_execute=None,
         )
         monkeypatch.setattr(
             iface,

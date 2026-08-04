@@ -8,6 +8,7 @@ import pytest
 
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
+    _get_declared_lock,
     _get_declared_member,
     _iter_declared_callables,
     _iter_declared_members,
@@ -113,3 +114,17 @@ def test_iter_callables_preserves_names_for_failure_reporting() -> None:
         ("first", first),
         ("third", third),
     ]
+
+
+def test_declared_lock_accepts_real_context_manager_and_rejects_dynamic_only() -> None:
+    """Lock resolution should require an explicitly declared context-manager contract."""
+    import threading
+
+    lock = threading.RLock()
+    assert _get_declared_lock(SimpleNamespace(lock=lock), "lock") is lock
+
+    class _DynamicLockOwner:
+        def __getattr__(self, _name: str) -> object:
+            return _DynamicProxy()
+
+    assert _get_declared_lock(_DynamicLockOwner(), "lock") is None

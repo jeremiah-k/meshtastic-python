@@ -107,7 +107,7 @@ class BLEManagementCommandsService:
             ble_client_factory is None and connected_elsewhere is None
         )
         if use_iface_owned_handler:
-            get_handler: object | None = None
+            get_handler: Callable[..., object] | None = None
             try:
                 get_handler = _get_declared_callable(
                     iface, "_get_management_command_handler"

@@ -9,6 +9,7 @@ from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
+    _get_declared_lock,
     _get_declared_member,
 )
 from meshtastic.interfaces.ble.client import BLEClient
@@ -160,7 +161,7 @@ class BLEReceiveRecoveryService:
         if cached_controller is not None:
             return cached_controller
         controller = controller_cls(iface)
-        state_lock = _get_declared_member(iface, "_state_lock")
+        state_lock = _get_declared_lock(iface, "_state_lock")
         if state_lock is None:
             with contextlib.suppress(
                 Exception

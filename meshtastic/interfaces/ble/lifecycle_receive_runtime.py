@@ -231,16 +231,14 @@ class BLEReceiveLifecycleCoordinator:
                 )
                 return None, None
             existing = self._session.receive_thread
-            existing_start_pending = bool(
-                getattr(iface, "_receive_start_pending", False)
-            )
+            existing_start_pending = self._session.receive_start_pending
             existing_ident: int | None = None
             existing_is_alive = False
             if existing is not None:
                 existing_ident, existing_is_alive = _thread_start_probe(existing)
             if self._is_current_receive_thread(existing):
                 now = time.monotonic()
-                pending_since = getattr(iface, "_receive_start_pending_since", None)
+                pending_since = self._session.receive_start_pending_since
                 if not existing_start_pending or not isinstance(
                     pending_since, (float, int)
                 ):
@@ -304,9 +302,7 @@ class BLEReceiveLifecycleCoordinator:
                         self._session.receive_start_pending = False
                         self._session.receive_start_pending_since = None
                     else:
-                        pending_since = getattr(
-                            iface, "_receive_start_pending_since", None
-                        )
+                        pending_since = self._session.receive_start_pending_since
                         now = time.monotonic()
                         if not isinstance(pending_since, (float, int)):
                             self._session.receive_start_pending_since = now
@@ -338,9 +334,7 @@ class BLEReceiveLifecycleCoordinator:
                         self._session.receive_start_pending = False
                         self._session.receive_start_pending_since = None
                     elif not self._is_thread_start_failure_confirmed(existing):
-                        pending_since = getattr(
-                            iface, "_receive_start_pending_since", None
-                        )
+                        pending_since = self._session.receive_start_pending_since
                         if not isinstance(pending_since, (float, int)):
                             self._session.receive_start_pending_since = time.monotonic()
                         self._session.receive_start_pending = True
@@ -448,7 +442,6 @@ class BLEReceiveLifecycleCoordinator:
         reset_recovery: bool,
     ) -> bool:
         """Probe receive-thread startup and clear stale references on failure."""
-        iface = self._iface
         _, thread_is_alive = _thread_start_probe(thread)
         if thread_is_alive:
             with self._session.lock:
@@ -472,7 +465,7 @@ class BLEReceiveLifecycleCoordinator:
             with self._session.lock:
                 if self._session.receive_thread is thread:
                     self._session.receive_start_pending = True
-                    pending_since = getattr(iface, "_receive_start_pending_since", None)
+                    pending_since = self._session.receive_start_pending_since
                     if not isinstance(pending_since, (float, int)):
                         self._session.receive_start_pending_since = time.monotonic()
             logger.debug(

@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, cast
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable, _get_declared_member)
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     AWAIT_TIMEOUT_BUFFER_SECONDS,
@@ -400,17 +404,11 @@ class ClientManager:
         daemon: bool,
     ) -> ThreadLike:
         """Create thread via public API with underscore fallback for test doubles."""
-        create_thread = _get_declared_callable(self.thread_coordinator, "create_thread")
-        legacy_create_thread = _get_declared_callable(self.thread_coordinator, "_create_thread")
-        valid_create_thread = (
-            create_thread
-            if callable(create_thread)
-            else None
+        valid_create_thread = _get_declared_callable(
+            self.thread_coordinator, "create_thread"
         )
-        valid_legacy_create_thread = (
-            legacy_create_thread
-            if callable(legacy_create_thread)
-            else None
+        valid_legacy_create_thread = _get_declared_callable(
+            self.thread_coordinator, "_create_thread"
         )
         if valid_create_thread is not None:
             return cast(
@@ -438,17 +436,11 @@ class ClientManager:
 
     def _thread_start_thread(self, thread: ThreadLike) -> None:
         """Start thread via public API with underscore fallback for test doubles."""
-        start_thread = _get_declared_callable(self.thread_coordinator, "start_thread")
-        legacy_start_thread = _get_declared_callable(self.thread_coordinator, "_start_thread")
-        valid_start_thread = (
-            start_thread
-            if callable(start_thread)
-            else None
+        valid_start_thread = _get_declared_callable(
+            self.thread_coordinator, "start_thread"
         )
-        valid_legacy_start_thread = (
-            legacy_start_thread
-            if callable(legacy_start_thread)
-            else None
+        valid_legacy_start_thread = _get_declared_callable(
+            self.thread_coordinator, "_start_thread"
         )
         if valid_start_thread is not None:
             valid_start_thread(thread)
@@ -701,11 +693,9 @@ class ClientManager:
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
-        safe_cleanup_hook = _get_declared_callable(self.error_handler, "safe_cleanup")
-        if not callable(safe_cleanup_hook):
-            safe_cleanup_hook = _get_declared_callable(self.error_handler, "_safe_cleanup")
-        if not callable(safe_cleanup_hook):
-            safe_cleanup_hook = None
+        safe_cleanup_hook = _resolve_declared_callable(
+            self.error_handler, "safe_cleanup", "_safe_cleanup"
+        )
 
         try:
             if (
@@ -1914,18 +1904,12 @@ class ConnectionOrchestrator:
         AttributeError
             If no supported find-device compatibility helper exists.
         """
-        find_device = getattr(self.interface, "findDevice", None)
-        if callable(find_device):
-            return cast(BLEDevice, find_device(target_address))
-
-        legacy_find_device = getattr(self.interface, "find_device", None)
-        if callable(legacy_find_device):
-            return cast(BLEDevice, legacy_find_device(target_address))
-
-        underscore_find_device = getattr(self.interface, "_find_device", None)
-        if callable(underscore_find_device):
-            return cast(BLEDevice, underscore_find_device(target_address))
-        raise AttributeError("Interface is missing findDevice/find_device/_find_device")
+        find_device = _resolve_declared_callable(
+            self.interface, "findDevice", "find_device", "_find_device"
+        )
+        if find_device is None:
+            raise AttributeError("Interface is missing findDevice/find_device/_find_device")
+        return cast(BLEDevice, find_device(target_address))
 
     def _finalize_connection(
         self,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from threading import RLock
+from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
 
 from meshtastic.interfaces.ble.coordination import ThreadLike
@@ -10,6 +10,21 @@ from meshtastic.interfaces.ble.state import ConnectionState
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
+
+
+class _LockPort(Protocol):
+    """Context-manager contract required from the BLE lifecycle lock."""
+
+    def __enter__(self) -> object:
+        """Acquire the lock and return its context value."""
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        """Release the lock context."""
 
 
 class _BLEStateManagerPort(Protocol):
@@ -37,13 +52,13 @@ class _BLEStateManagerPort(Protocol):
 class _BLESessionStatePort(Protocol):  # pylint: disable=too-many-instance-attributes
     """Mutable lifecycle state required by BLE coordinators."""
 
-    lock: RLock
+    lock: _LockPort
     closed: bool
     disconnect_notified: bool
     client_publish_pending: bool
     connected_publish_inflight_client: BLEClient | None
     client_replacement_pending: bool
-    last_disconnect_source: str
+    last_disconnect_source: str | None
     connection_alias_key: str | None
     prior_publish_was_reconnect: bool
     last_connect_pair_override: bool | None
@@ -60,3 +75,12 @@ class _BLESessionStatePort(Protocol):  # pylint: disable=too-many-instance-attri
     receive_start_pending: bool
     receive_start_pending_since: float | None
     receive_thread: ThreadLike | None
+
+    def reset_read_retry_count(self) -> None:
+        """Reset only the transient read retry counter."""
+
+    def reset_receive_retry_state(self) -> None:
+        """Reset transient read retry and warning counters."""
+
+    def reset_recovery_state(self) -> None:
+        """Reset receive-recovery attempt bookkeeping."""

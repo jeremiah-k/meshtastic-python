@@ -69,7 +69,7 @@ class BLEShutdownLifecycleCoordinator:
         """
         self._iface = iface
         self._session = _session_state_for(iface, session_state)
-        self._state_access = _LifecycleStateAccess(getattr(iface, "_state_manager", iface))
+        self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
         self._bounded_cleanup_thread: threading.Thread | None = None

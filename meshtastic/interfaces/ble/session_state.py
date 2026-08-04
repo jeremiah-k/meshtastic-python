@@ -2,15 +2,17 @@
 
 from dataclasses import dataclass
 import threading
-from threading import RLock
 from typing import TYPE_CHECKING, Any, cast
 
-from meshtastic.interfaces.ble.compat_adapter import _get_declared_member
+from meshtastic.interfaces.ble.compat_adapter import _get_declared_lock, _get_declared_member
 from meshtastic.interfaces.ble.coordination import ThreadLike
-from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort, _LockPort
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
+
+
+_MISSING_SESSION_FIELD = object()
 
 
 @dataclass(slots=True)
@@ -26,13 +28,13 @@ class BLESessionState:  # pylint: disable=too-many-instance-attributes
     introducing nested-lock behavior.
     """
 
-    lock: RLock
+    lock: _LockPort
     closed: bool = False
     disconnect_notified: bool = False
     client_publish_pending: bool = False
     connected_publish_inflight_client: "BLEClient | None" = None
     client_replacement_pending: bool = False
-    last_disconnect_source: str = ""
+    last_disconnect_source: str | None = ""
     connection_alias_key: str | None = None
     prior_publish_was_reconnect: bool = False
     last_connect_pair_override: bool | None = None
@@ -50,16 +52,23 @@ class BLESessionState:  # pylint: disable=too-many-instance-attributes
     receive_start_pending_since: float | None = None
     receive_thread: ThreadLike | None = None
 
+    def reset_read_retry_count(self) -> None:
+        """Reset only the transient read retry counter under the session lock."""
+        with self.lock:
+            self.read_retry_count = 0
+
     def reset_receive_retry_state(self) -> None:
-        """Reset transient read retry and warning counters."""
-        self.read_retry_count = 0
-        self.last_empty_read_warning = 0.0
-        self.suppressed_empty_read_warnings = 0
+        """Reset transient read retry and warning counters under the session lock."""
+        with self.lock:
+            self.read_retry_count = 0
+            self.last_empty_read_warning = 0.0
+            self.suppressed_empty_read_warnings = 0
 
     def reset_recovery_state(self) -> None:
-        """Reset receive-recovery attempt bookkeeping."""
-        self.receive_recovery_attempts = 0
-        self.last_recovery_time = 0.0
+        """Reset receive-recovery attempt bookkeeping under the session lock."""
+        with self.lock:
+            self.receive_recovery_attempts = 0
+            self.last_recovery_time = 0.0
 
 
 class _BLESessionStateCompatMixin:
@@ -74,20 +83,20 @@ class _BLESessionStateCompatMixin:
         if isinstance(state, BLESessionState):
             return state
         state_manager = self.__dict__.get("_state_manager")
-        lock = _get_declared_member(state_manager, "lock")
-        if not hasattr(lock, "acquire") or not hasattr(lock, "release"):
-            lock = threading.RLock()
+        lock = _get_declared_lock(state_manager, "lock")
+        if lock is None:
+            lock = cast(_LockPort, threading.RLock())
         state = BLESessionState(lock=lock)
         self.__dict__["_session_state"] = state
         return state
 
     @property
-    def _state_lock(self) -> threading.RLock:
+    def _state_lock(self) -> _LockPort:
         """Compatibility view of the owned lifecycle lock."""
         return self._get_session_state().lock
 
     @_state_lock.setter
-    def _state_lock(self, value: threading.RLock) -> None:
+    def _state_lock(self, value: _LockPort) -> None:
         self._get_session_state().lock = value
 
     @property
@@ -101,6 +110,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _disconnect_notified(self) -> bool:
+        """Compatibility view of the disconnect-notified flag."""
         return self._get_session_state().disconnect_notified
 
     @_disconnect_notified.setter
@@ -109,6 +119,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _client_publish_pending(self) -> bool:
+        """Compatibility view of the client-publication pending flag."""
         return self._get_session_state().client_publish_pending
 
     @_client_publish_pending.setter
@@ -117,6 +128,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _connected_publish_inflight_client(self) -> "BLEClient | None":
+        """Compatibility view of the client currently being published."""
         return self._get_session_state().connected_publish_inflight_client
 
     @_connected_publish_inflight_client.setter
@@ -125,6 +137,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _client_replacement_pending(self) -> bool:
+        """Compatibility view of the client-replacement pending flag."""
         return self._get_session_state().client_replacement_pending
 
     @_client_replacement_pending.setter
@@ -132,15 +145,17 @@ class _BLESessionStateCompatMixin:
         self._get_session_state().client_replacement_pending = value
 
     @property
-    def _last_disconnect_source(self) -> str:
+    def _last_disconnect_source(self) -> str | None:
+        """Compatibility view of the latest disconnect source."""
         return self._get_session_state().last_disconnect_source
 
     @_last_disconnect_source.setter
-    def _last_disconnect_source(self, value: str) -> None:
+    def _last_disconnect_source(self, value: str | None) -> None:
         self._get_session_state().last_disconnect_source = value
 
     @property
     def _connection_alias_key(self) -> str | None:
+        """Compatibility view of the active connection alias key."""
         return self._get_session_state().connection_alias_key
 
     @_connection_alias_key.setter
@@ -149,6 +164,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _prior_publish_was_reconnect(self) -> bool:
+        """Compatibility view of whether the prior publication was a reconnect."""
         return self._get_session_state().prior_publish_was_reconnect
 
     @_prior_publish_was_reconnect.setter
@@ -157,6 +173,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _last_connect_pair_override(self) -> bool | None:
+        """Compatibility view of the last pairing override."""
         return self._get_session_state().last_connect_pair_override
 
     @_last_connect_pair_override.setter
@@ -165,6 +182,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _last_connect_timeout_override(self) -> float | None:
+        """Compatibility view of the last connect-timeout override."""
         return self._get_session_state().last_connect_timeout_override
 
     @_last_connect_timeout_override.setter
@@ -173,6 +191,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _publishing_thread_override(self) -> object | None:
+        """Compatibility view of the publishing-thread override."""
         return self._get_session_state().publishing_thread_override
 
     @_publishing_thread_override.setter
@@ -181,6 +200,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _ever_connected(self) -> bool:
+        """Compatibility view of whether this session has ever connected."""
         return self._get_session_state().ever_connected
 
     @_ever_connected.setter
@@ -189,6 +209,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _connection_session_epoch(self) -> int:
+        """Compatibility view of the connection-session epoch."""
         return self._get_session_state().connection_session_epoch
 
     @_connection_session_epoch.setter
@@ -197,6 +218,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _receive_recovery_attempts(self) -> int:
+        """Compatibility view of receive-recovery attempts."""
         return self._get_session_state().receive_recovery_attempts
 
     @_receive_recovery_attempts.setter
@@ -205,6 +227,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _last_recovery_time(self) -> float:
+        """Compatibility view of the last receive-recovery timestamp."""
         return self._get_session_state().last_recovery_time
 
     @_last_recovery_time.setter
@@ -213,6 +236,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _read_retry_count(self) -> int:
+        """Compatibility view of the transient read-retry count."""
         return self._get_session_state().read_retry_count
 
     @_read_retry_count.setter
@@ -221,6 +245,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _last_empty_read_warning(self) -> float:
+        """Compatibility view of the last empty-read warning timestamp."""
         return self._get_session_state().last_empty_read_warning
 
     @_last_empty_read_warning.setter
@@ -229,6 +254,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _suppressed_empty_read_warnings(self) -> int:
+        """Compatibility view of suppressed empty-read warnings."""
         return self._get_session_state().suppressed_empty_read_warnings
 
     @_suppressed_empty_read_warnings.setter
@@ -237,6 +263,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _want_receive(self) -> bool:
+        """Compatibility view of receive-loop intent."""
         return self._get_session_state().want_receive
 
     @_want_receive.setter
@@ -245,6 +272,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _receive_start_pending(self) -> bool:
+        """Compatibility view of the receive-start pending flag."""
         return self._get_session_state().receive_start_pending
 
     @_receive_start_pending.setter
@@ -253,6 +281,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _receive_start_pending_since(self) -> float | None:
+        """Compatibility view of when receive-start became pending."""
         return self._get_session_state().receive_start_pending_since
 
     @_receive_start_pending_since.setter
@@ -261,6 +290,7 @@ class _BLESessionStateCompatMixin:
 
     @property
     def _receiveThread(self) -> ThreadLike | None:  # noqa: N802 - compatibility name
+        """Compatibility view of the receive thread."""
         return self._get_session_state().receive_thread
 
     @_receiveThread.setter
@@ -269,9 +299,15 @@ class _BLESessionStateCompatMixin:
 
 
 class _LegacyBLESessionStateAdapter:
-    """Adapt historical interface-private fields to the session-state port."""
+    """Adapt historical interface-private fields to the session-state port.
 
-    __slots__ = ("_iface",)
+    Partial legacy interfaces are allowed to omit lifecycle fields that historically
+    had implicit defaults.  The adapter preserves those defaults and owns a stable
+    fallback lock when ``_state_lock`` is absent, so every session-state operation
+    still has one synchronization primitive for the adapter lifetime.
+    """
+
+    __slots__ = ("_iface", "_fallback_lock")
     _FIELD_MAP = {
         "lock": "_state_lock",
         "closed": "_closed",
@@ -297,31 +333,90 @@ class _LegacyBLESessionStateAdapter:
         "receive_start_pending_since": "_receive_start_pending_since",
         "receive_thread": "_receiveThread",
     }
+    _FIELD_DEFAULTS: dict[str, object] = {
+        "closed": False,
+        "disconnect_notified": False,
+        "client_publish_pending": False,
+        "connected_publish_inflight_client": None,
+        "client_replacement_pending": False,
+        "last_disconnect_source": "",
+        "connection_alias_key": None,
+        "prior_publish_was_reconnect": False,
+        "last_connect_pair_override": None,
+        "last_connect_timeout_override": None,
+        "publishing_thread_override": None,
+        "ever_connected": False,
+        "connection_session_epoch": 0,
+        "receive_recovery_attempts": 0,
+        "last_recovery_time": 0.0,
+        "read_retry_count": 0,
+        "last_empty_read_warning": 0.0,
+        "suppressed_empty_read_warnings": 0,
+        "want_receive": True,
+        "receive_start_pending": False,
+        "receive_start_pending_since": None,
+        "receive_thread": None,
+    }
 
     def __init__(self, iface: object) -> None:
         object.__setattr__(self, "_iface", iface)
+        lock = _get_declared_lock(iface, "_state_lock")
+        if lock is None:
+            lock = cast(_LockPort, threading.RLock())
+        object.__setattr__(self, "_fallback_lock", lock)
 
     def __getattr__(self, name: str) -> Any:
         mapped = self._FIELD_MAP.get(name)
         if mapped is None:
             raise AttributeError(name)
-        return getattr(self._iface, mapped)
+        if name == "lock":
+            return self._fallback_lock
+        value = _get_declared_member(self._iface, mapped, _MISSING_SESSION_FIELD)
+        if value is not _MISSING_SESSION_FIELD:
+            return value
+        if name in self._FIELD_DEFAULTS:
+            return self._FIELD_DEFAULTS[name]
+        raise AttributeError(name)
 
     def __setattr__(self, name: str, value: object) -> None:
         mapped = self._FIELD_MAP.get(name)
         if mapped is None:
             raise AttributeError(name)
+        if name == "lock":
+            object.__setattr__(self, "_fallback_lock", cast(_LockPort, value))
         setattr(self._iface, mapped, value)
+
+    def reset_read_retry_count(self) -> None:
+        """Reset only the legacy transient read retry counter."""
+        with self._fallback_lock:
+            self.read_retry_count = 0
+
+    def reset_receive_retry_state(self) -> None:
+        """Reset legacy transient read retry and warning counters."""
+        with self._fallback_lock:
+            self.read_retry_count = 0
+            self.last_empty_read_warning = 0.0
+            self.suppressed_empty_read_warnings = 0
+
+    def reset_recovery_state(self) -> None:
+        """Reset legacy receive-recovery bookkeeping."""
+        with self._fallback_lock:
+            self.receive_recovery_attempts = 0
+            self.last_recovery_time = 0.0
 
 
 def _session_state_for(
     iface: object, explicit: _BLESessionStatePort | None = None
 ) -> _BLESessionStatePort:
-    """Return explicit/owned session state or a legacy interface adapter."""
+    """Return explicit/owned session state or a cached legacy interface adapter."""
     if explicit is not None:
         return explicit
     instance_dict = _get_declared_member(iface, "__dict__", {})
     state = instance_dict.get("_session_state") if isinstance(instance_dict, dict) else None
-    if isinstance(state, BLESessionState):
-        return state
-    return cast(_BLESessionStatePort, _LegacyBLESessionStateAdapter(iface))
+    if isinstance(state, (BLESessionState, _LegacyBLESessionStateAdapter)):
+        return cast(_BLESessionStatePort, state)
+
+    legacy_state = _LegacyBLESessionStateAdapter(iface)
+    if isinstance(instance_dict, dict):
+        instance_dict["_session_state"] = legacy_state
+    return cast(_BLESessionStatePort, legacy_state)

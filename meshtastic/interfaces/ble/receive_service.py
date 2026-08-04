@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakDBusError, BleakError, BleakGATTProtocolError
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_member)
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+    _iter_declared_members,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.client import BLEClient
@@ -80,6 +85,14 @@ class BLEReceiveRecoveryController:
         ----------
         iface : BLEInterface
             Interface instance whose receive/recovery lifecycle is managed.
+        session_state : _BLESessionStatePort | None
+            Optional shared lifecycle state. When ``None``, resolve the
+            interface-owned state or use the legacy adapter.
+
+        Attributes
+        ----------
+        _session : _BLESessionStatePort
+            Shared lifecycle state used by receive and recovery paths.
 
         Returns
         -------
@@ -105,68 +118,20 @@ class BLEReceiveRecoveryController:
         return hooks
 
     @staticmethod
-    def _as_usable_callable(
-        candidate: object | None,
-    ) -> Callable[..., object] | None:
-        """Return a callable hook when candidate is usable.
-
-        Parameters
-        ----------
-        candidate : object | None
-            Candidate hook object.
-
-        Returns
-        -------
-        Callable[..., object] | None
-            Callable candidate when explicitly usable; otherwise
-            ``None``.
-        """
-        if callable(candidate):
-            return cast(Callable[..., object], candidate)
-        return None
-
     def _resolve_private_public_callable(
-        self,
         owner: object,
         *,
         private_name: str,
         public_name: str,
     ) -> Callable[..., object] | None:
-        """Resolve private/public hook names to the first usable callable.
-
-        Parameters
-        ----------
-        owner : object
-            Object that may expose private/public hook variants.
-        private_name : str
-            Private hook attribute name to probe first.
-        public_name : str
-            Public hook attribute name used as fallback when private hook is
-            unavailable.
-
-        Returns
-        -------
-        Callable[..., object] | None
-            First usable callable hook, preferring private then public; else
-            ``None``.
-        """
-        private_hook = self._as_usable_callable(_get_declared_member(owner, private_name))
-        if private_hook is not None:
-            return private_hook
-        return self._as_usable_callable(_get_declared_member(owner, public_name))
-
-    @classmethod
-    def _is_unusable_probe_value(cls, value: object | None) -> bool:
-        """Return whether a probe value is absent or has an unsupported shape."""
-        _ = cls
-        return value is None
+        """Resolve declared private/public hook names in precedence order."""
+        return _resolve_declared_callable(owner, private_name, public_name)
 
     def _get_lifecycle_controller(self) -> object | None:
         """Return lifecycle controller when available on the bound interface."""
-        get_lifecycle_controller = getattr(
-            self._iface, "_get_lifecycle_controller", None
+        get_lifecycle_controller_fn = _get_declared_callable(
+            self._iface, "_get_lifecycle_controller"
         )
-        get_lifecycle_controller_fn = self._as_usable_callable(get_lifecycle_controller)
         if get_lifecycle_controller_fn is not None:
             try:
                 controller = get_lifecycle_controller_fn()
@@ -176,7 +141,7 @@ class BLEReceiveRecoveryController:
                     "BLE lifecycle controller probe failed",
                 )
                 return None
-            if self._is_unusable_probe_value(controller):
+            if controller is None:
                 return None
             return controller
         return None
@@ -200,8 +165,7 @@ class BLEReceiveRecoveryController:
                     )
                 else:
                     return result if isinstance(result, bool) else False
-        raw_ever_connected = _get_declared_member(self._iface, "_ever_connected", False)
-        return raw_ever_connected is True
+        return self._session.ever_connected is True
 
     @staticmethod
     def _normalize_bool_probe(raw_value: object) -> bool:
@@ -238,7 +202,7 @@ class BLEReceiveRecoveryController:
     def _is_connection_closing_locked(self) -> bool:
         """Return whether connection-closing probes indicate closing while lock is held."""
         iface = self._iface
-        state_manager = getattr(iface, "_state_manager", None)
+        state_manager = _get_declared_member(iface, "_state_manager")
         state_is_closing: bool | None = None
         if state_manager is None:
             raw_is_closing = getattr(iface, "_is_connection_closing", False)
@@ -260,9 +224,7 @@ class BLEReceiveRecoveryController:
                 legacy_is_closing = _get_declared_member(state_manager, "_is_closing")
                 state_is_closing = self._normalize_bool_probe(legacy_is_closing)
 
-        raw_closed = getattr(iface, "_closed", False)
-        closed = self._normalize_bool_probe(raw_closed)
-        return state_is_closing or closed
+        return bool(state_is_closing or self._session.closed)
 
     def _is_connection_closing(self) -> bool:
         """Return whether receive-loop behavior should treat the interface as closing."""
@@ -586,7 +548,7 @@ class BLEReceiveRecoveryController:
             f"read_loop: {error_message}",
             client=previous_client,
         )
-        self._session.read_retry_count = 0
+        self._session.reset_read_retry_count()
         if not should_continue:
             self._set_receive_wanted(want_receive=False)
         return should_continue
@@ -702,53 +664,26 @@ class BLEReceiveRecoveryController:
         iface = self._iface
         with self._session.lock:
             client = iface.client
-            state_is_connecting = _get_declared_member(iface._state_manager, "is_connecting")
-            if callable(state_is_connecting):
-                try:
-                    connecting_result = state_is_connecting()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - snapshot probe must remain best effort
-                    logger.debug(
-                        "Error probing state manager is_connecting()",
-                        exc_info=True,
-                    )
-                    is_connecting = False
-                else:
-                    is_connecting = (
-                        connecting_result
-                        if isinstance(connecting_result, bool)
-                        else False
-                    )
-            elif isinstance(state_is_connecting, bool):
-                is_connecting = state_is_connecting
-            else:
-                legacy_is_connecting = getattr(
-                    iface._state_manager, "_is_connecting", None
-                )
-                if callable(
-                    legacy_is_connecting
-                ):
+            state_manager = _get_declared_member(iface, "_state_manager")
+            is_connecting = False
+            for member_name, candidate in _iter_declared_members(
+                state_manager, "is_connecting", "_is_connecting"
+            ):
+                if callable(candidate):
                     try:
-                        connecting_result = legacy_is_connecting()
-                    except (
-                        Exception
-                    ):  # noqa: BLE001 - snapshot probe must remain best effort
+                        connecting_result = candidate()
+                    except Exception:  # noqa: BLE001 - snapshot probe stays best effort
                         logger.debug(
-                            "Error probing state manager _is_connecting()",
+                            "Error probing state manager %s()",
+                            member_name,
                             exc_info=True,
                         )
-                        is_connecting = False
-                    else:
-                        is_connecting = (
-                            connecting_result
-                            if isinstance(connecting_result, bool)
-                            else False
-                        )
-                elif isinstance(legacy_is_connecting, bool):
-                    is_connecting = legacy_is_connecting
+                        continue
                 else:
-                    is_connecting = False
+                    connecting_result = candidate
+                if isinstance(connecting_result, bool):
+                    is_connecting = connecting_result
+                    break
             publish_pending = self._session.client_publish_pending
             is_closing = self._is_connection_closing_locked()
         return client, is_connecting, publish_pending, is_closing
@@ -832,17 +767,17 @@ class BLEReceiveRecoveryController:
             retry_on_empty=not poll_without_notify,
         )
         if not payload:
-            self._session.read_retry_count = 0
+            self._session.reset_read_retry_count()
             return False
         logger.debug("FROMRADIO read: %s", payload.hex())
         try:
             iface._handle_from_radio(payload)
         except DecodeError as exc:
             logger.warning("Failed to parse FromRadio packet, discarding: %s", exc)
-            self._session.read_retry_count = 0
+            self._session.reset_read_retry_count()
             return True
         self._reset_recovery_after_stability()
-        self._session.read_retry_count = 0
+        self._session.reset_read_retry_count()
         return True
 
     def _handle_payload_read(
@@ -1025,7 +960,7 @@ class BLEReceiveRecoveryController:
         with self._session.lock:
             self._session.last_recovery_time = time.monotonic()
             updated_last_recovery_time = self._session.last_recovery_time
-        self._session.read_retry_count = 0
+        self._session.reset_read_retry_count()
         logger.debug(
             "BLE receive recovery timestamp updated: attempts=%d last_recovery_time=%.3f",
             attempts,
@@ -1079,7 +1014,8 @@ class BLEReceiveRecoveryController:
         for attempt in range(max_retries + 1):
             payload = client.read_gatt_char(FROMRADIO_UUID, timeout=read_timeout)
             if payload:
-                self._session.suppressed_empty_read_warnings = 0
+                with self._session.lock:
+                    self._session.suppressed_empty_read_warnings = 0
                 return payload
             if attempt < max_retries:
                 _sleep(iface._retry_policy_get_delay(iface._empty_read_policy, attempt))
@@ -1099,17 +1035,26 @@ class BLEReceiveRecoveryController:
             override_handle_transient_read_error(error)
             return
         transient_policy = iface._transient_read_policy
-        if iface._retry_policy_should_retry(transient_policy, self._session.read_retry_count):
-            attempt_index = self._session.read_retry_count
-            self._session.read_retry_count += 1
+        with self._session.lock:
+            retry_count = self._session.read_retry_count
+            should_retry = iface._retry_policy_should_retry(
+                transient_policy, retry_count
+            )
+            if should_retry:
+                attempt_index = retry_count
+                self._session.read_retry_count = retry_count + 1
+                next_retry_count = self._session.read_retry_count
+            else:
+                self._session.read_retry_count = 0
+                next_retry_count = 0
+        if should_retry:
             logger.debug(
                 "Transient BLE read error, retrying (%d/%d)",
-                self._session.read_retry_count,
+                next_retry_count,
                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
             )
             _sleep(iface._retry_policy_get_delay(transient_policy, attempt_index))
             return
-        self._session.read_retry_count = 0
         raise iface.BLEError(ERROR_READING_BLE) from error
 
     def log_empty_read_warning(self) -> None:
@@ -1127,8 +1072,17 @@ class BLEReceiveRecoveryController:
         notify_enabled = (
             raw_notify_enabled if isinstance(raw_notify_enabled, bool) else False
         )
-        if now - self._session.last_empty_read_warning >= cooldown:
+        with self._session.lock:
+            should_emit = now - self._session.last_empty_read_warning >= cooldown
             suppressed = self._session.suppressed_empty_read_warnings
+            if should_emit:
+                self._session.last_empty_read_warning = now
+                self._session.suppressed_empty_read_warnings = 0
+            else:
+                self._session.suppressed_empty_read_warnings = suppressed + 1
+                suppressed = self._session.suppressed_empty_read_warnings
+
+        if should_emit:
             message = f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}"
             if suppressed:
                 message = (
@@ -1142,14 +1096,11 @@ class BLEReceiveRecoveryController:
                     "%s (polling mode without FROMNUM notifications)",
                     message,
                 )
-            self._session.last_empty_read_warning = now
-            self._session.suppressed_empty_read_warnings = 0
             return
 
-        self._session.suppressed_empty_read_warnings += 1
         logger.debug(
             "Suppressed repeated empty BLE read warning (%d within %.0fs window)",
-            self._session.suppressed_empty_read_warnings,
+            suppressed,
             cooldown,
         )
 

@@ -1072,23 +1072,28 @@ def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(
         iface.close()
 
 
-def test_receive_controller_hook_resolution_helpers(
+def test_receive_controller_hook_resolution_uses_declared_members(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive controller helper resolution should treat null hooks as unusable."""
+    """Receive hook resolution should ignore synthesized members and use declared ones."""
     iface = _make_iface(monkeypatch)
     original_close = iface.close
+
+    class _DynamicHookOwner:
+        public_hook = staticmethod(lambda: "declared")
+
+        def __getattr__(self, _name: str) -> object:
+            return lambda: "dynamic"
+
     try:
         controller = iface._get_receive_recovery_controller()
-        monkeypatch.setattr(
-            controller,
-            "_resolve_iface_receive_hook_override",
-            lambda _name: None,
-            raising=True,
+        hook = controller._resolve_private_public_callable(
+            _DynamicHookOwner(),
+            private_name="private_hook",
+            public_name="public_hook",
         )
-        assert controller._as_usable_callable(None) is None
-        assert controller._is_unusable_probe_value(None) is True
-        assert controller._is_unusable_probe_value("ready") is False
+        assert hook is not None
+        assert hook() == "declared"
     finally:
         original_close()
 

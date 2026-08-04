@@ -369,6 +369,27 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
             orchestrator._compat_find_device(TEST_BLE_ADDRESS)
 
 
+def test_compat_find_device_ignores_synthesized_preferred_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Declared legacy find-device hooks should beat synthesized preferred names."""
+
+    class _LegacyFindDeviceInterface:
+        def __getattr__(self, _name: str) -> object:
+            return lambda _target: (_ for _ in ()).throw(
+                AssertionError("dynamic find-device hook must be ignored")
+            )
+
+        def find_device(self, target: str | None) -> object:
+            return SimpleNamespace(address=target)
+
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        orchestrator.interface = _LegacyFindDeviceInterface()
+        result = orchestrator._compat_find_device(TEST_BLE_ADDRESS)
+
+    assert result.address == TEST_BLE_ADDRESS
+
+
 def test_attempt_direct_connect_allows_discovery_for_derived_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

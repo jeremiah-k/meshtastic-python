@@ -985,6 +985,7 @@ def test_set_receive_wanted_delegates_to_explicit_controller_hook() -> None:
     iface._lifecycle_controller = mock_controller
 
     iface._set_receive_wanted(True)
+    mock_controller._set_receive_wanted.assert_called_once_with(want_receive=True)
 
 
 def test_should_run_receive_loop_uses_explicit_controller_hook() -> None:
@@ -1481,6 +1482,27 @@ def test_compat_dispatch_callable_prefers_public_name() -> None:
     target.public_method.assert_called_once()
 
 
+def test_compat_dispatch_callable_ignores_synthesized_preferred_name() -> None:
+    """Compatibility dispatch should prefer declared legacy hooks over dynamic proxies."""
+
+    class _DynamicCompatibilityTarget:
+        def __getattr__(self, _name: str) -> object:
+            return lambda: "dynamic-result"
+
+        def legacy_method(self) -> str:
+            return "legacy-result"
+
+    result = BLEInterface._compat_dispatch_callable(
+        _DynamicCompatibilityTarget(),
+        public_name="public_method",
+        legacy_name="legacy_method",
+        fallback_attr_name=None,
+        error_message="Method not found",
+    )
+
+    assert result == "legacy-result"
+
+
 def test_compat_dispatch_callable_falls_back_to_legacy() -> None:
     """_compat_dispatch_callable should fall back to legacy name."""
     target = MagicMock()
@@ -1913,14 +1935,33 @@ def test_client_manager_update_client_reference_dispatches() -> None:
 # ============================================================================
 
 
+class _DynamicOnlyStateLock:
+    """Lock double whose ownership probe exists only through ``__getattr__``."""
+
+    def __init__(self) -> None:
+        self.dynamic_probe_lookups = 0
+
+    def __enter__(self) -> "_DynamicOnlyStateLock":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        if name == "_is_owned":
+            self.dynamic_probe_lookups += 1
+            return lambda: True
+        raise AttributeError(name)
+
+
 def test_get_management_client_if_available_ignores_undeclared_lock_ownership(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_get_management_client_if_available should ignore an undeclared lock ownership probe."""
     iface = _build_minimal_interface()
 
-    iface._state_lock = MagicMock()
-    iface._state_lock._is_owned = MagicMock()
+    dynamic_lock = _DynamicOnlyStateLock()
+    iface._state_lock = dynamic_lock
 
     handler = MagicMock()
     handler.get_management_client_if_available = MagicMock(return_value=None)
@@ -1928,6 +1969,7 @@ def test_get_management_client_if_available_ignores_undeclared_lock_ownership(
 
     result = iface._get_management_client_if_available("test-address")
     assert result is None
+    assert dynamic_lock.dynamic_probe_lookups == 0
 
 
 def test_get_management_client_if_available_uses_locked_version(
@@ -1939,6 +1981,12 @@ def test_get_management_client_if_available_uses_locked_version(
     expected_client = DummyClient()
 
     class OwnedStateLock:
+        def __enter__(self) -> "OwnedStateLock":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
         def _is_owned(self) -> bool:
             return True
 
@@ -1962,8 +2010,8 @@ def test_get_management_client_for_target_ignores_undeclared_lock_ownership(
     """_get_management_client_for_target should ignore an undeclared lock ownership probe."""
     iface = _build_minimal_interface()
 
-    iface._state_lock = MagicMock()
-    iface._state_lock._is_owned = MagicMock()
+    dynamic_lock = _DynamicOnlyStateLock()
+    iface._state_lock = dynamic_lock
 
     handler = MagicMock()
     handler.get_management_client_for_target = MagicMock(return_value=None)
@@ -1974,6 +2022,7 @@ def test_get_management_client_for_target_ignores_undeclared_lock_ownership(
         prefer_current_client=True,
     )
     assert result is None
+    assert dynamic_lock.dynamic_probe_lookups == 0
 
 
 def test_get_management_client_for_target_uses_locked_version(
@@ -1985,6 +2034,12 @@ def test_get_management_client_for_target_uses_locked_version(
     expected_client = DummyClient()
 
     class OwnedStateLock:
+        def __enter__(self) -> "OwnedStateLock":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
         def _is_owned(self) -> bool:
             return True
 

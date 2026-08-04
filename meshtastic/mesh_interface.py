@@ -255,7 +255,16 @@ class MeshInterface:  # pylint: disable=R0902
     """
 
     _queue_wait_timeout_seconds: ClassVar[float] = QUEUE_WAIT_TIMEOUT_SECONDS
-    _last_disconnect_source: str | None
+
+    @property
+    def _last_disconnect_source(self) -> str | None:
+        """Return the latest transport disconnect source, if known."""
+        value = self.__dict__.get("_last_disconnect_source")
+        return value if isinstance(value, str) else None
+
+    @_last_disconnect_source.setter
+    def _last_disconnect_source(self, value: str | None) -> None:
+        self.__dict__["_last_disconnect_source"] = value
 
     # Optional instance-only overrides used by bounded reconnect probes.
     _connect_wait_timeout_seconds: float

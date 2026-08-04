@@ -10,6 +10,10 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _iter_declared_members,
 )
 from meshtastic.interfaces.ble.constants import RECONNECTED_EVENT, logger
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleErrorAccess,
     _LifecycleStateAccess,
@@ -160,6 +164,11 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 try:
                     result = member()
                 except Exception:  # noqa: BLE001 - probe remains best effort
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "Error probing ownership member %s()",
+                        _member_name,
+                    )
                     continue
             else:
                 result = member

@@ -73,7 +73,7 @@ class _OwnershipSnapshot:
     prior_ever_connected: bool
 
 
-def _client_is_connected_compat(client: "BLEClient") -> bool:
+def _client_is_connected_compat(client: object) -> bool:
     """Return connected-state flag from public/legacy BLEClient members."""
     for candidate_name, candidate in _iter_declared_members(
         client, "isConnected", "is_connected", "_is_connected"
@@ -422,9 +422,9 @@ class _LifecycleErrorAccess:
         except TypeError as exc:
             if not _is_unexpected_keyword_error(exc, "error_msg"):
                 _log_ble_failure(
-                _BLEFailureDisposition.BEST_EFFORT,
-                error_msg,
-            )
+                    _BLEFailureDisposition.BEST_EFFORT,
+                    error_msg,
+                )
                 return did_run(), None
             if did_run():
                 return True, None
@@ -434,9 +434,9 @@ class _LifecycleErrorAccess:
                     return True, result
             except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                 _log_ble_failure(
-                _BLEFailureDisposition.BEST_EFFORT,
-                error_msg,
-            )
+                    _BLEFailureDisposition.BEST_EFFORT,
+                    error_msg,
+                )
                 if did_run():
                     return True, None
             try:
@@ -445,9 +445,9 @@ class _LifecycleErrorAccess:
                     return True, result
             except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
                 _log_ble_failure(
-                _BLEFailureDisposition.BEST_EFFORT,
-                error_msg,
-            )
+                    _BLEFailureDisposition.BEST_EFFORT,
+                    error_msg,
+                )
                 if did_run():
                     return True, None
         except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
