@@ -10,6 +10,7 @@ import itertools
 import math
 import os
 import shutil
+import sys
 import threading
 import time
 from collections.abc import Callable, Generator
@@ -268,6 +269,11 @@ def reset_mt_config(monkeypatch: pytest.MonkeyPatch) -> None:
     the new parser to mt_config.parser so tests start with a clean configuration.
     """
     parser = argparse.ArgumentParser(add_help=False)
+    # Register process-wide CLI state before resetting it. Tests in the legacy
+    # CLI suite still assign these globals directly, so pytest must own their
+    # restoration even when an assertion or SystemExit interrupts the test.
+    monkeypatch.setattr(sys, "argv", list(sys.argv))
+    monkeypatch.setattr(mt_config, "args", mt_config.args)
     mt_config.reset()
     monkeypatch.setattr(mt_config, "parser", parser)
 

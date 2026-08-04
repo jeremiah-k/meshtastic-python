@@ -1,6 +1,6 @@
 """Meshtastic unit tests for __main__.py."""
 
-# pylint: disable=C0302,W0613,R0917
+# pylint: disable=W0613,R0917
 
 import base64
 import threading
@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 import meshtastic.__main__ as main_module
-from meshtastic.tests.test_main import (
+from meshtastic.tests._main_legacy_support import (
     _build_configure_interface,
     _patch_fast_monotonic,
     _run_main_configure_file,
@@ -30,16 +30,7 @@ from ..protobuf import config_pb2, localonly_pb2
 # from ..config_pb2 import Config
 
 
-SDS_DISABLED_SENTINEL: int = 4_294_967_295
-MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
-
-def _get_config_field(config: Any, dotted_path: str) -> Any:
-    """Walk a dotted `section.field` path on a protobuf Config message."""
-    obj = config
-    for part in dotted_path.split("."):
-        obj = getattr(obj, part)
-    return obj
 
 
 @pytest.fixture(autouse=True)
