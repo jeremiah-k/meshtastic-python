@@ -364,6 +364,7 @@ class BLEReceiveLifecycleCoordinator:
                 existing_thread=inconclusive_probe_thread,
                 name=name,
                 reset_recovery=reset_recovery,
+                clear_pending_if_alive=True,
                 enforce_pending_timeout=True,
             )
             return None, None

@@ -12,6 +12,10 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _resolve_declared_member,
 )
 from meshtastic.interfaces.ble.coordination import ThreadLike
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
     BLEDisconnectLifecycleCoordinator,
@@ -135,7 +139,14 @@ class BLELifecycleService:
 
         get_lifecycle_controller = _get_declared_callable(iface, "_get_lifecycle_controller")
         if get_lifecycle_controller is not None:
-            lifecycle_controller = get_lifecycle_controller()
+            try:
+                lifecycle_controller = get_lifecycle_controller()
+            except Exception:  # noqa: BLE001 - compatibility probe falls back
+                _log_ble_failure(
+                    _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                    "BLE lifecycle controller probe failed",
+                )
+                lifecycle_controller = None
             if lifecycle_controller is not None:
                 receive_coordinator = _resolve_declared_member(
                     lifecycle_controller,

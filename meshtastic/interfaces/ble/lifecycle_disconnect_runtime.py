@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
 
+from meshtastic.interfaces.ble.compat_adapter import _resolve_declared_callable
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
@@ -41,7 +42,21 @@ class BLEDisconnectLifecycleCoordinator:
     def __init__(
         self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
     ) -> None:
-        """Bind disconnect orchestration ownership to a specific interface."""
+        """Bind disconnect orchestration ownership to a specific interface.
+
+        Parameters
+        ----------
+        iface : BLEInterface
+            Interface instance whose disconnect orchestration is managed.
+        session_state : _BLESessionStatePort | None
+            Optional shared lifecycle state. When ``None``, resolve the
+            interface-owned state or use the legacy adapter.
+
+        Returns
+        -------
+        None
+            Initializes bound disconnect-orchestration collaborator state.
+        """
         self._iface = iface
         self._session = _session_state_for(iface, session_state)
         self._state_access = _LifecycleStateAccess(iface)
@@ -70,14 +85,10 @@ class BLEDisconnectLifecycleCoordinator:
                 )
                 return
             iface._shutdown_event.clear()
-        schedule_reconnect = getattr(
-            iface._reconnect_scheduler, "schedule_reconnect", None
+        schedule_reconnect = _resolve_declared_callable(
+            iface._reconnect_scheduler, "schedule_reconnect", "_schedule_reconnect"
         )
-        if not callable(schedule_reconnect):
-            schedule_reconnect = getattr(
-                iface._reconnect_scheduler, "_schedule_reconnect", None
-            )
-        if not callable(schedule_reconnect):
+        if schedule_reconnect is None:
             raise AttributeError(RECONNECT_SCHEDULER_MISSING_MSG)
         schedule_reconnect(iface.auto_reconnect, iface._shutdown_event)
 

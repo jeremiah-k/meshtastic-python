@@ -61,6 +61,9 @@ class BLEShutdownLifecycleCoordinator:
         ----------
         iface : BLEInterface
             Interface instance providing state/thread/error collaborators.
+        session_state : _BLESessionStatePort | None
+            Optional shared lifecycle state. When ``None``, resolve the
+            interface-owned state or use the legacy adapter.
 
         Returns
         -------
@@ -107,12 +110,14 @@ class BLEShutdownLifecycleCoordinator:
             Cleanup is best effort and intentionally suppresses hook failures.
         """
         iface = self._iface
-        cleanup_hook = getattr(iface.thread_coordinator, "cleanup", None)
-        if callable(cleanup_hook):
+        cleanup_hook = _get_declared_callable(iface.thread_coordinator, "cleanup")
+        if cleanup_hook is not None:
             hook_name = "cleanup"
         else:
-            legacy_cleanup = getattr(iface.thread_coordinator, "_cleanup", None)
-            if callable(legacy_cleanup):
+            legacy_cleanup = _get_declared_callable(
+                iface.thread_coordinator, "_cleanup"
+            )
+            if legacy_cleanup is not None:
                 cleanup_hook = legacy_cleanup
                 hook_name = "_cleanup"
             else:

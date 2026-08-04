@@ -421,10 +421,15 @@ class _LegacyBLESessionStateAdapter:
 def _session_state_for(
     iface: object, explicit: _BLESessionStatePort | None = None
 ) -> _BLESessionStatePort:
-    """Return explicit/owned session state or a cached legacy interface adapter."""
+    """Return explicit/owned session state or a cached legacy interface adapter.
+
+    Caches the legacy adapter only on collaborators that expose a real
+    instance ``__dict__``. Slot-based or partial test doubles get a fresh
+    adapter per call rather than silently writing into a throwaway fallback.
+    """
     if explicit is not None:
         return explicit
-    instance_dict = _get_declared_member(iface, "__dict__", {})
+    instance_dict = _get_declared_member(iface, "__dict__")
     state = (
         instance_dict.get("_session_state") if isinstance(instance_dict, dict) else None
     )

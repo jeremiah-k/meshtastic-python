@@ -59,6 +59,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         ----------
         iface : BLEInterface
             Interface instance whose ownership lifecycle is managed.
+        session_state : _BLESessionStatePort | None
+            Optional shared lifecycle state. When ``None``, resolve the
+            interface-owned state or use the legacy adapter.
 
         Returns
         -------

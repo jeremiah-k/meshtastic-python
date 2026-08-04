@@ -225,9 +225,8 @@ class BLEReceiveRecoveryService:
             ``True`` when polling without notify callbacks should proceed,
             otherwise ``False``.
         """
-        with iface._state_lock:
-            notify_enabled = _get_declared_member(iface, "_fromnum_notify_enabled", False)
-            return not (notify_enabled if isinstance(notify_enabled, bool) else False)
+        notify_enabled = _get_declared_member(iface, "_fromnum_notify_enabled", False)
+        return not (notify_enabled if isinstance(notify_enabled, bool) else False)
 
     @staticmethod
     def _coordinator_wait_for_event(

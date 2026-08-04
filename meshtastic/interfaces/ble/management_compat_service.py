@@ -107,16 +107,9 @@ class BLEManagementCommandsService:
             ble_client_factory is None and connected_elsewhere is None
         )
         if use_iface_owned_handler:
-            get_handler: Callable[..., object] | None = None
-            try:
-                get_handler = _get_declared_callable(
-                    iface, "_get_management_command_handler"
-                )
-            except AttributeError:
-                logger.debug(
-                    "Error resolving _get_management_command_handler; falling back to direct handler field.",
-                    exc_info=True,
-                )
+            get_handler: Callable[..., object] | None = _get_declared_callable(
+                iface, "_get_management_command_handler"
+            )
             if get_handler is not None:
                 try:
                     resolved = get_handler()

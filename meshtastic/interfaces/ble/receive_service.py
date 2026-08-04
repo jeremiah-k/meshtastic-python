@@ -675,10 +675,10 @@ class BLEReceiveRecoveryController:
                     try:
                         connecting_result = candidate()
                     except Exception:  # noqa: BLE001 - snapshot probe stays best effort
-                        logger.debug(
+                        _log_ble_failure(
+                            _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
                             "Error probing state manager %s()",
                             member_name,
-                            exc_info=True,
                         )
                         continue
                 else:
@@ -1039,9 +1039,10 @@ class BLEReceiveRecoveryController:
         transient_policy = iface._transient_read_policy
         with self._session.lock:
             retry_count = self._session.read_retry_count
-            should_retry = iface._retry_policy_should_retry(
-                transient_policy, retry_count
-            )
+        should_retry = iface._retry_policy_should_retry(transient_policy, retry_count)
+        attempt_index = 0
+        next_retry_count = 0
+        with self._session.lock:
             if should_retry:
                 attempt_index = retry_count
                 self._session.read_retry_count = retry_count + 1
