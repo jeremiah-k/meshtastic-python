@@ -42,15 +42,15 @@ from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
+from meshtastic._publishing import publishing_thread as publishingThread
+from meshtastic.interfaces.ble import constants as _ble_constants
+from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_lock,
     _iter_declared_members,
     _resolve_declared_callable,
 )
-from meshtastic._publishing import publishing_thread as publishingThread
-from meshtastic.interfaces.ble import constants as _ble_constants
-from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compatibility_service import (
     BLECompatibilityEventPublisher,
 )
@@ -90,16 +90,16 @@ from meshtastic.interfaces.ble.discovery import (
     _looks_like_ble_address,
     _parse_scan_response,
 )
-from meshtastic.interfaces.ble.failure_policy import (
-    _BLEFailureDisposition,
-    _log_ble_failure,
-)
 from meshtastic.interfaces.ble.errors import (
     BLEConnectionSuppressedError,
     BLEDeviceNotFoundError,
     BLEDiscoveryError,
     BLEErrorHandler,
     MeshtasticBLEError,
+)
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
 )
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
@@ -126,11 +126,11 @@ from meshtastic.interfaces.ble.notifications import (
 from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
-from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.session_state import (
     BLESessionState,
     _BLESessionStateCompatMixin,
 )
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unexpected_keyword_error,
     _sleep,
@@ -299,7 +299,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         #     This prevents race conditions when checking existing_client and
         #     managing the connection state machine.
         self._state_manager = BLEStateManager()  # Centralized connection state
-        self._session_state = BLESessionState(lock=self._state_manager.lock)
+        state_lock = self._state_manager.lock
+        self._session_state = BLESessionState(lock=state_lock)
         self._connect_lock = threading.RLock()  # Serializes connection attempts
         self._management_lock = (
             threading.RLock()
@@ -324,11 +325,11 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         self._notification_dispatcher = self._create_notification_dispatcher()
         self._discovery_manager: DiscoveryManager | None = DiscoveryManager()
         self._connection_validator = ConnectionValidator(
-            self._state_manager, self._state_lock, self.BLEError
+            self._state_manager, state_lock, self.BLEError
         )
         self._client_manager = ClientManager(
             self._state_manager,
-            self._state_lock,
+            state_lock,
             self.thread_coordinator,
             self.error_handler,
         )
@@ -338,12 +339,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             self._client_manager,
             self._discovery_manager,
             self._state_manager,
-            self._state_lock,
+            state_lock,
             self.thread_coordinator,
         )
         self._reconnect_scheduler = ReconnectScheduler(
             self._state_manager,
-            self._state_lock,
+            state_lock,
             self.thread_coordinator,
             self,
         )
@@ -1076,27 +1077,57 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             target_address
         )
 
+    def _dispatch_management_lookup_by_lock(
+        self,
+        *,
+        unlocked: Callable[[], T],
+        locked: Callable[[], T],
+        operation_name: str,
+    ) -> T:
+        """Dispatch a management lookup for the current state-lock context.
+
+        Parameters
+        ----------
+        unlocked : Callable[[], T]
+            Lookup to invoke when the state lock is not owned by this thread.
+        locked : Callable[[], T]
+            Lock-aware lookup to invoke when ownership is confirmed.
+        operation_name : str
+            Diagnostic name used when the best-effort ownership probe fails.
+
+        Returns
+        -------
+        T
+            Result from the selected lookup.
+        """
+        state_lock = _get_declared_lock(self, "_state_lock")
+        lock_is_owned = (
+            _get_declared_callable(state_lock, "_is_owned")
+            if state_lock is not None
+            else None
+        )
+        if lock_is_owned is not None:
+            try:
+                if lock_is_owned() is True:
+                    return locked()
+            except Exception:  # noqa: BLE001 - lock probe remains best effort
+                logger.debug(
+                    "Failed to probe _state_lock ownership before %s",
+                    operation_name,
+                    exc_info=True,
+                )
+        return unlocked()
+
     def _get_management_client_if_available(
         self, address: str | None
     ) -> BLEClient | None:
         """Return available management client via management collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = _get_declared_lock(self, "_state_lock")
-        if state_lock is None:
-            return handler.get_management_client_if_available(address)
-        lock_is_owned = _get_declared_callable(state_lock, "_is_owned")
-        if lock_is_owned is not None:
-            owns_lock = False
-            try:
-                owns_lock = lock_is_owned() is True
-            except Exception:  # noqa: BLE001 - lock probe remains best effort
-                logger.debug(
-                    "Failed to probe _state_lock ownership before management lookup",
-                    exc_info=True,
-                )
-            if owns_lock:
-                return handler.get_management_client_if_available_locked(address)
-        return handler.get_management_client_if_available(address)
+        return self._dispatch_management_lookup_by_lock(
+            unlocked=lambda: handler.get_management_client_if_available(address),
+            locked=lambda: handler.get_management_client_if_available_locked(address),
+            operation_name="management lookup",
+        )
 
     def _get_management_client_if_available_locked(
         self, address: str | None
@@ -1113,30 +1144,15 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> BLEClient | None:
         """Return reusable target-matching management client via collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = _get_declared_lock(self, "_state_lock")
-        if state_lock is None:
-            return handler.get_management_client_for_target(
+        return self._dispatch_management_lookup_by_lock(
+            unlocked=lambda: handler.get_management_client_for_target(
                 target_address,
                 prefer_current_client=prefer_current_client,
-            )
-        lock_is_owned = _get_declared_callable(state_lock, "_is_owned")
-        if lock_is_owned is not None:
-            owns_lock = False
-            try:
-                owns_lock = lock_is_owned() is True
-            except Exception:  # noqa: BLE001 - lock probe remains best effort
-                logger.debug(
-                    "Failed to probe _state_lock ownership before target lookup",
-                    exc_info=True,
-                )
-            if owns_lock:
-                return handler.get_management_client_for_target_locked(
-                    target_address,
-                    prefer_current_client=prefer_current_client,
-                )
-        return handler.get_management_client_for_target(
-            target_address,
-            prefer_current_client=prefer_current_client,
+            ),
+            locked=lambda: handler.get_management_client_for_target_locked(
+                target_address, prefer_current_client=prefer_current_client
+            ),
+            operation_name="target lookup",
         )
 
     def _get_management_client_for_target_locked(
@@ -2378,10 +2394,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
 
         def _restore_notification_session_after_rollback() -> None:
             """Best-effort rollback for notification session bookkeeping."""
-            if (
-                notification_dispatcher is None
-                or notification_session_snapshot is None
-            ):
+            if notification_dispatcher is None or notification_session_snapshot is None:
                 return
             with contextlib.suppress(
                 Exception
