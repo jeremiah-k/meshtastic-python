@@ -8,7 +8,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from meshtastic import ResponseHandler
+from meshtastic._core_constants import DECODE_ERROR_KEY
+from meshtastic._response_types import ResponseHandler
 from meshtastic.protobuf import portnums_pb2
 from meshtastic.util import Acknowledgment, Timeout
 
@@ -35,7 +36,6 @@ RESPONSE_WAIT_REQID_ERROR: str = (
     "Internal error: response wait requires a positive packet id."
 )
 
-DECODE_ERROR_KEY: str = "error"
 DECODE_FAILED_PREFIX: str = "decode-failed: "
 # Placeholder for legacy unscoped wait attribute mapping (currently unused)
 RETIRED_WAIT_REQUEST_ID_TTL_SECONDS: float = 60.0

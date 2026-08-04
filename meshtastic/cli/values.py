@@ -6,7 +6,7 @@ import argparse
 from typing import Any, Protocol
 
 import meshtastic.util
-from meshtastic import BROADCAST_ADDR, LOCAL_ADDR
+from meshtastic._core_constants import BROADCAST_ADDR, LOCAL_ADDR
 from meshtastic.protobuf import config_pb2
 
 

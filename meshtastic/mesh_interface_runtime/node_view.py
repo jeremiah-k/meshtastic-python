@@ -17,11 +17,7 @@ from pubsub import pub
 from tabulate import tabulate
 
 import meshtastic.node
-from meshtastic import (
-    BROADCAST_ADDR,
-    BROADCAST_NUM,
-    LOCAL_ADDR,
-)
+from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.protobuf import mesh_pb2
 from meshtastic.util import (
     convert_mac_addr,

@@ -85,6 +85,18 @@ from meshtastic.util import (
 )
 
 from . import util
+from ._core_constants import (
+    BROADCAST_ADDR as _BROADCAST_ADDR,
+    BROADCAST_NUM as _BROADCAST_NUM,
+    DECODE_ERROR_KEY as _DECODE_ERROR_KEY,
+    LOCAL_ADDR as _LOCAL_ADDR,
+    NODELESS_WANT_CONFIG_ID as _NODELESS_WANT_CONFIG_ID,
+    OUR_APP_VERSION as _OUR_APP_VERSION,
+)
+from ._response_types import (
+    ResponseCallback as _ResponseCallback,
+    ResponseHandler as _ResponseHandler,
+)
 from .protobuf import (
     admin_pb2,
     apponly_pb2,
@@ -144,23 +156,23 @@ def __getattr__(name: str) -> _Any:
 
 # Note: To follow PEP224, comments should be after the module variable.
 
-LOCAL_ADDR = "^local"
+LOCAL_ADDR = _LOCAL_ADDR
 """A special ID that means the local node"""
 
-BROADCAST_NUM: int = 0xFFFFFFFF
+BROADCAST_NUM: int = _BROADCAST_NUM
 """if using 8 bit nodenums this will be shortened on the target"""
 
-BROADCAST_ADDR = "^all"
+BROADCAST_ADDR = _BROADCAST_ADDR
 """A special ID that means broadcast"""
 
-OUR_APP_VERSION: int = 20300
+OUR_APP_VERSION: int = _OUR_APP_VERSION
 """The numeric buildnumber (shared with android apps) specifying the
    level of device code we are guaranteed to understand
 
    format is Mmmss (where M is 1+the numeric major number. i.e. 20120 means 1.1.20
 """
 
-NODELESS_WANT_CONFIG_ID = 69420
+NODELESS_WANT_CONFIG_ID = _NODELESS_WANT_CONFIG_ID
 """A special thing to pass for want_config_id that instructs nodes to skip sending nodeinfos other than its own."""
 
 publishingThread = DeferredExecution("publishing")
@@ -174,24 +186,13 @@ logger = logging.getLogger(__name__)
 
 REDACTED_TEXT = "<redacted>"
 REDACTED_BYTES = b"<redacted>"
-DECODE_ERROR_KEY = "error"
+DECODE_ERROR_KEY = _DECODE_ERROR_KEY
 
 
-ResponseCallback = _Callable[[dict[str, _Any]], _Any]
+ResponseCallback = _ResponseCallback
+ResponseHandler = _ResponseHandler
 ProtobufFactory = _Callable[[], _Any]
 OnReceive = _Callable[[_Any, dict[str, _Any]], None]
-
-
-class ResponseHandler(_NamedTuple):
-    """A pending response callback, waiting for a response to one of our messages."""
-
-    # requestId: int - used only as a key
-    #: a callable to call when a response is received
-    callback: ResponseCallback
-    #: Whether ACKs and NAKs should be passed to this handler
-    ackPermitted: bool = False
-    # Registration timestamps are intentionally tracked out-of-band by the
-    # request runtime so this historical two-field tuple remains compatible.
 
 
 class KnownProtocol(_NamedTuple):
