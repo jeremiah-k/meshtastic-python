@@ -584,3 +584,42 @@ class TestIsCurrentlyConnectedElsewhere:
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS
+
+
+def test_default_registry_owns_compatibility_collection_aliases() -> None:
+    """Legacy module collections should be identities owned by one registry."""
+    from meshtastic.interfaces.ble import gating
+
+    registry = gating._DEFAULT_REGISTRY
+    assert gating._REGISTRY_LOCK is registry.lock
+    assert gating._ADDR_LOCKS is registry.addr_locks
+    assert gating._CONNECTED_ADDRS is registry.connected_addrs
+    assert gating._CONNECTING_ADDRS is registry.connecting_addrs
+    assert gating._CONNECTED_OWNERS is registry.connected_owners
+    assert gating._CONNECTED_OWNER_IDS is registry.connected_owner_ids
+    assert gating._CONNECTED_MARKED_AT is registry.connected_marked_at
+    assert gating._CONNECTING_OWNERS is registry.connecting_owners
+    assert gating._CONNECTING_OWNER_IDS is registry.connecting_owner_ids
+    assert gating._CONNECTING_MARKED_AT is registry.connecting_marked_at
+    assert gating._LOCK_HOLDERS is registry.lock_holders
+
+
+def test_clear_all_registries_delegates_to_registry_owner() -> None:
+    """Reset helper should clear object-owned collections without rebinding them."""
+    from meshtastic.interfaces.ble import gating
+
+    registry = gating._DEFAULT_REGISTRY
+    addr_locks = registry.addr_locks
+    connected = registry.connected_addrs
+    connecting = registry.connecting_addrs
+
+    gating._mark_connecting("AA:BB:CC:DD:EE:FF")
+    gating._mark_connected("11:22:33:44:55:66")
+    gating._clear_all_registries()
+
+    assert registry.addr_locks is addr_locks
+    assert registry.connected_addrs is connected
+    assert registry.connecting_addrs is connecting
+    assert not registry.addr_locks
+    assert not registry.connected_addrs
+    assert not registry.connecting_addrs

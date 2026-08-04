@@ -38,19 +38,60 @@ from meshtastic.interfaces.ble.utils import sanitize_address
 
 logger = logging.getLogger("meshtastic.ble")
 
-_REGISTRY_LOCK = RLock()
-_ADDR_LOCKS: dict[str, RLock] = {}
-_CONNECTED_ADDRS: set[str] = set()
-_CONNECTING_ADDRS: set[str] = set()
-# Optional owner references for active connected-address claims.
-_CONNECTED_OWNERS: dict[str, weakref.ReferenceType[Any] | None] = {}
-_CONNECTED_OWNER_IDS: dict[str, int | None] = {}
-_CONNECTED_MARKED_AT: dict[str, float] = {}
-_CONNECTING_OWNERS: dict[str, weakref.ReferenceType[Any] | None] = {}
-_CONNECTING_OWNER_IDS: dict[str, int | None] = {}
-_CONNECTING_MARKED_AT: dict[str, float] = {}
-# Track locks that are currently held to prevent premature cleanup
-_LOCK_HOLDERS: dict[str, int] = {}  # key -> count of holders
+class _BLEAddressRegistry:
+    """Own process-wide BLE address claims and per-address lock bookkeeping.
+
+    The registry object owns all mutable gating state.  Module-level aliases are
+    retained below because a small amount of historical test/support code imports
+    the collections directly.  Runtime code should treat this object as the
+    ownership boundary and use the existing module-level operations rather than
+    mutating the collections itself.
+    """
+
+    def __init__(self) -> None:
+        """Initialize empty ownership, claim, and lock registries."""
+        self.lock = RLock()
+        self.addr_locks: dict[str, RLock] = {}
+        self.connected_addrs: set[str] = set()
+        self.connecting_addrs: set[str] = set()
+        self.connected_owners: dict[str, weakref.ReferenceType[Any] | None] = {}
+        self.connected_owner_ids: dict[str, int | None] = {}
+        self.connected_marked_at: dict[str, float] = {}
+        self.connecting_owners: dict[str, weakref.ReferenceType[Any] | None] = {}
+        self.connecting_owner_ids: dict[str, int | None] = {}
+        self.connecting_marked_at: dict[str, float] = {}
+        self.lock_holders: dict[str, int] = {}
+
+    def clear(self) -> None:
+        """Clear every registry collection while holding the owner lock."""
+        with self.lock:
+            self.addr_locks.clear()
+            self.connected_addrs.clear()
+            self.connecting_addrs.clear()
+            self.connected_marked_at.clear()
+            self.connecting_marked_at.clear()
+            self.connected_owner_ids.clear()
+            self.connecting_owner_ids.clear()
+            self.connected_owners.clear()
+            self.connecting_owners.clear()
+            self.lock_holders.clear()
+
+
+_DEFAULT_REGISTRY = _BLEAddressRegistry()
+
+# Internal compatibility aliases: keep existing imported collection identities
+# stable while making `_DEFAULT_REGISTRY` the single owner of mutable state.
+_REGISTRY_LOCK = _DEFAULT_REGISTRY.lock
+_ADDR_LOCKS = _DEFAULT_REGISTRY.addr_locks
+_CONNECTED_ADDRS = _DEFAULT_REGISTRY.connected_addrs
+_CONNECTING_ADDRS = _DEFAULT_REGISTRY.connecting_addrs
+_CONNECTED_OWNERS = _DEFAULT_REGISTRY.connected_owners
+_CONNECTED_OWNER_IDS = _DEFAULT_REGISTRY.connected_owner_ids
+_CONNECTED_MARKED_AT = _DEFAULT_REGISTRY.connected_marked_at
+_CONNECTING_OWNERS = _DEFAULT_REGISTRY.connecting_owners
+_CONNECTING_OWNER_IDS = _DEFAULT_REGISTRY.connecting_owner_ids
+_CONNECTING_MARKED_AT = _DEFAULT_REGISTRY.connecting_marked_at
+_LOCK_HOLDERS = _DEFAULT_REGISTRY.lock_holders
 
 
 def _clear_all_registries() -> None:
@@ -66,17 +107,7 @@ def _clear_all_registries() -> None:
     helper, because it force-clears global ownership and lock state.
     Intended for tests and full process-level reset paths.
     """
-    with _REGISTRY_LOCK:
-        _ADDR_LOCKS.clear()
-        _CONNECTED_ADDRS.clear()
-        _CONNECTING_ADDRS.clear()
-        _CONNECTED_MARKED_AT.clear()
-        _CONNECTING_MARKED_AT.clear()
-        _CONNECTED_OWNER_IDS.clear()
-        _CONNECTING_OWNER_IDS.clear()
-        _CONNECTED_OWNERS.clear()
-        _CONNECTING_OWNERS.clear()
-        _LOCK_HOLDERS.clear()
+    _DEFAULT_REGISTRY.clear()
 
 
 def _addr_key(addr: str | None) -> str | None:
