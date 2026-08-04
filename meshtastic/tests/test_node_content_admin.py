@@ -14,18 +14,16 @@ from ..mesh_interface import MeshInterface
 from ..node import MAX_CHANNELS, Node
 from ..protobuf import (
     admin_pb2,
-    apponly_pb2,
     config_pb2,
     localonly_pb2,
     mesh_pb2,
 )
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
-from ..serial_interface import SerialInterface
 from ..util import Acknowledgment
 
 from ._node_legacy_support import (
     _TrackingLock,
-    _encode_channel_set_to_url,
+    _get_mock_call_arg,
     _make_fake_send_admin,
 )
 
@@ -355,71 +353,6 @@ def test_factoryReset_full_device_uses_int_field_and_remote_ack_callback(
 
 
 @pytest.mark.unit
-def test_setURL_raises_when_channels_not_loaded(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setURL raises when config/channels are not loaded."""
-    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
-    ):
-        anode.setURL("")
-
-
-@pytest.mark.unit
-def test_setURL_valid_URL_but_no_settings(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setURL."""
-    iface = autospec_local_node_iface(SerialInterface)
-    url = "https://www.meshtastic.org/d/#"
-    anode = Node(iface, "!12345678", noProto=True)
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
-    ):
-        anode.setURL(url)
-
-
-@pytest.mark.unit
-def test_setURL_ignores_channels_over_device_limit(
-    caplog: LogCaptureFixture,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test that setURL ignores channels beyond the fixed device channel limit."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, "!12345678", noProto=True)
-    anode.channels = [
-        Channel(index=i, role=Channel.Role.DISABLED) for i in range(CHANNEL_LIMIT)
-    ]
-    anode.localConfig.lora.hop_limit = 2
-    # Mock I/O operations to prevent actual device communication
-    anode._write_channel_snapshot = MagicMock()  # type: ignore[method-assign]
-    anode._send_admin = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
-
-    channel_set = apponly_pb2.ChannelSet()
-    for i in range(CHANNEL_LIMIT + 1):
-        settings = channel_set.settings.add()
-        settings.name = f"ch{i}"
-        settings.psk = b"\x01"
-    channel_set.lora_config.hop_limit = 7
-
-    url = _encode_channel_set_to_url(channel_set)
-
-    with caplog.at_level(logging.WARNING):
-        anode.setURL(url)
-
-    assert re.search(
-        rf"URL contains more than {CHANNEL_LIMIT} channels",
-        caplog.text,
-        re.MULTILINE,
-    )
-    assert len(anode.channels) == CHANNEL_LIMIT
-    assert anode.channels[0].settings.name == "ch0"
-    assert anode.channels[CHANNEL_LIMIT - 1].settings.name == f"ch{CHANNEL_LIMIT - 1}"
-    assert anode.localConfig.lora.hop_limit == 7
-
-
-@pytest.mark.unit
 def test_setChannels_copies_input_channel_objects(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
@@ -482,3 +415,141 @@ def test_get_canned_message_times_out_without_response(
     assert re.search(
         r"Timed out waiting for canned message response", caplog.text, re.MULTILINE
     )
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("packet", "expected_flags"),
+    [
+        pytest.param(
+            {"decoded": {}},
+            (False, True, False),
+            id="missing-routing",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NO_REPLY"}}},
+            (False, True, False),
+            id="routing-no-reply",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}},
+            (False, True, False),
+            id="missing-source",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}, "from": "abc"},
+            (False, True, False),
+            id="invalid-source",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123},
+            (False, False, True),
+            id="implicit-ack",
+        ),
+        pytest.param(
+            {"decoded": {"routing": {"errorReason": "NONE"}}, "from": 124},
+            (True, False, False),
+            id="remote-ack",
+        ),
+    ],
+)
+def test_onAckNak_classifies_ack_nak_variants(
+    packet: dict[str, Any],
+    expected_flags: tuple[bool, bool, bool],
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """ACK/NAK variants should set exactly the expected acknowledgment flag."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode.nodeNum = 123
+    anode = Node(iface, "!12345678", noProto=True)
+    iface._acknowledgment = Acknowledgment()
+
+    anode.onAckNak(packet)
+
+    acknowledgment = iface._acknowledgment
+    assert (
+        acknowledgment.receivedAck,
+        acknowledgment.receivedNak,
+        acknowledgment.receivedImplAck,
+    ) == expected_flags
+
+@pytest.mark.unit
+def test_send_admin_no_proto_returns_none(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_send_admin should no-op when protocol usage is disabled."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    msg = admin_pb2.AdminMessage()
+
+    assert anode._send_admin(msg) is None
+
+@pytest.mark.unit
+def test_send_admin_uses_session_passkey_and_selected_admin_index(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_send_admin should attach passkey to outbound message and send over the selected admin channel."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode._get_admin_channel_index.return_value = 3
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
+    packet = mesh_pb2.MeshPacket()
+    iface.sendData.return_value = packet
+    anode = Node(iface, 321, noProto=False)
+    msg = admin_pb2.AdminMessage()
+
+    response_handler = MagicMock()
+    result = anode._send_admin(msg, wantResponse=True, onResponse=response_handler)
+
+    assert result is packet
+    iface.sendData.assert_called_once()
+    outbound_msg = iface.sendData.call_args[0][0]
+    assert outbound_msg.session_passkey == b"secret"
+    assert msg.session_passkey == b""
+    assert iface.sendData.call_args.kwargs["channelIndex"] == 3
+    assert iface.sendData.call_args.kwargs["pkiEncrypted"] is True
+
+@pytest.mark.unit
+def test_send_admin_respects_explicit_channel_zero(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_send_admin should treat channel 0 as explicit, not as auto-detect."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.localNode._get_admin_channel_index.return_value = 3
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"secret"}
+    packet = mesh_pb2.MeshPacket()
+    iface.sendData.return_value = packet
+    anode = Node(iface, 321, noProto=False)
+    msg = admin_pb2.AdminMessage()
+
+    result = anode._send_admin(msg, adminIndex=0)
+
+    assert result is packet
+    assert iface.sendData.call_args.kwargs["channelIndex"] == 0
+
+@pytest.mark.unit
+def test_ensureSessionKey_requests_only_when_missing(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """EnsureSessionKey should request only when missing and forward the selected admin index."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, 555, noProto=False)
+    anode.requestConfig = MagicMock()  # type: ignore[method-assign]
+    anode._timeout = MagicMock()
+    anode._timeout.waitForSet.return_value = True
+
+    iface._get_or_create_by_num.return_value = {}
+    anode.ensureSessionKey(adminIndex=6)
+    assert anode.requestConfig.call_count == 1
+    request_config_call = anode.requestConfig.call_args
+    assert request_config_call.args[0] == admin_pb2.AdminMessage.SESSIONKEY_CONFIG
+    assert (
+        _get_mock_call_arg(
+            request_config_call,
+            name="adminIndex",
+            positional_index=1,
+        )
+        == 6
+    )
+
+    anode.requestConfig.reset_mock()
+    iface._get_or_create_by_num.return_value = {"adminSessionPassKey": b"x"}
+    anode.ensureSessionKey()
+    anode.requestConfig.assert_not_called()

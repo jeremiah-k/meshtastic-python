@@ -26,7 +26,7 @@ from ._node_legacy_support import (
 
 
 @pytest.mark.unit
-def test_onRequestGetMetadata_handles_routing_error_and_ack_only(
+def test_on_request_get_metadata_handles_routing_error_and_ack_only(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
     """OnRequestGetMetadata should NAK on routing error and avoid recursive retries."""
@@ -48,7 +48,7 @@ def test_onRequestGetMetadata_handles_routing_error_and_ack_only(
 
 
 @pytest.mark.unit
-def test_onRequestGetMetadata_handles_non_routing_error_reason(
+def test_on_request_get_metadata_handles_non_routing_error_reason(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
     """OnRequestGetMetadata should mark NAK for decoded routing errors outside ROUTING_APP."""
@@ -69,7 +69,7 @@ def test_onRequestGetMetadata_handles_non_routing_error_reason(
 
 
 @pytest.mark.unit
-def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
+def test_on_request_get_metadata_logs_valid_and_fallback_enum_values(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     caplog: LogCaptureFixture,
 ) -> None:
@@ -91,29 +91,32 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
         anode.onRequestGetMetadata(
             {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": valid_raw}}}
         )
-    assert iface._acknowledgment.receivedAck is True
-    assert iface.metadata.firmware_version == "fw"
-    anode._timeout.reset.assert_called()
+        assert "role: CLIENT" in caplog.text
+        assert "hw_model: TBEAM" in caplog.text
 
-    iface._acknowledgment = Acknowledgment()
-    unknown_raw = admin_pb2.AdminMessage()
-    unknown_resp = unknown_raw.get_device_metadata_response
-    unknown_resp.firmware_version = "fw2"
-    unknown_resp.device_state_version = 2
-    unknown_resp.role = cast(config_pb2.Config.DeviceConfig.Role.ValueType, 999)
-    unknown_resp.position_flags = 0
-    unknown_resp.hw_model = cast(mesh_pb2.HardwareModel.ValueType, 999)
-    unknown_resp.hasPKC = False
-    unknown_resp.excluded_modules = 1
-    anode.onRequestGetMetadata(
-        {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": unknown_raw}}}
-    )
+        iface._acknowledgment = Acknowledgment()
+        unknown_raw = admin_pb2.AdminMessage()
+        unknown_resp = unknown_raw.get_device_metadata_response
+        unknown_resp.firmware_version = "fw2"
+        unknown_resp.device_state_version = 2
+        unknown_resp.role = cast(config_pb2.Config.DeviceConfig.Role.ValueType, 999)
+        unknown_resp.position_flags = 0
+        unknown_resp.hw_model = cast(mesh_pb2.HardwareModel.ValueType, 999)
+        unknown_resp.hasPKC = False
+        unknown_resp.excluded_modules = 1
+        anode.onRequestGetMetadata(
+            {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": unknown_raw}}}
+        )
+        assert "role: 999" in caplog.text
+        assert "hw_model: 999" in caplog.text
+
     assert iface._acknowledgment.receivedAck is True
     assert iface.metadata.firmware_version == "fw2"
+    anode._timeout.reset.assert_called()
 
 
 @pytest.mark.unit
-def test_onRequestGetMetadata_updates_metadata_under_node_db_lock() -> None:
+def test_on_request_get_metadata_updates_metadata_under_node_db_lock() -> None:
     """OnRequestGetMetadata should update iface.metadata while holding iface._node_db_lock."""
     lock = _TrackingLock()
     iface = _MetadataLockProbeIface(lock, include_acknowledgment=True)
@@ -166,7 +169,7 @@ def test_set_metadata_snapshot_stores_detached_copy_under_lock() -> None:
 
 
 @pytest.mark.unit
-def test_onRequestGetMetadata_emits_stdout_when_redirected(
+def test_on_request_get_metadata_emits_stdout_when_redirected(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
 ) -> None:
@@ -297,7 +300,7 @@ def test_get_metadata_snapshot_returns_none_for_non_proto_metadata(
 
 
 @pytest.mark.unit
-def test_getMetadata_waits_for_redirected_stdout_callback_output(
+def test_get_metadata_waits_for_redirected_stdout_callback_output(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -355,7 +358,7 @@ def test_getMetadata_waits_for_redirected_stdout_callback_output(
 
 
 @pytest.mark.unit
-def test_getMetadata_emits_cached_metadata_when_callback_never_arrives(
+def test_get_metadata_emits_cached_metadata_when_callback_never_arrives(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
