@@ -2,7 +2,7 @@
 
 This document is the canonical human-readable policy for compatibility aliases,
 deprecations, and legacy compatibility behaviors in this repository. Runtime
-decomposition import guarantees are additionally defined by the machine-readable
+import guarantees are additionally defined by the machine-readable
 ``meshtastic/_runtime_compatibility.json`` manifest consumed by API-baseline tooling.
 
 If a compatibility symbol is not listed here, or a runtime import guarantee is

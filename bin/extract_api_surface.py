@@ -54,8 +54,10 @@ def _load_runtime_compatibility_import_paths(pkg_dir: Path) -> list[str]:
         if path in seen_paths:
             raise ValueError(f"Duplicate runtime compatibility module path: {path}")
         if status not in _RUNTIME_MODULE_STATUSES:
+            allowed_statuses = ", ".join(sorted(_RUNTIME_MODULE_STATUSES))
             raise ValueError(
-                f"Unsupported runtime compatibility module status for {path}: {status!r}"
+                "Unsupported runtime compatibility module status for "
+                f"{path}: {status!r}; expected one of: {allowed_statuses}"
             )
         if not isinstance(purpose, str) or not purpose.strip():
             raise ValueError(f"Runtime compatibility purpose is required for {path}")
@@ -67,9 +69,11 @@ def _load_runtime_compatibility_import_paths(pkg_dir: Path) -> list[str]:
                     f"Runtime compatibility export name is invalid for {path}: {export_name!r}"
                 )
             if export_status not in _RUNTIME_EXPORT_STATUSES:
+                allowed_statuses = ", ".join(sorted(_RUNTIME_EXPORT_STATUSES))
                 raise ValueError(
                     "Unsupported runtime compatibility export status for "
-                    f"{path}.{export_name}: {export_status!r}"
+                    f"{path}.{export_name}: {export_status!r}; "
+                    f"expected one of: {allowed_statuses}"
                 )
         seen_paths.add(path)
         paths.append(path)
