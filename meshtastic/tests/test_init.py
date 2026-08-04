@@ -1,16 +1,18 @@
 """Meshtastic unit tests for __init__.py."""
 
+from collections.abc import Callable
 import copy
 import logging
 import re
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import create_autospec
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 import serial as pyserial  # type: ignore[import-untyped]
 
 import meshtastic
+from meshtastic import _protocol_runtime
 from meshtastic import (
     DECODE_ERROR_KEY,
     _on_admin_receive,
@@ -23,6 +25,7 @@ from meshtastic import (
 )
 
 from ..mesh_interface import MeshInterface
+from ..protobuf import admin_pb2
 from ..serial_interface import SerialInterface
 
 
@@ -462,6 +465,85 @@ def test_init_on_admin_receive_returns_when_passkey_missing(
 
     node = iface._get_or_create_by_num(4808675309)
     assert "adminSessionPassKey" not in node
+
+
+@pytest.mark.unit
+def test_receive_handlers_skip_packet_summary_when_debug_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Receive handlers should not build packet summaries unless DEBUG is enabled."""
+    iface = create_autospec(SerialInterface, instance=True)
+    packet_summary = MagicMock()
+    monkeypatch.setattr(_protocol_runtime, "_packet_debug_summary", packet_summary)
+    monkeypatch.setattr(
+        _protocol_runtime.logger,
+        "isEnabledFor",
+        lambda _level: False,
+    )
+    cases: tuple[tuple[Callable[[Any, dict[str, Any]], None], dict[str, Any]], ...] = (
+        (_on_text_receive, {"decoded": {"payload": b"hello"}}),
+        (_on_position_receive, {}),
+        (_on_node_info_receive, {}),
+        (_on_telemetry_receive, {}),
+    )
+
+    for handler, packet in cases:
+        handler(iface, packet)
+
+    packet_summary.assert_not_called()
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_does_not_merge_decode_error_metrics(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Partially decoded telemetry must not overwrite cached metric state."""
+    iface = iface_with_nodes
+    node = iface._get_or_create_by_num(4808675309)
+    with iface._node_db_lock:
+        node["deviceMetrics"] = {"batteryLevel": 95}
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {
+            "telemetry": {
+                DECODE_ERROR_KEY: "decode-failed: malformed",
+                "deviceMetrics": {"batteryLevel": 1},
+            }
+        },
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    assert node["deviceMetrics"] == {"batteryLevel": 95}
+    assert node["lastReceived"]["decoded"]["telemetry"][DECODE_ERROR_KEY].startswith(
+        "decode-failed"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw_admin",
+    (admin_pb2.AdminMessage(), {"session_passkey": b""}),
+    ids=("protobuf", "mapping"),
+)
+def test_init_on_admin_receive_does_not_replace_valid_key_with_empty_passkey(
+    iface_with_nodes: MeshInterface,
+    raw_admin: Any,
+) -> None:
+    """An omitted protobuf bytes field must not erase a cached admin passkey."""
+    iface = iface_with_nodes
+    node = iface._get_or_create_by_num(4808675309)
+    with iface._node_db_lock:
+        node["adminSessionPassKey"] = b"existing-key"
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": {"raw": raw_admin}},
+        "rxTime": 100,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    assert node["adminSessionPassKey"] == b"existing-key"
 
 
 @pytest.mark.unit
