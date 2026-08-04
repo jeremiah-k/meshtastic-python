@@ -4,9 +4,15 @@ import threading
 from types import SimpleNamespace
 
 from meshtastic.interfaces.ble.interface import BLEInterface
-from meshtastic.interfaces.ble.lifecycle_controller_runtime import BLELifecycleController
-from meshtastic.interfaces.ble.session_state import BLESessionState, _session_state_for
-from meshtastic.interfaces.ble.state import BLEStateManager
+from meshtastic.interfaces.ble.lifecycle_controller_runtime import (
+    BLELifecycleController,
+)
+from meshtastic.interfaces.ble.session_state import (
+    BLESessionState,
+    _LegacyBLESessionStateAdapter,
+    _session_state_for,
+)
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 
 def _bare_interface() -> BLEInterface:
@@ -52,8 +58,8 @@ def test_session_state_retry_reset_helpers() -> None:
     state.receive_recovery_attempts = 2
     state.last_recovery_time = 11.0
 
-    state.reset_receive_retry_state()
-    state.reset_recovery_state()
+    state._reset_receive_retry_state()
+    state._reset_recovery_state()
 
     assert state.read_retry_count == 0
     assert state.last_empty_read_warning == 0.0
@@ -111,20 +117,44 @@ def test_legacy_session_state_adapter_implements_reset_contract() -> None:
 
     state = _session_state_for(legacy)
     assert _session_state_for(legacy) is state
-    assert state.lock is state.lock
+    assert state.lock is legacy._state_lock
 
-    state.reset_read_retry_count()
+    state._reset_read_retry_count()
     assert legacy._read_retry_count == 0
 
     legacy._read_retry_count = 2
-    state.reset_receive_retry_state()
+    state._reset_receive_retry_state()
     assert legacy._read_retry_count == 0
     assert legacy._last_empty_read_warning == 0.0
     assert legacy._suppressed_empty_read_warnings == 0
 
-    state.reset_recovery_state()
+    state._reset_recovery_state()
     assert legacy._receive_recovery_attempts == 0
     assert legacy._last_recovery_time == 0.0
+
+
+def test_partial_interface_resolves_mixin_session_owner_directly() -> None:
+    """Partial BLE interfaces should not create a competing legacy adapter."""
+    iface = BLEInterface.__new__(BLEInterface)
+
+    state = _session_state_for(iface)
+
+    assert isinstance(state, BLESessionState)
+    assert state is iface._get_session_state()
+    assert state.lock is iface._state_lock
+
+
+def test_mixin_promotion_preserves_cached_adapter_lock() -> None:
+    """Fallback adapter promotion must retain the coordinator's shared lock."""
+    iface = BLEInterface.__new__(BLEInterface)
+    adapter = _LegacyBLESessionStateAdapter(iface)
+    iface.__dict__["_session_state"] = adapter
+
+    state = iface._get_session_state()
+
+    assert isinstance(state, BLESessionState)
+    assert state.lock is adapter.lock
+    assert iface._state_lock is adapter.lock
 
 
 def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
@@ -135,7 +165,9 @@ def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
 
     state_manager = BLEStateManager()
     state = BLESessionState(lock=state_manager.lock)
-    pending_thread = SimpleNamespace(name="PendingReceive", ident=None, is_alive=lambda: False)
+    pending_thread = SimpleNamespace(
+        name="PendingReceive", ident=None, is_alive=lambda: False
+    )
     state.receive_thread = pending_thread
     state.receive_start_pending = True
     state.receive_start_pending_since = 10**12  # safely in the future for this probe
@@ -151,10 +183,12 @@ def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
     def _unexpected_create(**_kwargs: object) -> object:
         raise AssertionError("pending session state should suppress thread creation")
 
-    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
-        name="PendingReceive",
-        reset_recovery=False,
-        create_runtime_thread=_unexpected_create,  # type: ignore[arg-type]
+    created, recovery_attempts = (
+        coordinator._check_receive_start_conditions(  # noqa: SLF001
+            name="PendingReceive",
+            reset_recovery=False,
+            create_runtime_thread=_unexpected_create,  # type: ignore[arg-type]
+        )
     )
 
     assert created is None
@@ -173,3 +207,48 @@ def test_receive_controller_reads_ever_connected_from_explicit_session() -> None
     controller = BLEReceiveRecoveryController(iface, session_state=state)  # type: ignore[arg-type]
 
     assert controller._has_ever_connected_session() is True  # noqa: SLF001
+
+
+def test_ownership_cleanup_reads_explicit_session_state() -> None:
+    """Publish cleanup must not consult contradictory interface compatibility fields."""
+    from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
+        BLEConnectionOwnershipLifecycleCoordinator,
+    )
+
+    client = object()
+    state_manager = BLEStateManager()
+    state = BLESessionState(
+        lock=state_manager.lock,
+        client_publish_pending=True,
+        connected_publish_inflight_client=client,  # type: ignore[arg-type]
+        connection_session_epoch=9,
+    )
+    iface = SimpleNamespace(
+        client=None,
+        address="legacy-address",
+        _last_connection_request="legacy-request",
+        _client_publish_pending=False,
+        _connected_publish_inflight_client=None,
+        _connection_session_epoch=1,
+    )
+    coordinator = BLEConnectionOwnershipLifecycleCoordinator(
+        iface, session_state=state  # type: ignore[arg-type]
+    )
+
+    coordinator._discard_invalidated_connected_client(  # noqa: SLF001
+        client,  # type: ignore[arg-type]
+        restore_address="AA:BB:CC:DD:EE:FF",
+        restore_last_connection_request="restored",
+        is_closing_getter=lambda: False,
+        reset_to_disconnected=lambda: True,
+        current_state_getter=lambda: ConnectionState.DISCONNECTED,
+        transition_to_disconnected=lambda: True,
+        safe_cleanup=lambda _cleanup, _name: None,
+    )
+
+    assert state.client_publish_pending is False
+    assert state.connected_publish_inflight_client is None
+    assert state.connection_session_epoch == 9
+    assert iface._client_publish_pending is False
+    assert iface._connected_publish_inflight_client is None
+    assert iface._connection_session_epoch == 1

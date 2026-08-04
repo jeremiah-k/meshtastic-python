@@ -76,11 +76,11 @@ class _BLESessionStatePort(Protocol):  # pylint: disable=too-many-instance-attri
     receive_start_pending_since: float | None
     receive_thread: ThreadLike | None
 
-    def reset_read_retry_count(self) -> None:
+    def _reset_read_retry_count(self) -> None:
         """Reset only the transient read retry counter."""
 
-    def reset_receive_retry_state(self) -> None:
+    def _reset_receive_retry_state(self) -> None:
         """Reset transient read retry and warning counters."""
 
-    def reset_recovery_state(self) -> None:
+    def _reset_recovery_state(self) -> None:
         """Reset receive-recovery attempt bookkeeping."""

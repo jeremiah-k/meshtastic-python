@@ -3,8 +3,6 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from meshtastic.interfaces.ble.ports import _BLESessionStatePort
-from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_member,
     _iter_declared_members,
@@ -20,6 +18,8 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleThreadAccess,
     _OwnershipSnapshot,
 )
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     sanitize_address,
@@ -48,7 +48,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
     """
 
     def __init__(
-        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+        self,
+        iface: "BLEInterface",
+        *,
+        session_state: _BLESessionStatePort | None = None,
     ) -> None:
         """Bind connection ownership coordination to a specific interface.
 
@@ -476,8 +479,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         is_closing = False
         disconnect_session_epoch = 0
         with self._session.lock:
-            disconnect_session_epoch = getattr(iface, "_connection_session_epoch", 0)
-            inflight_client = getattr(iface, "_connected_publish_inflight_client", None)
+            disconnect_session_epoch = self._session.connection_session_epoch
+            inflight_client = self._session.connected_publish_inflight_client
             if iface.client is client:
                 if inflight_client is client:
                     self._session.connected_publish_inflight_client = None
@@ -493,7 +496,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 )
             elif (
                 iface.client is None
-                and bool(getattr(iface, "_client_publish_pending", False))
+                and self._session.client_publish_pending
                 and inflight_client is client
             ):
                 self._session.connected_publish_inflight_client = None
@@ -516,8 +519,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         finally:
             with self._session.lock:
                 same_session = (
-                    getattr(iface, "_connection_session_epoch", 0)
-                    == disconnect_session_epoch
+                    self._session.connection_session_epoch == disconnect_session_epoch
                 )
             if same_session:
                 self._apply_post_cleanup_state_correction(
@@ -529,8 +531,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         if should_publish_disconnect and not is_closing:
             with self._session.lock:
                 publish_disconnect = (
-                    getattr(iface, "_connection_session_epoch", 0)
-                    == disconnect_session_epoch
+                    self._session.connection_session_epoch == disconnect_session_epoch
                 )
             if publish_disconnect:
                 iface._disconnected()
@@ -619,10 +620,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         with self._session.lock:
             still_owned, is_closing = get_connected_status_locked(connected_client)
             if still_owned and not is_closing:
-                publish_pending = bool(getattr(iface, "_client_publish_pending", False))
-                inflight_client = getattr(
-                    iface, "_connected_publish_inflight_client", None
-                )
+                publish_pending = self._session.client_publish_pending
+                inflight_client = self._session.connected_publish_inflight_client
                 if not publish_pending:
                     self._session.client_publish_pending = True
                     self._session.connected_publish_inflight_client = connected_client
@@ -678,10 +677,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
         if publish_claimed:
             with self._session.lock:
-                if (
-                    getattr(iface, "_connected_publish_inflight_client", None)
-                    is connected_client
-                ):
+                if self._session.connected_publish_inflight_client is connected_client:
                     self._session.connected_publish_inflight_client = None
         post_check_snapshot = snapshot_provider(
             connected_client,
@@ -747,7 +743,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 raise_invalidated(post_commit_snapshot)
             publish_allowed = False
             with self._session.lock:
-                published_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+                published_session_epoch = self._session.connection_session_epoch
                 publish_allowed = iface.client is connected_client
             if not publish_allowed:
                 stale_snapshot = snapshot_provider(
@@ -759,7 +755,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             with self._session.lock:
                 publish_allowed = (
                     iface.client is connected_client
-                    and getattr(iface, "_connection_session_epoch", 0)
+                    and self._session.connection_session_epoch
                     == published_session_epoch
                 )
             if not publish_allowed:
@@ -782,7 +778,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 with self._session.lock:
                     fallback_allowed = (
                         iface.client is connected_client
-                        and getattr(iface, "_connection_session_epoch", 0)
+                        and self._session.connection_session_epoch
                         == published_session_epoch
                     )
                 if not fallback_allowed:
@@ -796,7 +792,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             with self._session.lock:
                 publish_completed = (
                     iface.client is connected_client
-                    and getattr(iface, "_connection_session_epoch", 0)
+                    and self._session.connection_session_epoch
                     == published_session_epoch
                 )
                 if publish_completed:
@@ -806,10 +802,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 self._emit_verified_connection_side_effects(connected_client)
         finally:
             with self._session.lock:
-                if (
-                    getattr(iface, "_connected_publish_inflight_client", None)
-                    is connected_client
-                ):
+                if self._session.connected_publish_inflight_client is connected_client:
                     self._session.connected_publish_inflight_client = None
                 if iface.client is connected_client:
                     self._session.client_publish_pending = False
@@ -830,8 +823,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             )
             with self._session.lock:
                 same_session = (
-                    getattr(iface, "_connection_session_epoch", 0)
-                    == published_session_epoch
+                    self._session.connection_session_epoch == published_session_epoch
                 )
             if same_session:
                 iface._disconnected()
@@ -885,7 +877,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     self._session.connection_alias_key = connection_alias_key
                 else:
                     active_client = iface.client
-                    owns_alias = self._session.connection_alias_key == connection_alias_key
+                    owns_alias = (
+                        self._session.connection_alias_key == connection_alias_key
+                    )
                     should_clear_gate_keys = owns_alias and (
                         active_client is connected_client or active_client is None
                     )
@@ -909,7 +903,9 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 if not still_active:
                     self._log_gate_cleanup(connected_client, is_closing=is_closing)
                     active_client = iface.client
-                    owns_alias = self._session.connection_alias_key == connection_alias_key
+                    owns_alias = (
+                        self._session.connection_alias_key == connection_alias_key
+                    )
                     should_clear_gate_keys = owns_alias and (
                         active_client is connected_client or active_client is None
                     )

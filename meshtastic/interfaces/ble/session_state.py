@@ -1,10 +1,13 @@
 """Owned mutable lifecycle state for a BLE interface session."""
 
-from dataclasses import dataclass
 import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from meshtastic.interfaces.ble.compat_adapter import _get_declared_lock, _get_declared_member
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_lock,
+    _get_declared_member,
+)
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort, _LockPort
 
@@ -52,19 +55,19 @@ class BLESessionState:  # pylint: disable=too-many-instance-attributes
     receive_start_pending_since: float | None = None
     receive_thread: ThreadLike | None = None
 
-    def reset_read_retry_count(self) -> None:
+    def _reset_read_retry_count(self) -> None:
         """Reset only the transient read retry counter under the session lock."""
         with self.lock:
             self.read_retry_count = 0
 
-    def reset_receive_retry_state(self) -> None:
+    def _reset_receive_retry_state(self) -> None:
         """Reset transient read retry and warning counters under the session lock."""
         with self.lock:
             self.read_retry_count = 0
             self.last_empty_read_warning = 0.0
             self.suppressed_empty_read_warnings = 0
 
-    def reset_recovery_state(self) -> None:
+    def _reset_recovery_state(self) -> None:
         """Reset receive-recovery attempt bookkeeping under the session lock."""
         with self.lock:
             self.receive_recovery_attempts = 0
@@ -75,17 +78,23 @@ class _BLESessionStateCompatMixin:
     """Preserve historical private lifecycle attributes over owned session state."""
 
     _state_manager: Any
-    _session_state: BLESessionState
+    _session_state: _BLESessionStatePort
 
     def _get_session_state(self) -> BLESessionState:
         """Return owned lifecycle state, lazily supporting partial interfaces."""
         state = self.__dict__.get("_session_state")
         if isinstance(state, BLESessionState):
             return state
-        state_manager = self.__dict__.get("_state_manager")
-        lock = _get_declared_lock(state_manager, "lock")
-        if lock is None:
-            lock = cast(_LockPort, threading.RLock())
+        if isinstance(state, _LegacyBLESessionStateAdapter):
+            # A legacy adapter can be cached before a partial interface first
+            # reaches a mixin property. Promote it without changing the shared
+            # lock; the adapter continues to proxy fields into this owner.
+            lock = state.lock
+        else:
+            state_manager = self.__dict__.get("_state_manager")
+            lock = _get_declared_lock(state_manager, "lock")
+            if lock is None:
+                lock = cast(_LockPort, threading.RLock())
         state = BLESessionState(lock=lock)
         self.__dict__["_session_state"] = state
         return state
@@ -386,19 +395,19 @@ class _LegacyBLESessionStateAdapter:
             object.__setattr__(self, "_fallback_lock", cast(_LockPort, value))
         setattr(self._iface, mapped, value)
 
-    def reset_read_retry_count(self) -> None:
+    def _reset_read_retry_count(self) -> None:
         """Reset only the legacy transient read retry counter."""
         with self._fallback_lock:
             self.read_retry_count = 0
 
-    def reset_receive_retry_state(self) -> None:
+    def _reset_receive_retry_state(self) -> None:
         """Reset legacy transient read retry and warning counters."""
         with self._fallback_lock:
             self.read_retry_count = 0
             self.last_empty_read_warning = 0.0
             self.suppressed_empty_read_warnings = 0
 
-    def reset_recovery_state(self) -> None:
+    def _reset_recovery_state(self) -> None:
         """Reset legacy receive-recovery bookkeeping."""
         with self._fallback_lock:
             self.receive_recovery_attempts = 0
@@ -412,9 +421,14 @@ def _session_state_for(
     if explicit is not None:
         return explicit
     instance_dict = _get_declared_member(iface, "__dict__", {})
-    state = instance_dict.get("_session_state") if isinstance(instance_dict, dict) else None
+    state = (
+        instance_dict.get("_session_state") if isinstance(instance_dict, dict) else None
+    )
     if isinstance(state, (BLESessionState, _LegacyBLESessionStateAdapter)):
         return cast(_BLESessionStatePort, state)
+
+    if isinstance(iface, _BLESessionStateCompatMixin):
+        return iface._get_session_state()
 
     legacy_state = _LegacyBLESessionStateAdapter(iface)
     if isinstance(instance_dict, dict):

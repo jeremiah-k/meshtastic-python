@@ -5,11 +5,11 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from meshtastic.interfaces.ble.ports import _BLESessionStatePort
-from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleThreadAccess
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.utils import _thread_start_probe
 
 if TYPE_CHECKING:
@@ -29,7 +29,10 @@ class BLEReceiveLifecycleCoordinator:
     """
 
     def __init__(
-        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+        self,
+        iface: "BLEInterface",
+        *,
+        session_state: _BLESessionStatePort | None = None,
     ) -> None:
         """Bind receive lifecycle ownership to a specific interface.
 
@@ -37,6 +40,9 @@ class BLEReceiveLifecycleCoordinator:
         ----------
         iface : BLEInterface
             Interface instance owning receive state and thread references.
+        session_state : _BLESessionStatePort | None
+            Optional shared lifecycle state. When ``None``, resolve the
+            interface-owned state or use the legacy adapter.
 
         Returns
         -------
@@ -493,7 +499,8 @@ class BLEReceiveLifecycleCoordinator:
         with self._session.lock:
             if (
                 self._session.receive_thread is thread
-                and self._session.receive_recovery_attempts == recovery_attempts_before_start
+                and self._session.receive_recovery_attempts
+                == recovery_attempts_before_start
                 and _thread_start_probe(thread)[1]
             ):
                 self._session.receive_recovery_attempts = 0

@@ -10,15 +10,13 @@ from typing import TYPE_CHECKING, cast
 
 from bleak.exc import BleakDBusError, BleakError, BleakGATTProtocolError
 
+from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_member,
     _iter_declared_members,
     _resolve_declared_callable,
 )
-from meshtastic.interfaces.ble.ports import _BLESessionStatePort
-from meshtastic.interfaces.ble.session_state import _session_state_for
-from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     ERROR_READING_BLE,
     FROMRADIO_UUID,
@@ -36,6 +34,8 @@ from meshtastic.interfaces.ble.failure_policy import (
     _BLEFailureDisposition,
     _log_ble_failure,
 )
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.utils import (
     _sleep,
 )
@@ -77,7 +77,10 @@ class BLEReceiveRecoveryController:
     """
 
     def __init__(
-        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+        self,
+        iface: "BLEInterface",
+        *,
+        session_state: _BLESessionStatePort | None = None,
     ) -> None:
         """Bind receive/recovery helpers to a specific interface instance.
 
@@ -282,9 +285,7 @@ class BLEReceiveRecoveryController:
         legacy_check_and_clear_event = getattr(
             coordinator, "_check_and_clear_event", None
         )
-        if callable(
-            legacy_check_and_clear_event
-        ):
+        if callable(legacy_check_and_clear_event):
             result = legacy_check_and_clear_event(event_name)
             return result if isinstance(result, bool) else False
         return False
@@ -548,7 +549,7 @@ class BLEReceiveRecoveryController:
             f"read_loop: {error_message}",
             client=previous_client,
         )
-        self._session.reset_read_retry_count()
+        self._session._reset_read_retry_count()
         if not should_continue:
             self._set_receive_wanted(want_receive=False)
         return should_continue
@@ -556,11 +557,8 @@ class BLEReceiveRecoveryController:
     def _should_poll_without_notify(self) -> bool:
         """Return whether fallback polling is allowed without notify callbacks."""
         iface = self._iface
-        with self._session.lock:
-            notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
-            return not (
-                notify_enabled if isinstance(notify_enabled, bool) else False
-            )
+        notify_enabled = _get_declared_member(iface, "_fromnum_notify_enabled", False)
+        return not (notify_enabled if isinstance(notify_enabled, bool) else False)
 
     def _resolve_wait_for_runtime_event(
         self,
@@ -767,17 +765,17 @@ class BLEReceiveRecoveryController:
             retry_on_empty=not poll_without_notify,
         )
         if not payload:
-            self._session.reset_read_retry_count()
+            self._session._reset_read_retry_count()
             return False
         logger.debug("FROMRADIO read: %s", payload.hex())
         try:
             iface._handle_from_radio(payload)
         except DecodeError as exc:
             logger.warning("Failed to parse FromRadio packet, discarding: %s", exc)
-            self._session.reset_read_retry_count()
+            self._session._reset_read_retry_count()
             return True
         self._reset_recovery_after_stability()
-        self._session.reset_read_retry_count()
+        self._session._reset_read_retry_count()
         return True
 
     def _handle_payload_read(
@@ -960,7 +958,7 @@ class BLEReceiveRecoveryController:
         with self._session.lock:
             self._session.last_recovery_time = time.monotonic()
             updated_last_recovery_time = self._session.last_recovery_time
-        self._session.reset_read_retry_count()
+        self._session._reset_read_retry_count()
         logger.debug(
             "BLE receive recovery timestamp updated: attempts=%d last_recovery_time=%.3f",
             attempts,
