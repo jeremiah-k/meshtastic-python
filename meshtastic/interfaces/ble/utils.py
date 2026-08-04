@@ -9,8 +9,8 @@ from types import ModuleType
 from typing import Any, TypeVar, cast
 
 from meshtastic.interfaces.ble.compat_adapter import (
-    _get_declared_callable,
     _get_declared_member,
+    _resolve_declared_callable,
 )
 from meshtastic.interfaces.ble.constants import logger
 
@@ -126,13 +126,7 @@ def _resolve_safe_execute(iface: object) -> Callable[..., Any] | None:
         otherwise ``None``.
     """
     error_handler = _get_declared_member(iface, "error_handler")
-    safe_execute = _get_declared_callable(error_handler, "safe_execute")
-    if safe_execute is not None:
-        return safe_execute
-    legacy_safe_execute = _get_declared_callable(error_handler, "_safe_execute")
-    if legacy_safe_execute is not None:
-        return legacy_safe_execute
-    return None
+    return _resolve_declared_callable(error_handler, "safe_execute", "_safe_execute")
 
 
 def _safe_execute_through_adapter(

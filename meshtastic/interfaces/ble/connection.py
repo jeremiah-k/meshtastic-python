@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING, cast
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
+from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_member,
     _resolve_declared_callable,
 )
-from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     AWAIT_TIMEOUT_BUFFER_SECONDS,
     BLECLIENT_ERROR_ALREADY_CONNECTED,
@@ -44,6 +44,7 @@ from meshtastic.interfaces.ble.errors import (
 from meshtastic.interfaces.ble.errors import (
     BLEErrorHandler,
 )
+from meshtastic.interfaces.ble.lifecycle_primitives import _client_is_connected_compat
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unexpected_keyword_error,
@@ -122,7 +123,6 @@ def _is_device_not_found_error(err: Exception) -> bool:
         return True
     message = str(err).casefold()
     return bool(message) and _DEVICE_NOT_FOUND_MESSAGE_RE.search(message) is not None
-
 
 
 def _run_safe_cleanup(
@@ -270,18 +270,10 @@ class ConnectionValidator:
     @staticmethod
     def _client_is_connected(client: BLEClient | None) -> bool:
         """Resolve connected state from public/legacy BLEClient compatibility members."""
-        if client is None:
+        try:
+            return _client_is_connected_compat(client)
+        except AttributeError:
             return False
-        for candidate_name in ("isConnected", "is_connected", "_is_connected"):
-            candidate = _get_declared_member(client, candidate_name)
-            if callable(candidate):
-                connected = candidate()
-                if isinstance(connected, bool):
-                    return connected
-                continue
-            if isinstance(candidate, bool):
-                return candidate
-        return False
 
     def _check_existing_client(
         self,
@@ -706,9 +698,7 @@ class ClientManager:
                 is_connected = False
                 for probe_name in ("is_connected", "isConnected", "_is_connected"):
                     is_connected_probe = _get_declared_member(client, probe_name)
-                    if callable(
-                        is_connected_probe
-                    ):
+                    if callable(is_connected_probe):
                         try:
                             is_connected = bool(is_connected_probe())
                         except (
@@ -721,9 +711,7 @@ class ClientManager:
                             )
                         if is_connected:
                             break
-                    elif isinstance(
-                        is_connected_probe, bool
-                    ):
+                    elif isinstance(is_connected_probe, bool):
                         is_connected = is_connected_probe
                         if is_connected:
                             break
@@ -936,11 +924,12 @@ class ConnectionOrchestrator:
         )
         kwargs = {} if kwargs is None else kwargs
         public_member = _get_declared_member(target, public_name, missing_sentinel)
-        underscore_member = _get_declared_member(target, underscore_name, missing_sentinel)
+        underscore_member = _get_declared_member(
+            target, underscore_name, missing_sentinel
+        )
 
-        if (
-            prefer_instance_type is not None
-            and issubclass(type(target), prefer_instance_type)
+        if prefer_instance_type is not None and issubclass(
+            type(target), prefer_instance_type
         ):
             if public_member is missing_sentinel:
                 raise AttributeError(
@@ -1908,7 +1897,9 @@ class ConnectionOrchestrator:
             self.interface, "findDevice", "find_device", "_find_device"
         )
         if find_device is None:
-            raise AttributeError("Interface is missing findDevice/find_device/_find_device")
+            raise AttributeError(
+                "Interface is missing findDevice/find_device/_find_device"
+            )
         return cast(BLEDevice, find_device(target_address))
 
     def _finalize_connection(
@@ -1989,7 +1980,9 @@ class ConnectionOrchestrator:
                 )
 
         if emit_connected_side_effects:
-            raw_ever_connected = _get_declared_member(self.interface, "_ever_connected", False)
+            raw_ever_connected = _get_declared_member(
+                self.interface, "_ever_connected", False
+            )
             prior_ever_connected = (
                 raw_ever_connected if isinstance(raw_ever_connected, bool) else False
             )

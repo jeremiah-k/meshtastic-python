@@ -27,6 +27,7 @@ from meshtastic.interfaces.ble.errors import (
     BLEDeviceNotFoundError,
     BLEErrorHandler,
 )
+from meshtastic.interfaces.ble.management_runtime import BLEManagementCommandHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
@@ -80,6 +81,25 @@ def test_connection_validator_client_is_connected_member_paths() -> None:
 
     client_unknown = SimpleNamespace(isConnected=lambda: "yes")
     assert ConnectionValidator._client_is_connected(client_unknown) is False
+
+
+def test_connectivity_probes_share_declared_fallback_semantics() -> None:
+    """Connection and management paths should use the same declared fallback."""
+
+    class FallbackConnectivityClient:
+        def isConnected(self) -> bool:  # noqa: N802 - compatibility spelling
+            raise RuntimeError("preferred probe failed")
+
+        def _is_connected(self) -> bool:
+            return True
+
+        def __getattr__(self, _name: str) -> object:
+            return lambda: False
+
+    client = FallbackConnectivityClient()
+
+    assert ConnectionValidator._client_is_connected(client) is True  # type: ignore[arg-type]
+    assert BLEManagementCommandHandler._is_client_connected(client) is True  # type: ignore[arg-type]
 
 
 def test_connection_helpers_cover_mock_import_and_inline_safe_cleanup(

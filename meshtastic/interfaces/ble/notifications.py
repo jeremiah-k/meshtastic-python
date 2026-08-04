@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from bleak.exc import BleakDBusError, BleakError
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.compat_adapter import _resolve_declared_callable
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED,
     FROMNUM_UUID,
@@ -381,38 +381,34 @@ class BLENotificationDispatcher:
             logger.debug(error_msg)
             return
         report_exception: Callable[[str], Any] | None = None
-        for hook_name in ("safe_execute", "_safe_execute"):
-            safe_execute_hook = getattr(error_handler, hook_name, None)
-            if callable(safe_execute_hook):
-                safe_execute_callable = cast(Callable[..., Any], safe_execute_hook)
+        safe_execute_hook = _resolve_declared_callable(
+            error_handler, "safe_execute", "_safe_execute"
+        )
+        if safe_execute_hook is not None:
+            safe_execute_callable = cast(Callable[..., Any], safe_execute_hook)
 
-                def _report_via_safe_execute(
-                    message: str,
-                    *,
-                    _safe_execute_callable: Callable[..., Any] = safe_execute_callable,
-                ) -> None:
-                    def _raise_handler_error() -> None:
-                        raise RuntimeError(message)
+            def _report_via_safe_execute(
+                message: str,
+                *,
+                _safe_execute_callable: Callable[..., Any] = safe_execute_callable,
+            ) -> None:
+                def _raise_handler_error() -> None:
+                    raise RuntimeError(message)
 
-                    BLENotificationDispatcher.invoke_safe_execute_compat(
-                        _safe_execute_callable,
-                        _raise_handler_error,
-                        error_msg=message,
-                        fallback=lambda: logger.debug(message),
-                    )
+                BLENotificationDispatcher.invoke_safe_execute_compat(
+                    _safe_execute_callable,
+                    _raise_handler_error,
+                    error_msg=message,
+                    fallback=lambda: logger.debug(message),
+                )
 
-                report_exception = _report_via_safe_execute
-                break
-        for hook_name in (
-            "handle_unhandled_exception",
-            "_handle_unhandled_exception",
-        ):
-            if report_exception is not None:
-                break
-            hook = getattr(error_handler, hook_name, None)
-            if callable(hook):
-                report_exception = hook
-                break
+            report_exception = _report_via_safe_execute
+        if report_exception is None:
+            report_exception = _resolve_declared_callable(
+                error_handler,
+                "handle_unhandled_exception",
+                "_handle_unhandled_exception",
+            )
         if report_exception is not None:
             try:
                 report_exception(error_msg)
@@ -725,10 +721,10 @@ class BLENotificationDispatcher:
                     _report_notification_error()
 
             error_handler = self._resolve_error_handler()
-            safe_execute = _get_declared_callable(error_handler, "safe_execute")
-            if not callable(safe_execute):
-                safe_execute = _get_declared_callable(error_handler, "_safe_execute")
-            if not callable(safe_execute):
+            safe_execute = _resolve_declared_callable(
+                error_handler, "safe_execute", "_safe_execute"
+            )
+            if safe_execute is None:
                 try:
                     _invoke_handler()
                 except (

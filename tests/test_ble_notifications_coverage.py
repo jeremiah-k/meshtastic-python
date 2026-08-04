@@ -609,6 +609,35 @@ def test_report_notification_handler_error_with_safe_execute(
 
 
 @pytest.mark.unit
+def test_report_notification_handler_error_uses_declared_legacy_safe_execute(
+    notification_dispatcher: BLENotificationDispatcher,
+) -> None:
+    """A synthesized public hook must not mask the declared legacy hook."""
+
+    class LegacyErrorHandler:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def _safe_execute(self, func: Callable[[], None], **_kwargs: object) -> None:
+            self.calls += 1
+            try:
+                func()
+            except RuntimeError:
+                pass
+
+        def __getattr__(self, _name: str) -> object:
+            return lambda *_args, **_kwargs: None
+
+    handler = LegacyErrorHandler()
+    dispatcher = notification_dispatcher
+    dispatcher._error_handler_provider = lambda: handler
+
+    dispatcher.report_notification_handler_error("Test error")
+
+    assert handler.calls == 1
+
+
+@pytest.mark.unit
 def test_report_notification_handler_error_with_handle_unhandled_exception(
     notification_dispatcher: BLENotificationDispatcher,
 ) -> None:
@@ -895,22 +924,18 @@ def test_notification_manager_thread_safety(
 
 
 @pytest.mark.unit
-def test_dispatcher_error_handler_resolution_chain() -> None:
-    """Test error handler resolution tries multiple hooks in order."""
-
-    # Test with handler that has _safe_execute but not safe_execute
-    mock_handler = Mock()
-    # Don't set safe_execute at all
-    mock_handler._safe_execute = Mock(return_value=None)
+def test_dispatcher_resolves_error_handler_from_provider() -> None:
+    """The dispatcher should return the error handler supplied by its provider."""
+    error_handler = object()
 
     dispatcher = BLENotificationDispatcher(
         notification_manager=NotificationManager(),
-        error_handler_provider=lambda: mock_handler,
+        error_handler_provider=lambda: error_handler,
         trigger_read_event=lambda: None,
     )
 
     result = dispatcher._resolve_error_handler()
-    assert result is mock_handler
+    assert result is error_handler
 
 
 @pytest.mark.unit
