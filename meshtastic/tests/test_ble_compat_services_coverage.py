@@ -201,7 +201,7 @@ class TestBLEManagementCommandsServiceHandlerResolution:
         result = BLEManagementCommandsService._handler_for_shim(iface)
         assert result is handler
 
-    def test_handler_for_shim_create_new_handler(self):
+    def test_handler_for_shim_create_new_handler(self) -> None:
         """Test creating new handler when no iface-owned handler exists."""
         iface = SimpleNamespace(_connected_elsewhere_late_bound=None)
 
@@ -529,7 +529,7 @@ class TestBLEReceiveRecoveryServiceControllerDetection:
         )
         assert result is True
 
-    def test_is_controller_like_dynamic_proxy(self):
+    def test_is_controller_like_dynamic_proxy(self) -> None:
         """Dynamic-only controller members should not satisfy the contract."""
         mock_controller = _DynamicAttributeProxy()
 
@@ -587,7 +587,7 @@ class TestBLEReceiveRecoveryServiceControllerDetection:
         result = BLEReceiveRecoveryService._resolve_controller_candidate(None)
         assert result is None
 
-    def test_resolve_controller_candidate_dynamic_proxy(self):
+    def test_resolve_controller_candidate_dynamic_proxy(self) -> None:
         """Dynamic-only controller candidates should resolve to None."""
         mock_controller = _DynamicAttributeProxy()
 

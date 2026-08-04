@@ -87,7 +87,11 @@ def test_connectivity_probes_share_declared_fallback_semantics() -> None:
     """Connection and management paths should use the same declared fallback."""
 
     class FallbackConnectivityClient:
+        def __init__(self) -> None:
+            self.preferred_probe_calls = 0
+
         def isConnected(self) -> bool:  # noqa: N802 - compatibility spelling
+            self.preferred_probe_calls += 1
             raise RuntimeError("preferred probe failed")
 
         def _is_connected(self) -> bool:
@@ -99,7 +103,9 @@ def test_connectivity_probes_share_declared_fallback_semantics() -> None:
     client = FallbackConnectivityClient()
 
     assert ConnectionValidator._client_is_connected(client) is True  # type: ignore[arg-type]
+    assert client.preferred_probe_calls == 1
     assert BLEManagementCommandHandler._is_client_connected(client) is True  # type: ignore[arg-type]
+    assert client.preferred_probe_calls == 2
 
 
 def test_connection_helpers_cover_mock_import_and_inline_safe_cleanup(

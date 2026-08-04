@@ -618,11 +618,13 @@ def test_clear_all_registries_delegates_to_registry_owner() -> None:
     connecting_owners = registry.connecting_owners
     connecting_owner_ids = registry.connecting_owner_ids
     connecting_marked_at = registry.connecting_marked_at
+    lock_holders = registry.lock_holders
 
     connecting_owner = object()
     connected_owner = object()
     gating._mark_connecting("AA:BB:CC:DD:EE:FF", owner=connecting_owner)
     gating._mark_connected("11:22:33:44:55:66", owner=connected_owner)
+    lock_holders["test-holder"] = 1
     gating._clear_all_registries()
 
     assert registry.addr_locks is addr_locks
@@ -634,6 +636,7 @@ def test_clear_all_registries_delegates_to_registry_owner() -> None:
     assert registry.connecting_owners is connecting_owners
     assert registry.connecting_owner_ids is connecting_owner_ids
     assert registry.connecting_marked_at is connecting_marked_at
+    assert registry.lock_holders is lock_holders
     assert not registry.addr_locks
     assert not registry.connected_addrs
     assert not registry.connecting_addrs
@@ -643,3 +646,4 @@ def test_clear_all_registries_delegates_to_registry_owner() -> None:
     assert not registry.connecting_owners
     assert not registry.connecting_owner_ids
     assert not registry.connecting_marked_at
+    assert not registry.lock_holders
