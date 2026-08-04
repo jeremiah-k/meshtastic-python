@@ -111,3 +111,46 @@ def test_core_owner_modules_do_not_import_package_root() -> None:
         assert module.__file__ is not None
         path = Path(module.__file__).resolve()
         assert _meshtastic_root_references(path) == set(), path
+
+
+def test_public_protocol_runtime_objects_preserve_identity() -> None:
+    """Package-root protocol objects should be exact internal runtime re-exports."""
+    from meshtastic import _protocol_runtime
+
+    assert meshtastic.ProtobufFactory is _protocol_runtime.ProtobufFactory
+    assert meshtastic.OnReceive is _protocol_runtime.OnReceive
+    assert meshtastic.KnownProtocol is _protocol_runtime.KnownProtocol
+    assert meshtastic.protocols is _protocol_runtime.protocols
+    assert meshtastic.REDACTED_TEXT is _protocol_runtime.REDACTED_TEXT
+    assert meshtastic.REDACTED_BYTES is _protocol_runtime.REDACTED_BYTES
+
+
+def test_receive_pipeline_imports_protocol_registry_from_internal_runtime() -> None:
+    """Receive processing should not route protocol-registry access through package root."""
+    path = ROOT / "meshtastic/mesh_interface_runtime/receive_pipeline.py"
+    assert "protocols" not in _imports_from_meshtastic_root(path)
+
+
+def test_public_known_protocol_metadata_and_pickle_contract_are_preserved() -> None:
+    """Moving KnownProtocol must not change its historical public metadata."""
+    known_protocol = meshtastic.KnownProtocol("test")
+    assert meshtastic.KnownProtocol.__module__ == "meshtastic"
+    assert pickle.loads(pickle.dumps(known_protocol)) == known_protocol
+    assert str(inspect.signature(meshtastic.KnownProtocol)) == (
+        "(name: str, protobufFactory: Optional[Callable[[], Any]] = None, "
+        "onReceive: Optional[Callable[[Any, dict[str, Any]], NoneType]] = None)"
+    )
+
+
+def test_protocol_runtime_uses_historical_package_logger() -> None:
+    """Handler extraction should not change the logger name or logger object."""
+    from meshtastic import _protocol_runtime
+
+    assert _protocol_runtime.logger is meshtastic.logger
+
+
+def test_protocol_owner_module_does_not_import_package_root() -> None:
+    """The protocol runtime should remain below the package facade."""
+    path = ROOT / "meshtastic/_protocol_runtime.py"
+    assert _imports_from_meshtastic_root(path) == set()
+>>>>>>> 77cf3dcf (Extract protocol registry runtime)

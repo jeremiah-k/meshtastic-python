@@ -12,8 +12,9 @@ import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
 from pubsub import pub
 
-from meshtastic import protocols, publishingThread
+from meshtastic import publishingThread
 from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, DECODE_ERROR_KEY
+from meshtastic._protocol_runtime import protocols
 from meshtastic._topics import LOCKDOWN_STATUS_TOPIC
 from meshtastic.protobuf import (
     channel_pb2,
