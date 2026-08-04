@@ -162,7 +162,7 @@ class TestBoundedThreadTOCTOU:
 
         blocker = threading.Event()
 
-        # Use a real function so _is_unconfigured_mock_callable does not skip it.
+        # Use an explicitly declared function so structural hook lookup resolves it.
         def slow_cleanup() -> None:
             blocker.wait()
 

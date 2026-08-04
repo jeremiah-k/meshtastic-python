@@ -130,10 +130,10 @@ def test_client_manager_handles_concurrent_updates() -> None:
         thread.ident = 1
         thread.is_alive.return_value = True
 
-    thread_coordinator._create_thread.side_effect = (
-        lambda *_args, **_kwargs: _new_thread()
+    thread_coordinator._create_thread = MagicMock(
+        side_effect=lambda *_args, **_kwargs: _new_thread()
     )
-    thread_coordinator._start_thread.side_effect = _mark_started
+    thread_coordinator._start_thread = MagicMock(side_effect=_mark_started)
     error_handler = MagicMock()
 
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
@@ -226,7 +226,7 @@ def test_connection_validator_with_normalized_addresses() -> None:
 
     # Create mock client with various address formats
     mock_client = MagicMock()
-    mock_client.isConnected.return_value = True
+    mock_client.isConnected = MagicMock(return_value=True)
     mock_bleak = MagicMock()
     mock_bleak.address = "AA:BB:CC:DD:EE:FF"
     mock_client.bleak_client = mock_bleak

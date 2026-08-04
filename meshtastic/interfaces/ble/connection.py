@@ -41,8 +41,8 @@ from meshtastic.interfaces.ble.errors import (
 )
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
+    _get_declared_callable,
+    _get_declared_member,
     _is_unexpected_keyword_error,
     _thread_start_probe,
     sanitize_address,
@@ -120,25 +120,6 @@ def _is_device_not_found_error(err: Exception) -> bool:
     message = str(err).casefold()
     return bool(message) and _DEVICE_NOT_FOUND_MESSAGE_RE.search(message) is not None
 
-
-def _is_mock_instance(target: object) -> bool:
-    """Return whether ``target`` is a unittest mock instance.
-
-    Parameters
-    ----------
-    target : object
-        Candidate object inspected for mock-instance type.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``target`` is a ``Mock`` or ``NonCallableMock``.
-    """
-    try:
-        from unittest.mock import Mock, NonCallableMock
-    except ImportError:  # pragma: no cover - stdlib import should always exist
-        return False
-    return isinstance(target, (Mock, NonCallableMock))
 
 
 def _run_safe_cleanup(
@@ -289,17 +270,13 @@ class ConnectionValidator:
         if client is None:
             return False
         for candidate_name in ("isConnected", "is_connected", "_is_connected"):
-            candidate = getattr(client, candidate_name, None)
+            candidate = _get_declared_member(client, candidate_name)
             if callable(candidate):
-                if _is_unconfigured_mock_callable(candidate):
-                    continue
                 connected = candidate()
                 if isinstance(connected, bool):
                     return connected
                 continue
-            if isinstance(candidate, bool) and not _is_unconfigured_mock_member(
-                candidate
-            ):
+            if isinstance(candidate, bool):
                 return candidate
         return False
 
@@ -335,7 +312,7 @@ class ConnectionValidator:
             return False
         normalized_request_key = sanitize_address(normalized_request)
         client_address = sanitize_address(getattr(client, "address", None))
-        bleak_client = getattr(client, "bleak_client", None)
+        bleak_client = _get_declared_member(client, "bleak_client")
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
             t
@@ -424,18 +401,16 @@ class ClientManager:
         daemon: bool,
     ) -> ThreadLike:
         """Create thread via public API with underscore fallback for test doubles."""
-        create_thread = getattr(self.thread_coordinator, "create_thread", None)
-        legacy_create_thread = getattr(self.thread_coordinator, "_create_thread", None)
+        create_thread = _get_declared_callable(self.thread_coordinator, "create_thread")
+        legacy_create_thread = _get_declared_callable(self.thread_coordinator, "_create_thread")
         valid_create_thread = (
             create_thread
             if callable(create_thread)
-            and not _is_unconfigured_mock_callable(create_thread)
             else None
         )
         valid_legacy_create_thread = (
             legacy_create_thread
             if callable(legacy_create_thread)
-            and not _is_unconfigured_mock_callable(legacy_create_thread)
             else None
         )
         if valid_create_thread is not None:
@@ -464,18 +439,16 @@ class ClientManager:
 
     def _thread_start_thread(self, thread: ThreadLike) -> None:
         """Start thread via public API with underscore fallback for test doubles."""
-        start_thread = getattr(self.thread_coordinator, "start_thread", None)
-        legacy_start_thread = getattr(self.thread_coordinator, "_start_thread", None)
+        start_thread = _get_declared_callable(self.thread_coordinator, "start_thread")
+        legacy_start_thread = _get_declared_callable(self.thread_coordinator, "_start_thread")
         valid_start_thread = (
             start_thread
             if callable(start_thread)
-            and not _is_unconfigured_mock_callable(start_thread)
             else None
         )
         valid_legacy_start_thread = (
             legacy_start_thread
             if callable(legacy_start_thread)
-            and not _is_unconfigured_mock_callable(legacy_start_thread)
             else None
         )
         if valid_start_thread is not None:
@@ -729,28 +702,24 @@ class ClientManager:
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
         skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
-        safe_cleanup_hook = getattr(self.error_handler, "safe_cleanup", None)
-        if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
-            safe_cleanup_hook
-        ):
-            safe_cleanup_hook = getattr(self.error_handler, "_safe_cleanup", None)
-        if not callable(safe_cleanup_hook) or _is_unconfigured_mock_callable(
-            safe_cleanup_hook
-        ):
+        safe_cleanup_hook = _get_declared_callable(self.error_handler, "safe_cleanup")
+        if not callable(safe_cleanup_hook):
+            safe_cleanup_hook = _get_declared_callable(self.error_handler, "_safe_cleanup")
+        if not callable(safe_cleanup_hook):
             safe_cleanup_hook = None
 
         try:
             if (
                 not skip_disconnect
-                and not getattr(client, "_closed", False)
-                and getattr(client, "bleak_client", None)
+                and not _get_declared_member(client, "_closed", False)
+                and _get_declared_member(client, "bleak_client")
             ):
                 is_connected = False
                 for probe_name in ("is_connected", "isConnected", "_is_connected"):
-                    is_connected_probe = getattr(client, probe_name, None)
+                    is_connected_probe = _get_declared_member(client, probe_name)
                     if callable(
                         is_connected_probe
-                    ) and not _is_unconfigured_mock_callable(is_connected_probe):
+                    ):
                         try:
                             is_connected = bool(is_connected_probe())
                         except (
@@ -765,7 +734,7 @@ class ClientManager:
                             break
                     elif isinstance(
                         is_connected_probe, bool
-                    ) and not _is_unconfigured_mock_member(is_connected_probe):
+                    ):
                         is_connected = is_connected_probe
                         if is_connected:
                             break
@@ -977,24 +946,12 @@ class ConnectionOrchestrator:
             dispatch_kwdefaults.get("default_if_missing", _DISPATCH_MISSING),
         )
         kwargs = {} if kwargs is None else kwargs
-        public_member = getattr(target, public_name, missing_sentinel)
-        underscore_member = getattr(target, underscore_name, missing_sentinel)
-
-        if not call_member:
-            if _is_unconfigured_mock_member(public_member):
-                public_member = missing_sentinel
-            if _is_unconfigured_mock_member(underscore_member):
-                underscore_member = missing_sentinel
-        else:
-            if _is_unconfigured_mock_callable(public_member):
-                public_member = missing_sentinel
-            if _is_unconfigured_mock_callable(underscore_member):
-                underscore_member = missing_sentinel
+        public_member = _get_declared_member(target, public_name, missing_sentinel)
+        underscore_member = _get_declared_member(target, underscore_name, missing_sentinel)
 
         if (
             prefer_instance_type is not None
-            and isinstance(target, prefer_instance_type)
-            and not _is_mock_instance(target)
+            and issubclass(type(target), prefer_instance_type)
         ):
             if public_member is missing_sentinel:
                 raise AttributeError(
@@ -1390,7 +1347,7 @@ class ConnectionOrchestrator:
     @staticmethod
     def _extract_client_address(client: BLEClient) -> str | None:
         """Return the best-known connected address from a BLE client."""
-        bleak_client = getattr(client, "bleak_client", None)
+        bleak_client = _get_declared_member(client, "bleak_client")
         bleak_address = getattr(bleak_client, "address", None)
         if isinstance(bleak_address, str) and bleak_address:
             return bleak_address
@@ -1959,19 +1916,15 @@ class ConnectionOrchestrator:
             If no supported find-device compatibility helper exists.
         """
         find_device = getattr(self.interface, "findDevice", None)
-        if callable(find_device) and not _is_unconfigured_mock_callable(find_device):
+        if callable(find_device):
             return cast(BLEDevice, find_device(target_address))
 
         legacy_find_device = getattr(self.interface, "find_device", None)
-        if callable(legacy_find_device) and not _is_unconfigured_mock_callable(
-            legacy_find_device
-        ):
+        if callable(legacy_find_device):
             return cast(BLEDevice, legacy_find_device(target_address))
 
         underscore_find_device = getattr(self.interface, "_find_device", None)
-        if callable(underscore_find_device) and not _is_unconfigured_mock_callable(
-            underscore_find_device
-        ):
+        if callable(underscore_find_device):
             return cast(BLEDevice, underscore_find_device(target_address))
         raise AttributeError("Interface is missing findDevice/find_device/_find_device")
 
@@ -2053,15 +2006,9 @@ class ConnectionOrchestrator:
                 )
 
         if emit_connected_side_effects:
-            raw_ever_connected = getattr(self.interface, "_ever_connected", False)
+            raw_ever_connected = _get_declared_member(self.interface, "_ever_connected", False)
             prior_ever_connected = (
-                False
-                if _is_unconfigured_mock_member(raw_ever_connected)
-                else (
-                    raw_ever_connected
-                    if isinstance(raw_ever_connected, bool)
-                    else False
-                )
+                raw_ever_connected if isinstance(raw_ever_connected, bool) else False
             )
             on_connected_func()
             if prior_ever_connected:

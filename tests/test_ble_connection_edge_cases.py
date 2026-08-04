@@ -59,8 +59,11 @@ def _make_orchestrator_client_manager() -> MagicMock:
             "update_client_reference",
         ]
     )
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.return_value = None
+    client_manager.safe_close_client = MagicMock()
     client_manager.safe_close_client.return_value = None
+    client_manager.update_client_reference = MagicMock()
     client_manager.update_client_reference.return_value = None
     return client_manager
 
@@ -181,6 +184,7 @@ def test_connection_validator_check_existing_client_none_request() -> None:
 
     # Create mock client
     mock_client = MagicMock()
+    mock_client.isConnected = MagicMock()
     mock_client.isConnected.return_value = True
 
     # Should return True for None request
@@ -196,6 +200,7 @@ def test_connection_validator_check_existing_client_disconnected() -> None:
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
     mock_client = MagicMock()
+    mock_client.isConnected = MagicMock()
     mock_client.isConnected.return_value = False
 
     assert not validator._check_existing_client(mock_client, "address", None)
@@ -374,6 +379,7 @@ def test_connection_validator_check_existing_client_matching_address() -> None:
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
     mock_client = MagicMock()
+    mock_client.isConnected = MagicMock()
     mock_client.isConnected.return_value = True
     mock_bleak_client = MagicMock()
     mock_bleak_client.address = "AA:BB:CC:DD:EE:FF"
@@ -398,6 +404,7 @@ def test_connection_validator_check_existing_client_uses_cached_client_address()
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
     mock_client = MagicMock()
+    mock_client.isConnected = MagicMock()
     mock_client.isConnected.return_value = True
     mock_client.address = "AA:BB:CC:DD:EE:FF"
     mock_client.bleak_client = SimpleNamespace(address=None)
@@ -458,6 +465,7 @@ def test_client_manager_safe_close_client_prefers_public_safe_cleanup() -> None:
     mock_client = MagicMock()
     mock_client._closed = False
     mock_client.bleak_client = object()
+    mock_client.is_connected = MagicMock()
     mock_client.is_connected.return_value = True
 
     manager._safe_close_client(mock_client)
@@ -498,7 +506,9 @@ def test_client_manager_update_client_reference_schedules_close() -> None:
     old_client = MagicMock()
     new_client = MagicMock()
     thread_like = MagicMock()
+    thread_coordinator._create_thread = MagicMock()
     thread_coordinator._create_thread.return_value = thread_like
+    thread_coordinator._start_thread = MagicMock()
     thread_coordinator._start_thread.return_value = None
 
     manager._update_client_reference(new_client, old_client)
@@ -567,7 +577,9 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
 
     client_manager = _make_orchestrator_client_manager()
     mock_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = mock_client
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = KeyboardInterrupt()
 
     interface = MagicMock()
@@ -607,12 +619,14 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
 
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
     discovered_device = BLEDevice("AA:BB:CC:DD:EE:FF", "Mesh", details=None)
+    interface.findDevice = MagicMock()
     interface.findDevice.return_value = discovered_device
     interface.find_device = MagicMock(return_value=discovered_device)
     interface._find_device = MagicMock(return_value=discovered_device)
@@ -627,6 +641,7 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
             raise TimeoutError("direct connect timed out")
         raise AssertionError("fallback connect should not run while closing")
 
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = _connect_side_effect
 
     orchestrator = ConnectionOrchestrator(
@@ -665,7 +680,9 @@ def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject
     """_transition_failure_to_disconnected should force reset if transition calls fail."""
     state_manager = MagicMock()
     state_manager._current_state = ConnectionState.CONNECTING
+    state_manager._transition_to = MagicMock()
     state_manager._transition_to.return_value = False
+    state_manager._reset_to_disconnected = MagicMock()
     state_manager._reset_to_disconnected.return_value = True
     state_lock = RLock()
     validator = ConnectionValidator(BLEStateManager(), state_lock, MockBLEError)
@@ -697,6 +714,7 @@ def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address(
     interface.BLEError = MockBLEError
     interface._ever_connected = True
     thread_coordinator = MagicMock()
+    thread_coordinator._set_event = MagicMock()
     thread_coordinator._set_event.return_value = None
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -708,6 +726,7 @@ def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address(
         thread_coordinator=thread_coordinator,
     )
     client = MagicMock()
+    client.isConnected = MagicMock()
     client.isConnected.return_value = True
     on_connected = MagicMock()
 
@@ -738,6 +757,7 @@ def test_finalize_connection_can_defer_connected_side_effects() -> None:
     interface.BLEError = MockBLEError
     interface._ever_connected = True
     thread_coordinator = MagicMock()
+    thread_coordinator._set_event = MagicMock()
     thread_coordinator._set_event.return_value = None
     orchestrator = ConnectionOrchestrator(
         interface=interface,
@@ -749,6 +769,7 @@ def test_finalize_connection_can_defer_connected_side_effects() -> None:
         thread_coordinator=thread_coordinator,
     )
     client = MagicMock()
+    client.isConnected = MagicMock()
     client.isConnected.return_value = True
     on_connected = MagicMock()
 
@@ -841,6 +862,7 @@ def test_connection_orchestrator_raises_when_connect_state_transition_fails() ->
     assert state_manager._transition_to(ConnectionState.CONNECTING)
     assert state_manager._transition_to(ConnectionState.CONNECTED)
     validator = MagicMock(spec_set=ConnectionValidator)
+    validator.validate_connection_request = MagicMock()
     validator.validate_connection_request.return_value = None
     client_manager = _make_orchestrator_client_manager()
     interface = MagicMock()
@@ -885,7 +907,9 @@ def test_connection_orchestrator_reraises_retry_ble_dbus_error(
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         OSError("direct connect failed"),
         BleakDBusError("org.bluez.Error.Failed", ["retry dbus failure"]),
@@ -894,6 +918,7 @@ def test_connection_orchestrator_reraises_retry_ble_dbus_error(
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
+    interface.findDevice = MagicMock()
     interface.findDevice.return_value = BLEDevice(
         "AA:BB:CC:DD:EE:FF", "Meshtastic", details=None
     )
@@ -936,6 +961,7 @@ def test_connection_orchestrator_returns_after_successful_direct_connect() -> No
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
@@ -976,6 +1002,7 @@ def test_connection_orchestrator_forwards_pair_on_connect_to_client_creation() -
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
@@ -1025,6 +1052,7 @@ def test_connection_orchestrator_uses_explicit_connect_timeout_override() -> Non
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
@@ -1066,6 +1094,7 @@ def test_connection_orchestrator_allows_none_connect_timeout() -> None:
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = direct_client
 
     interface = MagicMock()
@@ -1160,7 +1189,9 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry()
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         None,
@@ -1216,10 +1247,12 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_identifier_fal
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     discovered_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [
         direct_client,
         discovered_client,
     ]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("mesh-node", "not found"),
         None,
@@ -1229,6 +1262,7 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_identifier_fal
     interface.BLEError = MockBLEError
     interface._closed = False
     discovered_device = BLEDevice("AA:BB:CC:DD:EE:FF", "mesh-node", details=None)
+    interface.findDevice = MagicMock()
     interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
@@ -1281,12 +1315,14 @@ def test_connection_orchestrator_uses_full_timeout_for_non_pairing_fallback() ->
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     fallback_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = fallback_client
 
     interface = MagicMock()
     interface.BLEError = MockBLEError
     interface._closed = False
     discovered_device = BLEDevice("AA:BB:CC:DD:EE:FF", "Mesh", details=None)
+    interface.findDevice = MagicMock()
     interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
@@ -1332,7 +1368,9 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         None,
@@ -1399,7 +1437,9 @@ def test_connection_orchestrator_skips_scan_after_direct_timeout_for_explicit_ad
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         TimeoutError("direct connect timed out"),
         None,
@@ -1466,7 +1506,9 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     discovered_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [direct_client, discovered_client]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("mesh-node", "not found"),
         None,
@@ -1476,6 +1518,7 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
     interface.BLEError = MockBLEError
     interface._closed = False
     discovered_device = BLEDevice("11:22:33:44:55:66", "Mesh", details=None)
+    interface.findDevice = MagicMock()
     interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
@@ -1535,7 +1578,9 @@ def test_connection_orchestrator_derived_current_address_uses_discovery_after_di
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     discovered_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [direct_client, discovered_client]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         TimeoutError("direct connect timed out"),
         None,
@@ -1546,6 +1591,7 @@ def test_connection_orchestrator_derived_current_address_uses_discovery_after_di
     interface._closed = False
     derived_current_address = "AA:BB:CC:DD:EE:FF"
     discovered_device = BLEDevice("11:22:33:44:55:66", "Mesh", details=None)
+    interface.findDevice = MagicMock()
     interface.findDevice.return_value = discovered_device
 
     orchestrator = ConnectionOrchestrator(
@@ -1605,10 +1651,12 @@ def test_connection_orchestrator_falls_back_to_find_device_when_findDevice_missi
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     discovered_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [
         direct_client,
         discovered_client,
     ]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("mesh-node", "not found"),
         None,
@@ -1653,10 +1701,12 @@ def test_connection_orchestrator_falls_back_to_underscore_find_device() -> None:
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     discovered_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [
         direct_client,
         discovered_client,
     ]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("mesh-node", "not found"),
         None,
@@ -1703,10 +1753,12 @@ def test_connection_orchestrator_raises_after_explicit_address_direct_retry_not_
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [
         direct_client,
         retry_client,
     ]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
         BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
@@ -1765,7 +1817,9 @@ def test_connection_orchestrator_handles_bleak_dbus_error_during_connect() -> No
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = direct_client
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = BleakDBusError(
         "org.bluez.Error.Failed", []
     )
@@ -1918,6 +1972,7 @@ def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout(
     mock_client = MagicMock()
     mock_client._closed = False
     mock_client.bleak_client = object()
+    mock_client.is_connected = MagicMock()
     mock_client.is_connected.return_value = True
 
     def _reject_await_timeout(*, await_timeout: float | None = None) -> None:
@@ -1926,6 +1981,7 @@ def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout(
                 "disconnect() got an unexpected keyword argument 'await_timeout'"
             )
 
+    mock_client.disconnect = MagicMock()
     mock_client.disconnect.side_effect = _reject_await_timeout
 
     manager._safe_close_client(mock_client)
@@ -1949,12 +2005,14 @@ def test_client_manager_safe_close_client_does_not_fallback_on_unrelated_typeerr
     mock_client = MagicMock()
     mock_client._closed = False
     mock_client.bleak_client = object()
+    mock_client.is_connected = MagicMock()
     mock_client.is_connected.return_value = True
 
     def _raise_unrelated(*, await_timeout: float | None = None) -> None:
         del await_timeout
         raise TypeError("takes 1 positional argument but 2 were given")
 
+    mock_client.disconnect = MagicMock()
     mock_client.disconnect.side_effect = _raise_unrelated
 
     # _safe_close_client should swallow the error and still run close()
@@ -1972,7 +2030,9 @@ def test_retry_direct_connect_cleans_up_retry_client_on_interrupt() -> None:
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = retry_client
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = KeyboardInterrupt("stop")
 
     interface = MagicMock()
@@ -2013,6 +2073,7 @@ def test_retry_direct_connect_skips_cleanup_on_successful_return() -> None:
     validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
     client_manager = _make_orchestrator_client_manager()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.return_value = retry_client
 
     interface = MagicMock()
@@ -2061,7 +2122,9 @@ def test_stale_cleanup_retry_propagates_address_mismatch(
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [direct_client, retry_client]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         OSError("stale bluez"),
         None,
@@ -2140,10 +2203,12 @@ def test_stale_cleanup_retry_fallback_on_generic_retry_failure(
     client_manager = _make_orchestrator_client_manager()
     direct_client = MagicMock()
     retry_client = MagicMock()
+    client_manager.create_client = MagicMock()
     client_manager.create_client.side_effect = [
         direct_client,
         retry_client,
     ]
+    client_manager.connect_client = MagicMock()
     client_manager.connect_client.side_effect = [
         OSError("stale bluez"),
         BleakError("retry failed"),

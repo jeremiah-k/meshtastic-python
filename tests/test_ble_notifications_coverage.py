@@ -578,24 +578,6 @@ def test_resolve_error_handler_provider_failure() -> None:
 
 
 @pytest.mark.unit
-def test_resolve_error_handler_unconfigured_mock() -> None:
-    """Test error handler resolution with unconfigured mock."""
-
-    unconfigured_mock = Mock()
-
-    dispatcher = BLENotificationDispatcher(
-        notification_manager=NotificationManager(),
-        error_handler_provider=lambda: unconfigured_mock,
-        trigger_read_event=lambda: None,
-    )
-
-    result = dispatcher._resolve_error_handler()
-
-    # Should return None for unconfigured mock
-    assert result is None
-
-
-@pytest.mark.unit
 def test_report_notification_handler_error_no_handler(
     notification_dispatcher: BLENotificationDispatcher,
 ) -> None:
@@ -621,21 +603,9 @@ def test_report_notification_handler_error_with_safe_execute(
     dispatcher = notification_dispatcher
     dispatcher._error_handler_provider = lambda: mock_handler
 
-    # Patch both checks so our mock is considered configured
-    with (
-        patch(
-            "meshtastic.interfaces.ble.notifications._is_unconfigured_mock_member",
-            return_value=False,
-        ),
-        patch(
-            "meshtastic.interfaces.ble.notifications._is_unconfigured_mock_callable",
-            return_value=False,
-        ),
-    ):
-        dispatcher.report_notification_handler_error("Test error")
+    dispatcher.report_notification_handler_error("Test error")
 
-        # safe_execute should have been called
-        assert mock_handler.safe_execute.called
+    assert mock_handler.safe_execute.called
 
 
 @pytest.mark.unit
@@ -939,14 +909,8 @@ def test_dispatcher_error_handler_resolution_chain() -> None:
         trigger_read_event=lambda: None,
     )
 
-    # Patch _is_unconfigured_mock_member to return False so our handler is considered configured
-    with patch(
-        "meshtastic.interfaces.ble.notifications._is_unconfigured_mock_member",
-        return_value=False,
-    ):
-        result = dispatcher._resolve_error_handler()
-        # _resolve_error_handler returns the handler object, not the safe_execute callable
-        assert result is mock_handler
+    result = dispatcher._resolve_error_handler()
+    assert result is mock_handler
 
 
 @pytest.mark.unit

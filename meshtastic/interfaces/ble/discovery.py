@@ -20,9 +20,8 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
+    _get_declared_callable,
     _call_factory_with_optional_kwarg,
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
     _is_unexpected_keyword_error,
     resolve_ble_module,
     sanitize_address,
@@ -95,15 +94,13 @@ def _is_discovery_client_like(client: object) -> bool:
     -------
     bool
         ``True`` when the client exposes a callable supported discovery method
-        that is not an unconfigured mock callable, otherwise ``False``.
+        otherwise ``False``.
     """
-    discover = getattr(client, "discover", None)
-    if callable(discover) and not _is_unconfigured_mock_callable(discover):
+    discover = _get_declared_callable(client, "discover")
+    if callable(discover):
         return True
-    underscore_discover = getattr(client, "_discover", None)
-    return callable(underscore_discover) and not _is_unconfigured_mock_callable(
-        underscore_discover
-    )
+    underscore_discover = _get_declared_callable(client, "_discover")
+    return callable(underscore_discover)
 
 
 def _looks_like_ble_address(identifier: str) -> bool:
@@ -510,7 +507,7 @@ class DiscoveryManager:
         def _probe_connected_state(candidate: object) -> bool | None:
             for method_name in ("isConnected", "is_connected"):
                 probe = getattr(candidate, method_name, None)
-                if callable(probe) and not _is_unconfigured_mock_callable(probe):
+                if callable(probe):
                     try:
                         result = probe()
                     except Exception:  # noqa: BLE001 - defensive probe path
@@ -523,9 +520,7 @@ class DiscoveryManager:
                     if isinstance(result, bool):
                         return result
             member_probe = getattr(candidate, "is_connected", None)
-            if isinstance(member_probe, bool) and not _is_unconfigured_mock_member(
-                member_probe
-            ):
+            if isinstance(member_probe, bool):
                 return member_probe
             return None
 
@@ -657,12 +652,12 @@ class DiscoveryManager:
             if not target_identifier:
                 discover_kwargs["service_uuids"] = [SERVICE_UUID]
 
-            discover = getattr(client, "discover", None)
-            if not callable(discover) or _is_unconfigured_mock_callable(discover):
+            discover = _get_declared_callable(client, "discover")
+            if not callable(discover):
                 # Compatibility for minimal test doubles that still expose
                 # underscore-prefixed discover helpers.
                 discover = getattr(client, "_discover", None)
-            if not callable(discover) or _is_unconfigured_mock_callable(discover):
+            if not callable(discover):
                 self._invalidate_cached_client_if_same(client)
                 raise DiscoveryClientError.invalid_client(
                     resolved_factory,
@@ -700,13 +695,9 @@ class DiscoveryManager:
                 ) from exc
             if inspect.isawaitable(response):
                 await_bridge = getattr(client, "async_await", None)
-                if not callable(await_bridge) or _is_unconfigured_mock_callable(
-                    await_bridge
-                ):
+                if not callable(await_bridge):
                     await_bridge = getattr(client, "_async_await", None)
-                if callable(await_bridge) and not _is_unconfigured_mock_callable(
-                    await_bridge
-                ):
+                if callable(await_bridge):
                     response = await_bridge(response)
                 if inspect.isawaitable(response):
                     if inspect.iscoroutine(response):

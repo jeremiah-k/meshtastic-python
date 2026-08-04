@@ -902,7 +902,7 @@ def test_utils_remaining_optional_kwarg_and_safe_execute_branches() -> None:
 
     iface_no_hooks = SimpleNamespace(
         error_handler=SimpleNamespace(
-            safe_execute=MagicMock(), _safe_execute=MagicMock()
+            safe_execute=None, _safe_execute=None
         )
     )
     assert ble_utils._resolve_safe_execute(iface_no_hooks) is None
@@ -927,10 +927,10 @@ def test_utils_remaining_optional_kwarg_and_safe_execute_branches() -> None:
 
 
 def test_utils_resolve_safe_execute_legacy_hook_branch() -> None:
-    """Legacy underscore safe_execute hook should be returned when public hook is unconfigured."""
+    """Legacy underscore safe_execute hook should be returned when public hook is absent."""
     iface = SimpleNamespace(
         error_handler=SimpleNamespace(
-            safe_execute=MagicMock(),
+            safe_execute=None,
             _safe_execute=lambda func, **_kwargs: func(),
         )
     )

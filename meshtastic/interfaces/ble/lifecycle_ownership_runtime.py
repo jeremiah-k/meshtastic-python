@@ -14,8 +14,6 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
     sanitize_address,
 )
 
@@ -157,7 +155,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             return False
         for member_name in member_names:
             member = getattr(owner, member_name, None)
-            if callable(member) and not _is_unconfigured_mock_callable(member):
+            if callable(member):
                 try:
                     result = member()
                 except Exception:  # noqa: BLE001 - probe remains best effort
@@ -165,7 +163,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 if isinstance(result, bool):
                     return result
                 continue
-            if isinstance(member, bool) and not _is_unconfigured_mock_member(member):
+            if isinstance(member, bool):
                 return member
         return False
 
@@ -251,11 +249,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         )
 
     def _has_ever_connected_session(self) -> bool:
-        """Return mock-safe `True` when this interface published a connection."""
-        raw_ever_connected = getattr(self._iface, "_ever_connected", False)
-        if _is_unconfigured_mock_member(raw_ever_connected):
-            return False
-        return raw_ever_connected is True
+        """Return `True` when this interface published a connection."""
+        return self._session.ever_connected is True
 
     def _emit_verified_connection_side_effects(
         self, connected_client: "BLEClient"

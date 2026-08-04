@@ -18,7 +18,6 @@ from meshtastic.interfaces.ble.gating import (
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
     _thread_start_probe,
 )
 
@@ -132,11 +131,11 @@ class ReconnectScheduler:
             If neither hook is available and callable.
         """
         public_hook = getattr(self.thread_coordinator, public_name, None)
-        if callable(public_hook) and not _is_unconfigured_mock_callable(public_hook):
+        if callable(public_hook):
             return cast(Callable[..., object], public_hook)
 
         legacy_hook = getattr(self.thread_coordinator, legacy_name, None)
-        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
+        if callable(legacy_hook):
             return cast(Callable[..., object], legacy_hook)
 
         raise ThreadCoordinatorMissingMethodError(f"{public_name}/{legacy_name}")
@@ -332,15 +331,13 @@ class ReconnectWorker:
 
         for candidate_name in candidate_names:
             candidate_method = getattr(self.reconnect_policy, candidate_name, None)
-            if callable(candidate_method) and not _is_unconfigured_mock_callable(
-                candidate_method
-            ):
+            if callable(candidate_method):
                 return candidate_method(*args)
 
         # Backward compatibility for test doubles that only expose underscored methods.
         for candidate_name in candidate_names:
             fallback = getattr(self.reconnect_policy, f"_{candidate_name}", None)
-            if callable(fallback) and not _is_unconfigured_mock_callable(fallback):
+            if callable(fallback):
                 return fallback(*args)
         raise ReconnectPolicyMissingMethodError(method_name)
 

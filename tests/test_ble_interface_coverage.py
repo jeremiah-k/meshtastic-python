@@ -970,31 +970,25 @@ def test_notification_dispatcher_reports_handler_error(
 
 
 # ============================================================================
-# Compatibility and Mock Handling Tests
+# Compatibility Dispatch Tests
 # ============================================================================
 
 
-def test_set_receive_wanted_handles_unconfigured_mock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_set_receive_wanted should handle unconfigured mock lifecycle controller."""
+def test_set_receive_wanted_delegates_to_explicit_controller_hook() -> None:
+    """_set_receive_wanted should delegate to an explicitly declared lifecycle hook."""
     iface = _build_minimal_interface()
 
-    # Create a mock that returns unconfigured mock callables
     mock_controller = MagicMock()
     mock_controller._set_receive_wanted = MagicMock()
     mock_controller._set_receive_wanted.side_effect = lambda **kwargs: None
 
     iface._lifecycle_controller = mock_controller
 
-    # Should not raise when dealing with unconfigured mocks
     iface._set_receive_wanted(True)
 
 
-def test_should_run_receive_loop_handles_unconfigured_mock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_should_run_receive_loop should handle unconfigured mock lifecycle controller."""
+def test_should_run_receive_loop_uses_explicit_controller_hook() -> None:
+    """_should_run_receive_loop should use an explicitly declared lifecycle hook."""
     iface = _build_minimal_interface()
 
     iface._lifecycle_controller = SimpleNamespace(should_run_receive_loop=lambda: False)
@@ -1002,10 +996,8 @@ def test_should_run_receive_loop_handles_unconfigured_mock(
     assert result is False
 
 
-def test_start_receive_thread_handles_unconfigured_mock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_start_receive_thread should handle unconfigured mock lifecycle controller."""
+def test_start_receive_thread_uses_explicit_controller_hook() -> None:
+    """_start_receive_thread should use an explicitly declared lifecycle hook."""
     iface = _build_minimal_interface()
 
     start_receive_thread = MagicMock(side_effect=lambda **kwargs: None)
@@ -1294,19 +1286,19 @@ def test_close_clears_connecting_state_with_exception(
     assert "Failed to clear connecting gates" in caplog.text
 
 
-def test_close_handles_lifecycle_close_exception(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Close should handle exceptions from lifecycle controller close."""
+def test_close_propagates_lifecycle_close_exception() -> None:
+    """Close should preserve failures raised by an explicit lifecycle collaborator."""
+
+    class _FailingLifecycleController:
+        @staticmethod
+        def _close(**_kwargs: object) -> None:
+            raise RuntimeError("Close failed")
+
     iface = _build_minimal_interface()
+    iface._lifecycle_controller = _FailingLifecycleController()  # type: ignore[assignment]
 
-    mock_controller = MagicMock()
-    mock_controller._close = MagicMock(side_effect=Exception("Close failed"))
-
-    iface._lifecycle_controller = mock_controller
-
-    # Should not raise despite exception in lifecycle close
-    iface.close()
+    with pytest.raises(RuntimeError, match="Close failed"):
+        iface.close()
 
 
 # ============================================================================
@@ -1921,13 +1913,12 @@ def test_client_manager_update_client_reference_dispatches() -> None:
 # ============================================================================
 
 
-def test_get_management_client_if_available_handles_unconfigured_mock_lock(
+def test_get_management_client_if_available_ignores_undeclared_lock_ownership(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_get_management_client_if_available should handle unconfigured mock lock."""
+    """_get_management_client_if_available should ignore an undeclared lock ownership probe."""
     iface = _build_minimal_interface()
 
-    # Make state_lock an unconfigured mock
     iface._state_lock = MagicMock()
     iface._state_lock._is_owned = MagicMock()
 
@@ -1965,13 +1956,12 @@ def test_get_management_client_if_available_uses_locked_version(
     get_management_client_if_available_locked.assert_called_once_with("test-address")
 
 
-def test_get_management_client_for_target_handles_unconfigured_mock_lock(
+def test_get_management_client_for_target_ignores_undeclared_lock_ownership(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_get_management_client_for_target should handle unconfigured mock lock."""
+    """_get_management_client_for_target should ignore an undeclared lock ownership probe."""
     iface = _build_minimal_interface()
 
-    # Make state_lock an unconfigured mock
     iface._state_lock = MagicMock()
     iface._state_lock._is_owned = MagicMock()
 

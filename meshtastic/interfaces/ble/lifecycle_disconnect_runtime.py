@@ -24,7 +24,6 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
     _sleep,
     _thread_start_probe,
 )
@@ -74,15 +73,11 @@ class BLEDisconnectLifecycleCoordinator:
         schedule_reconnect = getattr(
             iface._reconnect_scheduler, "schedule_reconnect", None
         )
-        if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
-            schedule_reconnect
-        ):
+        if not callable(schedule_reconnect):
             schedule_reconnect = getattr(
                 iface._reconnect_scheduler, "_schedule_reconnect", None
             )
-        if not callable(schedule_reconnect) or _is_unconfigured_mock_callable(
-            schedule_reconnect
-        ):
+        if not callable(schedule_reconnect):
             raise AttributeError(RECONNECT_SCHEDULER_MISSING_MSG)
         schedule_reconnect(iface.auto_reconnect, iface._shutdown_event)
 

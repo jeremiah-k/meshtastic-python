@@ -9,8 +9,8 @@ from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
+    _get_declared_callable,
+    _get_declared_member,
 )
 
 if TYPE_CHECKING:
@@ -51,11 +51,8 @@ class BLEReceiveRecoveryService:
         bool
             True if candidate has the required method(s).
         """
-        if _is_unconfigured_mock_member(candidate):
-            return False
         if required_method is not None:
-            method = getattr(candidate, required_method, None)
-            return callable(method) and not _is_unconfigured_mock_callable(method)
+            return _get_declared_callable(candidate, required_method) is not None
         # Full compatibility surface check
         required_methods = (
             "handle_read_loop_disconnect",
@@ -77,8 +74,7 @@ class BLEReceiveRecoveryService:
             "_start_receive_thread",
         )
         for method_name in required_methods:
-            method = getattr(candidate, method_name, None)
-            if not callable(method) or _is_unconfigured_mock_callable(method):
+            if _get_declared_callable(candidate, method_name) is None:
                 return False
         return True
 
@@ -90,12 +86,11 @@ class BLEReceiveRecoveryService:
         iface: "BLEInterface | None" = None,
     ) -> "BLEReceiveRecoveryController | None":
         """Resolve concrete controller instances from eager or lazy candidates."""
-        if candidate is None or _is_unconfigured_mock_member(candidate):
+        if candidate is None:
             return None
         resolved = candidate
         should_invoke_factory = (
             callable(resolved)
-            and not _is_unconfigured_mock_callable(resolved)
             and (
                 inspect.isclass(resolved)
                 or not BLEReceiveRecoveryService._is_controller_like(
@@ -119,7 +114,6 @@ class BLEReceiveRecoveryService:
             return None
         if (
             resolved is not None
-            and not _is_unconfigured_mock_member(resolved)
             and BLEReceiveRecoveryService._is_controller_like(resolved, required_method)
         ):
             return cast("BLEReceiveRecoveryController", resolved)
@@ -144,10 +138,8 @@ class BLEReceiveRecoveryService:
             Controller bound to ``iface``.
         """
         controller_cls = BLEReceiveRecoveryService._controller_class()
-        get_controller = getattr(iface, "_get_receive_recovery_controller", None)
-        if callable(get_controller) and not _is_unconfigured_mock_callable(
-            get_controller
-        ):
+        get_controller = _get_declared_callable(iface, "_get_receive_recovery_controller")
+        if callable(get_controller):
             with contextlib.suppress(
                 Exception
             ):  # noqa: BLE001 - shim resolution stays best effort
@@ -159,7 +151,7 @@ class BLEReceiveRecoveryService:
                 )
                 if resolved_controller is not None:
                     return resolved_controller
-        cached = getattr(iface, "_receive_recovery_controller", None)
+        cached = _get_declared_member(iface, "_receive_recovery_controller")
         cached_controller = BLEReceiveRecoveryService._resolve_controller_candidate(
             cached,
             required_method,
@@ -168,8 +160,8 @@ class BLEReceiveRecoveryService:
         if cached_controller is not None:
             return cached_controller
         controller = controller_cls(iface)
-        state_lock = getattr(iface, "_state_lock", None)
-        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+        state_lock = _get_declared_member(iface, "_state_lock")
+        if state_lock is None:
             with contextlib.suppress(
                 Exception
             ):  # noqa: BLE001 - best-effort cache attach
@@ -178,7 +170,7 @@ class BLEReceiveRecoveryService:
         with contextlib.suppress(
             Exception
         ), state_lock:  # noqa: BLE001 - best-effort cache attach
-            cached = getattr(iface, "_receive_recovery_controller", None)
+            cached = _get_declared_member(iface, "_receive_recovery_controller")
             cached_controller = BLEReceiveRecoveryService._resolve_controller_candidate(
                 cached,
                 required_method,
@@ -234,9 +226,7 @@ class BLEReceiveRecoveryService:
         """
         with iface._state_lock:
             notify_enabled = getattr(iface, "_fromnum_notify_enabled", False)
-            if _is_unconfigured_mock_member(notify_enabled):
-                notify_enabled = False
-            return not bool(notify_enabled)
+            return not (notify_enabled if isinstance(notify_enabled, bool) else False)
 
     @staticmethod
     def _coordinator_wait_for_event(

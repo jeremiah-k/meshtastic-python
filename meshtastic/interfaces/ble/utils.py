@@ -7,7 +7,6 @@ import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
 from typing import Any, TypeVar, cast
-from unittest.mock import DEFAULT, Mock, NonCallableMock
 
 from meshtastic.interfaces.ble.constants import logger
 
@@ -18,45 +17,41 @@ _POSITIONAL_ONLY_KEYWORD_FRAGMENT = (
 )
 
 
-def _is_unconfigured_mock_member(candidate: object) -> bool:
-    """Return whether a candidate is an unconfigured auto-generated mock member.
+_MISSING = object()
 
-    Parameters
-    ----------
-    candidate : object
-        Candidate object to inspect.
 
-    Returns
-    -------
-    bool
-        True when the object is a mock member with default return behavior,
-        no side effect, and no recorded calls.
+def _get_declared_member(
+    target: object | None,
+    name: str,
+    default: T | None = None,
+) -> object | T | None:
+    """Return an explicitly declared member without invoking dynamic fallback.
+
+    ``MagicMock`` and other dynamic proxies synthesize arbitrary attributes via
+    ``__getattr__``. BLE compatibility dispatch should only consider members
+    that an object explicitly defines on the instance or its type. Using
+    ``inspect.getattr_static`` enforces that rule without making production code
+    aware of any test-double implementation.
     """
-    if not isinstance(candidate, (Mock, NonCallableMock)):
-        return False
-    return (
-        getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
-        and getattr(candidate, "_mock_wraps", None) is None
-        and getattr(candidate, "side_effect", None) is None
-        and not getattr(candidate, "call_args_list", [])
-    )
+    if target is None:
+        return default
+    try:
+        inspect.getattr_static(target, name)
+    except AttributeError:
+        return default
+    try:
+        return getattr(target, name)
+    except AttributeError:
+        return default
 
 
-def _is_unconfigured_mock_callable(candidate: object) -> bool:
-    """Return whether a candidate is an unconfigured callable auto-generated mock.
-
-    Parameters
-    ----------
-    candidate : object
-        Candidate object to inspect.
-
-    Returns
-    -------
-    bool
-        True when candidate is callable and also matches
-        ``_is_unconfigured_mock_member``.
-    """
-    return callable(candidate) and _is_unconfigured_mock_member(candidate)
+def _get_declared_callable(
+    target: object | None,
+    name: str,
+) -> Callable[..., Any] | None:
+    """Return an explicitly declared callable member when available."""
+    candidate = _get_declared_member(target, name)
+    return cast(Callable[..., Any], candidate) if callable(candidate) else None
 
 
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
@@ -163,15 +158,13 @@ def _resolve_safe_execute(iface: object) -> Callable[..., Any] | None:
         Resolved ``safe_execute`` callable when available and configured;
         otherwise ``None``.
     """
-    error_handler = getattr(iface, "error_handler", None)
-    safe_execute = getattr(error_handler, "safe_execute", None)
-    if callable(safe_execute) and not _is_unconfigured_mock_callable(safe_execute):
-        return cast(Callable[..., Any], safe_execute)
-    legacy_safe_execute = getattr(error_handler, "_safe_execute", None)
-    if callable(legacy_safe_execute) and not _is_unconfigured_mock_callable(
-        legacy_safe_execute
-    ):
-        return cast(Callable[..., Any], legacy_safe_execute)
+    error_handler = _get_declared_member(iface, "error_handler")
+    safe_execute = _get_declared_callable(error_handler, "safe_execute")
+    if safe_execute is not None:
+        return safe_execute
+    legacy_safe_execute = _get_declared_callable(error_handler, "_safe_execute")
+    if legacy_safe_execute is not None:
+        return legacy_safe_execute
     return None
 
 

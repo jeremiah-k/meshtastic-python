@@ -750,10 +750,10 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
+def test_discovery_manager_prefers_configured_underscore_discover_when_public_missing() -> (
     None
 ):
-    """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
+    """Verify discovery prefers configured ``_discover`` when ``discover`` is absent.
 
     Returns
     -------
@@ -767,20 +767,19 @@ def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigu
         ),
     }
     client = MagicMock()
-    client._discover.return_value = discover_result
+    client.discover = None
+    client._discover = MagicMock(return_value=discover_result)
     manager = DiscoveryManager(client_factory=lambda **_kwargs: client)
 
     devices = manager._discover_devices(address=None)
 
     assert devices == [filtered_device]
     client._discover.assert_called_once()
-    client.discover.assert_not_called()
 
     client._discover.reset_mock()
     devices = manager.discover_devices(address=None)
     assert devices == [filtered_device]
     client._discover.assert_called_once()
-    client.discover.assert_not_called()
 
 
 def test_discovery_manager_discards_cached_client_on_non_kwarg_typeerror(

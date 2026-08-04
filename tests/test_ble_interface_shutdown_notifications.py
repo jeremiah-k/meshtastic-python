@@ -503,7 +503,7 @@ class _ClientWithCallbacks(DummyClient):
             self.callbacks[uuid] = cast(Callable[[Any, bytes], None], args[1])
 
 
-def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unconfigured(
+def test_register_notifications_safe_call_inline_fallback_when_safe_execute_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Notification wrappers should use inline fallback when safe_execute hooks are unconfigured."""
@@ -535,8 +535,6 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         client.callbacks[LOGRADIO_UUID]("sender", b"log")
 
         assert errors == ["Error in log notification handler"]
-        safe_execute.assert_not_called()
-        legacy_safe_execute.assert_not_called()
     finally:
         iface.close()
 

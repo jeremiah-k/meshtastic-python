@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import builtins
 import contextlib
 from collections.abc import Iterator
 from threading import Event, RLock
@@ -33,7 +32,6 @@ from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
 
-MOCK_IMPORT_UNAVAILABLE_MSG = "mock import unavailable"
 TEST_BLE_ADDRESS = "AA:BB:CC:DD:EE:FF"
 TEST_CONNECT_TIMEOUT_SECONDS = 5.0
 
@@ -88,21 +86,6 @@ def test_connection_helpers_cover_mock_import_and_inline_safe_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Connection helper utilities should handle import fallback and inline cleanup execution."""
-    real_import = builtins.__import__
-
-    def _import_with_mock_failure(
-        name: str,
-        globals_arg: dict[str, object] | None = None,
-        locals_arg: dict[str, object] | None = None,
-        fromlist: tuple[str, ...] = (),
-        level: int = 0,
-    ) -> object:
-        if name == "unittest.mock":
-            raise ImportError(MOCK_IMPORT_UNAVAILABLE_MSG)
-        return real_import(name, globals_arg, locals_arg, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", _import_with_mock_failure)
-    assert connection_mod._is_mock_instance(object()) is False
 
     cleanup_calls: list[str] = []
 
@@ -522,7 +505,7 @@ def test_client_error_handler_and_connection_state_branches(
         func()
 
     client.error_handler = SimpleNamespace(
-        safe_cleanup=MagicMock(),
+        safe_cleanup=None,
         _safe_cleanup=_legacy_cleanup,
     )
     client._error_handler_safe_cleanup(lambda: None, "cleanup")
@@ -627,7 +610,7 @@ def test_orchestrator_dispatch_and_event_remaining_branches(
     with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
         assert (
             orchestrator._dispatch_public_or_underscore(
-                target=SimpleNamespace(_legacy=MagicMock()),
+                target=SimpleNamespace(),
                 public_name="public",
                 underscore_name="_legacy",
                 call_member=False,

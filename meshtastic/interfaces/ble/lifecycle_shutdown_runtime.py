@@ -27,8 +27,7 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
+    _get_declared_callable,
     _is_unexpected_keyword_error,
     _thread_start_probe,
 )
@@ -105,13 +104,11 @@ class BLEShutdownLifecycleCoordinator:
         """
         iface = self._iface
         cleanup_hook = getattr(iface.thread_coordinator, "cleanup", None)
-        if callable(cleanup_hook) and not _is_unconfigured_mock_callable(cleanup_hook):
+        if callable(cleanup_hook):
             hook_name = "cleanup"
         else:
             legacy_cleanup = getattr(iface.thread_coordinator, "_cleanup", None)
-            if callable(legacy_cleanup) and not _is_unconfigured_mock_callable(
-                legacy_cleanup
-            ):
+            if callable(legacy_cleanup):
                 cleanup_hook = legacy_cleanup
                 hook_name = "_cleanup"
             else:
@@ -541,7 +538,6 @@ class BLEShutdownLifecycleCoordinator:
 
     def _consume_disconnect_notification_state(self) -> bool:
         """Consume publish flags and decide disconnect notification emission."""
-        iface = self._iface
         notify = False
         with self._session.lock:
             if self._session.client_publish_pending:
@@ -560,11 +556,7 @@ class BLEShutdownLifecycleCoordinator:
                     notify = True
             elif not self._session.disconnect_notified:
                 self._session.disconnect_notified = True
-                raw_ever_connected = getattr(iface, "_ever_connected", False)
-                if _is_unconfigured_mock_member(raw_ever_connected):
-                    notify = False
-                else:
-                    notify = raw_ever_connected is True
+                notify = self._session.ever_connected is True
         return notify
 
     def _shutdown_client(
@@ -632,8 +624,8 @@ class BLEShutdownLifecycleCoordinator:
             elif method_name == "_cleanup_all":
                 candidate_names.append("cleanup_all")
             for candidate_name in candidate_names:
-                method = getattr(notification_manager, candidate_name, None)
-                if callable(method) and not _is_unconfigured_mock_callable(method):
+                method = _get_declared_callable(notification_manager, candidate_name)
+                if callable(method):
                     return cast(Callable[..., object], method)
             return None
 

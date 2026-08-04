@@ -33,7 +33,6 @@ from meshtastic.interfaces.ble.gating import (
 )
 from meshtastic.interfaces.ble.utils import (
     _call_factory_with_optional_kwarg,
-    _is_unconfigured_mock_callable,
     sanitize_address,
 )
 
@@ -274,7 +273,7 @@ class BLEManagementCommandHandler:
             return fallback(*args, **kwargs)
 
         override = getattr(self._iface, method_name, None)
-        if callable(override) and not _is_unconfigured_mock_callable(override):
+        if callable(override):
 
             def _invoke_override() -> T:
                 active_dispatches.add(method_name)
@@ -420,9 +419,7 @@ class BLEManagementCommandHandler:
         callable_probe_seen = False
         for attr_name in ("isConnected", "is_connected", "_is_connected"):
             is_connected = getattr(client, attr_name, None)
-            if callable(is_connected) and not _is_unconfigured_mock_callable(
-                is_connected
-            ):
+            if callable(is_connected):
                 try:
                     connected_result = is_connected()
                 except (

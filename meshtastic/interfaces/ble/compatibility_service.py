@@ -10,10 +10,6 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
-)
-from meshtastic.interfaces.ble.utils import (
     _resolve_safe_execute as _resolve_safe_execute_hook,
 )
 from meshtastic.interfaces.ble.utils import (
@@ -55,13 +51,13 @@ class BLECompatibilityEventPublisher:
     @staticmethod
     def _is_live_publishing_thread(publishing_thread: object | None) -> bool:
         """Return whether a publishing-thread facade appears alive/usable."""
-        if publishing_thread is None or _is_unconfigured_mock_member(publishing_thread):
+        if publishing_thread is None:
             return False
         thread = getattr(publishing_thread, "thread", None)
-        if thread is None or _is_unconfigured_mock_member(thread):
+        if thread is None:
             return True
         is_alive = getattr(thread, "is_alive", None)
-        if not callable(is_alive) or _is_unconfigured_mock_callable(is_alive):
+        if not callable(is_alive):
             return True
         try:
             alive_result = is_alive()
@@ -294,12 +290,8 @@ class BLECompatibilityEventService:
         queue_work = getattr(publishing_thread, "queueWork", None)
         queue = getattr(publishing_thread, "queue", None)
         put_nowait = getattr(queue, "put_nowait", None)
-        can_queue_work = callable(queue_work) and not _is_unconfigured_mock_callable(
-            queue_work
-        )
-        can_put_nowait = callable(put_nowait) and not _is_unconfigured_mock_callable(
-            put_nowait
-        )
+        can_queue_work = callable(queue_work)
+        can_put_nowait = callable(put_nowait)
         queue_work_callback: Callable[[Any], object] | None = (
             cast(Callable[[Any], object], queue_work) if can_queue_work else None
         )
@@ -309,7 +301,7 @@ class BLECompatibilityEventService:
         thread = getattr(publishing_thread, "thread", None)
         is_alive = getattr(thread, "is_alive", None)
         thread_is_alive: bool | None = None
-        if callable(is_alive) and not _is_unconfigured_mock_callable(is_alive):
+        if callable(is_alive):
             try:
                 alive_result = is_alive()
             except Exception:  # noqa: BLE001 - enqueue path is best effort
@@ -393,7 +385,7 @@ class BLECompatibilityEventService:
             thread = getattr(publishing_thread, "thread", None)
             is_alive = getattr(thread, "is_alive", None)
             alive_result = False
-            if callable(is_alive) and not _is_unconfigured_mock_callable(is_alive):
+            if callable(is_alive):
                 try:
                     alive_result = is_alive()
                 except Exception:  # noqa: BLE001 - disconnect fallback must continue
@@ -435,7 +427,7 @@ class BLECompatibilityEventService:
             return
         thread = getattr(publishing_thread, "thread", None)
         thread_drain = getattr(thread, "_drain_publish_queue", None)
-        if callable(thread_drain) and not _is_unconfigured_mock_callable(thread_drain):
+        if callable(thread_drain):
             try:
                 BLECompatibilityEventService._safe_execute(
                     iface,
@@ -459,7 +451,6 @@ class BLECompatibilityEventService:
         if (
             queue is None
             or not callable(get_nowait)
-            or _is_unconfigured_mock_callable(get_nowait)
         ):
             return
         iterations = 0
@@ -534,9 +525,7 @@ class BLECompatibilityEventService:
             is_closing = bool(getattr(iface, "_closed", False))
             state_manager = getattr(iface, "_state_manager", None)
             raw_is_closing = getattr(state_manager, "is_closing", None)
-            if callable(raw_is_closing) and not _is_unconfigured_mock_callable(
-                raw_is_closing
-            ):
+            if callable(raw_is_closing):
                 try:
                     state_probe = raw_is_closing()
                 except Exception:  # noqa: BLE001 - shutdown probe remains best effort
@@ -548,9 +537,7 @@ class BLECompatibilityEventService:
             if is_closing:
                 return True
             legacy_is_closing = getattr(state_manager, "_is_closing", None)
-            if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
-                legacy_is_closing
-            ):
+            if callable(legacy_is_closing):
                 try:
                     legacy_probe = legacy_is_closing()
                 except Exception:  # noqa: BLE001 - shutdown probe remains best effort
@@ -655,9 +642,7 @@ class BLECompatibilityEventService:
         resolved_publishing_thread = publishing_thread
         if resolved_publishing_thread is None:
             get_publishing_thread = getattr(iface, "_get_publishing_thread", None)
-            if callable(get_publishing_thread) and not _is_unconfigured_mock_callable(
-                get_publishing_thread
-            ):
+            if callable(get_publishing_thread):
                 try:
                     resolved_publishing_thread = get_publishing_thread()
                 except Exception:  # noqa: BLE001 - compatibility shim is best effort

@@ -588,7 +588,7 @@ class TestLifecycleThreadAccess:
     ) -> None:
         """Test join_thread fallback to thread.join."""
         mock_thread = MagicMock()
-        # Configure join so it's not detected as unconfigured mock
+        # Configure join explicitly for this thread-coordinator double
         mock_thread.join = MagicMock(return_value=None)
         mock_iface.thread_coordinator = None
         thread_access.join_thread(mock_thread, timeout=1.0)
@@ -781,7 +781,7 @@ class TestLifecycleErrorAccess:
         # Configure error_handler so it's not detected as unconfigured
         error_handler = MagicMock()
         error_handler.return_value = True
-        # Pre-configure common methods to avoid auto-generated unconfigured mocks
+        # Declare the collaborator methods exercised by this lifecycle path
         error_handler.safe_cleanup = MagicMock(return_value=True)
         error_handler._safe_cleanup = MagicMock(return_value=True)
         error_handler.safe_execute = MagicMock(return_value=True)

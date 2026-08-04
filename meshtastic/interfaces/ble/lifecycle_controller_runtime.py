@@ -28,9 +28,7 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
 )
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-)
+from meshtastic.interfaces.ble.utils import _get_declared_callable
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -206,10 +204,8 @@ class BLELifecycleController:
             attr_name: str,
             fallback_factory: Callable[[], _HookT],
         ) -> _HookT:
-            raw_hook = getattr(iface, attr_name, None)
-            if not callable(raw_hook) or _is_unconfigured_mock_callable(raw_hook):
-                return fallback_factory()
-            return cast(_HookT, raw_hook)
+            raw_hook = _get_declared_callable(iface, attr_name)
+            return fallback_factory() if raw_hook is None else cast(_HookT, raw_hook)
 
         def _fallback_is_closing() -> Callable[[], bool]:
             def is_closing() -> bool:

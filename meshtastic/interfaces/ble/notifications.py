@@ -22,8 +22,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
+    _get_declared_callable,
     _is_unexpected_keyword_error,
     _sleep,
 )
@@ -363,7 +362,7 @@ class BLENotificationDispatcher:
         -------
         object | None
             Resolved error-handler object, or ``None`` when provider lookup
-            fails or returns an unconfigured mock placeholder.
+            fails or returns no handler.
         """
         try:
             error_handler = self._error_handler_provider()
@@ -372,8 +371,6 @@ class BLENotificationDispatcher:
                 "Error resolving notification error-handler provider.",
                 exc_info=True,
             )
-            return None
-        if _is_unconfigured_mock_member(error_handler):
             return None
         return error_handler
 
@@ -386,9 +383,7 @@ class BLENotificationDispatcher:
         report_exception: Callable[[str], Any] | None = None
         for hook_name in ("safe_execute", "_safe_execute"):
             safe_execute_hook = getattr(error_handler, hook_name, None)
-            if callable(safe_execute_hook) and not _is_unconfigured_mock_callable(
-                safe_execute_hook
-            ):
+            if callable(safe_execute_hook):
                 safe_execute_callable = cast(Callable[..., Any], safe_execute_hook)
 
                 def _report_via_safe_execute(
@@ -415,7 +410,7 @@ class BLENotificationDispatcher:
             if report_exception is not None:
                 break
             hook = getattr(error_handler, hook_name, None)
-            if callable(hook) and not _is_unconfigured_mock_callable(hook):
+            if callable(hook):
                 report_exception = hook
                 break
         if report_exception is not None:
@@ -690,7 +685,7 @@ class BLENotificationDispatcher:
         ) -> None:
             def _report_notification_error() -> None:
                 def _try_report(hook: object | None) -> bool:
-                    if not callable(hook) or _is_unconfigured_mock_callable(hook):
+                    if not callable(hook):
                         return False
                     try:
                         hook(error_msg)
@@ -730,14 +725,10 @@ class BLENotificationDispatcher:
                     _report_notification_error()
 
             error_handler = self._resolve_error_handler()
-            safe_execute = getattr(error_handler, "safe_execute", None)
-            if not callable(safe_execute) or _is_unconfigured_mock_callable(
-                safe_execute
-            ):
-                safe_execute = getattr(error_handler, "_safe_execute", None)
-            if not callable(safe_execute) or _is_unconfigured_mock_callable(
-                safe_execute
-            ):
+            safe_execute = _get_declared_callable(error_handler, "safe_execute")
+            if not callable(safe_execute):
+                safe_execute = _get_declared_callable(error_handler, "_safe_execute")
+            if not callable(safe_execute):
                 try:
                     _invoke_handler()
                 except (

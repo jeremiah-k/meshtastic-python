@@ -26,8 +26,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
+    _get_declared_member,
     _sleep,
 )
 
@@ -114,10 +113,10 @@ class BLEReceiveRecoveryController:
         Returns
         -------
         Callable[..., object] | None
-            Callable candidate when it is not an unconfigured mock; otherwise
+            Callable candidate when explicitly usable; otherwise
             ``None``.
         """
-        if callable(candidate) and not _is_unconfigured_mock_callable(candidate):
+        if callable(candidate):
             return cast(Callable[..., object], candidate)
         return None
 
@@ -146,17 +145,16 @@ class BLEReceiveRecoveryController:
             First usable callable hook, preferring private then public; else
             ``None``.
         """
-        private_hook = self._as_usable_callable(getattr(owner, private_name, None))
+        private_hook = self._as_usable_callable(_get_declared_member(owner, private_name))
         if private_hook is not None:
             return private_hook
-        return self._as_usable_callable(getattr(owner, public_name, None))
+        return self._as_usable_callable(_get_declared_member(owner, public_name))
 
     @classmethod
-    def _is_unusable_mock_value(cls, value: object | None) -> bool:
-        """Return whether value is absent or an unconfigured mock placeholder."""
-        if value is None or _is_unconfigured_mock_member(value):
-            return True
-        return callable(value) and _is_unconfigured_mock_callable(value)
+    def _is_unusable_probe_value(cls, value: object | None) -> bool:
+        """Return whether a probe value is absent or has an unsupported shape."""
+        _ = cls
+        return value is None
 
     def _get_lifecycle_controller(self) -> object | None:
         """Return lifecycle controller when available on the bound interface."""
@@ -169,13 +167,13 @@ class BLEReceiveRecoveryController:
                 controller = get_lifecycle_controller_fn()
             except Exception:  # noqa: BLE001 - probe remains best effort
                 return None
-            if self._is_unusable_mock_value(controller):
+            if self._is_unusable_probe_value(controller):
                 return None
             return controller
         return None
 
     def _has_ever_connected_session(self) -> bool:
-        """Return mock-safe ever-connected state for receive-loop behavior."""
+        """Return strict ever-connected state for receive-loop behavior."""
         lifecycle_controller = self._get_lifecycle_controller()
         if lifecycle_controller is not None:
             has_ever_connected_session_fn = self._resolve_private_public_callable(
@@ -193,17 +191,13 @@ class BLEReceiveRecoveryController:
                     )
                 else:
                     return result if isinstance(result, bool) else False
-        raw_ever_connected = getattr(self._iface, "_ever_connected", False)
-        if _is_unconfigured_mock_member(raw_ever_connected):
-            return False
+        raw_ever_connected = _get_declared_member(self._iface, "_ever_connected", False)
         return raw_ever_connected is True
 
     @staticmethod
     def _normalize_bool_probe(raw_value: object) -> bool:
-        """Normalize a bool-like probe while filtering mock placeholders."""
-        if _is_unconfigured_mock_member(raw_value):
-            return False
-        if callable(raw_value) and not _is_unconfigured_mock_callable(raw_value):
+        """Normalize a bool-like compatibility probe."""
+        if callable(raw_value):
             try:
                 result = raw_value()
                 return result if isinstance(result, bool) else False
@@ -233,10 +227,8 @@ class BLEReceiveRecoveryController:
             raw_is_closing = getattr(iface, "_is_connection_closing", False)
             state_is_closing = self._normalize_bool_probe(raw_is_closing)
         else:
-            raw_is_closing = getattr(state_manager, "is_closing", None)
-            if callable(raw_is_closing) and not _is_unconfigured_mock_callable(
-                raw_is_closing
-            ):
+            raw_is_closing = _get_declared_member(state_manager, "is_closing")
+            if callable(raw_is_closing):
                 try:
                     result = raw_is_closing()
                     if isinstance(result, bool):
@@ -245,12 +237,10 @@ class BLEReceiveRecoveryController:
                     Exception
                 ):  # noqa: BLE001 - closing probe must remain best effort
                     state_is_closing = None
-            elif not _is_unconfigured_mock_member(raw_is_closing) and isinstance(
-                raw_is_closing, bool
-            ):
+            elif isinstance(raw_is_closing, bool):
                 state_is_closing = raw_is_closing
             if state_is_closing is None:
-                legacy_is_closing = getattr(state_manager, "_is_closing", None)
+                legacy_is_closing = _get_declared_member(state_manager, "_is_closing")
                 state_is_closing = self._normalize_bool_probe(legacy_is_closing)
 
         raw_closed = getattr(iface, "_closed", False)
@@ -287,15 +277,11 @@ class BLEReceiveRecoveryController:
     ) -> bool:
         """Wait for a coordinator event using compatibility dispatch."""
         wait_for_event = getattr(coordinator, "wait_for_event", None)
-        if callable(wait_for_event) and not _is_unconfigured_mock_callable(
-            wait_for_event
-        ):
+        if callable(wait_for_event):
             result = wait_for_event(event_name, timeout=timeout)
             return result if isinstance(result, bool) else False
         legacy_wait_for_event = getattr(coordinator, "_wait_for_event", None)
-        if callable(legacy_wait_for_event) and not _is_unconfigured_mock_callable(
-            legacy_wait_for_event
-        ):
+        if callable(legacy_wait_for_event):
             result = legacy_wait_for_event(event_name, timeout=timeout)
             return result if isinstance(result, bool) else False
         if timeout is None:
@@ -311,9 +297,7 @@ class BLEReceiveRecoveryController:
     ) -> bool:
         """Check and clear a coordinator event using compatibility dispatch."""
         check_and_clear_event = getattr(coordinator, "check_and_clear_event", None)
-        if callable(check_and_clear_event) and not _is_unconfigured_mock_callable(
-            check_and_clear_event
-        ):
+        if callable(check_and_clear_event):
             result = check_and_clear_event(event_name)
             return result if isinstance(result, bool) else False
         legacy_check_and_clear_event = getattr(
@@ -321,7 +305,7 @@ class BLEReceiveRecoveryController:
         )
         if callable(
             legacy_check_and_clear_event
-        ) and not _is_unconfigured_mock_callable(legacy_check_and_clear_event):
+        ):
             result = legacy_check_and_clear_event(event_name)
             return result if isinstance(result, bool) else False
         return False
@@ -332,23 +316,19 @@ class BLEReceiveRecoveryController:
     ) -> None:
         """Clear a coordinator event using compatibility dispatch."""
         clear_events = getattr(coordinator, "clear_events", None)
-        if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
+        if callable(clear_events):
             clear_events(event_name)
             return
         legacy_clear_events = getattr(coordinator, "_clear_events", None)
-        if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
-            legacy_clear_events
-        ):
+        if callable(legacy_clear_events):
             legacy_clear_events(event_name)
             return
         clear_event = getattr(coordinator, "clear_event", None)
-        if callable(clear_event) and not _is_unconfigured_mock_callable(clear_event):
+        if callable(clear_event):
             clear_event(event_name)
             return
         legacy_clear_event = getattr(coordinator, "_clear_event", None)
-        if callable(legacy_clear_event) and not _is_unconfigured_mock_callable(
-            legacy_clear_event
-        ):
+        if callable(legacy_clear_event):
             legacy_clear_event(event_name)
 
     def _should_run_receive_loop(self) -> bool:
@@ -543,16 +523,12 @@ class BLEReceiveRecoveryController:
 
         iface = self._iface
         instance_override = iface.__dict__.get(method_name)
-        if callable(instance_override) and not _is_unconfigured_mock_callable(
-            instance_override
-        ):
+        if callable(instance_override):
             if self._is_default_iface_receive_hook(method_name, instance_override):
                 return None
             return _wrap_override(cast(Callable[..., object], instance_override))
         class_or_subclass_override = getattr(iface, method_name, None)
-        if callable(class_or_subclass_override) and not _is_unconfigured_mock_callable(
-            class_or_subclass_override
-        ):
+        if callable(class_or_subclass_override):
             if self._is_default_iface_receive_hook(
                 method_name,
                 class_or_subclass_override,
@@ -598,20 +574,9 @@ class BLEReceiveRecoveryController:
         iface = self._iface
         with self._session.lock:
             notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
-            is_unconfigured_member = getattr(
-                iface, "_is_unconfigured_mock_member", None
+            return not (
+                notify_enabled if isinstance(notify_enabled, bool) else False
             )
-            if callable(is_unconfigured_member) and not _is_unconfigured_mock_callable(
-                is_unconfigured_member
-            ):
-                try:
-                    if bool(is_unconfigured_member("_fromnum_notify_enabled")):
-                        notify_enabled = False
-                except Exception:  # noqa: BLE001 - probe remains best effort
-                    notify_enabled = False
-            if _is_unconfigured_mock_member(notify_enabled):
-                notify_enabled = False
-            return not bool(notify_enabled)
 
     def _resolve_wait_for_runtime_event(
         self,
@@ -630,9 +595,7 @@ class BLEReceiveRecoveryController:
             The injected wait function when provided and configured; otherwise
             a wrapper that delegates to ``_coordinator_wait_for_event``.
         """
-        if callable(wait_for_event) and not _is_unconfigured_mock_callable(
-            wait_for_event
-        ):
+        if callable(wait_for_event):
             injected_wait_for_event = cast(
                 Callable[["ThreadCoordinator", str, float | None], object],
                 wait_for_event,
@@ -713,10 +676,8 @@ class BLEReceiveRecoveryController:
         iface = self._iface
         with self._session.lock:
             client = iface.client
-            state_is_connecting = getattr(iface._state_manager, "is_connecting", None)
-            if callable(state_is_connecting) and not _is_unconfigured_mock_callable(
-                state_is_connecting
-            ):
+            state_is_connecting = _get_declared_member(iface._state_manager, "is_connecting")
+            if callable(state_is_connecting):
                 try:
                     connecting_result = state_is_connecting()
                 except (
@@ -733,9 +694,7 @@ class BLEReceiveRecoveryController:
                         if isinstance(connecting_result, bool)
                         else False
                     )
-            elif not _is_unconfigured_mock_member(state_is_connecting) and isinstance(
-                state_is_connecting, bool
-            ):
+            elif isinstance(state_is_connecting, bool):
                 is_connecting = state_is_connecting
             else:
                 legacy_is_connecting = getattr(
@@ -743,7 +702,7 @@ class BLEReceiveRecoveryController:
                 )
                 if callable(
                     legacy_is_connecting
-                ) and not _is_unconfigured_mock_callable(legacy_is_connecting):
+                ):
                     try:
                         connecting_result = legacy_is_connecting()
                     except (
@@ -760,9 +719,7 @@ class BLEReceiveRecoveryController:
                             if isinstance(connecting_result, bool)
                             else False
                         )
-                elif not _is_unconfigured_mock_member(
-                    legacy_is_connecting
-                ) and isinstance(legacy_is_connecting, bool):
+                elif isinstance(legacy_is_connecting, bool):
                     is_connecting = legacy_is_connecting
                 else:
                     is_connecting = False
@@ -1133,9 +1090,7 @@ class BLEReceiveRecoveryController:
         cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
         raw_notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
         notify_enabled = (
-            False
-            if _is_unconfigured_mock_member(raw_notify_enabled)
-            else bool(raw_notify_enabled)
+            raw_notify_enabled if isinstance(raw_notify_enabled, bool) else False
         )
         if now - self._session.last_empty_read_warning >= cooldown:
             suppressed = self._session.suppressed_empty_read_warnings

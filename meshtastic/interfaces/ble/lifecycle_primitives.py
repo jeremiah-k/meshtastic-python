@@ -9,8 +9,7 @@ from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.ports import _BLEStateManagerPort
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
+    _get_declared_member,
     _is_unexpected_keyword_error,
 )
 
@@ -68,10 +67,8 @@ class _OwnershipSnapshot:
 def _client_is_connected_compat(client: "BLEClient") -> bool:
     """Return connected-state flag from public/legacy BLEClient members."""
     for candidate_name in ("isConnected", "is_connected", "_is_connected"):
-        candidate = getattr(client, candidate_name, None)
+        candidate = _get_declared_member(client, candidate_name)
         if callable(candidate):
-            if _is_unconfigured_mock_callable(candidate):
-                continue
             try:
                 connected = candidate()
             except Exception:  # noqa: BLE001 - connectivity probes stay best effort
@@ -84,7 +81,7 @@ def _client_is_connected_compat(client: "BLEClient") -> bool:
             if isinstance(connected, bool):
                 return connected
             continue
-        if isinstance(candidate, bool) and not _is_unconfigured_mock_member(candidate):
+        if isinstance(candidate, bool):
             return candidate
     raise AttributeError(CLIENT_MISSING_CONNECTED_MSG)
 
@@ -98,10 +95,8 @@ class _LifecycleStateAccess:
 
     def is_connected(self) -> bool:
         """Return connected-state flag from public-first state-manager members."""
-        public_is_connected = getattr(self._state_manager, "is_connected", None)
-        if callable(public_is_connected) and not _is_unconfigured_mock_callable(
-            public_is_connected
-        ):
+        public_is_connected = _get_declared_member(self._state_manager, "is_connected")
+        if callable(public_is_connected):
             try:
                 result = public_is_connected()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -112,14 +107,12 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, bool):
                     return result
-        if not _is_unconfigured_mock_member(public_is_connected) and isinstance(
+        if isinstance(
             public_is_connected, bool
         ):
             return public_is_connected
-        legacy_is_connected = getattr(self._state_manager, "_is_connected", None)
-        if callable(legacy_is_connected) and not _is_unconfigured_mock_callable(
-            legacy_is_connected
-        ):
+        legacy_is_connected = _get_declared_member(self._state_manager, "_is_connected")
+        if callable(legacy_is_connected):
             try:
                 result = legacy_is_connected()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -130,7 +123,7 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, bool):
                     return result
-        if not _is_unconfigured_mock_member(legacy_is_connected) and isinstance(
+        if isinstance(
             legacy_is_connected, bool
         ):
             return legacy_is_connected
@@ -138,8 +131,8 @@ class _LifecycleStateAccess:
 
     def current_state(self) -> ConnectionState:
         """Return current connection state from public-first state-manager members."""
-        public_state = getattr(self._state_manager, "current_state", None)
-        if callable(public_state) and not _is_unconfigured_mock_callable(public_state):
+        public_state = _get_declared_member(self._state_manager, "current_state")
+        if callable(public_state):
             try:
                 result = public_state()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -150,12 +143,12 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, ConnectionState):
                     return result
-        if not _is_unconfigured_mock_member(public_state) and isinstance(
+        if isinstance(
             public_state, ConnectionState
         ):
             return public_state
-        legacy_state = getattr(self._state_manager, "_current_state", None)
-        if callable(legacy_state) and not _is_unconfigured_mock_callable(legacy_state):
+        legacy_state = _get_declared_member(self._state_manager, "_current_state")
+        if callable(legacy_state):
             try:
                 result = legacy_state()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -166,7 +159,7 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, ConnectionState):
                     return result
-        if not _is_unconfigured_mock_member(legacy_state) and isinstance(
+        if isinstance(
             legacy_state, ConnectionState
         ):
             return legacy_state
@@ -174,10 +167,8 @@ class _LifecycleStateAccess:
 
     def transition_to(self, new_state: ConnectionState) -> bool:
         """Transition state manager using public-first compatibility dispatch."""
-        public_transition = getattr(self._state_manager, "transition_to", None)
-        if callable(public_transition) and not _is_unconfigured_mock_callable(
-            public_transition
-        ):
+        public_transition = _get_declared_member(self._state_manager, "transition_to")
+        if callable(public_transition):
             try:
                 result = public_transition(new_state)
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -188,10 +179,8 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, bool):
                     return result
-        legacy_transition = getattr(self._state_manager, "_transition_to", None)
-        if callable(legacy_transition) and not _is_unconfigured_mock_callable(
-            legacy_transition
-        ):
+        legacy_transition = _get_declared_member(self._state_manager, "_transition_to")
+        if callable(legacy_transition):
             try:
                 result = legacy_transition(new_state)
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -209,7 +198,7 @@ class _LifecycleStateAccess:
         public_reset = getattr(
             self._state_manager, "reset_to_disconnected", None
         )
-        if callable(public_reset) and not _is_unconfigured_mock_callable(public_reset):
+        if callable(public_reset):
             try:
                 result = public_reset()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -223,7 +212,7 @@ class _LifecycleStateAccess:
         legacy_reset = getattr(
             self._state_manager, "_reset_to_disconnected", None
         )
-        if callable(legacy_reset) and not _is_unconfigured_mock_callable(legacy_reset):
+        if callable(legacy_reset):
             try:
                 result = legacy_reset()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -238,10 +227,8 @@ class _LifecycleStateAccess:
 
     def is_closing(self) -> bool:
         """Return closing-state flag from public-first state-manager members."""
-        public_is_closing = getattr(self._state_manager, "is_closing", None)
-        if callable(public_is_closing) and not _is_unconfigured_mock_callable(
-            public_is_closing
-        ):
+        public_is_closing = _get_declared_member(self._state_manager, "is_closing")
+        if callable(public_is_closing):
             try:
                 result = public_is_closing()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -252,14 +239,12 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, bool):
                     return result
-        if not _is_unconfigured_mock_member(public_is_closing) and isinstance(
+        if isinstance(
             public_is_closing, bool
         ):
             return public_is_closing
-        legacy_is_closing = getattr(self._state_manager, "_is_closing", None)
-        if callable(legacy_is_closing) and not _is_unconfigured_mock_callable(
-            legacy_is_closing
-        ):
+        legacy_is_closing = _get_declared_member(self._state_manager, "_is_closing")
+        if callable(legacy_is_closing):
             try:
                 result = legacy_is_closing()
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
@@ -270,7 +255,7 @@ class _LifecycleStateAccess:
             else:
                 if isinstance(result, bool):
                     return result
-        if not _is_unconfigured_mock_member(legacy_is_closing) and isinstance(
+        if isinstance(
             legacy_is_closing, bool
         ):
             return legacy_is_closing
@@ -306,15 +291,13 @@ class _LifecycleThreadAccess:
         kwargs: dict[str, object] | None = None,
     ) -> ThreadLike:
         """Create thread via public-first coordinator compatibility dispatch."""
-        coordinator = getattr(self._iface, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        coordinator = _get_declared_member(self._iface, "thread_coordinator")
+        if coordinator is None:
             raise AttributeError(
                 THREAD_COORDINATOR_MISSING_FMT % ("create_thread", "_create_thread")
             )
-        create_thread = getattr(coordinator, "create_thread", None)
-        if callable(create_thread) and not _is_unconfigured_mock_callable(
-            create_thread
-        ):
+        create_thread = _get_declared_member(coordinator, "create_thread")
+        if callable(create_thread):
             return cast(
                 ThreadLike,
                 create_thread(
@@ -325,10 +308,8 @@ class _LifecycleThreadAccess:
                     kwargs=kwargs,
                 ),
             )
-        legacy_create_thread = getattr(coordinator, "_create_thread", None)
-        if callable(legacy_create_thread) and not _is_unconfigured_mock_callable(
-            legacy_create_thread
-        ):
+        legacy_create_thread = _get_declared_member(coordinator, "_create_thread")
+        if callable(legacy_create_thread):
             return cast(
                 ThreadLike,
                 legacy_create_thread(
@@ -345,19 +326,17 @@ class _LifecycleThreadAccess:
 
     def start_thread(self, thread: object) -> None:
         """Start thread via public-first coordinator compatibility dispatch."""
-        coordinator = getattr(self._iface, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        coordinator = _get_declared_member(self._iface, "thread_coordinator")
+        if coordinator is None:
             raise AttributeError(
                 THREAD_COORDINATOR_MISSING_FMT % ("start_thread", "_start_thread")
             )
-        start_thread = getattr(coordinator, "start_thread", None)
-        if callable(start_thread) and not _is_unconfigured_mock_callable(start_thread):
+        start_thread = _get_declared_member(coordinator, "start_thread")
+        if callable(start_thread):
             start_thread(thread)
             return
-        legacy_start_thread = getattr(coordinator, "_start_thread", None)
-        if callable(legacy_start_thread) and not _is_unconfigured_mock_callable(
-            legacy_start_thread
-        ):
+        legacy_start_thread = _get_declared_member(coordinator, "_start_thread")
+        if callable(legacy_start_thread):
             legacy_start_thread(thread)
             return
         raise AttributeError(
@@ -366,14 +345,12 @@ class _LifecycleThreadAccess:
 
     def join_thread(self, thread: object, *, timeout: float | None) -> None:
         """Join thread via public-first coordinator compatibility dispatch."""
-        coordinator = getattr(self._iface, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        coordinator = _get_declared_member(self._iface, "thread_coordinator")
+        if coordinator is None:
             logger.debug("Thread coordinator is missing join_thread/_join_thread")
         else:
-            join_thread = getattr(coordinator, "join_thread", None)
-            if callable(join_thread) and not _is_unconfigured_mock_callable(
-                join_thread
-            ):
+            join_thread = _get_declared_member(coordinator, "join_thread")
+            if callable(join_thread):
                 try:
                     join_thread(thread, timeout=timeout)
                 except Exception:  # noqa: BLE001 - non-critical join stays best effort
@@ -384,10 +361,8 @@ class _LifecycleThreadAccess:
                     )
                 else:
                     return
-            legacy_join_thread = getattr(coordinator, "_join_thread", None)
-            if callable(legacy_join_thread) and not _is_unconfigured_mock_callable(
-                legacy_join_thread
-            ):
+            legacy_join_thread = _get_declared_member(coordinator, "_join_thread")
+            if callable(legacy_join_thread):
                 try:
                     legacy_join_thread(thread, timeout=timeout)
                 except Exception:  # noqa: BLE001 - non-critical join stays best effort
@@ -399,7 +374,7 @@ class _LifecycleThreadAccess:
                 else:
                     return
         thread_join = getattr(thread, "join", None)
-        if callable(thread_join) and not _is_unconfigured_mock_callable(thread_join):
+        if callable(thread_join):
             try:
                 thread_join(timeout=timeout)
             except Exception:  # noqa: BLE001 - non-critical join stays best effort
@@ -409,12 +384,12 @@ class _LifecycleThreadAccess:
 
     def set_event(self, event_name: str) -> None:
         """Set event via public-first coordinator compatibility dispatch."""
-        coordinator = getattr(self._iface, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        coordinator = _get_declared_member(self._iface, "thread_coordinator")
+        if coordinator is None:
             logger.debug("Thread coordinator is missing set_event/_set_event")
             return
-        set_event = getattr(coordinator, "set_event", None)
-        if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
+        set_event = _get_declared_member(coordinator, "set_event")
+        if callable(set_event):
             try:
                 set_event(event_name)
             except Exception:  # noqa: BLE001 - non-critical event set stays best effort
@@ -425,10 +400,8 @@ class _LifecycleThreadAccess:
                 )
             else:
                 return
-        legacy_set_event = getattr(coordinator, "_set_event", None)
-        if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
-            legacy_set_event
-        ):
+        legacy_set_event = _get_declared_member(coordinator, "_set_event")
+        if callable(legacy_set_event):
             try:
                 legacy_set_event(event_name)
             except Exception:  # noqa: BLE001 - non-critical event set stays best effort
@@ -443,12 +416,12 @@ class _LifecycleThreadAccess:
 
     def clear_events(self, *event_names: str) -> None:
         """Clear events via public-first coordinator compatibility dispatch."""
-        coordinator = getattr(self._iface, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        coordinator = _get_declared_member(self._iface, "thread_coordinator")
+        if coordinator is None:
             logger.debug("Thread coordinator is missing clear_events/_clear_events")
             return
-        clear_events = getattr(coordinator, "clear_events", None)
-        if callable(clear_events) and not _is_unconfigured_mock_callable(clear_events):
+        clear_events = _get_declared_member(coordinator, "clear_events")
+        if callable(clear_events):
             try:
                 clear_events(*event_names)
             except Exception:  # noqa: BLE001 - non-critical clear stays best effort
@@ -459,10 +432,8 @@ class _LifecycleThreadAccess:
                 )
             else:
                 return
-        legacy_clear_events = getattr(coordinator, "_clear_events", None)
-        if callable(legacy_clear_events) and not _is_unconfigured_mock_callable(
-            legacy_clear_events
-        ):
+        legacy_clear_events = _get_declared_member(coordinator, "_clear_events")
+        if callable(legacy_clear_events):
             try:
                 legacy_clear_events(*event_names)
             except Exception:  # noqa: BLE001 - non-critical clear stays best effort
@@ -477,16 +448,14 @@ class _LifecycleThreadAccess:
 
     def wake_waiting_threads(self, *event_names: str) -> None:
         """Wake waiters via public-first coordinator compatibility dispatch."""
-        coordinator = getattr(self._iface, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        coordinator = _get_declared_member(self._iface, "thread_coordinator")
+        if coordinator is None:
             logger.debug(
                 "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
             )
             return
-        wake_waiting_threads = getattr(coordinator, "wake_waiting_threads", None)
-        if callable(wake_waiting_threads) and not _is_unconfigured_mock_callable(
-            wake_waiting_threads
-        ):
+        wake_waiting_threads = _get_declared_member(coordinator, "wake_waiting_threads")
+        if callable(wake_waiting_threads):
             try:
                 wake_waiting_threads(*event_names)
                 return
@@ -499,9 +468,7 @@ class _LifecycleThreadAccess:
         legacy_wake_waiting_threads = getattr(
             coordinator, "_wake_waiting_threads", None
         )
-        if callable(legacy_wake_waiting_threads) and not _is_unconfigured_mock_callable(
-            legacy_wake_waiting_threads
-        ):
+        if callable(legacy_wake_waiting_threads):
             try:
                 legacy_wake_waiting_threads(*event_names)
                 return
@@ -511,8 +478,8 @@ class _LifecycleThreadAccess:
                     event_names,
                     exc_info=True,
                 )
-        set_event = getattr(coordinator, "set_event", None)
-        if callable(set_event) and not _is_unconfigured_mock_callable(set_event):
+        set_event = _get_declared_member(coordinator, "set_event")
+        if callable(set_event):
             failed_events: list[str] = []
             for event_name in event_names:
                 try:
@@ -527,10 +494,8 @@ class _LifecycleThreadAccess:
             if not failed_events:
                 return
             event_names = tuple(failed_events)
-        legacy_set_event = getattr(coordinator, "_set_event", None)
-        if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
-            legacy_set_event
-        ):
+        legacy_set_event = _get_declared_member(coordinator, "_set_event")
+        if callable(legacy_set_event):
             failed_events = []
             for event_name in event_names:
                 try:
@@ -560,12 +525,12 @@ class _LifecycleErrorAccess:
         self, public_name: str, legacy_name: str
     ) -> Callable[..., object] | None:
         """Resolve an error-handler hook with public-first fallback behavior."""
-        error_handler = getattr(self._iface, "error_handler", None)
-        hook = getattr(error_handler, public_name, None)
-        if callable(hook) and not _is_unconfigured_mock_callable(hook):
+        error_handler = _get_declared_member(self._iface, "error_handler")
+        hook = _get_declared_member(error_handler, public_name)
+        if callable(hook):
             return cast(Callable[..., object], hook)
-        legacy_hook = getattr(error_handler, legacy_name, None)
-        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
+        legacy_hook = _get_declared_member(error_handler, legacy_name)
+        if callable(legacy_hook):
             return cast(Callable[..., object], legacy_hook)
         return None
 

@@ -37,7 +37,6 @@ import time
 from collections.abc import Awaitable, Callable
 from threading import Event
 from typing import IO, Any, NoReturn, TypedDict, TypeVar, cast
-from unittest.mock import Mock
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -123,8 +122,8 @@ from meshtastic.interfaces.ble.session_state import (
     _BLESessionStateCompatMixin,
 )
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
+    _get_declared_callable,
+    _get_declared_member,
     _is_unexpected_keyword_error,
     _sleep,
     sanitize_address,
@@ -449,19 +448,11 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             True to request the receive loop to run, False to stop it.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        set_receive_wanted = getattr(lifecycle_controller, "_set_receive_wanted", None)
-        if callable(set_receive_wanted) and _is_unconfigured_mock_callable(
-            set_receive_wanted
-        ):
-            set_receive_wanted = None
+        set_receive_wanted = _get_declared_callable(lifecycle_controller, "_set_receive_wanted")
         if set_receive_wanted is None:
             set_receive_wanted = getattr(
                 lifecycle_controller, "set_receive_wanted", None
             )
-            if callable(set_receive_wanted) and _is_unconfigured_mock_callable(
-                set_receive_wanted
-            ):
-                set_receive_wanted = None
         if callable(set_receive_wanted):
             set_receive_wanted(want_receive=want_receive)
 
@@ -477,18 +468,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         should_run_receive_loop = getattr(
             lifecycle_controller, "_should_run_receive_loop", None
         )
-        if callable(should_run_receive_loop) and _is_unconfigured_mock_callable(
-            should_run_receive_loop
-        ):
-            should_run_receive_loop = None
         if should_run_receive_loop is None:
             should_run_receive_loop = getattr(
                 lifecycle_controller, "should_run_receive_loop", None
             )
-            if callable(should_run_receive_loop) and _is_unconfigured_mock_callable(
-                should_run_receive_loop
-            ):
-                should_run_receive_loop = None
         if callable(should_run_receive_loop):
             result = should_run_receive_loop()
             return result if isinstance(result, bool) else False
@@ -510,18 +493,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         start_receive_thread = getattr(
             lifecycle_controller, "_start_receive_thread", None
         )
-        if callable(start_receive_thread) and _is_unconfigured_mock_callable(
-            start_receive_thread
-        ):
-            start_receive_thread = None
         if start_receive_thread is None:
             start_receive_thread = getattr(
                 lifecycle_controller, "start_receive_thread", None
             )
-            if callable(start_receive_thread) and _is_unconfigured_mock_callable(
-                start_receive_thread
-            ):
-                start_receive_thread = None
         if callable(start_receive_thread):
             start_receive_thread(
                 name=name,
@@ -709,30 +684,24 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> Callable[[str], None] | None:
         """Resolve set-event hook with instance-override compatibility behavior."""
         instance_set_event = getattr(coordinator, "__dict__", {}).get("set_event")
-        if callable(instance_set_event) and not _is_unconfigured_mock_callable(
-            instance_set_event
-        ):
+        if callable(instance_set_event):
             return cast(Callable[[str], None], instance_set_event)
         class_set_event = getattr(type(coordinator), "set_event", None)
-        if callable(class_set_event) and not _is_unconfigured_mock_callable(
-            class_set_event
-        ):
+        if callable(class_set_event):
 
             def _dispatch_class_event(event_name: str) -> None:
                 class_set_event(coordinator, event_name)
 
             return _dispatch_class_event
         legacy_set_event = getattr(coordinator, "_set_event", None)
-        if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
-            legacy_set_event
-        ):
+        if callable(legacy_set_event):
             return cast(Callable[[str], None], legacy_set_event)
         return None
 
     def _set_thread_event(self, event_name: str) -> None:
         """Set thread-coordinator event via public-first compatibility dispatch."""
         coordinator = getattr(self, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        if coordinator is None:
             logger.debug(
                 "Thread coordinator is missing set_event/_set_event for event %s",
                 event_name,
@@ -1112,18 +1081,14 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> BLEClient | None:
         """Return available management client via management collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = getattr(self, "_state_lock", None)
-        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+        state_lock = _get_declared_member(self, "_state_lock")
+        if state_lock is None:
             return handler.get_management_client_if_available(address)
-        lock_is_owned = getattr(state_lock, "_is_owned", None)
-        if isinstance(lock_is_owned, Mock):
-            return handler.get_management_client_if_available(address)
-        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(
-            lock_is_owned
-        ):
+        lock_is_owned = _get_declared_callable(state_lock, "_is_owned")
+        if lock_is_owned is not None:
             owns_lock = False
             try:
-                owns_lock = bool(lock_is_owned())
+                owns_lock = lock_is_owned() is True
             except Exception:  # noqa: BLE001 - lock probe remains best effort
                 logger.debug(
                     "Failed to probe _state_lock ownership before management lookup",
@@ -1148,24 +1113,17 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> BLEClient | None:
         """Return reusable target-matching management client via collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = getattr(self, "_state_lock", None)
-        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+        state_lock = _get_declared_member(self, "_state_lock")
+        if state_lock is None:
             return handler.get_management_client_for_target(
                 target_address,
                 prefer_current_client=prefer_current_client,
             )
-        lock_is_owned = getattr(state_lock, "_is_owned", None)
-        if isinstance(lock_is_owned, Mock):
-            return handler.get_management_client_for_target(
-                target_address,
-                prefer_current_client=prefer_current_client,
-            )
-        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(
-            lock_is_owned
-        ):
+        lock_is_owned = _get_declared_callable(state_lock, "_is_owned")
+        if lock_is_owned is not None:
             owns_lock = False
             try:
-                owns_lock = bool(lock_is_owned())
+                owns_lock = lock_is_owned() is True
             except Exception:  # noqa: BLE001 - lock probe remains best effort
                 logger.debug(
                     "Failed to probe _state_lock ownership before target lookup",
@@ -1225,7 +1183,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     def _get_or_create_error_handler(self) -> BLEErrorHandler:
         """Return bound error handler, creating one lazily for partial test doubles."""
         handler = getattr(self, "error_handler", None)
-        if handler is None or _is_unconfigured_mock_member(handler):
+        if handler is None:
             handler = BLEErrorHandler()
             self.error_handler = handler
         return cast(BLEErrorHandler, handler)
@@ -1239,18 +1197,18 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         to lockless initialization for partial test doubles that bypass `__init__`.
         """
         collaborator = getattr(self, attr_name, None)
-        if collaborator is not None and not _is_unconfigured_mock_member(collaborator):
+        if collaborator is not None:
             return cast(T, collaborator)
-        state_lock = getattr(self, "_state_lock", None)
-        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+        state_lock = _get_declared_member(self, "_state_lock")
+        if state_lock is None:
             collaborator = getattr(self, attr_name, None)
-            if collaborator is None or _is_unconfigured_mock_member(collaborator):
+            if collaborator is None:
                 collaborator = factory()
                 setattr(self, attr_name, collaborator)
             return cast(T, collaborator)
         with state_lock:
             collaborator = getattr(self, attr_name, None)
-            if collaborator is None or _is_unconfigured_mock_member(collaborator):
+            if collaborator is None:
                 collaborator = factory()
                 setattr(self, attr_name, collaborator)
         return cast(T, collaborator)
@@ -1258,9 +1216,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     def _create_notification_dispatcher(self) -> BLENotificationDispatcher:
         """Build notification dispatcher with canonical collaborator wiring."""
         notification_manager = getattr(self, "_notification_manager", None)
-        if notification_manager is None or _is_unconfigured_mock_member(
-            notification_manager
-        ):
+        if notification_manager is None:
             notification_manager = NotificationManager()
             self._notification_manager = notification_manager
         return BLENotificationDispatcher(
@@ -1618,21 +1574,15 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         """Dispatch a callable through public/legacy/fallback compatibility names."""
         kwargs = {} if kwargs is None else kwargs
         public_member = getattr(target, public_name, None)
-        if callable(public_member) and not _is_unconfigured_mock_callable(
-            public_member
-        ):
+        if callable(public_member):
             return public_member(*args, **kwargs)
         legacy_member = getattr(target, legacy_name, None)
-        if callable(legacy_member) and not _is_unconfigured_mock_callable(
-            legacy_member
-        ):
+        if callable(legacy_member):
             return legacy_member(*args, **kwargs)
         if fallback_attr_name is None:
             raise AttributeError(error_message)
         fallback_member = getattr(target, fallback_attr_name, None)
-        if not callable(fallback_member) or _is_unconfigured_mock_callable(
-            fallback_member
-        ):
+        if not callable(fallback_member):
             raise AttributeError(error_message)
         return fallback_member(*args, **kwargs)
 
@@ -1647,48 +1597,36 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> bool:
         """Resolve bool members via public/legacy/fallback compatibility names."""
         public_member = getattr(target, public_name, None)
-        if callable(public_member) and not _is_unconfigured_mock_callable(
-            public_member
-        ):
+        if callable(public_member):
             try:
                 resolved_public = public_member()
             except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
                 resolved_public = None
             if isinstance(resolved_public, bool):
                 return resolved_public
-        if isinstance(public_member, bool) and not _is_unconfigured_mock_member(
-            public_member
-        ):
+        if isinstance(public_member, bool):
             return public_member
         legacy_member = getattr(target, legacy_name, None)
-        if callable(legacy_member) and not _is_unconfigured_mock_callable(
-            legacy_member
-        ):
+        if callable(legacy_member):
             try:
                 resolved_legacy = legacy_member()
             except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
                 resolved_legacy = None
             if isinstance(resolved_legacy, bool):
                 return resolved_legacy
-        if isinstance(legacy_member, bool) and not _is_unconfigured_mock_member(
-            legacy_member
-        ):
+        if isinstance(legacy_member, bool):
             return legacy_member
         if fallback_attr_name is None:
             raise AttributeError(error_message)
         fallback_member = getattr(target, fallback_attr_name, None)
-        if callable(fallback_member) and not _is_unconfigured_mock_callable(
-            fallback_member
-        ):
+        if callable(fallback_member):
             try:
                 resolved_fallback = fallback_member()
             except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
                 resolved_fallback = None
             if isinstance(resolved_fallback, bool):
                 return resolved_fallback
-        if isinstance(fallback_member, bool) and not _is_unconfigured_mock_member(
-            fallback_member
-        ):
+        if isinstance(fallback_member, bool):
             return fallback_member
         raise AttributeError(error_message)
 
@@ -2276,9 +2214,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             resolved_dispatcher = self._get_notification_dispatcher()
         except Exception:  # noqa: BLE001 - rollback snapshot is best effort
             resolved_dispatcher = None
-        if resolved_dispatcher is not None and not _is_unconfigured_mock_member(
-            resolved_dispatcher
-        ):
+        if resolved_dispatcher is not None:
             notification_dispatcher = resolved_dispatcher
             try:
                 registered_epoch = (
@@ -2460,7 +2396,6 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             if (
                 notification_dispatcher is None
                 or notification_session_snapshot is None
-                or _is_unconfigured_mock_member(notification_dispatcher)
             ):
                 return
             with contextlib.suppress(
