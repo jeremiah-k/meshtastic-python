@@ -20,6 +20,10 @@ from meshtastic.interfaces.ble.constants import (
     RECONNECTED_EVENT,
     logger,
 )
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.gating import _addr_key
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleErrorAccess,
@@ -119,10 +123,10 @@ class BLEShutdownLifecycleCoordinator:
             try:
                 cleanup_hook()
             except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
-                logger.debug(
+                _log_ble_failure(
+                    _BLEFailureDisposition.BEST_EFFORT,
                     "Error running thread coordinator %s()",
                     hook_name,
-                    exc_info=True,
                 )
             return
 
@@ -137,10 +141,10 @@ class BLEShutdownLifecycleCoordinator:
             try:
                 cleanup_hook()
             except Exception:  # noqa: BLE001 - shutdown cleanup is best effort
-                logger.debug(
+                _log_ble_failure(
+                    _BLEFailureDisposition.BEST_EFFORT,
                     "Error running thread coordinator %s()",
                     hook_name,
-                    exc_info=True,
                 )
             finally:
                 with self._bounded_thread_lock:
@@ -359,9 +363,9 @@ class BLEShutdownLifecycleCoordinator:
         try:
             wake_waiters(READ_TRIGGER_EVENT, RECONNECTED_EVENT)
         except Exception:  # noqa: BLE001 - close must remain best effort
-            logger.debug(
+            _log_ble_failure(
+                _BLEFailureDisposition.BEST_EFFORT,
                 "Error waking BLE receive-thread waiters during close",
-                exc_info=True,
             )
         receive_thread = self._session.receive_thread
         if receive_thread is None:
@@ -374,7 +378,11 @@ class BLEShutdownLifecycleCoordinator:
                 return False
             try:
                 return is_alive_probe() is False
-            except Exception:  # noqa: BLE001 - probe remains best effort
+            except Exception:  # noqa: BLE001 - shutdown probe is best effort
+                _log_ble_failure(
+                    _BLEFailureDisposition.BEST_EFFORT,
+                    "Unable to probe BLE receive-thread liveness during close",
+                )
                 return False
 
         start_failure_confirmed = False
@@ -384,7 +392,11 @@ class BLEShutdownLifecycleCoordinator:
             if callable(is_started):
                 try:
                     start_failure_confirmed = not bool(is_started())
-                except Exception:  # noqa: BLE001 - probe remains best effort
+                except Exception:  # noqa: BLE001 - shutdown probe is best effort
+                    _log_ble_failure(
+                        _BLEFailureDisposition.BEST_EFFORT,
+                        "Unable to probe BLE receive-thread start state during close",
+                    )
                     start_failure_confirmed = False
             elif isinstance(receive_thread, threading.Thread):
                 start_failure_confirmed = True
@@ -412,9 +424,9 @@ class BLEShutdownLifecycleCoordinator:
                     timeout=join_timeout,
                 )
             except Exception:  # noqa: BLE001 - close must remain best effort
-                logger.debug(
+                _log_ble_failure(
+                    _BLEFailureDisposition.BEST_EFFORT,
                     "Error joining BLE receive thread during close",
-                    exc_info=True,
                 )
             post_join_ident, post_join_is_alive = _thread_start_probe(receive_thread)
             if post_join_is_alive:

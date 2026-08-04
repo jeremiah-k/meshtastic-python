@@ -1,5 +1,6 @@
 """Receive-loop and recovery helpers for BLE interface orchestration."""
 
+import logging
 import math
 import threading
 import time
@@ -26,6 +27,10 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.errors import DecodeError
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.utils import (
     _sleep,
 )
@@ -165,7 +170,11 @@ class BLEReceiveRecoveryController:
         if get_lifecycle_controller_fn is not None:
             try:
                 controller = get_lifecycle_controller_fn()
-            except Exception:  # noqa: BLE001 - probe remains best effort
+            except Exception:  # noqa: BLE001 - compatibility probe falls back
+                _log_ble_failure(
+                    _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                    "BLE lifecycle controller probe failed",
+                )
                 return None
             if self._is_unusable_probe_value(controller):
                 return None
@@ -185,9 +194,9 @@ class BLEReceiveRecoveryController:
                 try:
                     result = has_ever_connected_session_fn()
                 except Exception:  # noqa: BLE001 - probe remains best effort
-                    logger.debug(
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
                         "Probe has_ever_connected_session_fn failed",
-                        exc_info=True,
                     )
                 else:
                     return result if isinstance(result, bool) else False
@@ -201,7 +210,11 @@ class BLEReceiveRecoveryController:
             try:
                 result = raw_value()
                 return result if isinstance(result, bool) else False
-            except Exception:  # noqa: BLE001 - probe remains best effort
+            except Exception:  # noqa: BLE001 - compatibility probe falls back
+                _log_ble_failure(
+                    _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                    "BLE boolean compatibility probe failed",
+                )
                 return False
         if isinstance(raw_value, bool):
             return raw_value
@@ -214,7 +227,11 @@ class BLEReceiveRecoveryController:
         """Call a hook and return True only if result is a real bool True."""
         try:
             result = hook(*args, **kwargs)
-        except Exception:  # noqa: BLE001 - hook probes remain best effort
+        except Exception:  # noqa: BLE001 - compatibility probe falls back
+            _log_ble_failure(
+                _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                "BLE compatibility boolean hook failed",
+            )
             return False
         return result if isinstance(result, bool) else False
 
@@ -260,9 +277,9 @@ class BLEReceiveRecoveryController:
                 try:
                     result = is_connection_closing_fn()
                 except Exception:  # noqa: BLE001 - probe remains best effort
-                    logger.debug(
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
                         "Probe is_connection_closing_fn failed",
-                        exc_info=True,
                     )
                 else:
                     return result if isinstance(result, bool) else False
@@ -340,9 +357,10 @@ class BLEReceiveRecoveryController:
             try:
                 result = override_should_run_receive_loop()
             except Exception:
-                logger.error(
+                _log_ble_failure(
+                    _BLEFailureDisposition.TERMINAL,
                     "Receive-loop override should_run_receive_loop raised",
-                    exc_info=True,
+                    level=logging.ERROR,
                 )
                 raise
             return result if isinstance(result, bool) else False
@@ -357,9 +375,10 @@ class BLEReceiveRecoveryController:
                 try:
                     result = should_run_receive_loop_fn()
                 except Exception:
-                    logger.error(
+                    _log_ble_failure(
+                        _BLEFailureDisposition.TERMINAL,
                         "Lifecycle should_run_receive_loop raised",
-                        exc_info=True,
+                        level=logging.ERROR,
                     )
                     raise
                 return result if isinstance(result, bool) else False
@@ -400,9 +419,10 @@ class BLEReceiveRecoveryController:
                     client=client,
                 )
             except Exception:  # noqa: BLE001 - disconnect hook must surface failures
-                logger.warning(
+                _log_ble_failure(
+                    _BLEFailureDisposition.TERMINAL,
                     "Disconnect handler override raised",
-                    exc_info=True,
+                    level=logging.WARNING,
                 )
                 raise
             return result if isinstance(result, bool) else False
@@ -421,9 +441,10 @@ class BLEReceiveRecoveryController:
                     client=client,
                 )
             except Exception:  # noqa: BLE001 - disconnect hook must surface failures
-                logger.warning(
+                _log_ble_failure(
+                    _BLEFailureDisposition.TERMINAL,
                     "Lifecycle disconnect handler raised",
-                    exc_info=True,
+                    level=logging.WARNING,
                 )
                 raise
             return result if isinstance(result, bool) else False
@@ -553,9 +574,10 @@ class BLEReceiveRecoveryController:
                     previous_client,
                 )
             except Exception:  # noqa: BLE001 - disconnect hook must surface failures
-                logger.warning(
+                _log_ble_failure(
+                    _BLEFailureDisposition.TERMINAL,
                     "Read-loop disconnect override raised",
-                    exc_info=True,
+                    level=logging.WARNING,
                 )
                 raise
             return result if isinstance(result, bool) else False
@@ -613,7 +635,11 @@ class BLEReceiveRecoveryController:
                         event_name,
                         timeout,
                     )
-                except Exception:  # noqa: BLE001 - wait probe remains best effort
+                except Exception:  # noqa: BLE001 - compatibility wait probe falls back
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "BLE wait-event compatibility probe failed",
+                    )
                     return False
                 return result if isinstance(result, bool) else False
 
@@ -855,7 +881,11 @@ class BLEReceiveRecoveryController:
                 self._close_after_fatal_read()
             return True, True
         except Exception as exc:  # noqa: BLE001  # pragma: no cover
-            logger.exception("Unexpected error in BLE read loop")
+            _log_ble_failure(
+                _BLEFailureDisposition.RETRYABLE,
+                "Unexpected error in BLE read loop",
+                level=logging.ERROR,
+            )
             if self.handle_read_loop_disconnect(repr(exc), client):
                 return True, False
             return True, True
@@ -928,7 +958,11 @@ class BLEReceiveRecoveryController:
             logger.exception("Fatal error in BLE receive thread")
             self.recover_receive_thread(RECEIVE_THREAD_FATAL_REASON)
         except Exception:  # noqa: BLE001
-            logger.exception("Unexpected fatal error in BLE receive thread")
+            _log_ble_failure(
+                _BLEFailureDisposition.RETRYABLE,
+                "Unexpected fatal error in BLE receive thread",
+                level=logging.ERROR,
+            )
             self.recover_receive_thread(RECEIVE_THREAD_FATAL_REASON)
 
     def recover_receive_thread(self, disconnect_reason: str) -> None:
@@ -1010,10 +1044,11 @@ class BLEReceiveRecoveryController:
                     name="BLEReceiveRecovery", reset_recovery=False
                 )
             except Exception:  # noqa: BLE001 - preserve existing failure behavior
-                logger.warning(
+                _log_ble_failure(
+                    _BLEFailureDisposition.RETRYABLE,
                     "BLE receive recovery restart failed (attempt %d)",
                     attempts,
-                    exc_info=True,
+                    level=logging.WARNING,
                 )
                 raise
             logger.debug(

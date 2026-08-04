@@ -11,6 +11,10 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _resolve_declared_callable,
 )
 from meshtastic.interfaces.ble.constants import logger
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.ports import _BLEStateManagerPort
 from meshtastic.interfaces.ble.state import ConnectionState
@@ -78,10 +82,10 @@ def _client_is_connected_compat(client: "BLEClient") -> bool:
             try:
                 connected = candidate()
             except Exception:  # noqa: BLE001 - connectivity probes stay best effort
-                logger.debug(
+                _log_ble_failure(
+                    _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
                     "Error probing BLE client connectivity via %s",
                     candidate_name,
-                    exc_info=True,
                 )
                 continue
         else:
@@ -111,10 +115,10 @@ class _LifecycleStateAccess:
                 try:
                     result = candidate()
                 except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                    logger.debug(
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
                         "Error probing state manager %s()",
                         member_name,
-                        exc_info=True,
                     )
                     continue
             else:
@@ -133,10 +137,10 @@ class _LifecycleStateAccess:
             try:
                 result = candidate(*args)
             except Exception:  # noqa: BLE001 - compatibility probe must fall through
-                logger.debug(
+                _log_ble_failure(
+                    _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
                     "Error calling state manager %s()",
                     member_name,
-                    exc_info=True,
                 )
                 continue
             if isinstance(result, bool):
@@ -236,10 +240,10 @@ class _LifecycleThreadAccess:
             try:
                 hook(*args, **kwargs)
             except Exception:  # noqa: BLE001 - non-critical lifecycle hook
-                logger.debug(
+                _log_ble_failure(
+                    _BLEFailureDisposition.BEST_EFFORT,
                     "Error in thread_coordinator.%s",
                     member_name,
-                    exc_info=True,
                 )
                 continue
             return True
@@ -282,7 +286,11 @@ class _LifecycleThreadAccess:
             try:
                 thread_join(timeout=timeout)
             except Exception:  # noqa: BLE001 - non-critical join stays best effort
-                logger.debug("Error in thread.join for %r", thread, exc_info=True)
+                _log_ble_failure(
+                    _BLEFailureDisposition.BEST_EFFORT,
+                    "Error in thread.join for %r",
+                    thread,
+                )
             return
         logger.debug("Thread coordinator is missing join_thread/_join_thread")
 
@@ -318,11 +326,11 @@ class _LifecycleThreadAccess:
                 try:
                     set_event(event_name)
                 except Exception:  # noqa: BLE001 - non-critical wake stays best effort
-                    logger.debug(
+                    _log_ble_failure(
+                        _BLEFailureDisposition.BEST_EFFORT,
                         "Error in thread_coordinator.%s fallback for %s",
                         member_name,
                         event_name,
-                        exc_info=True,
                     )
                     failed.append(event_name)
             if not failed:
@@ -378,17 +386,21 @@ class _LifecycleErrorAccess:
                 if cleanup_ran or bool(hook_result):
                     return
             except Exception:  # noqa: BLE001 - hook failure must not abort shutdown
-                logger.debug(
+                _log_ble_failure(
+                    _BLEFailureDisposition.BEST_EFFORT,
                     "Error running safe_cleanup hook for %s",
                     operation_name,
-                    exc_info=True,
                 )
                 if cleanup_ran:
                     return
         try:
             cleanup()
         except Exception:  # noqa: BLE001 - shutdown cleanup must remain best effort
-            logger.debug("Error during %s", operation_name, exc_info=True)
+            _log_ble_failure(
+                _BLEFailureDisposition.BEST_EFFORT,
+                "Error during %s",
+                operation_name,
+            )
 
     @staticmethod
     def _try_safe_execute_variants(
@@ -409,7 +421,10 @@ class _LifecycleErrorAccess:
             return did_run(), result
         except TypeError as exc:
             if not _is_unexpected_keyword_error(exc, "error_msg"):
-                logger.debug(error_msg, exc_info=True)
+                _log_ble_failure(
+                _BLEFailureDisposition.BEST_EFFORT,
+                error_msg,
+            )
                 return did_run(), None
             if did_run():
                 return True, None
@@ -418,7 +433,10 @@ class _LifecycleErrorAccess:
                 if did_run():
                     return True, result
             except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
-                logger.debug(error_msg, exc_info=True)
+                _log_ble_failure(
+                _BLEFailureDisposition.BEST_EFFORT,
+                error_msg,
+            )
                 if did_run():
                     return True, None
             try:
@@ -426,11 +444,17 @@ class _LifecycleErrorAccess:
                 if did_run():
                     return True, result
             except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
-                logger.debug(error_msg, exc_info=True)
+                _log_ble_failure(
+                _BLEFailureDisposition.BEST_EFFORT,
+                error_msg,
+            )
                 if did_run():
                     return True, None
         except Exception:  # noqa: BLE001 - hook failures must not abort shutdown
-            logger.debug(error_msg, exc_info=True)
+            _log_ble_failure(
+                _BLEFailureDisposition.BEST_EFFORT,
+                error_msg,
+            )
             if did_run():
                 return True, None
         return False, None
@@ -462,5 +486,8 @@ class _LifecycleErrorAccess:
         try:
             return func()
         except Exception:  # noqa: BLE001 - shutdown execution must remain best effort
-            logger.debug(error_msg, exc_info=True)
+            _log_ble_failure(
+                _BLEFailureDisposition.BEST_EFFORT,
+                error_msg,
+            )
             return None

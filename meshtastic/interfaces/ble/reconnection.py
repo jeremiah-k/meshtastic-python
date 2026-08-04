@@ -11,6 +11,10 @@ from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.errors import BLEDBusTransportError
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _is_currently_connected_elsewhere,
@@ -598,9 +602,11 @@ class ReconnectWorker:
                 except Exception:
                     if self._should_abort_reconnect(context="unexpected error"):
                         return
-                    logger.exception(
+                    _log_ble_failure(
+                        _BLEFailureDisposition.RETRYABLE,
                         "Unexpected error during auto-reconnect attempt %d",
                         attempt_num,
+                        level=logging.ERROR,
                     )
                 else:
                     logger.info(
@@ -638,12 +644,18 @@ class ReconnectWorker:
                 self.reconnect_policy,
             )
         except Exception:
-            logger.exception(
-                "Unexpected error during reconnect loop setup; aborting reconnect"
+            _log_ble_failure(
+                _BLEFailureDisposition.TERMINAL,
+                "Unexpected error during reconnect loop setup; aborting reconnect",
+                level=logging.ERROR,
             )
         finally:
             if on_exit is not None:
                 try:
                     on_exit()
                 except Exception:
-                    logger.exception("Reconnect loop exit callback failed")
+                    _log_ble_failure(
+                        _BLEFailureDisposition.BEST_EFFORT,
+                        "Reconnect loop exit callback failed",
+                        level=logging.ERROR,
+                    )
