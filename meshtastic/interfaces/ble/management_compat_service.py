@@ -96,7 +96,7 @@ class BLEManagementCommandsService:
 
     @staticmethod
     def _handler_for_shim(
-        iface: "BLEInterface",
+        iface: "BLEInterface | object",
         *,
         expected_method: str | None = None,
         ble_client_factory: Callable[..., BLEClient] | None = None,
@@ -173,7 +173,7 @@ class BLEManagementCommandsService:
 
                 connected_elsewhere = _default_connected_elsewhere
         return BLEManagementCommandHandler(
-            iface,
+            cast("BLEInterface", iface),
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         )
