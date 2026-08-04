@@ -680,19 +680,28 @@ class DeferredExecution:
     def queueWork(self, runnable: Callable[[], Any]) -> None:
         """Enqueue a callable to be executed by the background worker thread.
 
+        Work accepted before :meth:`stop` is guaranteed to run before the worker
+        exits. Work submitted after shutdown begins is ignored, preserving the
+        historical non-raising behavior while making the shutdown boundary
+        deterministic.
+
         Parameters
         ----------
         runnable : Callable[[], Any]
             A zero-argument callable to be executed later.
         """
-        self.queue.put(runnable)
+        with self._stop_lock:
+            if self._shutdown:
+                return
+            self.queue.put(runnable)
 
     def stop(self) -> None:
         """Signal the worker thread to shut down gracefully.
 
-        Enqueues a sentinel value that causes the worker loop to exit. After calling
-        stop(), the worker will finish processing pending items and exits. This method
-        is safe to call multiple times and is a no-op if already stopped.
+        Enqueues a sentinel value after all work accepted before this call. The
+        worker drains those pending items in FIFO order and exits when it reaches
+        the sentinel. This method is safe to call multiple times and is a no-op if
+        shutdown has already started.
         """
         with self._stop_lock:
             if not self._shutdown:
@@ -723,11 +732,12 @@ class DeferredExecution:
     def _run(self) -> None:
         """Continuously executes callables retrieved from the internal work queue.
 
-        Runs an infinite loop that takes callables from self.queue and invokes them; any
-        exception raised by a callable is logged and processing continues. The loop exits
-        when the _SHUTDOWN sentinel is received or when stop() is called.
+        Runs an infinite loop that takes callables from ``self.queue`` and invokes
+        them. Exceptions raised by queued work are logged and processing continues.
+        The loop exits only when it consumes the shutdown sentinel, ensuring work
+        accepted before :meth:`stop` is drained first.
         """
-        while not self._shutdown:
+        while True:
             try:
                 o = self.queue.get(timeout=_DEFERRED_QUEUE_POLL_TIMEOUT_SECONDS)
                 if o is self._SHUTDOWN:
