@@ -311,9 +311,9 @@ class _LegacyBLESessionStateAdapter:
     """Adapt historical interface-private fields to the session-state port.
 
     Partial legacy interfaces are allowed to omit lifecycle fields that historically
-    had implicit defaults.  The adapter preserves those defaults and owns a stable
-    fallback lock when ``_state_lock`` is absent, so every session-state operation
-    still has one synchronization primitive for the adapter lifetime.
+    had implicit defaults. The adapter preserves those defaults, follows the
+    interface's currently declared ``_state_lock`` when present, and retains one
+    stable fallback lock for intervals where no declared lock exists.
     """
 
     __slots__ = ("_iface", "_fallback_lock")
@@ -369,17 +369,23 @@ class _LegacyBLESessionStateAdapter:
 
     def __init__(self, iface: object) -> None:
         object.__setattr__(self, "_iface", iface)
-        lock = _get_declared_lock(iface, "_state_lock")
-        if lock is None:
-            lock = cast(_LockPort, threading.RLock())
-        object.__setattr__(self, "_fallback_lock", lock)
+        object.__setattr__(
+            self, "_fallback_lock", cast(_LockPort, threading.RLock())
+        )
 
     def __getattr__(self, name: str) -> Any:
         mapped = self._FIELD_MAP.get(name)
         if mapped is None:
             raise AttributeError(name)
         if name == "lock":
-            return self._fallback_lock
+            if isinstance(self._iface, _BLESessionStateCompatMixin):
+                current_state = self._iface.__dict__.get("_session_state")
+                if current_state is self:
+                    return self._fallback_lock
+                if isinstance(current_state, BLESessionState):
+                    return current_state.lock
+            declared_lock = _get_declared_lock(self._iface, mapped)
+            return self._fallback_lock if declared_lock is None else declared_lock
         value = _get_declared_member(self._iface, mapped, _MISSING_SESSION_FIELD)
         if value is not _MISSING_SESSION_FIELD:
             return value
@@ -391,25 +397,23 @@ class _LegacyBLESessionStateAdapter:
         mapped = self._FIELD_MAP.get(name)
         if mapped is None:
             raise AttributeError(name)
-        if name == "lock":
-            object.__setattr__(self, "_fallback_lock", cast(_LockPort, value))
         setattr(self._iface, mapped, value)
 
     def _reset_read_retry_count(self) -> None:
         """Reset only the legacy transient read retry counter."""
-        with self._fallback_lock:
+        with self.lock:
             self.read_retry_count = 0
 
     def _reset_receive_retry_state(self) -> None:
         """Reset legacy transient read retry and warning counters."""
-        with self._fallback_lock:
+        with self.lock:
             self.read_retry_count = 0
             self.last_empty_read_warning = 0.0
             self.suppressed_empty_read_warnings = 0
 
     def _reset_recovery_state(self) -> None:
         """Reset legacy receive-recovery bookkeeping."""
-        with self._fallback_lock:
+        with self.lock:
             self.receive_recovery_attempts = 0
             self.last_recovery_time = 0.0
 

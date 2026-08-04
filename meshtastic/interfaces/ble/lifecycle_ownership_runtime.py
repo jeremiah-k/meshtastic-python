@@ -310,7 +310,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
     def _apply_owned_client_invalidation(
         self,
-        iface: "BLEInterface",
         *,
         get_is_closing: Callable[[], bool],
         restored_address: str | None,
@@ -328,6 +327,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             whether a disconnect event should be emitted, and ``is_closing``
             indicates whether shutdown is active.
         """
+        iface = self._iface
         replacement_pending = bool(self._session.client_replacement_pending)
         already_notified = bool(self._session.disconnect_notified)
         is_closing = get_is_closing() or self._session.closed
@@ -346,7 +346,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
     def _apply_publish_pending_invalidation(
         self,
-        iface: "BLEInterface",
         *,
         get_is_closing: Callable[[], bool],
         restored_address: str | None,
@@ -360,6 +359,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             ``(should_reset_state, should_publish_disconnect, is_closing)``
             using the same semantics as `_apply_owned_client_invalidation`.
         """
+        iface = self._iface
         replacement_pending = bool(self._session.client_replacement_pending)
         already_notified = bool(self._session.disconnect_notified)
         self._session.client_publish_pending = False
@@ -489,7 +489,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     should_publish_disconnect,
                     is_closing,
                 ) = self._apply_owned_client_invalidation(
-                    iface,
                     get_is_closing=get_is_closing,
                     restored_address=restored_address,
                     restore_last_connection_request=restore_last_connection_request,
@@ -505,7 +504,6 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     should_publish_disconnect,
                     is_closing,
                 ) = self._apply_publish_pending_invalidation(
-                    iface,
                     get_is_closing=get_is_closing,
                     restored_address=restored_address,
                     restore_last_connection_request=restore_last_connection_request,

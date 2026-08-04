@@ -167,7 +167,13 @@ class BLEReceiveRecoveryController:
                         "Probe has_ever_connected_session_fn failed",
                     )
                 else:
-                    return result if isinstance(result, bool) else False
+                    if isinstance(result, bool):
+                        return result
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "Probe has_ever_connected_session_fn returned non-bool result",
+                        exc_info=False,
+                    )
         return self._session.ever_connected is True
 
     @staticmethod
@@ -208,7 +214,9 @@ class BLEReceiveRecoveryController:
         state_manager = _get_declared_member(iface, "_state_manager")
         state_is_closing: bool | None = None
         if state_manager is None:
-            raw_is_closing = getattr(iface, "_is_connection_closing", False)
+            raw_is_closing = _get_declared_member(
+                iface, "_is_connection_closing", False
+            )
             state_is_closing = self._normalize_bool_probe(raw_is_closing)
         else:
             raw_is_closing = _get_declared_member(state_manager, "is_closing")
@@ -247,7 +255,13 @@ class BLEReceiveRecoveryController:
                         "Probe is_connection_closing_fn failed",
                     )
                 else:
-                    return result if isinstance(result, bool) else False
+                    if isinstance(result, bool):
+                        return result
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "Probe is_connection_closing_fn returned non-bool result",
+                        exc_info=False,
+                    )
         with self._session.lock:
             return self._is_connection_closing_locked()
 
@@ -258,13 +272,11 @@ class BLEReceiveRecoveryController:
         timeout: float | None,
     ) -> bool:
         """Wait for a coordinator event using compatibility dispatch."""
-        wait_for_event = getattr(coordinator, "wait_for_event", None)
-        if callable(wait_for_event):
+        wait_for_event = _resolve_declared_callable(
+            coordinator, "wait_for_event", "_wait_for_event"
+        )
+        if wait_for_event is not None:
             result = wait_for_event(event_name, timeout=timeout)
-            return result if isinstance(result, bool) else False
-        legacy_wait_for_event = getattr(coordinator, "_wait_for_event", None)
-        if callable(legacy_wait_for_event):
-            result = legacy_wait_for_event(event_name, timeout=timeout)
             return result if isinstance(result, bool) else False
         if timeout is None:
             _sleep(COORDINATOR_WAIT_FALLBACK_SLEEP_SEC)
@@ -278,15 +290,11 @@ class BLEReceiveRecoveryController:
         event_name: str,
     ) -> bool:
         """Check and clear a coordinator event using compatibility dispatch."""
-        check_and_clear_event = getattr(coordinator, "check_and_clear_event", None)
-        if callable(check_and_clear_event):
-            result = check_and_clear_event(event_name)
-            return result if isinstance(result, bool) else False
-        legacy_check_and_clear_event = getattr(
-            coordinator, "_check_and_clear_event", None
+        check_and_clear_event = _resolve_declared_callable(
+            coordinator, "check_and_clear_event", "_check_and_clear_event"
         )
-        if callable(legacy_check_and_clear_event):
-            result = legacy_check_and_clear_event(event_name)
+        if check_and_clear_event is not None:
+            result = check_and_clear_event(event_name)
             return result if isinstance(result, bool) else False
         return False
 
@@ -295,21 +303,17 @@ class BLEReceiveRecoveryController:
         coordinator: "ThreadCoordinator", event_name: str
     ) -> None:
         """Clear a coordinator event using compatibility dispatch."""
-        clear_events = getattr(coordinator, "clear_events", None)
-        if callable(clear_events):
+        clear_events = _resolve_declared_callable(
+            coordinator, "clear_events", "_clear_events"
+        )
+        if clear_events is not None:
             clear_events(event_name)
             return
-        legacy_clear_events = getattr(coordinator, "_clear_events", None)
-        if callable(legacy_clear_events):
-            legacy_clear_events(event_name)
-            return
-        clear_event = getattr(coordinator, "clear_event", None)
-        if callable(clear_event):
+        clear_event = _resolve_declared_callable(
+            coordinator, "clear_event", "_clear_event"
+        )
+        if clear_event is not None:
             clear_event(event_name)
-            return
-        legacy_clear_event = getattr(coordinator, "_clear_event", None)
-        if callable(legacy_clear_event):
-            legacy_clear_event(event_name)
 
     def _should_run_receive_loop(self) -> bool:
         """Return whether the lifecycle currently wants receive-loop execution."""

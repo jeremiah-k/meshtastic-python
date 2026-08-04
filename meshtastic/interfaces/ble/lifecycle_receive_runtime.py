@@ -229,6 +229,7 @@ class BLEReceiveLifecycleCoordinator:
         deferred_current_thread: ThreadLike | None = None
         deferred_current_thread_waiting = False
         schedule_deferred_restart_for: ThreadLike | None = None
+        inconclusive_probe_thread: ThreadLike | None = None
         with self._session.lock:
             if self._session.closed or not self._session.want_receive:
                 logger.debug(
@@ -344,25 +345,28 @@ class BLEReceiveLifecycleCoordinator:
                         if not isinstance(pending_since, (float, int)):
                             self._session.receive_start_pending_since = time.monotonic()
                         self._session.receive_start_pending = True
-                        self._schedule_deferred_receive_restart(
-                            existing_thread=existing,
-                            name=name,
-                            reset_recovery=reset_recovery,
-                            enforce_pending_timeout=True,
-                        )
+                        inconclusive_probe_thread = existing
                         logger.debug(
                             "Skipping receive thread start (%s): %s liveness probe inconclusive.",
                             name,
                             existing.name,
                         )
-                        return None, None
-                    self._session.receive_start_pending = False
-                    self._session.receive_start_pending_since = None
-            if deferred_current_thread is None:
+                    else:
+                        self._session.receive_start_pending = False
+                        self._session.receive_start_pending_since = None
+            if deferred_current_thread is None and inconclusive_probe_thread is None:
                 expected_existing = existing
                 recovery_attempts_before_start = (
                     self._session.receive_recovery_attempts if reset_recovery else None
                 )
+        if inconclusive_probe_thread is not None:
+            self._schedule_deferred_receive_restart(
+                existing_thread=inconclusive_probe_thread,
+                name=name,
+                reset_recovery=reset_recovery,
+                enforce_pending_timeout=True,
+            )
+            return None, None
         if deferred_current_thread_waiting:
             if schedule_deferred_restart_for is not None:
                 self._schedule_deferred_receive_restart(

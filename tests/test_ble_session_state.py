@@ -1,7 +1,7 @@
 """Tests for owned BLE session-state compatibility views."""
 
 import threading
-from types import SimpleNamespace
+from types import SimpleNamespace, TracebackType
 
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.interfaces.ble.lifecycle_controller_runtime import (
@@ -133,6 +133,20 @@ def test_legacy_session_state_adapter_implements_reset_contract() -> None:
     assert legacy._last_recovery_time == 0.0
 
 
+def test_legacy_session_state_adapter_tracks_replaced_declared_lock() -> None:
+    """Legacy adapters should follow the interface's current declared state lock."""
+    first_lock = threading.RLock()
+    replacement_lock = threading.RLock()
+    legacy = SimpleNamespace(_state_lock=first_lock)
+
+    state = _session_state_for(legacy)
+    assert state.lock is first_lock
+
+    legacy._state_lock = replacement_lock
+
+    assert state.lock is replacement_lock
+
+
 def test_partial_interface_resolves_mixin_session_owner_directly() -> None:
     """Partial BLE interfaces should not create a competing legacy adapter."""
     iface = BLEInterface.__new__(BLEInterface)
@@ -145,7 +159,7 @@ def test_partial_interface_resolves_mixin_session_owner_directly() -> None:
 
 
 def test_mixin_promotion_preserves_cached_adapter_lock() -> None:
-    """Fallback adapter promotion must retain the coordinator's shared lock."""
+    """Fallback adapter promotion must retain one shared, replaceable state lock."""
     iface = BLEInterface.__new__(BLEInterface)
     adapter = _LegacyBLESessionStateAdapter(iface)
     iface.__dict__["_session_state"] = adapter
@@ -155,6 +169,12 @@ def test_mixin_promotion_preserves_cached_adapter_lock() -> None:
     assert isinstance(state, BLESessionState)
     assert state.lock is adapter.lock
     assert iface._state_lock is adapter.lock
+
+    replacement_lock = threading.RLock()
+    iface._state_lock = replacement_lock
+
+    assert state.lock is replacement_lock
+    assert adapter.lock is replacement_lock
 
 
 def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
@@ -178,7 +198,9 @@ def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
         _receive_start_pending=False,
         _receive_start_pending_since=None,
     )
-    coordinator = BLEReceiveLifecycleCoordinator(iface, session_state=state)  # type: ignore[arg-type]
+    coordinator = BLEReceiveLifecycleCoordinator(  # type: ignore[arg-type]
+        iface, session_state=state
+    )
 
     def _unexpected_create(**_kwargs: object) -> object:
         raise AssertionError("pending session state should suppress thread creation")
@@ -207,6 +229,127 @@ def test_receive_controller_reads_ever_connected_from_explicit_session() -> None
     controller = BLEReceiveRecoveryController(iface, session_state=state)  # type: ignore[arg-type]
 
     assert controller._has_ever_connected_session() is True  # noqa: SLF001
+
+
+def test_receive_controller_invalid_lifecycle_results_fall_back_to_session() -> None:
+    """Non-bool lifecycle probes must not override authoritative session state."""
+    from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+
+    state_manager = BLEStateManager()
+    state = BLESessionState(lock=state_manager.lock, ever_connected=True, closed=True)
+    lifecycle = SimpleNamespace(
+        _has_ever_connected_session=lambda: None,
+        _is_connection_closing=lambda: object(),
+    )
+    iface = SimpleNamespace(
+        _get_lifecycle_controller=lambda: lifecycle,
+        _state_manager=None,
+        _is_connection_closing=False,
+    )
+    controller = BLEReceiveRecoveryController(iface, session_state=state)  # type: ignore[arg-type]
+
+    assert controller._has_ever_connected_session() is True  # noqa: SLF001
+    assert controller._is_connection_closing() is True  # noqa: SLF001
+
+
+def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock() -> None:
+    """Deferred restart scheduling must not begin while the session lock is held."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
+    )
+
+    class _TrackingLock:
+        def __init__(self) -> None:
+            self._lock = threading.RLock()
+            self.held = False
+
+        def __enter__(self) -> "_TrackingLock":
+            self._lock.acquire()
+            self.held = True
+            return self
+
+        def __exit__(
+            self,
+            _exc_type: type[BaseException] | None,
+            _exc_value: BaseException | None,
+            _traceback: TracebackType | None,
+        ) -> None:
+            self.held = False
+            self._lock.release()
+
+    lock = _TrackingLock()
+    state = BLESessionState(lock=lock)
+    existing = SimpleNamespace(
+        name="InconclusiveReceive", ident=None, is_alive=lambda: False
+    )
+    state.receive_thread = existing  # type: ignore[assignment]
+    iface = SimpleNamespace(_receive_from_radio_impl=lambda: None)
+    coordinator = BLEReceiveLifecycleCoordinator(  # type: ignore[arg-type]
+        iface, session_state=state
+    )
+    scheduled: list[tuple[object, bool]] = []
+
+    def _capture_schedule(**kwargs: object) -> None:
+        assert lock.held is False
+        scheduled.append(
+            (kwargs["existing_thread"], bool(kwargs["enforce_pending_timeout"]))
+        )
+
+    coordinator._schedule_deferred_receive_restart = (  # type: ignore[method-assign]
+        _capture_schedule
+    )
+
+    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
+        name="InconclusiveReceive",
+        reset_recovery=False,
+        create_runtime_thread=lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("inconclusive liveness must defer thread creation")
+        ),
+    )
+
+    assert created is None
+    assert recovery_attempts is None
+    assert scheduled == [(existing, True)]
+    assert state.receive_start_pending is True
+
+
+def test_disconnect_plan_reads_epoch_from_explicit_session_state() -> None:
+    """Disconnect staleness must use the coordinator's owned session epoch."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+
+    state_manager = BLEStateManager()
+    state = BLESessionState(
+        lock=state_manager.lock,
+        client_publish_pending=True,
+        connection_session_epoch=9,
+    )
+    iface = SimpleNamespace(
+        auto_reconnect=False,
+        client=None,
+        address="AA:BB:CC:DD:EE:FF",
+        _connection_session_epoch=1,
+        _shutdown_event=threading.Event(),
+        _extract_client_address=lambda _client: None,
+        _sorted_address_keys=lambda *keys: [key for key in keys if key],
+    )
+    coordinator = BLEDisconnectLifecycleCoordinator(
+        iface, session_state=state  # type: ignore[arg-type]
+    )
+
+    plan = coordinator._resolve_disconnect_target(  # noqa: SLF001
+        "explicit-session",
+        client=None,
+        bleak_client=None,
+        current_state_getter=lambda: ConnectionState.CONNECTED,
+        is_closing_getter=lambda: False,
+        transition_to_disconnected=lambda: True,
+        reset_to_disconnected=lambda: True,
+    )
+
+    assert plan.session_epoch == 9
+    assert iface._connection_session_epoch == 1
 
 
 def test_ownership_cleanup_reads_explicit_session_state() -> None:

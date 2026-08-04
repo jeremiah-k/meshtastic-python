@@ -44,7 +44,7 @@ class BLEDisconnectLifecycleCoordinator:
         """Bind disconnect orchestration ownership to a specific interface."""
         self._iface = iface
         self._session = _session_state_for(iface, session_state)
-        self._state_access = _LifecycleStateAccess(getattr(iface, "_state_manager", iface))
+        self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
 
@@ -292,7 +292,7 @@ class BLEDisconnectLifecycleCoordinator:
                 early_return=None,
                 previous_client=previous_client,
                 client_at_start=client_at_start,
-                session_epoch=getattr(iface, "_connection_session_epoch", 0),
+                session_epoch=self._session.connection_session_epoch,
                 address=address,
                 disconnect_keys=tuple(disconnect_keys),
                 should_reconnect=should_reconnect,
@@ -413,7 +413,7 @@ class BLEDisconnectLifecycleCoordinator:
         skip_side_effects = False
         with self._session.lock:
             active_client = iface.client
-            active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+            active_session_epoch = self._session.connection_session_epoch
             if active_session_epoch != plan.session_epoch or (
                 active_client is not None and active_client is not plan.client_at_start
             ):
@@ -425,7 +425,7 @@ class BLEDisconnectLifecycleCoordinator:
             still_stale = False
             with self._session.lock:
                 active_client = iface.client
-                active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+                active_session_epoch = self._session.connection_session_epoch
                 still_stale = active_session_epoch != plan.session_epoch or (
                     active_client is not None
                     and active_client is not plan.client_at_start
@@ -457,7 +457,7 @@ class BLEDisconnectLifecycleCoordinator:
         stale_after_close = False
         with self._session.lock:
             active_client = iface.client
-            active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+            active_session_epoch = self._session.connection_session_epoch
             stale_after_close = active_session_epoch != plan.session_epoch or (
                 active_client is not None and active_client is not plan.client_at_start
             )
@@ -466,7 +466,7 @@ class BLEDisconnectLifecycleCoordinator:
             rechecked_stale_disconnect_keys_after_close: list[str] = []
             with self._session.lock:
                 active_client = iface.client
-                active_session_epoch = getattr(iface, "_connection_session_epoch", 0)
+                active_session_epoch = self._session.connection_session_epoch
                 still_stale_after_close = (
                     active_session_epoch != plan.session_epoch
                     or (
