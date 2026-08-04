@@ -171,3 +171,28 @@ def test_protocol_owner_module_does_not_import_package_root() -> None:
     assert _protocol_runtime.__file__ is not None
     path = Path(_protocol_runtime.__file__).resolve()
     assert _meshtastic_root_references(path) == set()
+
+
+def test_public_publishing_thread_is_internal_owner_identity() -> None:
+    """Historical publishingThread should alias the internal singleton exactly."""
+    from meshtastic import _publishing
+
+    assert meshtastic.publishingThread is _publishing.publishing_thread
+
+
+def test_publishing_consumers_do_not_import_worker_from_package_root() -> None:
+    """Internal publishers should depend on the internal worker owner directly."""
+    paths = (
+        ROOT / "meshtastic/mesh_interface.py",
+        ROOT / "meshtastic/mesh_interface_runtime/receive_pipeline.py",
+        ROOT / "meshtastic/interfaces/ble/interface.py",
+    )
+    for path in paths:
+        assert "publishingThread" not in _imports_from_meshtastic_root(path), path
+
+
+def test_publishing_owner_module_does_not_import_package_root() -> None:
+    """Publishing ownership should remain below the package facade."""
+    path = ROOT / "meshtastic/_publishing.py"
+    assert _imports_from_meshtastic_root(path) == set()
+>>>>>>> fc83821e (Move publishing worker ownership out of package facade)
