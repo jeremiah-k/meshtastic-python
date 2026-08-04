@@ -3,7 +3,6 @@
 # pylint: disable=C0302,W0613,R0917
 
 import logging
-import platform
 import re
 import sys
 from pathlib import Path
@@ -35,15 +34,14 @@ from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
 
 from ._main_legacy_support import (
-    build_configure_interface as _build_configure_interface,
-    make_fake_tcp_interface as _make_fake_tcp_interface,
-    run_main_configure_file as _run_main_configure_file,
+    _build_configure_interface,
+    _make_fake_tcp_interface,
+    _run_main_configure_file,
 )
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
 
-SDS_DISABLED_SENTINEL: int = 4_294_967_295
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
 @pytest.fixture(autouse=True)
@@ -859,7 +857,6 @@ def test_tunnel_tunnel_arg_with_no_devices(
     mock_platform_system.side_effect = a_mock
     sys.argv = ["", "--tunnel"]
     mt_config.args = sys.argv  # type: ignore[assignment]
-    print(f"platform.system():{platform.system()}")
     with caplog.at_level(logging.DEBUG):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             tunnelMain()
@@ -889,7 +886,6 @@ def test_tunnel_subnet_arg_with_no_devices(
     mock_platform_system.side_effect = a_mock
     sys.argv = ["", "--subnet", "foo"]
     mt_config.args = sys.argv  # type: ignore[assignment]
-    print(f"platform.system():{platform.system()}")
     with caplog.at_level(logging.DEBUG):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             tunnelMain()
@@ -1551,10 +1547,15 @@ def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
     )
 
     monkeypatch.setattr(main_module, "meter", None)
+    monkeypatch.setattr(main_module, "have_powermon", True)
+    monkeypatch.setattr(main_module, "RidenPowerSupply", object)
+    monkeypatch.setattr(main_module, "PPK2PowerSupply", object)
     monkeypatch.setattr(main_module, "SimPowerSupply", lambda: fake_meter)
     monkeypatch.setattr(mt_config, "args", args)
     sleep_mock = MagicMock()
-    monkeypatch.setattr(main_module.time, "sleep", sleep_mock)  # type: ignore[attr-defined]
+    time_attrs = vars(main_module.time).copy()
+    time_attrs["sleep"] = sleep_mock
+    monkeypatch.setattr(main_module, "time", SimpleNamespace(**time_attrs), raising=True)
 
     _create_power_meter()
 

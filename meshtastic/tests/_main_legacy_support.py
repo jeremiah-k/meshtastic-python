@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
@@ -15,12 +17,12 @@ from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
 from meshtastic import mt_config
 from meshtastic.__main__ import main
+from meshtastic.node import Node
 from meshtastic.protobuf import localonly_pb2
 from meshtastic.serial_interface import SerialInterface
 
 
-
-def get_config_field(config: Any, dotted_path: str) -> Any:
+def _get_config_field(config: Any, dotted_path: str) -> Any:
     """Walk a dotted ``section.field`` path on a protobuf Config message."""
     value = config
     for part in dotted_path.split("."):
@@ -28,7 +30,7 @@ def get_config_field(config: Any, dotted_path: str) -> Any:
     return value
 
 
-def patch_fast_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
+def _patch_fast_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
     """Advance monotonic time quickly in reconnect/config verification tests."""
     value = [0.0]
 
@@ -36,10 +38,14 @@ def patch_fast_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
         value[0] += 100.0
         return value[0]
 
-    monkeypatch.setattr(main_module.time, "monotonic", _fast)
+    time_attrs = vars(main_module.time).copy()
+    time_attrs["monotonic"] = _fast
+    monkeypatch.setattr(
+        main_module, "time", SimpleNamespace(**time_attrs), raising=True
+    )
 
 
-def mock_send_text(
+def _mock_send_text(
     text: str,
     dest: Any,
     wantAck: bool = False,
@@ -53,13 +59,17 @@ def mock_send_text(
     print("inside mocked sendText")
     print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
-def build_export_interface(
+
+def _build_export_interface(
     local_config: localonly_pb2.LocalConfig,
     module_config: localonly_pb2.LocalModuleConfig,
 ) -> MagicMock:
     """Build a minimal interface mock compatible with ``export_config``."""
-    iface = MagicMock(autospec=SerialInterface)
-    iface.localNode = MagicMock()
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.localNode = create_autospec(Node, instance=True)
     iface.localNode.localConfig = local_config
     iface.localNode.moduleConfig = module_config
     iface.localNode.getURL.return_value = "https://meshtastic.org/e/#Cgo"
@@ -71,7 +81,7 @@ def build_export_interface(
     return iface
 
 
-def build_configure_interface(
+def _build_configure_interface(
     target_local: localonly_pb2.LocalConfig | None = None,
     target_module: localonly_pb2.LocalModuleConfig | None = None,
 ) -> tuple[MagicMock, MagicMock]:
@@ -86,7 +96,7 @@ def build_configure_interface(
     device_module = localonly_pb2.LocalModuleConfig()
     device_module.CopyFrom(target_module)
 
-    target_node = MagicMock()
+    target_node = create_autospec(Node, instance=True)
     target_node.localConfig = target_local
     target_node.moduleConfig = target_module
     target_node.beginSettingsTransaction = MagicMock()
@@ -104,13 +114,17 @@ def build_configure_interface(
         if local_field is not None:
             device_local.ClearField(config_name)  # type: ignore[arg-type]
             if target_local.HasField(config_name):  # type: ignore[arg-type]
-                getattr(device_local, config_name).CopyFrom(getattr(target_local, config_name))
+                getattr(device_local, config_name).CopyFrom(
+                    getattr(target_local, config_name)
+                )
             return
         module_field = target_module.DESCRIPTOR.fields_by_name.get(config_name)
         if module_field is not None:
             device_module.ClearField(config_name)  # type: ignore[arg-type]
             if target_module.HasField(config_name):  # type: ignore[arg-type]
-                getattr(device_module, config_name).CopyFrom(getattr(target_module, config_name))
+                getattr(device_module, config_name).CopyFrom(
+                    getattr(target_module, config_name)
+                )
 
     target_node.writeConfig = MagicMock(side_effect=_write_config_side_effect)
 
@@ -123,17 +137,24 @@ def build_configure_interface(
         if containing_name == "LocalConfig":
             target_local.ClearField(field_name)  # type: ignore[arg-type]
             if device_local.HasField(field_name):  # type: ignore[arg-type]
-                getattr(target_local, field_name).CopyFrom(getattr(device_local, field_name))
+                getattr(target_local, field_name).CopyFrom(
+                    getattr(device_local, field_name)
+                )
             return
         if containing_name == "LocalModuleConfig":
             target_module.ClearField(field_name)  # type: ignore[arg-type]
             if device_module.HasField(field_name):  # type: ignore[arg-type]
-                getattr(target_module, field_name).CopyFrom(getattr(device_module, field_name))
+                getattr(target_module, field_name).CopyFrom(
+                    getattr(device_module, field_name)
+                )
 
     target_node.requestConfig = MagicMock(side_effect=_request_config_side_effect)
     target_node.setFixedPosition = MagicMock()
 
-    iface = MagicMock(autospec=SerialInterface)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = target_node
@@ -141,20 +162,29 @@ def build_configure_interface(
     return iface, target_node
 
 
-def run_main_configure_file(
+def _run_main_configure_file(
     config_path: Path,
     iface: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Run ``main`` for ``--configure`` against a supplied interface mock."""
-    monkeypatch.setattr("time.sleep", lambda _: None)
-    sys.argv = ["", "--configure", str(config_path)]
-    mt_config.args = cast(Any, sys.argv)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        main()
+    argv = ["", "--configure", str(config_path)]
+    time_attrs = vars(main_module.time).copy()
+    time_attrs["sleep"] = lambda _seconds: None
+    with monkeypatch.context() as configure_patch:
+        configure_patch.setattr(sys, "argv", argv)
+        configure_patch.setattr(mt_config, "args", cast(Any, argv))
+        configure_patch.setattr(
+            main_module,
+            "time",
+            SimpleNamespace(**time_attrs),
+            raising=True,
+        )
+        with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+            main()
 
 
-def make_fake_tcp_interface(
+def _make_fake_tcp_interface(
     *,
     get_node: Callable[..., Any] | None = None,
     on_close: Callable[[], None] | None = None,
@@ -179,7 +209,7 @@ def make_fake_tcp_interface(
     return _FakeTCPInterface
 
 
-def build_nested_bytes_test_message() -> Any:
+def _build_nested_bytes_test_message() -> Any:
     """Build a dynamic protobuf covering nested/repeated/map bytes fields."""
     file_proto = descriptor_pb2.FileDescriptorProto(
         name="nested_bytes_test.proto", package="mtjk.tests.nested", syntax="proto3"

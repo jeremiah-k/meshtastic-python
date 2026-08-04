@@ -36,10 +36,10 @@ from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 
 from ._main_legacy_support import (
-    build_configure_interface as _build_configure_interface,
-    build_export_interface as _build_export_interface,
-    patch_fast_monotonic as _patch_fast_monotonic,
-    run_main_configure_file as _run_main_configure_file,
+    _build_configure_interface,
+    _build_export_interface,
+    _patch_fast_monotonic,
+    _run_main_configure_file,
 )
 
 # from ..remote_hardware import onGPIOreceive
@@ -1310,8 +1310,7 @@ ls_secs: 300
 position_broadcast_smart: true
 fixed_position: true
 position_flags: 35"""
-        export_config(mo)
-    out = export_config(mo)
+        out = export_config(mo)
     _, err = capsys.readouterr()
 
     # ensure we do not output this line

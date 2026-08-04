@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
 import pytest
 import yaml
@@ -30,15 +30,14 @@ from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 
 from ._main_legacy_support import (
-    build_configure_interface as _build_configure_interface,
-    mock_send_text as _mock_sendText_helper,
-    run_main_configure_file as _run_main_configure_file,
+    _build_configure_interface,
+    _mock_send_text,
+    _run_main_configure_file,
 )
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
 
-SDS_DISABLED_SENTINEL: int = 4_294_967_295
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
 @pytest.fixture(autouse=True)
@@ -286,169 +285,102 @@ def test_main_get_ringtone(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_ham_to_KI123(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --set-ham KI123."""
+    """``--set-ham`` should license the owner and disable channel encryption."""
     sys.argv = ["", "--set-ham", "KI123"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
-    mocked_node = MagicMock(autospec=Node)
-
-    def mock_turn_off_encryption_on_primary_channel() -> None:
-        """Simulate disabling encryption on the primary channel."""
-        print("inside mocked turnOffEncryptionOnPrimaryChannel")
-
-    def mock_setOwner(name: str, is_licensed: bool) -> None:
-        """Simulate setOwner and print received parameters."""
-        print(f"inside mocked setOwner name:{name} is_licensed:{is_licensed}")
-
-    mocked_node.turnOffEncryptionOnPrimaryChannel.side_effect = (
-        mock_turn_off_encryption_on_primary_channel
-    )
-    mocked_node.setOwner.side_effect = mock_setOwner
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
+    mocked_node = create_autospec(Node, instance=True)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.__enter__.return_value = iface
+    iface.__exit__.return_value = None
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Setting Ham ID to KI123", out, re.MULTILINE)
-        assert re.search(r"inside mocked setOwner", out, re.MULTILINE)
-        assert re.search(
-            r"inside mocked turnOffEncryptionOnPrimaryChannel", out, re.MULTILINE
-        )
-        assert err == ""
-        mo.assert_called()
 
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_reboot(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --reboot."""
-    sys.argv = ["", "--reboot"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock(autospec=Node)
-
-    def mock_reboot() -> None:
-        """Simulate node reboot command."""
-        print("inside mocked reboot")
-
-    mocked_node.reboot.side_effect = mock_reboot
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"inside mocked reboot", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_reboot_ota(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --reboot-ota."""
-    sys.argv = ["", "--reboot-ota"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock(autospec=Node)
-
-    def mock_reboot_ota() -> None:
-        """Simulate node reboot OTA command."""
-        print("inside mocked rebootOTA")
-
-    mocked_node.rebootOTA.side_effect = mock_reboot_ota
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"inside mocked rebootOTA", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+    assert re.search(r"Connected to radio", out, re.MULTILINE)
+    assert re.search(r"Setting Ham ID to KI123", out, re.MULTILINE)
+    assert err == ""
+    mocked_node.setOwner.assert_called_once_with("KI123", is_licensed=True)
+    mocked_node.turnOffEncryptionOnPrimaryChannel.assert_called_once_with()
+    mo.assert_called()
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @pytest.mark.parametrize(
-    ("args", "method_name", "marker"),
+    ("flag", "method_name"),
     [
-        (["--reboot", "--ack"], "reboot", "inside mocked reboot"),
-        (["--reboot-ota", "--ack"], "rebootOTA", "inside mocked rebootOTA"),
-        (["--enter-dfu", "--ack"], "enterDFUMode", "inside mocked enterDFU"),
-        (["--shutdown", "--ack"], "shutdown", "inside mocked shutdown"),
+        ("--reboot", "reboot"),
+        ("--reboot-ota", "rebootOTA"),
+        ("--shutdown", "shutdown"),
+    ],
+)
+def test_main_rebooting_command(
+    flag: str,
+    method_name: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reboot and shutdown flags should invoke exactly their selected node command."""
+    sys.argv = ["", flag]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = create_autospec(Node, instance=True)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.__enter__.return_value = iface
+    iface.__exit__.return_value = None
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
+        main()
+        out, err = capsys.readouterr()
+
+    assert re.search(r"Connected to radio", out, re.MULTILINE)
+    assert err == ""
+    getattr(mocked_node, method_name).assert_called_once_with()
+    mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("args", "method_name"),
+    [
+        (["--reboot", "--ack"], "reboot"),
+        (["--reboot-ota", "--ack"], "rebootOTA"),
+        (["--enter-dfu", "--ack"], "enterDFUMode"),
+        (["--shutdown", "--ack"], "shutdown"),
     ],
 )
 def test_rebooting_commands_with_ack_skip_wait(
     args: list[str],
     method_name: str,
-    marker: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Rebooting commands should skip trailing ACK waits to avoid hangs."""
+    """Rebooting commands should invoke the node and skip trailing ACK waits."""
     sys.argv = ["", *args]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
-    mocked_node = MagicMock(autospec=Node)
-    getattr(mocked_node, method_name).side_effect = lambda: print(marker)
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
+    mocked_node = create_autospec(Node, instance=True)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.__enter__.return_value = iface
+    iface.__exit__.return_value = None
     iface.getNode.return_value = mocked_node
     mocked_node.iface = iface
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
         out, err = capsys.readouterr()
-        assert "Connected to radio" in out
-        assert marker in out
-        assert "Waiting for an acknowledgment from remote node" not in out
-        assert err == ""
 
+    assert "Connected to radio" in out
+    assert "Waiting for an acknowledgment from remote node" not in out
+    assert err == ""
+    getattr(mocked_node, method_name).assert_called_once_with()
     iface.waitForAckNak.assert_not_called()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_shutdown(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --shutdown."""
-    sys.argv = ["", "--shutdown"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock(autospec=Node)
-
-    def mock_shutdown() -> None:
-        """Simulate node shutdown command."""
-        print("inside mocked shutdown")
-
-    mocked_node.shutdown.side_effect = mock_shutdown
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"inside mocked shutdown", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
 
 
 @pytest.mark.unit
@@ -468,7 +400,7 @@ def test_main_sendtext(capsys: pytest.CaptureFixture[str]) -> None:
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
-    iface.sendText.side_effect = _mock_sendText_helper
+    iface.sendText.side_effect = _mock_send_text
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
@@ -505,7 +437,7 @@ def test_main_sendtext_with_channel(capsys: pytest.CaptureFixture[str]) -> None:
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
-    iface.sendText.side_effect = _mock_sendText_helper
+    iface.sendText.side_effect = _mock_send_text
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
@@ -520,11 +452,13 @@ def test_main_sendtext_with_channel(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize("ch_index", ["-1", "9"])
 def test_main_sendtext_with_invalid_channel(
-    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+    ch_index: str,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Test --sendtext."""
-    sys.argv = ["", "--sendtext", "hello", "--ch-index", "-1"]
+    """``--sendtext`` should reject channel indices outside the valid range."""
+    sys.argv = ["", "--sendtext", "hello", "--ch-index", ch_index]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     iface = MagicMock(autospec=SerialInterface)
@@ -533,47 +467,14 @@ def test_main_sendtext_with_invalid_channel(
     iface.localNode.getChannelByChannelIndex.return_value = None
     iface.localNode.getChannelCopyByChannelIndex.return_value = None
 
-    with caplog.at_level(logging.DEBUG):
-        with patch(
-            "meshtastic.serial_interface.SerialInterface", return_value=iface
-        ) as mo:
-            with pytest.raises(SystemExit) as pytest_wrapped_e:
-                main()
-            assert pytest_wrapped_e.type is SystemExit
-            assert pytest_wrapped_e.value.code == 1
-            _, err = capsys.readouterr()
-            # Error messages go to stderr
-            assert re.search(r"is not a valid channel", err, re.MULTILINE)
-            mo.assert_called()
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
+        with pytest.raises(SystemExit) as exc_info:
+            main()
 
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_sendtext_with_invalid_channel_nine(
-    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test --sendtext."""
-    sys.argv = ["", "--sendtext", "hello", "--ch-index", "9"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.localNode.getChannelByChannelIndex.return_value = None
-    iface.localNode.getChannelCopyByChannelIndex.return_value = None
-
-    with caplog.at_level(logging.DEBUG):
-        with patch(
-            "meshtastic.serial_interface.SerialInterface", return_value=iface
-        ) as mo:
-            with pytest.raises(SystemExit) as pytest_wrapped_e:
-                main()
-            assert pytest_wrapped_e.type is SystemExit
-            assert pytest_wrapped_e.value.code == 1
-            _, err = capsys.readouterr()
-            # Error messages go to stderr
-            assert re.search(r"is not a valid channel", err, re.MULTILINE)
-            mo.assert_called()
+    assert exc_info.value.code == 1
+    _, err = capsys.readouterr()
+    assert re.search(r"is not a valid channel", err, re.MULTILINE)
+    mo.assert_called()
 
 
 @pytest.mark.unit
@@ -712,11 +613,11 @@ def test_main_removeposition(capsys: pytest.CaptureFixture[str]) -> None:
 
     mocked_node = MagicMock(autospec=Node)
 
-    def mock_removeFixedPosition() -> None:
+    def _mock_remove_fixed_position() -> None:
         """Simulate removing fixed position."""
         print("inside mocked removeFixedPosition")
 
-    mocked_node.removeFixedPosition.side_effect = mock_removeFixedPosition
+    mocked_node.removeFixedPosition.side_effect = _mock_remove_fixed_position
 
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
@@ -735,98 +636,42 @@ def test_main_removeposition(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_setlat(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --setlat."""
-    sys.argv = ["", "--setlat", "37.5"]
+@pytest.mark.parametrize(
+    ("flag", "value", "expected_message", "expected_call"),
+    [
+        ("--setlat", "37.5", "Fixing latitude", (37.5, 0.0, 0)),
+        ("--setlon", "-122.1", "Fixing longitude", (0.0, -122.1, 0)),
+        ("--setalt", "51", "Fixing altitude", (0.0, 0.0, 51)),
+    ],
+)
+def test_main_set_fixed_position(
+    flag: str,
+    value: str,
+    expected_message: str,
+    expected_call: tuple[float, float, int],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Each fixed-position flag should forward the normalized coordinates exactly."""
+    sys.argv = ["", flag, value]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
-    mocked_node = MagicMock(autospec=Node)
-
-    def mock_setFixedPosition(lat: Any, lon: Any, alt: Any) -> None:
-        """Simulate setting fixed position and print provided coordinates."""
-        print("inside mocked setFixedPosition")
-        print(f"{lat} {lon} {alt}")
-
-    mocked_node.setFixedPosition.side_effect = mock_setFixedPosition
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
+    mocked_node = create_autospec(Node, instance=True)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.__enter__.return_value = iface
+    iface.__exit__.return_value = None
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Fixing latitude", out, re.MULTILINE)
-        assert re.search(r"Setting device position", out, re.MULTILINE)
-        assert re.search(r"inside mocked setFixedPosition", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
 
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_setlon(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --setlon."""
-    sys.argv = ["", "--setlon", "-122.1"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock(autospec=Node)
-
-    def mock_setFixedPosition(lat: Any, lon: Any, alt: Any) -> None:
-        """Simulate setting fixed position and print provided coordinates."""
-        print("inside mocked setFixedPosition")
-        print(f"{lat} {lon} {alt}")
-
-    mocked_node.setFixedPosition.side_effect = mock_setFixedPosition
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Fixing longitude", out, re.MULTILINE)
-        assert re.search(r"Setting device position", out, re.MULTILINE)
-        assert re.search(r"inside mocked setFixedPosition", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_main_setalt(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --setalt."""
-    sys.argv = ["", "--setalt", "51"]
-    mt_config.args = sys.argv  # type: ignore[assignment]
-
-    mocked_node = MagicMock(autospec=Node)
-
-    def mock_setFixedPosition(lat: Any, lon: Any, alt: Any) -> None:
-        """Simulate setting fixed position and print provided coordinates."""
-        print("inside mocked setFixedPosition")
-        print(f"{lat} {lon} {alt}")
-
-    mocked_node.setFixedPosition.side_effect = mock_setFixedPosition
-
-    iface = MagicMock(autospec=SerialInterface)
-    iface.__enter__ = MagicMock(return_value=iface)
-    iface.__exit__ = MagicMock(return_value=None)
-    iface.getNode.return_value = mocked_node
-
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Fixing altitude", out, re.MULTILINE)
-        assert re.search(r"Setting device position", out, re.MULTILINE)
-        assert re.search(r"inside mocked setFixedPosition", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+    assert re.search(r"Connected to radio", out, re.MULTILINE)
+    assert expected_message in out
+    assert re.search(r"Setting device position", out, re.MULTILINE)
+    assert err == ""
+    mocked_node.setFixedPosition.assert_called_once_with(*expected_call)
+    mo.assert_called()
 
 
 @pytest.mark.unit
@@ -1029,22 +874,30 @@ def test_main_set_invalid_wifi_psk(
             assert err == ""
             mo.assert_called()
 
+        assert anode.localConfig.network.wifi_psk == ""
 
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_get_pref_redacts_security_private_key(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """getPref() should redact secret-bearing security values in field reads."""
-    node = SimpleNamespace(
+
+@pytest.fixture
+def pref_node() -> SimpleNamespace:
+    """Return the minimal node surface required by ``getPref`` tests."""
+    return SimpleNamespace(
         localConfig=localonly_pb2.LocalConfig(),
         moduleConfig=localonly_pb2.LocalModuleConfig(),
         requestConfig=MagicMock(),
     )
-    private_key = bytes(range(32))
-    node.localConfig.security.private_key = private_key
 
-    assert main_module.getPref(node, "security.private_key") is True
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_get_pref_redacts_security_private_key(
+    pref_node: SimpleNamespace,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """getPref() should redact secret-bearing security values in field reads."""
+    private_key = bytes(range(32))
+    pref_node.localConfig.security.private_key = private_key
+
+    assert main_module.getPref(pref_node, "security.private_key") is True
     out, err = capsys.readouterr()
     assert "security.private_key: <redacted>" in out
     assert base64.b64encode(private_key).decode("utf-8") not in out
@@ -1054,22 +907,18 @@ def test_get_pref_redacts_security_private_key(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_get_pref_redacts_security_section_values(
+    pref_node: SimpleNamespace,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Whole-field getPref() reads should redact secret values in each printed field."""
-    node = SimpleNamespace(
-        localConfig=localonly_pb2.LocalConfig(),
-        moduleConfig=localonly_pb2.LocalModuleConfig(),
-        requestConfig=MagicMock(),
-    )
     private_key = bytes(range(32))
     public_key = bytes(range(32, 64))
     admin_key = bytes(range(64, 96))
-    node.localConfig.security.private_key = private_key
-    node.localConfig.security.public_key = public_key
-    node.localConfig.security.admin_key.append(admin_key)
+    pref_node.localConfig.security.private_key = private_key
+    pref_node.localConfig.security.public_key = public_key
+    pref_node.localConfig.security.admin_key.append(admin_key)
 
-    assert main_module.getPref(node, "security") is True
+    assert main_module.getPref(pref_node, "security") is True
     out, err = capsys.readouterr()
     assert "security.private_key: <redacted>" in out
     assert "security.public_key: <redacted>" in out
@@ -1083,21 +932,17 @@ def test_get_pref_redacts_security_section_values(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_get_pref_allow_secrets_shows_private_key(
+    pref_node: SimpleNamespace,
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """getPref(allow_secrets=True) should show the actual private key value."""
-    node = SimpleNamespace(
-        localConfig=localonly_pb2.LocalConfig(),
-        moduleConfig=localonly_pb2.LocalModuleConfig(),
-        requestConfig=MagicMock(),
-    )
     private_key = bytes(range(32))
-    node.localConfig.security.private_key = private_key
+    pref_node.localConfig.security.private_key = private_key
 
     with caplog.at_level(logging.DEBUG):
         assert (
-            main_module.getPref(node, "security.private_key", allow_secrets=True)
+            main_module.getPref(pref_node, "security.private_key", allow_secrets=True)
             is True
         )
     out, err = capsys.readouterr()
@@ -1110,22 +955,18 @@ def test_get_pref_allow_secrets_shows_private_key(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_get_pref_allow_secrets_shows_security_section_keys(
+    pref_node: SimpleNamespace,
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """getPref(allow_secrets=True) whole-field read should show actual key values."""
-    node = SimpleNamespace(
-        localConfig=localonly_pb2.LocalConfig(),
-        moduleConfig=localonly_pb2.LocalModuleConfig(),
-        requestConfig=MagicMock(),
-    )
     private_key = bytes(range(32))
     public_key = bytes(range(32, 64))
-    node.localConfig.security.private_key = private_key
-    node.localConfig.security.public_key = public_key
+    pref_node.localConfig.security.private_key = private_key
+    pref_node.localConfig.security.public_key = public_key
 
     with caplog.at_level(logging.DEBUG):
-        assert main_module.getPref(node, "security", allow_secrets=True) is True
+        assert main_module.getPref(pref_node, "security", allow_secrets=True) is True
     out, err = capsys.readouterr()
     assert "<redacted>" not in out
     assert base64.b64encode(private_key).decode("utf-8") in out

@@ -14,9 +14,9 @@ import yaml
 
 import meshtastic.__main__ as main_module
 from meshtastic.tests._main_legacy_support import (
-    build_configure_interface as _build_configure_interface,
-    patch_fast_monotonic as _patch_fast_monotonic,
-    run_main_configure_file as _run_main_configure_file,
+    _build_configure_interface,
+    _patch_fast_monotonic,
+    _run_main_configure_file,
 )
 
 # from ..radioconfig_pb2 import UserPreferences
@@ -30,16 +30,7 @@ from ..protobuf import config_pb2, localonly_pb2
 # from ..config_pb2 import Config
 
 
-SDS_DISABLED_SENTINEL: int = 4_294_967_295
-MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
-
-def _get_config_field(config: Any, dotted_path: str) -> Any:
-    """Walk a dotted `section.field` path on a protobuf Config message."""
-    obj = config
-    for part in dotted_path.split("."):
-        obj = getattr(obj, part)
-    return obj
 
 
 @pytest.fixture(autouse=True)

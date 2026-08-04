@@ -3,7 +3,6 @@
 # pylint: disable=W0613,R0917
 
 import argparse
-import importlib.util
 import logging
 import re
 import sys
@@ -36,7 +35,6 @@ from ..tcp_interface import TCPInterface
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
 
-SDS_DISABLED_SENTINEL: int = 4_294_967_295
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
 @pytest.fixture(autouse=True)
@@ -514,14 +512,14 @@ def test_main_info(
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
 
-    def mock_showInfo() -> None:
+    def _mock_show_info() -> None:
         """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
         print("inside mocked showInfo")
 
-    iface.showInfo.side_effect = mock_showInfo
+    iface.showInfo.side_effect = _mock_show_info
     with caplog.at_level(logging.DEBUG):
         with patch(
             "meshtastic.serial_interface.SerialInterface", return_value=iface
@@ -585,14 +583,14 @@ def test_main_info_with_tcp_interface(capsys: pytest.CaptureFixture[str]) -> Non
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
 
-    def mock_showInfo() -> None:
+    def _mock_show_info() -> None:
         """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
         print("inside mocked showInfo")
 
-    iface.showInfo.side_effect = mock_showInfo
+    iface.showInfo.side_effect = _mock_show_info
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -613,23 +611,23 @@ def test_main_no_proto(capsys: pytest.CaptureFixture[str]) -> None:
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
 
-    def mock_showInfo() -> None:
+    def _mock_show_info() -> None:
         """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
         print("inside mocked showInfo")
 
-    iface.showInfo.side_effect = mock_showInfo
+    iface.showInfo.side_effect = _mock_show_info
 
     # Override the time.sleep so there is no loop
-    def my_sleep(amount: float) -> None:
+    def _sleep_and_exit(amount: float) -> None:
         """Print sleep duration and terminate to break the no-proto loop in tests."""
         print(f"amount:{amount}")
         sys.exit(0)
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        with patch("time.sleep", side_effect=my_sleep):
+        with patch("time.sleep", side_effect=_sleep_and_exit):
             with pytest.raises(SystemExit) as pytest_wrapped_e:
                 main()
             assert pytest_wrapped_e.type is SystemExit
@@ -655,14 +653,14 @@ def test_main_info_with_seriallog_stdout(capsys: pytest.CaptureFixture[str]) -> 
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
 
-    def mock_showInfo() -> None:
+    def _mock_show_info() -> None:
         """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
         print("inside mocked showInfo")
 
-    iface.showInfo.side_effect = mock_showInfo
+    iface.showInfo.side_effect = _mock_show_info
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -707,7 +705,7 @@ def test_main_info_with_seriallog_output_txt(
         )
         return iface
 
-    def mock_showInfo() -> None:
+    def _mock_show_info() -> None:
         """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
@@ -718,7 +716,7 @@ def test_main_info_with_seriallog_output_txt(
             stream.flush()
         print("inside mocked showInfo")
 
-    iface.showInfo.side_effect = mock_showInfo
+    iface.showInfo.side_effect = _mock_show_info
     with patch(
         "meshtastic.serial_interface.SerialInterface",
         side_effect=_serial_interface_factory,
@@ -735,36 +733,49 @@ def test_main_info_with_seriallog_output_txt(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_qr(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test --qr."""
+def test_main_qr(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--qr`` should render the exact primary-channel URL returned by the node."""
+    expected_url = "https://meshtastic.org/e/#deterministic-primary"
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv  # type: ignore[assignment]
+
+    qr = MagicMock()
+    qr.terminal.return_value = "<qr-terminal>"
+    qr_factory = MagicMock(return_value=qr)
+    monkeypatch.setattr(
+        main_module,
+        "pyqrcode",
+        SimpleNamespace(create=qr_factory),
+        raising=True,
+    )
 
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
-    # TODO: could mock/check url
+    iface.getNode.return_value.getURL.return_value = expected_url
+
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Primary channel URL", out, re.MULTILINE)
-        if importlib.util.find_spec("pyqrcode") is None:
-            assert re.search(
-                r"Install pyqrcode to view a QR code printed to terminal.",
-                out,
-                re.MULTILINE,
-            )
-        else:
-            # if a qr code is generated it will have lots of these
-            assert re.search(r"\[7m", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+
+    assert re.search(r"Connected to radio", out, re.MULTILINE)
+    assert f"Primary channel URL: {expected_url}" in out
+    assert "<qr-terminal>" in out
+    assert err == ""
+    qr_factory.assert_called_once_with(expected_url)
+    qr.terminal.assert_called_once_with()
+    mo.assert_called()
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_onConnected_exception(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_onConnected_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Verify that running main with --qr exits with code 1 when QR code generation raises an exception.
 
     Raises
@@ -775,7 +786,7 @@ def test_main_onConnected_exception(capsys: pytest.CaptureFixture[str]) -> None:
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
-    def throw_an_exception(_junk: Any) -> None:
+    def _throw_an_exception(_junk: Any) -> None:
         """Raise a deterministic exception used by tests.
 
         Raises
@@ -785,18 +796,21 @@ def test_main_onConnected_exception(capsys: pytest.CaptureFixture[str]) -> None:
         """
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
-    pytest.importorskip("pyqrcode")
-
+    monkeypatch.setattr(
+        main_module,
+        "pyqrcode",
+        SimpleNamespace(create=_throw_an_exception),
+        raising=True,
+    )
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
-        with patch("pyqrcode.create", side_effect=throw_an_exception):
-            with pytest.raises(SystemExit) as pytest_wrapped_e:
-                main()
-            _ = capsys.readouterr()  # consume output to avoid polluting test output
-            assert pytest_wrapped_e.type is SystemExit
-            assert pytest_wrapped_e.value.code == 1
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+    _ = capsys.readouterr()  # consume output to avoid polluting test output
+    assert pytest_wrapped_e.type is SystemExit
+    assert pytest_wrapped_e.value.code == 1
 
 
 @pytest.mark.unit
@@ -815,7 +829,7 @@ def test_main_nodes(capsys: pytest.CaptureFixture[str]) -> None:
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
 
-    def mock_showNodes(includeSelf: bool, showFields: Any) -> None:
+    def _mock_show_nodes(includeSelf: bool, showFields: Any) -> None:
         """Print a test marker indicating a mocked node listing and its options.
 
         Parameters
@@ -827,7 +841,7 @@ def test_main_nodes(capsys: pytest.CaptureFixture[str]) -> None:
         """
         print(f"inside mocked showNodes: {includeSelf} {showFields}")
 
-    iface.showNodes.side_effect = mock_showNodes
+    iface.showNodes.side_effect = _mock_show_nodes
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
