@@ -84,3 +84,15 @@ def test_print_config_facade_uses_current_camel_case_setting(
     main_module.printConfig(config)
 
     runtime_print.assert_called_once_with(config, camel_case=True)
+
+
+@pytest.mark.unit
+def test_is_repeated_field_supports_legacy_descriptor_labels() -> None:
+    """Legacy protobuf descriptors should fall back to label comparison."""
+    repeated = SimpleNamespace(label=3, LABEL_REPEATED=3)
+    singular = SimpleNamespace(label=1, LABEL_REPEATED=3)
+    missing_label = SimpleNamespace(LABEL_REPEATED=3)
+
+    assert main_module.cli_config_io.is_repeated_field(repeated) is True
+    assert main_module.cli_config_io.is_repeated_field(singular) is False
+    assert main_module.cli_config_io.is_repeated_field(missing_label) is False
