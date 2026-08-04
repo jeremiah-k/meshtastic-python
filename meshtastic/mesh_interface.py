@@ -1360,6 +1360,10 @@ class MeshInterface:  # pylint: disable=R0902
         """
         self._send_pipeline.waitForConfig()
 
+    def _wait_for_ack_nak(self, request_id: int) -> None:
+        """Wait for the ACK/NAK correlated to one internal request id."""
+        self._send_pipeline._wait_for_ack_nak(request_id)
+
     def waitForAckNak(self) -> None:
         """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out.
 

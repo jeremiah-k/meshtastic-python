@@ -3,6 +3,11 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.admin_wait import (
+    _extract_request_id_from_response,
+    _mark_admin_wait_acknowledged,
+    _set_admin_wait_error,
+)
 from meshtastic.node_runtime.shared import ERROR_REASON_NONE, MAX_CHANNELS
 from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 from meshtastic.util import stripnl
@@ -31,7 +36,24 @@ class _NodeMetadataResponseRuntime:
     def __init__(self, node: "Node") -> None:
         self._node = node
 
-    def _handle_routing_portnum(self, decoded: dict[str, Any]) -> bool:
+    def _record_wait_error(self, packet: dict[str, Any], message: str) -> None:
+        """Record one request-scoped metadata-response failure."""
+        _set_admin_wait_error(
+            self._node,
+            message,
+            request_id=_extract_request_id_from_response(self._node, packet),
+        )
+
+    def _mark_wait_acknowledged(self, packet: dict[str, Any]) -> None:
+        """Mark one request-scoped metadata response complete."""
+        _mark_admin_wait_acknowledged(
+            self._node,
+            _extract_request_id_from_response(self._node, packet),
+        )
+
+    def _handle_routing_portnum(
+        self, decoded: dict[str, Any], packet: dict[str, Any] | None = None
+    ) -> bool:
         """Handle ROUTING_APP metadata responses and indicate whether processing is complete."""
         if decoded.get("portnum") != portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
@@ -59,6 +81,10 @@ class _NodeMetadataResponseRuntime:
                 error_reason,
             )
             self._node.iface._acknowledgment.receivedNak = True
+            if packet is not None:
+                self._record_wait_error(
+                    packet, f"Routing error on response: {error_reason}"
+                )
             self._node._signal_metadata_stdout_event()
             return True
         logger.debug(
@@ -66,7 +92,9 @@ class _NodeMetadataResponseRuntime:
         )
         return True
 
-    def _handle_generic_routing_error(self, decoded: dict[str, Any]) -> bool:
+    def _handle_generic_routing_error(
+        self, decoded: dict[str, Any], packet: dict[str, Any] | None = None
+    ) -> bool:
         """Handle non-routing-port metadata errors and indicate completion."""
         routing = decoded.get("routing")
         if not isinstance(routing, dict):
@@ -82,6 +110,10 @@ class _NodeMetadataResponseRuntime:
         if error_reason != ERROR_REASON_NONE:
             logger.error("Error on response: %s", error_reason)
             self._node.iface._acknowledgment.receivedNak = True
+            if packet is not None:
+                self._record_wait_error(
+                    packet, f"Routing error on response: {error_reason}"
+                )
             self._node._signal_metadata_stdout_event()
             return True
         return False
@@ -135,9 +167,9 @@ class _NodeMetadataResponseRuntime:
             )
             self._node._signal_metadata_stdout_event()
             return
-        if self._handle_routing_portnum(decoded):
+        if self._handle_routing_portnum(decoded, packet):
             return
-        if self._handle_generic_routing_error(decoded):
+        if self._handle_generic_routing_error(decoded, packet):
             return
 
         admin_message = decoded.get("admin")
@@ -162,6 +194,7 @@ class _NodeMetadataResponseRuntime:
         metadata_snapshot = mesh_pb2.DeviceMetadata()
         metadata_snapshot.CopyFrom(metadata_response)
         self._node.iface._acknowledgment.receivedAck = True
+        self._mark_wait_acknowledged(packet)
         self._node._set_metadata_snapshot(metadata_snapshot)
         self._node._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(metadata_response))

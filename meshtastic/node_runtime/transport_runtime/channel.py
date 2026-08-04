@@ -4,6 +4,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from meshtastic.node_runtime.admin_wait import (
+    _send_admin_with_ack_scope,
+    _wait_for_admin_ack,
+)
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
 )
@@ -60,8 +64,10 @@ class _NodeChannelWriteRuntime:
             if self._node is not self._node.iface.localNode
             else None
         )
-        request = self._node._send_admin(
+        request = _send_admin_with_ack_scope(
+            self._node,
             request_message,
+            scope_ack=on_response is not None,
             adminIndex=admin_index,
             onResponse=on_response,
         )
@@ -76,7 +82,7 @@ class _NodeChannelWriteRuntime:
         # Wait for ACK/NAK response for remote nodes
         if on_response is not None and request is not None:
             try:
-                self._node.iface.waitForAckNak()
+                _wait_for_admin_ack(self._node, request)
             except Exception as exc:
                 self._node._raise_interface_error(
                     f"Channel write for index {channel_to_write.index} failed: {exc}"

@@ -3,6 +3,11 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.admin_wait import (
+    _extract_request_id_from_response,
+    _mark_admin_wait_acknowledged,
+    _set_admin_wait_error,
+)
 from meshtastic.node_runtime.shared import ERROR_REASON_NONE
 from meshtastic.protobuf import admin_pb2
 from meshtastic.util import camel_to_snake
@@ -18,6 +23,21 @@ class _NodeSettingsResponseRuntime:
 
     def __init__(self, node: "Node") -> None:
         self._node = node
+
+    def _record_wait_error(self, packet: dict[str, Any], message: str) -> None:
+        """Record one request-scoped settings-response failure."""
+        _set_admin_wait_error(
+            self._node,
+            message,
+            request_id=_extract_request_id_from_response(self._node, packet),
+        )
+
+    def _mark_wait_acknowledged(self, packet: dict[str, Any]) -> None:
+        """Mark one request-scoped settings response complete."""
+        _mark_admin_wait_acknowledged(
+            self._node,
+            _extract_request_id_from_response(self._node, packet),
+        )
 
     # pylint: disable=too-many-positional-arguments
     def _resolve_config_response(
@@ -96,8 +116,10 @@ class _NodeSettingsResponseRuntime:
         logger.debug("handleSettingsResponse() response received")
         decoded = packet.get("decoded")
         if not isinstance(decoded, dict):
-            logger.warning("Received malformed settings response (missing decoded).")
+            message = "Received malformed settings response (missing decoded)."
+            logger.warning(message)
             self._node.iface._acknowledgment.receivedNak = True
+            self._record_wait_error(packet, message)
             return
         routing = decoded.get("routing")
         if isinstance(routing, dict):
@@ -108,23 +130,33 @@ class _NodeSettingsResponseRuntime:
                     error_reason,
                 )
                 self._node.iface._acknowledgment.receivedNak = True
+                self._record_wait_error(
+                    packet, f"Routing error on response: {error_reason}"
+                )
                 return
 
         admin_message = decoded.get("admin")
         if not isinstance(admin_message, dict):
-            logger.warning("Received malformed settings response (missing admin).")
+            message = "Received malformed settings response (missing admin)."
+            logger.warning(message)
             self._node.iface._acknowledgment.receivedNak = True
+            self._record_wait_error(packet, message)
             return
         target = self._resolve_config_target(admin_message)
         if target is None:
             self._node.iface._acknowledgment.receivedNak = True
+            self._record_wait_error(
+                packet, "Received settings response without a recognized config field."
+            )
             return
 
         oneof, field_name, config_values = target
         raw_admin = admin_message.get("raw")
         if not isinstance(raw_admin, admin_pb2.AdminMessage):
-            logger.warning("Received malformed settings response (invalid admin.raw).")
+            message = "Received malformed settings response (invalid admin.raw)."
+            logger.warning(message)
             self._node.iface._acknowledgment.receivedNak = True
+            self._record_wait_error(packet, message)
             return
         parent_config = getattr(raw_admin, oneof)
         if not parent_config.HasField(field_name):
@@ -133,8 +165,13 @@ class _NodeSettingsResponseRuntime:
                 field_name,
             )
             self._node.iface._acknowledgment.receivedNak = True
+            self._record_wait_error(
+                packet,
+                f"Received settings response without expected field '{field_name}'.",
+            )
             return
         raw_config = getattr(parent_config, field_name)
         config_values.CopyFrom(raw_config)
         self._node.iface._acknowledgment.receivedAck = True
+        self._mark_wait_acknowledged(packet)
         logger.info("Received settings block: %s", field_name)

@@ -5,6 +5,10 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.admin_wait import (
+    _send_admin_with_ack_scope,
+    _wait_for_admin_ack,
+)
 from meshtastic.protobuf import admin_pb2, mesh_pb2
 
 if TYPE_CHECKING:
@@ -34,13 +38,15 @@ class _NodePositionTimeCommandRuntime:
     ) -> mesh_pb2.MeshPacket | None:
         """Send position/time admin command and wait for remote ACK/NAK when needed."""
         on_response = self._select_remote_ack_callback()
-        request = self._node._send_admin(
+        request = _send_admin_with_ack_scope(
+            self._node,
             admin_message,
+            scope_ack=on_response is not None,
             onResponse=on_response,
             wantResponse=True,
         )
         if on_response is not None and request is not None:
-            self._node.iface.waitForAckNak()
+            _wait_for_admin_ack(self._node, request)
         return request
 
     def _set_fixed_position(
