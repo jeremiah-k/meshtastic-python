@@ -5,7 +5,7 @@ import re
 import warnings
 from collections.abc import Callable
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 from pytest import CaptureFixture, LogCaptureFixture
@@ -399,7 +399,7 @@ def test_waitForConfig_success(
 @pytest.mark.unit
 def test_start_ota_local_node() -> None:
     """Test startOTA canonical signature on local node."""
-    iface = MagicMock(autospec=MeshInterface)
+    iface = create_autospec(MeshInterface, instance=True)
     anode = Node(iface, 1234567890, noProto=True)
     iface.localNode = anode
 
@@ -419,7 +419,7 @@ def test_start_ota_local_node() -> None:
 @pytest.mark.unit
 def test_start_ota_local_node_legacy_alias_keywords() -> None:
     """Test startOTA legacy aliases ota_mode/ota_hash remain supported."""
-    iface = MagicMock(autospec=MeshInterface)
+    iface = create_autospec(MeshInterface, instance=True)
     anode = Node(iface, 1234567890, noProto=True)
     iface.localNode = anode
 
@@ -441,7 +441,7 @@ def test_start_ota_local_node_legacy_alias_keywords() -> None:
 @pytest.mark.unit
 def test_start_ota_remote_node_raises_error() -> None:
     """Test startOTA on remote node raises MeshInterfaceError."""
-    iface = MagicMock(autospec=MeshInterface)
+    iface = create_autospec(MeshInterface, instance=True)
     local_node = Node(iface, 1234567890, noProto=True)
     remote_node = Node(iface, 9876543210, noProto=True)
     iface.localNode = local_node
