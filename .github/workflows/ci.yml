@@ -109,10 +109,12 @@ jobs:
     steps:
       - *checkout_step
       - *setup_python_step
+      - name: Load and verify quality tool versions
+        run: python bin/check_quality_tool_versions.py --github-env "$GITHUB_ENV"
       - name: Install ruff
-        run: python -m pip install --upgrade "ruff==0.15.10"
+        run: python -m pip install --upgrade "ruff==${RUFF_VERSION}"
       - name: Run ruff on tests
-        run: ruff check meshtastic/tests
+        run: ruff check meshtastic/tests tests
   mypy:
     name: Mypy (py3.13)
     runs-on: ubuntu-latest

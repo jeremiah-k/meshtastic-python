@@ -81,9 +81,17 @@ docs:
 lint:
 	PYLINTHOME=$${TMPDIR:-/tmp}/pylint-cache $(POETRY_RUN) pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
 
-# lint tests with ruff (same command as CI)
+# lint tests with the canonical Ruff version (same scope as CI)
 lint-tests:
-	ruff check meshtastic/tests
+	@set -eu; \
+		expected=$$(python bin/check_quality_tool_versions.py --print-ruff-version); \
+		actual=$$(ruff --version | awk '{print $$2}'); \
+		if [ "$$actual" != "$$expected" ]; then \
+			echo "error: ruff $$actual installed; expected $$expected" >&2; \
+			echo "install with: python -m pip install ruff==$$expected" >&2; \
+			exit 2; \
+		fi; \
+		ruff check meshtastic/tests tests
 
 # show the slowest unit tests
 slow:
