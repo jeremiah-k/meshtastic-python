@@ -11,7 +11,7 @@ from typing import Any, NoReturn
 from pubsub import pub
 
 import meshtastic.util
-from meshtastic import BROADCAST_NUM
+from meshtastic._core_constants import BROADCAST_NUM
 from meshtastic.protobuf import portnums_pb2
 from meshtastic.serial_interface import SerialInterface
 from meshtastic.tcp_interface import TCPInterface

@@ -6,6 +6,8 @@ exists so internal request runtimes do not depend on package-root implementation
 
 from typing import Any, Callable, NamedTuple
 
+__all__ = ("ResponseCallback", "ResponseHandler")
+
 ResponseCallback = Callable[[dict[str, Any]], Any]
 
 
@@ -17,5 +19,7 @@ class ResponseHandler(NamedTuple):
 
 
 # Registration timestamps remain out-of-band so the historical two-field tuple
-# shape stays compatible. Preserve its original public module metadata too.
+# shape stays compatible. NamedTuple records its defining module in pickle and
+# introspection metadata, so preserve the historical public lookup path after
+# moving the implementation into this private leaf module.
 ResponseHandler.__module__ = "meshtastic"

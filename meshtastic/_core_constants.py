@@ -4,6 +4,16 @@ This module intentionally contains no imports from other ``meshtastic`` modules.
 Public compatibility is provided by re-exports from :mod:`meshtastic`.
 """
 
+__all__ = (
+    "BROADCAST_ADDR",
+    "BROADCAST_NUM",
+    "DECODE_ERROR_KEY",
+    "LOCAL_ADDR",
+    "NODELESS_WANT_CONFIG_ID",
+    "OUR_APP_VERSION",
+)
+
+
 LOCAL_ADDR = "^local"
 """Special destination identifier for the local node."""
 
