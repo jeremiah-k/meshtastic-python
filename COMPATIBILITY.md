@@ -1,9 +1,12 @@
 # Compatibility Inventory and Deprecation Matrix
 
-This document is the canonical source of truth for compatibility aliases,
-deprecations, and legacy compatibility behaviors in this repository.
+This document is the canonical human-readable policy for compatibility aliases,
+deprecations, and legacy compatibility behaviors in this repository. Runtime
+import guarantees are additionally defined by the machine-readable
+``meshtastic/_runtime_compatibility.json`` manifest consumed by API-baseline tooling.
 
-If a compatibility symbol is not listed here, do not add or keep it by default.
+If a compatibility symbol is not listed here, or a runtime import guarantee is
+not present in that manifest, do not add or keep it by default.
 
 ## Scope and Policy
 
@@ -56,13 +59,17 @@ implementation details that are NOT part of the public stable API.
 
 ### Documented Runtime Compatibility Exports
 
-The following specific exports from runtime modules are retained for
-test ecosystem compatibility. These are the ONLY runtime imports with
-stability guarantees:
+The machine-readable manifest ``meshtastic/_runtime_compatibility.json`` is the
+source of truth consumed by API-baseline tooling for runtime import guarantees.
+It currently guarantees only:
 
 | Module Path                                | Export      | Purpose                    | Status               |
 | ------------------------------------------ | ----------- | -------------------------- | -------------------- |
 | `meshtastic.node_runtime.settings_runtime` | `toNodeNum` | Test mocking compatibility | `COMPAT_STABLE_SHIM` |
+
+Adding a runtime compatibility guarantee requires updating the manifest and this
+policy together. Internal test imports do not become compatibility commitments
+merely because they exist in the repository.
 
 ### Policy for External Test Authors
 

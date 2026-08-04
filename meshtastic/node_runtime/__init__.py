@@ -1,8 +1,9 @@
-"""Public API for node runtime constants and helpers.
+"""Internal convenience exports for Node runtime implementations.
 
-This module exports constants and utility functions intended for use across
-Meshtastic Node implementations. Symbols listed in __all__ are part of the
-stable public interface.
+The ``node_runtime`` package is an implementation detail and its ``__all__``
+list is not public API. Runtime compatibility guarantees are limited to entries
+in ``meshtastic/_runtime_compatibility.json`` and documented in
+``COMPATIBILITY.md``.
 """
 
 from .shared import (

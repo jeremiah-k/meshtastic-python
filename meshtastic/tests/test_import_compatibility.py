@@ -11,6 +11,8 @@ Reference: COMPATIBILITY.md for documented compatibility aliases.
 from __future__ import annotations
 
 import importlib
+import json
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -410,3 +412,19 @@ class TestModuleReimport:
         assert meshtastic is not None
         assert hasattr(meshtastic, "Node")
         assert hasattr(meshtastic, "BROADCAST_ADDR")
+
+
+def test_runtime_compatibility_manifest_exports_are_importable() -> None:
+    """Every manifest-backed runtime compatibility export should remain importable."""
+    project_root = Path(__file__).resolve().parents[2]
+    manifest = json.loads(
+        (project_root / "meshtastic" / "_runtime_compatibility.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert manifest["schema_version"] == 1
+    for entry in manifest["modules"]:
+        module = importlib.import_module(entry["path"])
+        for export_name in entry["exports"]:
+            assert hasattr(module, export_name), (entry["path"], export_name)

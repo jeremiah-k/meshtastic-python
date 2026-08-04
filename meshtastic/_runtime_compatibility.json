@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "modules": [
+    {
+      "path": "meshtastic.node_runtime.settings_runtime",
+      "status": "INTERNAL_COMPAT",
+      "purpose": "Test mocking compatibility",
+      "exports": {
+        "toNodeNum": "COMPAT_STABLE_SHIM"
+      }
+    }
+  ]
+}
