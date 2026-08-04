@@ -1,6 +1,6 @@
 """Compatibility seams for the extracted Node contact runtime."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import create_autospec, patch
 
 import pytest
 
@@ -11,7 +11,7 @@ from meshtastic.node import Node
 
 def _node_with_contact(node_num: int, *, macaddr: str = "AQIDBAUG") -> Node:
     """Build a Node with one contact-shaped NodeDB entry."""
-    iface = MagicMock(autospec=MeshInterface)
+    iface = create_autospec(MeshInterface, instance=True)
     iface.nodesByNum = {
         node_num: {
             "num": node_num,
