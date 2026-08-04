@@ -2006,6 +2006,8 @@ def test_response_handler_pruning_expires_managed_callbacks_only() -> None:
         assert 501 not in iface.responseHandlers
         assert 501 not in iface._request_wait_runtime._response_matchers
         assert 501 not in iface._request_wait_runtime._ack_nak_handlers
+        assert 501 not in iface._request_wait_runtime._response_handler_registered_at
+        assert 501 not in iface._request_wait_runtime._managed_response_handlers
 
 
 @pytest.mark.unit
@@ -2057,6 +2059,8 @@ def test_response_handler_pruning_preserves_legacy_unmanaged_entry() -> None:
             now=time.monotonic() + 10_000.0
         ) == []
         assert 504 in iface.responseHandlers
+        assert 504 not in iface._request_wait_runtime._response_handler_registered_at
+        assert 504 not in iface._request_wait_runtime._managed_response_handlers
 
 
 @pytest.mark.unit
@@ -2076,4 +2080,57 @@ def test_response_handler_registration_prunes_previous_stale_callback() -> None:
         )
 
         assert 505 not in iface.responseHandlers
+        assert 505 not in iface._request_wait_runtime._response_handler_registered_at
+        assert 505 not in iface._request_wait_runtime._response_matchers
+        assert 505 not in iface._request_wait_runtime._ack_nak_handlers
+        assert 505 not in iface._request_wait_runtime._managed_response_handlers
         assert 506 in iface.responseHandlers
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_inbound_response_expires_only_its_correlated_stale_handler() -> None:
+    """Inbound traffic should enforce TTL without scanning unrelated handlers."""
+    with MeshInterface(noProto=True) as iface:
+        runtime = iface._request_wait_runtime
+        stale_callback = MagicMock()
+        other_callback = MagicMock()
+        runtime.add_response_handler(507, stale_callback, ack_permitted=True)
+        runtime.add_response_handler(509, other_callback, ack_permitted=True)
+        runtime._response_handler_registered_at[507] = (
+            time.monotonic() - RESPONSE_HANDLER_TTL_SECONDS - 1.0
+        )
+        runtime._response_handler_registered_at[509] = (
+            time.monotonic() - RESPONSE_HANDLER_TTL_SECONDS - 1.0
+        )
+
+        iface._request_wait_runtime.correlate_inbound_response(
+            packet_dict={"decoded": {"requestId": 507}},
+            skip_response_callback_for_decode_failure=False,
+            extract_request_id=lambda packet: packet["decoded"]["requestId"],
+        )
+
+        stale_callback.assert_not_called()
+        assert 507 not in iface.responseHandlers
+        assert 509 in iface.responseHandlers
+        assert 509 in runtime._response_handler_registered_at
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_response_handler_pruning_preserves_legacy_replacement() -> None:
+    """A direct legacy replacement should shed stale managed metadata only."""
+    with MeshInterface(noProto=True) as iface:
+        runtime = iface._request_wait_runtime
+        runtime.add_response_handler(508, MagicMock(), ack_permitted=True)
+        registered_at = runtime._response_handler_registered_at[508]
+        legacy_handler = ResponseHandler(callback=MagicMock(), ackPermitted=True)
+        iface.responseHandlers[508] = legacy_handler
+
+        assert runtime.prune_stale_response_handlers(
+            now=registered_at + RESPONSE_HANDLER_TTL_SECONDS + 1.0
+        ) == []
+        assert iface.responseHandlers[508] is legacy_handler
+        assert 508 not in runtime._response_handler_registered_at
+        assert 508 not in runtime._response_matchers
+        assert 508 not in runtime._ack_nak_handlers
+        assert 508 not in runtime._managed_response_handlers
