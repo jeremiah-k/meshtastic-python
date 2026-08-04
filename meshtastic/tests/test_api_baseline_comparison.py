@@ -463,15 +463,15 @@ class TestTopLevelExportsAgainstBaseline:
 
 
 class TestLegacyImportPathsAgainstBaseline:
-    """Tests to verify internal import paths still work."""
+    """Tests to verify documented runtime compatibility import paths."""
 
     def test_legacy_import_paths_against_baseline(
         self, current_baseline, stored_baseline, pytestconfig
     ):
-        """Verify legacy internal import paths still work.
+        """Verify manifest-backed runtime compatibility import paths remain stable.
 
-        This test ensures that code using internal imports doesn't break
-        when the package structure changes.
+        Internal runtime modules that are absent from the manifest are free to move
+        without creating an API-baseline failure.
         """
         if stored_baseline is None:
             if _should_update_baselines(pytestconfig):

@@ -1,15 +1,6 @@
 {
   "legacy_import_paths": [
-    "meshtastic.node_runtime.channel_export_runtime",
-    "meshtastic.node_runtime.channel_lookup_runtime",
-    "meshtastic.node_runtime.channel_normalization_runtime",
-    "meshtastic.node_runtime.channel_presentation_runtime",
-    "meshtastic.node_runtime.channel_request_runtime",
-    "meshtastic.node_runtime.content_runtime",
-    "meshtastic.node_runtime.settings_runtime",
-    "meshtastic.node_runtime.seturl_runtime",
-    "meshtastic.node_runtime.shared",
-    "meshtastic.node_runtime.transport_runtime"
+    "meshtastic.node_runtime.settings_runtime"
   ],
   "mesh_interface_methods": {
     "close": "(self)",

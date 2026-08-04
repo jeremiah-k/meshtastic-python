@@ -14,18 +14,67 @@ import sys
 from pathlib import Path
 from typing import Any
 
-LEGACY_IMPORT_PATHS = [
-    "meshtastic.node_runtime.settings_runtime",
-    "meshtastic.node_runtime.channel_request_runtime",
-    "meshtastic.node_runtime.channel_lookup_runtime",
-    "meshtastic.node_runtime.channel_export_runtime",
-    "meshtastic.node_runtime.channel_presentation_runtime",
-    "meshtastic.node_runtime.channel_normalization_runtime",
-    "meshtastic.node_runtime.seturl_runtime",
-    "meshtastic.node_runtime.transport_runtime",
-    "meshtastic.node_runtime.content_runtime",
-    "meshtastic.node_runtime.shared",
-]
+RUNTIME_COMPATIBILITY_MANIFEST = "_runtime_compatibility.json"
+_RUNTIME_MODULE_STATUSES = {"INTERNAL_COMPAT"}
+_RUNTIME_EXPORT_STATUSES = {"COMPAT_STABLE_SHIM", "COMPAT_DEPRECATE", "INTERNAL_COMPAT"}
+
+
+def _load_runtime_compatibility_import_paths(pkg_dir: Path) -> list[str]:
+    """Return documented runtime compatibility module paths for one source tree.
+
+    Older source trees may predate the manifest; in that case they have no
+    manifest-backed runtime import guarantees.
+    """
+    manifest_path = pkg_dir / RUNTIME_COMPATIBILITY_MANIFEST
+    if not manifest_path.exists():
+        return []
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 1:
+        raise ValueError(
+            f"Unsupported runtime compatibility manifest schema: {manifest_path}"
+        )
+    modules = manifest.get("modules")
+    if not isinstance(modules, list):
+        raise ValueError(
+            f"Runtime compatibility manifest modules must be a list: {manifest_path}"
+        )
+    paths: list[str] = []
+    seen_paths: set[str] = set()
+    for entry in modules:
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"Runtime compatibility manifest has an invalid module entry: {entry!r}"
+            )
+        path = entry.get("path")
+        status = entry.get("status")
+        purpose = entry.get("purpose")
+        exports = entry.get("exports")
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"Runtime compatibility module path is invalid: {entry!r}")
+        if path in seen_paths:
+            raise ValueError(f"Duplicate runtime compatibility module path: {path}")
+        if status not in _RUNTIME_MODULE_STATUSES:
+            raise ValueError(
+                f"Unsupported runtime compatibility module status for {path}: {status!r}"
+            )
+        if not isinstance(purpose, str) or not purpose.strip():
+            raise ValueError(f"Runtime compatibility purpose is required for {path}")
+        if not isinstance(exports, dict) or not exports:
+            raise ValueError(f"Runtime compatibility exports are required for {path}")
+        for export_name, export_status in exports.items():
+            if not isinstance(export_name, str) or not export_name:
+                raise ValueError(
+                    f"Runtime compatibility export name is invalid for {path}: {export_name!r}"
+                )
+            if export_status not in _RUNTIME_EXPORT_STATUSES:
+                raise ValueError(
+                    "Unsupported runtime compatibility export status for "
+                    f"{path}.{export_name}: {export_status!r}"
+                )
+        seen_paths.add(path)
+        paths.append(path)
+    return sorted(paths)
+
 
 
 def _annotation_to_str(node: ast.AST | None) -> str:
@@ -290,10 +339,9 @@ def _module_path_exists(pkg_dir: Path, dotted_path: str) -> bool:
 
 
 def _capture_legacy_import_paths(pkg_dir: Path) -> list[str]:
-    """Capture compatibility import paths that exist in the provided tree."""
-    return sorted(
-        [path for path in LEGACY_IMPORT_PATHS if _module_path_exists(pkg_dir, path)]
-    )
+    """Capture manifest-backed runtime compatibility paths present in the tree."""
+    documented_paths = _load_runtime_compatibility_import_paths(pkg_dir)
+    return [path for path in documented_paths if _module_path_exists(pkg_dir, path)]
 
 
 def extract_api_surface(
