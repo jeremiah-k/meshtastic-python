@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Generator
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -42,7 +43,6 @@ from ._ble_runtime_fakes import (
 )
 
 # pylint: disable=too-many-lines
-
 
 
 class _ImmediateThread:
@@ -186,31 +186,31 @@ class TestLifecycleStateAccess:
     """Test _LifecycleStateAccess class."""
 
     @pytest.fixture
-    def mock_iface(self) -> Any:
+    def mock_iface(self) -> SimpleNamespace:
         """Create an interface double with an explicit state-manager fake."""
-        return type("Iface", (), {"_state_manager": _FakeStateManager()})()
+        return SimpleNamespace(_state_manager=_FakeStateManager())
 
     @pytest.fixture
-    def state_access(self, mock_iface: Any) -> _LifecycleStateAccess:
+    def state_access(self, mock_iface: SimpleNamespace) -> _LifecycleStateAccess:
         """Create _LifecycleStateAccess instance."""
         return _LifecycleStateAccess(mock_iface)
 
     def test_is_connected_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_connected via public callable."""
         mock_iface._state_manager.connected = True
         assert state_access.is_connected() is True
 
     def test_is_connected_via_public_bool(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_connected via public boolean attribute."""
         mock_iface._state_manager.is_connected = True
         assert state_access.is_connected() is True
 
     def test_is_connected_via_legacy_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_connected via legacy callable."""
         mock_iface._state_manager.is_connected = None
@@ -218,7 +218,7 @@ class TestLifecycleStateAccess:
         assert state_access.is_connected() is True
 
     def test_is_connected_via_legacy_bool(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_connected via legacy boolean attribute."""
         mock_iface._state_manager.is_connected = None
@@ -226,7 +226,7 @@ class TestLifecycleStateAccess:
         assert state_access.is_connected() is True
 
     def test_is_connected_raises_when_missing(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when is_connected not found."""
         mock_iface._state_manager.is_connected = None
@@ -235,7 +235,7 @@ class TestLifecycleStateAccess:
             state_access.is_connected()
 
     def test_is_connected_exception_in_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in public is_connected callable."""
         mock_iface._state_manager.is_connected = MagicMock(
@@ -245,7 +245,7 @@ class TestLifecycleStateAccess:
         assert state_access.is_connected() is True
 
     def test_is_connected_exception_in_legacy_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in legacy is_connected callable."""
         mock_iface._state_manager.is_connected = None
@@ -256,21 +256,21 @@ class TestLifecycleStateAccess:
             state_access.is_connected()
 
     def test_current_state_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test current_state via public callable."""
         mock_iface._state_manager.state = ConnectionState.CONNECTED
         assert state_access.current_state() == ConnectionState.CONNECTED
 
     def test_current_state_via_public_attribute(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test current_state via public attribute."""
         mock_iface._state_manager.current_state = ConnectionState.CONNECTING
         assert state_access.current_state() == ConnectionState.CONNECTING
 
     def test_current_state_via_legacy_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test current_state via legacy callable."""
         mock_iface._state_manager.current_state = None
@@ -280,7 +280,7 @@ class TestLifecycleStateAccess:
         assert state_access.current_state() == ConnectionState.DISCONNECTED
 
     def test_current_state_via_legacy_attribute(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test current_state via legacy attribute."""
         mock_iface._state_manager.current_state = None
@@ -288,7 +288,7 @@ class TestLifecycleStateAccess:
         assert state_access.current_state() == ConnectionState.ERROR
 
     def test_current_state_raises_when_missing(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when current_state not found."""
         mock_iface._state_manager.current_state = None
@@ -299,7 +299,7 @@ class TestLifecycleStateAccess:
             state_access.current_state()
 
     def test_current_state_exception_in_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in current_state callable."""
         mock_iface._state_manager.current_state = MagicMock(
@@ -309,14 +309,14 @@ class TestLifecycleStateAccess:
         assert state_access.current_state() == ConnectionState.CONNECTED
 
     def test_transition_to_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test transition_to via public callable."""
         assert state_access.transition_to(ConnectionState.CONNECTED) is True
         assert mock_iface._state_manager.transition_calls == [ConnectionState.CONNECTED]
 
     def test_transition_to_via_legacy_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test transition_to via legacy callable."""
         mock_iface._state_manager.transition_to = None
@@ -324,7 +324,7 @@ class TestLifecycleStateAccess:
         assert state_access.transition_to(ConnectionState.DISCONNECTING) is True
 
     def test_transition_to_raises_when_missing(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when transition_to not found."""
         mock_iface._state_manager.transition_to = None
@@ -333,7 +333,7 @@ class TestLifecycleStateAccess:
             state_access.transition_to(ConnectionState.DISCONNECTED)
 
     def test_transition_to_exception_in_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in transition_to callable."""
         mock_iface._state_manager.transition_to = MagicMock(
@@ -343,7 +343,7 @@ class TestLifecycleStateAccess:
         assert state_access.transition_to(ConnectionState.CONNECTED) is True
 
     def test_reset_to_disconnected_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test reset_to_disconnected via public callable."""
         mock_iface._state_manager.state = ConnectionState.CONNECTED
@@ -351,7 +351,7 @@ class TestLifecycleStateAccess:
         assert mock_iface._state_manager.reset_calls == 1
 
     def test_reset_to_disconnected_via_legacy_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test reset_to_disconnected via legacy callable."""
         mock_iface._state_manager.reset_to_disconnected = None
@@ -359,7 +359,7 @@ class TestLifecycleStateAccess:
         assert state_access.reset_to_disconnected() is True
 
     def test_reset_to_disconnected_raises_when_missing(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when reset_to_disconnected not found."""
         mock_iface._state_manager.reset_to_disconnected = None
@@ -368,7 +368,7 @@ class TestLifecycleStateAccess:
             state_access.reset_to_disconnected()
 
     def test_reset_to_disconnected_exception_in_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in reset_to_disconnected callable."""
         mock_iface._state_manager.reset_to_disconnected = MagicMock(
@@ -378,21 +378,21 @@ class TestLifecycleStateAccess:
         assert state_access.reset_to_disconnected() is True
 
     def test_is_closing_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_closing via public callable."""
         mock_iface._state_manager.closing = True
         assert state_access.is_closing() is True
 
     def test_is_closing_via_public_bool(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_closing via public boolean."""
         mock_iface._state_manager.is_closing = True
         assert state_access.is_closing() is True
 
     def test_is_closing_via_legacy_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_closing via legacy callable."""
         mock_iface._state_manager.is_closing = None
@@ -400,7 +400,7 @@ class TestLifecycleStateAccess:
         assert state_access.is_closing() is True
 
     def test_is_closing_via_legacy_bool(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test is_closing via legacy boolean."""
         mock_iface._state_manager.is_closing = None
@@ -408,7 +408,7 @@ class TestLifecycleStateAccess:
         assert state_access.is_closing() is True
 
     def test_is_closing_graceful_degradation(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that is_closing returns False gracefully when not found."""
         mock_iface._state_manager.is_closing = None
@@ -417,7 +417,7 @@ class TestLifecycleStateAccess:
         assert state_access.is_closing() is False
 
     def test_is_closing_exception_in_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: MagicMock
+        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in is_closing callable."""
         mock_iface._state_manager.is_closing = MagicMock(
@@ -440,17 +440,17 @@ class TestLifecycleThreadAccess:
     """Test _LifecycleThreadAccess class."""
 
     @pytest.fixture
-    def mock_iface(self) -> Any:
+    def mock_iface(self) -> SimpleNamespace:
         """Create an interface double with an explicit thread coordinator fake."""
-        return type("Iface", (), {"thread_coordinator": _FakeThreadCoordinator()})()
+        return SimpleNamespace(thread_coordinator=_FakeThreadCoordinator())
 
     @pytest.fixture
-    def thread_access(self, mock_iface: Any) -> _LifecycleThreadAccess:
+    def thread_access(self, mock_iface: SimpleNamespace) -> _LifecycleThreadAccess:
         """Create _LifecycleThreadAccess instance."""
         return _LifecycleThreadAccess(mock_iface)
 
     def test_create_thread_via_public_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test create_thread via public callable."""
         mock_thread = MagicMock()
@@ -467,7 +467,7 @@ class TestLifecycleThreadAccess:
         assert result is mock_thread
 
     def test_create_thread_via_legacy_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test create_thread via legacy callable."""
         mock_thread = MagicMock()
@@ -485,7 +485,7 @@ class TestLifecycleThreadAccess:
         assert result is mock_thread
 
     def test_create_thread_raises_when_coordinator_missing(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when thread_coordinator is missing."""
         mock_iface.thread_coordinator = None
@@ -500,7 +500,7 @@ class TestLifecycleThreadAccess:
             thread_access.create_thread(target=dummy_target, name="test", daemon=True)
 
     def test_create_thread_raises_when_method_missing(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when create_thread method is missing."""
         mock_iface.thread_coordinator.create_thread = None
@@ -516,7 +516,7 @@ class TestLifecycleThreadAccess:
             thread_access.create_thread(target=dummy_target, name="test", daemon=True)
 
     def test_start_thread_via_public_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test start_thread via public callable."""
         mock_thread = MagicMock()
@@ -526,7 +526,7 @@ class TestLifecycleThreadAccess:
         mock_iface.thread_coordinator.start_thread.assert_called_once_with(mock_thread)
 
     def test_start_thread_via_legacy_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test start_thread via legacy callable."""
         mock_thread = MagicMock()
@@ -536,7 +536,7 @@ class TestLifecycleThreadAccess:
         mock_iface.thread_coordinator._start_thread.assert_called_once_with(mock_thread)
 
     def test_start_thread_raises_when_coordinator_missing(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when thread_coordinator is missing."""
         mock_iface.thread_coordinator = None
@@ -548,7 +548,7 @@ class TestLifecycleThreadAccess:
             thread_access.start_thread(mock_thread)
 
     def test_start_thread_raises_when_method_missing(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test that AttributeError is raised when start_thread method is missing."""
         mock_iface.thread_coordinator.start_thread = None
@@ -561,7 +561,7 @@ class TestLifecycleThreadAccess:
             thread_access.start_thread(mock_thread)
 
     def test_join_thread_via_public_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test join_thread via public callable."""
         mock_thread = MagicMock()
@@ -572,7 +572,7 @@ class TestLifecycleThreadAccess:
         )
 
     def test_join_thread_via_legacy_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test join_thread via legacy callable."""
         mock_thread = MagicMock()
@@ -584,7 +584,7 @@ class TestLifecycleThreadAccess:
         )
 
     def test_join_thread_fallback_to_thread_join(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test join_thread fallback to thread.join."""
         mock_thread = MagicMock()
@@ -596,7 +596,7 @@ class TestLifecycleThreadAccess:
         assert mock_thread.join.call_count >= 1
 
     def test_join_thread_exception_handling_public(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in public join_thread."""
         mock_thread = MagicMock()
@@ -609,7 +609,7 @@ class TestLifecycleThreadAccess:
         mock_iface.thread_coordinator._join_thread.assert_called_once()
 
     def test_join_thread_exception_handling_both(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling when both coordinator methods fail."""
         mock_thread = MagicMock()
@@ -623,7 +623,7 @@ class TestLifecycleThreadAccess:
         thread_access.join_thread(mock_thread, timeout=1.0)
 
     def test_join_thread_exception_in_thread_join(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in thread.join fallback."""
         mock_thread = MagicMock()
@@ -633,7 +633,7 @@ class TestLifecycleThreadAccess:
         thread_access.join_thread(mock_thread, timeout=1.0)
 
     def test_set_event_via_public_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test set_event via public callable."""
         mock_iface.thread_coordinator.set_event = MagicMock(return_value=None)
@@ -641,7 +641,7 @@ class TestLifecycleThreadAccess:
         mock_iface.thread_coordinator.set_event.assert_called_once_with("test_event")
 
     def test_set_event_via_legacy_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test set_event via legacy callable."""
         mock_iface.thread_coordinator.set_event = None
@@ -650,7 +650,7 @@ class TestLifecycleThreadAccess:
         mock_iface.thread_coordinator._set_event.assert_called_once_with("test_event")
 
     def test_set_event_missing_coordinator(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test set_event when coordinator is missing (best effort, no raise)."""
         mock_iface.thread_coordinator = None
@@ -658,7 +658,7 @@ class TestLifecycleThreadAccess:
         thread_access.set_event("test_event")
 
     def test_set_event_exception_handling(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in set_event."""
         mock_iface.thread_coordinator.set_event = MagicMock(
@@ -670,7 +670,7 @@ class TestLifecycleThreadAccess:
         mock_iface.thread_coordinator._set_event.assert_called_once()
 
     def test_clear_events_via_public_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test clear_events via public callable."""
         mock_iface.thread_coordinator.clear_events = MagicMock(return_value=None)
@@ -680,7 +680,7 @@ class TestLifecycleThreadAccess:
         )
 
     def test_clear_events_via_legacy_callable(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test clear_events via legacy callable."""
         mock_iface.thread_coordinator.clear_events = None
@@ -691,7 +691,7 @@ class TestLifecycleThreadAccess:
         )
 
     def test_clear_events_missing_coordinator(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test clear_events when coordinator is missing (best effort, no raise)."""
         mock_iface.thread_coordinator = None
@@ -699,7 +699,7 @@ class TestLifecycleThreadAccess:
         thread_access.clear_events("event1")
 
     def test_clear_events_exception_handling(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in clear_events."""
         mock_iface.thread_coordinator.clear_events = MagicMock(
@@ -711,7 +711,7 @@ class TestLifecycleThreadAccess:
         mock_iface.thread_coordinator._clear_events.assert_called_once()
 
     def test_wake_waiting_threads_via_public(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test wake_waiting_threads via public callable."""
         mock_iface.thread_coordinator.wake_waiting_threads = MagicMock(
@@ -723,7 +723,7 @@ class TestLifecycleThreadAccess:
         )
 
     def test_wake_waiting_threads_via_legacy(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test wake_waiting_threads via legacy callable."""
         mock_iface.thread_coordinator.wake_waiting_threads = None
@@ -736,7 +736,7 @@ class TestLifecycleThreadAccess:
         )
 
     def test_wake_waiting_threads_fallback_to_set_event(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test wake_waiting_threads fallback to set_event."""
         mock_iface.thread_coordinator.wake_waiting_threads = None
@@ -747,7 +747,7 @@ class TestLifecycleThreadAccess:
         assert mock_iface.thread_coordinator.set_event.call_count == 2
 
     def test_wake_waiting_threads_missing_coordinator(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test wake_waiting_threads when coordinator is missing (best effort, no raise)."""
         mock_iface.thread_coordinator = None
@@ -755,7 +755,7 @@ class TestLifecycleThreadAccess:
         thread_access.wake_waiting_threads("event1")
 
     def test_wake_waiting_threads_exception_handling(
-        self, thread_access: _LifecycleThreadAccess, mock_iface: MagicMock
+        self, thread_access: _LifecycleThreadAccess, mock_iface: SimpleNamespace
     ) -> None:
         """Test exception handling in wake_waiting_threads with partial failures."""
         mock_iface.thread_coordinator.wake_waiting_threads = MagicMock(

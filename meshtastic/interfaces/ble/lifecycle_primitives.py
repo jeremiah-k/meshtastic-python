@@ -11,11 +11,11 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _resolve_declared_callable,
 )
 from meshtastic.interfaces.ble.constants import logger
+from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.failure_policy import (
     _BLEFailureDisposition,
     _log_ble_failure,
 )
-from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.ports import _BLEStateManagerPort
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
@@ -27,6 +27,10 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 THREAD_COORDINATOR_MISSING_FMT = "Thread coordinator is missing %s/%s"
+THREAD_COORDINATOR_MISSING_WAKE_MSG = (
+    "Thread coordinator is missing "
+    "wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
+)
 RECONNECT_SCHEDULER_MISSING_MSG = (
     "Reconnect scheduler is missing schedule_reconnect/_schedule_reconnect"
 )
@@ -114,7 +118,9 @@ class _LifecycleStateAccess:
             if callable(candidate):
                 try:
                     result = candidate()
-                except Exception:  # noqa: BLE001 - compatibility probe must fall through
+                except (
+                    Exception
+                ):  # noqa: BLE001 - compatibility probe must fall through
                     _log_ble_failure(
                         _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
                         "Error probing state manager %s()",
@@ -214,9 +220,7 @@ class _LifecycleThreadAccess:
     ) -> Callable[..., object]:
         """Resolve a required current/legacy coordinator callable."""
         coordinator = self._coordinator()
-        resolved = _resolve_declared_callable(
-            coordinator, public_name, legacy_name
-        )
+        resolved = _resolve_declared_callable(coordinator, public_name, legacy_name)
         if resolved is None:
             raise AttributeError(
                 THREAD_COORDINATOR_MISSING_FMT % (public_name, legacy_name)
@@ -292,25 +296,25 @@ class _LifecycleThreadAccess:
                     thread,
                 )
             return
-        logger.debug("Thread coordinator is missing join_thread/_join_thread")
+        logger.debug(THREAD_COORDINATOR_MISSING_FMT, "join_thread", "_join_thread")
 
     def set_event(self, event_name: str) -> None:
         """Set a coordinator event using current/legacy hooks."""
         if not self._best_effort_call("set_event", "_set_event", event_name):
-            logger.debug("Thread coordinator is missing set_event/_set_event")
+            logger.debug(THREAD_COORDINATOR_MISSING_FMT, "set_event", "_set_event")
 
     def clear_events(self, *event_names: str) -> None:
         """Clear coordinator events using current/legacy hooks."""
         if not self._best_effort_call("clear_events", "_clear_events", *event_names):
-            logger.debug("Thread coordinator is missing clear_events/_clear_events")
+            logger.debug(
+                THREAD_COORDINATOR_MISSING_FMT, "clear_events", "_clear_events"
+            )
 
     def wake_waiting_threads(self, *event_names: str) -> None:
         """Wake waiters with bulk hooks, then fall back to per-event hooks."""
         coordinator = self._coordinator()
         if coordinator is None:
-            logger.debug(
-                "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
-            )
+            logger.debug(THREAD_COORDINATOR_MISSING_WAKE_MSG)
             return
         if self._best_effort_call(
             "wake_waiting_threads", "_wake_waiting_threads", *event_names
@@ -336,9 +340,7 @@ class _LifecycleThreadAccess:
             if not failed:
                 return
             remaining = failed
-        logger.debug(
-            "Thread coordinator is missing wake_waiting_threads/_wake_waiting_threads/set_event/_set_event"
-        )
+        logger.debug(THREAD_COORDINATOR_MISSING_WAKE_MSG)
 
 
 class _LifecycleErrorAccess:
