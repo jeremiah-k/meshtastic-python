@@ -174,6 +174,8 @@ OUR_APP_VERSION: int = _OUR_APP_VERSION
 NODELESS_WANT_CONFIG_ID = _NODELESS_WANT_CONFIG_ID
 """A special thing to pass for want_config_id that instructs nodes to skip sending nodeinfos other than its own."""
 
+# COMPAT_STABLE_SHIM: preserve the historical package-root publishingThread
+# singleton while internal publishers depend on its private owner directly.
 publishingThread = _publishing.publishing_thread
 """Process-wide deferred publisher worker.
 

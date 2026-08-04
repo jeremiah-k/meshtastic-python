@@ -2,8 +2,8 @@
 
 The historical :data:`meshtastic.publishingThread` name remains a direct alias
 to :data:`publishing_thread`. Keeping construction here removes publisher
-ownership from the package facade while preserving import-time behavior and
-object identity for compatibility.
+ownership from the package facade while ensuring package-root and internal
+consumers share one process-wide worker.
 """
 
 from meshtastic.util import DeferredExecution
