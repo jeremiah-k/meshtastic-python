@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,6 +13,10 @@ import pytest
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node_runtime.admin_wait import (
     WAIT_ATTR_NAK,
+    _accepts_response_wait_attr,
+    _extract_request_id_from_response,
+    _extract_request_id_from_sent_packet,
+    _set_admin_wait_error,
     _wait_for_admin_ack,
 )
 from meshtastic.node_runtime.settings_runtime.admin import _NodeAdminCommandRuntime
@@ -52,8 +56,8 @@ class _ScopedIfaceDouble:
         self.legacy_waits += 1
 
 
-class _RemoteAdminNodeDouble:
-    """Minimal node double with a real bound ``_send_admin`` method."""
+class _AdminNodeDoubleBase:
+    """Shared state for modern and legacy bound admin sender doubles."""
 
     def __init__(self) -> None:
         self.iface = _ScopedIfaceDouble()
@@ -65,6 +69,10 @@ class _RemoteAdminNodeDouble:
 
     def onAckNak(self, _packet: dict[str, Any]) -> None:  # noqa: N802
         """ACK callback placeholder used only to select remote wait policy."""
+
+
+class _RemoteAdminNodeDouble(_AdminNodeDoubleBase):
+    """Minimal node double with the current bound ``_send_admin`` signature."""
 
     def _send_admin(
         self,
@@ -110,7 +118,7 @@ def test_remote_admin_command_registers_and_uses_request_scoped_ack_wait() -> No
     assert node.iface.legacy_waits == 0
 
 
-class _LegacyBoundAdminNodeDouble(_RemoteAdminNodeDouble):
+class _LegacyBoundAdminNodeDouble(_AdminNodeDoubleBase):
     """Bound admin sender that preserves the pre-scope private signature."""
 
     def _send_admin(
@@ -150,8 +158,8 @@ def test_admin_wait_falls_back_to_legacy_interface_contract() -> None:
     iface = SimpleNamespace(waitForAckNak=MagicMock())
     node = SimpleNamespace(iface=iface)
 
-    _wait_for_admin_ack(  # type: ignore[arg-type]
-        node,
+    _wait_for_admin_ack(
+        cast(Any, node),
         mesh_pb2.MeshPacket(id=99),
     )
 
@@ -346,14 +354,16 @@ def test_admin_send_helper_preserves_instance_level_transport_monkeypatch() -> N
 
 
 @pytest.mark.unit
-def test_fast_admin_ack_is_not_lost_between_send_and_wait() -> None:
+def test_fast_admin_ack_is_not_lost_between_send_and_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A synchronous ACK during transport send must satisfy the later scoped wait."""
     from types import MethodType
 
     from meshtastic.node import Node
 
     with MeshInterface(noProto=True) as iface:
-        iface.myInfo = SimpleNamespace(my_node_num=1)
+        iface.myInfo = mesh_pb2.MyNodeInfo(my_node_num=1)
         iface.localNode.nodeNum = 1
         iface._get_or_create_by_num = MethodType(  # type: ignore[method-assign]  # noqa: SLF001
             lambda _self, _node_num: {},
@@ -382,7 +392,7 @@ def test_fast_admin_ack_is_not_lost_between_send_and_wait() -> None:
             )
             return packet
 
-        iface._send_packet = _send_packet  # type: ignore[method-assign]  # noqa: SLF001
+        monkeypatch.setattr(iface, "_send_packet", _send_packet)
 
         request = remote._admin_command_runtime._send_command(  # noqa: SLF001
             admin_pb2.AdminMessage(reboot_seconds=1),
@@ -442,14 +452,16 @@ def test_metadata_response_marks_scoped_request_completion() -> None:
 
 
 @pytest.mark.unit
-def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request() -> None:
+def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Overlapping remote admin calls must resolve only from their own responses."""
     from types import MethodType
 
     from meshtastic.node import Node
 
     with MeshInterface(noProto=True) as iface:
-        iface.myInfo = SimpleNamespace(my_node_num=1)
+        iface.myInfo = mesh_pb2.MyNodeInfo(my_node_num=1)
         iface.localNode.nodeNum = 1
         iface._get_or_create_by_num = MethodType(  # type: ignore[method-assign]  # noqa: SLF001
             lambda _self, _node_num: {},
@@ -470,7 +482,7 @@ def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request() ->
                 sent_packets.append(snapshot)
             return packet
 
-        iface._send_packet = _send_packet  # type: ignore[method-assign]  # noqa: SLF001
+        monkeypatch.setattr(iface, "_send_packet", _send_packet)
 
         results: dict[int, str] = {}
         errors: dict[int, BaseException] = {}
@@ -541,3 +553,106 @@ def test_overlapping_remote_admin_commands_correlate_ack_and_nak_by_request() ->
         assert set(errors) == {2}
         assert "NO_RESPONSE" in str(errors[2])
         assert iface._active_wait_request_ids.get(WAIT_ATTR_NAK) is None  # noqa: SLF001
+
+
+@pytest.mark.unit
+def test_admin_wait_request_id_helpers_handle_missing_legacy_hooks() -> None:
+    """Request-id extraction should degrade safely on minimal compatibility doubles."""
+    node = SimpleNamespace(iface=SimpleNamespace())
+
+    assert _extract_request_id_from_sent_packet(node, None) is None  # type: ignore[arg-type]
+    assert (
+        _extract_request_id_from_sent_packet(  # type: ignore[arg-type]
+            node,
+            mesh_pb2.MeshPacket(id=0),
+        )
+        is None
+    )
+    assert _extract_request_id_from_response(node, {}) is None  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_admin_wait_error_noops_without_wait_error_hook() -> None:
+    """Minimal interface doubles without scoped error storage should remain supported."""
+    node = SimpleNamespace(iface=SimpleNamespace())
+
+    _set_admin_wait_error(  # type: ignore[arg-type]
+        node,
+        "ignored",
+        request_id=123,
+    )
+
+
+@pytest.mark.unit
+def test_admin_sender_signature_probe_handles_uninspectable_callable() -> None:
+    """Compatibility send callables with invalid signatures should disable private scoping."""
+    class _UninspectableCallable:
+        @property
+        def __signature__(self) -> object:
+            raise ValueError("no signature")
+
+        def __call__(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    assert _accepts_response_wait_attr(_UninspectableCallable()) is False
+
+
+@pytest.mark.unit
+def test_request_scoped_admin_wait_timeout_retires_request() -> None:
+    """A timed-out scoped ACK wait should retire its request bookkeeping."""
+    request_id = 909
+    with MeshInterface(noProto=True) as iface:
+        iface._timeout.expireTimeout = 0.01  # noqa: SLF001
+        iface._timeout.sleepInterval = 0.001  # noqa: SLF001
+        iface._clear_wait_error(WAIT_ATTR_NAK, request_id=request_id)  # noqa: SLF001
+
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Timed out waiting for an acknowledgment",
+        ):
+            iface._wait_for_ack_nak(request_id)  # noqa: SLF001
+
+        assert request_id not in iface._active_wait_request_ids.get(  # noqa: SLF001
+            WAIT_ATTR_NAK, set()
+        )
+        assert request_id in iface._retired_wait_request_ids[WAIT_ATTR_NAK]  # noqa: SLF001
+
+
+@pytest.mark.unit
+def test_settings_response_missing_expected_field_records_scoped_failure() -> None:
+    """A structurally valid settings envelope missing its field should NAK its request."""
+    iface = SimpleNamespace(
+        _acknowledgment=Acknowledgment(),
+        _extract_request_id_from_packet=lambda _packet: 818,
+        _mark_wait_acknowledged=MagicMock(),
+        _set_wait_error=MagicMock(),
+    )
+    node = SimpleNamespace(
+        iface=iface,
+        localConfig=localonly_pb2.LocalConfig(),
+        moduleConfig=localonly_pb2.LocalModuleConfig(),
+    )
+    raw = admin_pb2.AdminMessage()
+    packet: dict[str, Any] = {
+        "decoded": {
+            "admin": {
+                "getConfigResponse": {"device": {}},
+                "raw": raw,
+            }
+        }
+    }
+
+    _NodeSettingsResponseRuntime(node).handleSettingsResponse(packet)  # type: ignore[arg-type]
+
+    assert iface._acknowledgment.receivedNak is True
+    assert iface._set_wait_error.call_args_list == [
+        (
+            (WAIT_ATTR_NAK, "Received settings response without expected field 'device'."),
+            {},
+        ),
+        (
+            (WAIT_ATTR_NAK, "Received settings response without expected field 'device'."),
+            {"request_id": 818},
+        ),
+    ]
+    iface._mark_wait_acknowledged.assert_not_called()
