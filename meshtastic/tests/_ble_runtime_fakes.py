@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 
 from meshtastic.interfaces.ble.state import ConnectionState
@@ -17,6 +18,7 @@ class _FakeStateManager:
         connected: bool = False,
         closing: bool = False,
     ) -> None:
+        self.lock = threading.RLock()
         self.state = state
         self.connected = connected
         self.closing = closing

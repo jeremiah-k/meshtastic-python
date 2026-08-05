@@ -78,10 +78,41 @@ class _OwnershipSnapshot:
 
 
 def _client_is_connected_compat(client: object) -> bool:
-    """Return connected-state flag from public/legacy BLEClient members."""
-    for candidate_name, candidate in _iter_declared_members(
-        client, "isConnected", "is_connected", "_is_connected"
-    ):
+    """Return connected-state flag from public/legacy BLEClient members.
+
+    Parameters
+    ----------
+    client : object
+        Client-like object exposing current or legacy connectivity members.
+
+    Returns
+    -------
+    bool
+        First declared connectivity probe that yields a real boolean.
+
+    Raises
+    ------
+    AttributeError
+        If no declared compatibility candidate yields a boolean result.
+
+    Notes
+    -----
+    Declared-member resolution and callable probes are best effort. Failures
+    are reported as compatibility fallbacks and probing continues, so callers
+    share one explicit exception contract.
+    """
+    for candidate_name in ("isConnected", "is_connected", "_is_connected"):
+        try:
+            candidate = _get_declared_member(client, candidate_name)
+        except Exception:  # noqa: BLE001 - connectivity probes stay best effort
+            _log_ble_failure(
+                _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                "Error resolving BLE client connectivity member %s",
+                candidate_name,
+            )
+            continue
+        if candidate is None:
+            continue
         if callable(candidate):
             try:
                 connected = candidate()

@@ -180,6 +180,18 @@ class TestClientIsConnectedCompat:
         client._is_connected = True
         assert _client_is_connected_compat(client) is True
 
+    def test_client_is_connected_property_failure_falls_back(self) -> None:
+        """A failing declared descriptor should not abort later connectivity probes."""
+
+        class _Client:
+            @property
+            def isConnected(self) -> bool:  # noqa: N802 - compatibility spelling
+                raise RuntimeError("descriptor failed")
+
+            _is_connected = True
+
+        assert _client_is_connected_compat(_Client()) is True
+
 
 @pytest.mark.unit
 class TestLifecycleStateAccess:
@@ -194,6 +206,12 @@ class TestLifecycleStateAccess:
     def state_access(self, mock_iface: SimpleNamespace) -> _LifecycleStateAccess:
         """Create _LifecycleStateAccess instance."""
         return _LifecycleStateAccess(mock_iface)
+
+    def test_fake_state_manager_exposes_shared_lock(
+        self, mock_iface: SimpleNamespace
+    ) -> None:
+        """Lifecycle fakes should model the production shared-lock contract."""
+        assert mock_iface._state_manager.lock is not None
 
     def test_is_connected_via_public_callable(
         self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace

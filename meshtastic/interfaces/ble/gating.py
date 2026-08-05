@@ -50,6 +50,9 @@ class _BLEAddressRegistry:
 
     def __init__(self) -> None:
         """Initialize empty ownership, claim, and lock registries."""
+        # Invariant: never rebind these collections after construction. The
+        # module-level compatibility aliases below capture object identity, so
+        # registry reset must mutate in place (for example via ``.clear()``).
         self.lock = RLock()
         self.addr_locks: dict[str, RLock] = {}
         self.connected_addrs: set[str] = set()

@@ -264,7 +264,13 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         )
 
     def _has_ever_connected_session(self) -> bool:
-        """Return `True` when this interface published a connection."""
+        """Return ``True`` when this interface published a connection.
+
+        Notes
+        -----
+        This method must not acquire ``self._session.lock``. Callers such as
+        ``_verify_ownership_snapshot`` invoke it while already holding that lock.
+        """
         return self._session.ever_connected is True
 
     def _emit_verified_connection_side_effects(

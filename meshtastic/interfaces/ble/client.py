@@ -19,7 +19,10 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable, _get_declared_member)
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_member,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_OPERATION_FAILED,
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
@@ -290,13 +293,7 @@ class BLEClient:
         if error_handler is None:
             return None
 
-        hook = _get_declared_callable(error_handler, public_name)
-        if callable(hook):
-            return cast(Callable[..., Any], hook)
-        legacy_hook = _get_declared_callable(error_handler, legacy_name)
-        if callable(legacy_hook):
-            return cast(Callable[..., Any], legacy_hook)
-        return None
+        return _resolve_declared_callable(error_handler, public_name, legacy_name)
 
     def _error_handler_safe_execute(
         self,

@@ -96,7 +96,7 @@ class BLEManagementCommandsService:
 
     @staticmethod
     def _handler_for_shim(
-        iface: "BLEInterface | object",
+        iface: object,
         *,
         expected_method: str | None = None,
         ble_client_factory: Callable[..., BLEClient] | None = None,
