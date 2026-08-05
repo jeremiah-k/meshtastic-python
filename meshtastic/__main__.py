@@ -29,6 +29,7 @@ from pubsub import pub
 
 import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.runtime as cli_runtime
+from meshtastic.cli.context import ActionOutcome, CliContext
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
@@ -2559,11 +2560,6 @@ def onConnected(interface: MeshInterface) -> None:
     RuntimeError
         If `mt_config.args` is not set up before calling this function.
     """
-    closeNow = False  # Should we drop the connection after we finish?
-    waitForAckNak = (
-        False  # Should we wait for an acknowledgment if we send to a remote node?
-    )
-    skip_ack_wait = False  # OTA reboots the node before an ACK can be observed.
     try:
         args = mt_config.args
         if args is None:
@@ -2574,6 +2570,13 @@ def onConnected(interface: MeshInterface) -> None:
             "requestChannelAttempts": args.channel_fetch_attempts,
             "timeout": args.timeout,
         }
+        context = CliContext(
+            interface=interface,
+            args=args,
+            get_node_kwargs=getNode_kwargs,
+            outcome=ActionOutcome(wait_for_ack_nak=False),
+        )
+        outcome = context.outcome
 
         # do not print this line if we are exporting the config
         if not args.export_config:
@@ -2594,14 +2597,14 @@ def onConnected(interface: MeshInterface) -> None:
             interface.getNode(args.dest, False, **getNode_kwargs).setTime(args.set_time)
 
         if args.remove_position:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
 
             _cli_print("Removing fixed position and disabling fixed position setting")
             interface.getNode(args.dest, False, **getNode_kwargs).removeFixedPosition()
         elif args.setlat or args.setlon or args.setalt:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
 
             alt = 0
             lat = 0.0
@@ -2629,8 +2632,8 @@ def onConnected(interface: MeshInterface) -> None:
             )
 
         if args.set_owner or args.set_owner_short or args.set_is_unmessageable:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
 
             long_name = args.set_owner.strip() if args.set_owner else None
             short_name = args.set_owner_short.strip() if args.set_owner_short else None
@@ -2668,8 +2671,8 @@ def onConnected(interface: MeshInterface) -> None:
             )
 
         if args.set_canned_message:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if node.module_available(mesh_pb2.CANNEDMSG_CONFIG):
                 _cli_print(
@@ -2682,8 +2685,8 @@ def onConnected(interface: MeshInterface) -> None:
                 )
 
         if args.set_ringtone:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if node.module_available(mesh_pb2.EXTNOTIF_CONFIG):
                 _cli_print(f"Setting ringtone to {args.set_ringtone}")
@@ -2695,7 +2698,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.pos_fields:
             # If --pos-fields invoked with args, set position fields
-            closeNow = True
+            outcome.close_now = True
             positionConfig = interface.getNode(
                 args.dest, **getNode_kwargs
             ).localConfig.position
@@ -2721,7 +2724,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         elif args.pos_fields is not None:
             # If --pos-fields invoked without args, read and display current value
-            closeNow = True
+            outcome.close_now = True
             positionConfig = interface.getNode(
                 args.dest, **getNode_kwargs
             ).localConfig.position
@@ -2738,7 +2741,7 @@ def onConnected(interface: MeshInterface) -> None:
                 _cli_exit(
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
-            closeNow = True
+            outcome.close_now = True
             _cli_print(f"Setting Ham ID to {ham_id} and turning off encryption")
             interface.getNode(args.dest, **getNode_kwargs).setOwner(
                 ham_id, is_licensed=True
@@ -2749,55 +2752,55 @@ def onConnected(interface: MeshInterface) -> None:
             ).turnOffEncryptionOnPrimaryChannel()
 
         if args.reboot:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
+            outcome.skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).reboot()
 
         if args.reboot_ota:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
+            outcome.skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).rebootOTA()
 
         if args.ota_update:
-            closeNow = True
-            skip_ack_wait = True
+            outcome.close_now = True
+            outcome.skip_ack_wait = True
             _handle_ota_update(interface, args, getNode_kwargs)
             return
 
         if args.enter_dfu:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
+            outcome.skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).enterDFUMode()
 
         if args.shutdown:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
+            outcome.skip_ack_wait = True
             interface.getNode(args.dest, False, **getNode_kwargs).shutdown()
 
         if args.device_metadata:
-            closeNow = True
+            outcome.close_now = True
             interface.getNode(args.dest, False, **getNode_kwargs).getMetadata()
 
         if args.begin_edit:
-            closeNow = True
+            outcome.close_now = True
             interface.getNode(
                 args.dest, False, **getNode_kwargs
             ).beginSettingsTransaction()
 
         if args.commit_edit:
-            closeNow = True
+            outcome.close_now = True
             interface.getNode(
                 args.dest, False, **getNode_kwargs
             ).commitSettingsTransaction()
 
         if args.factory_reset or args.factory_reset_device:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
+            outcome.skip_ack_wait = True
 
             full = bool(args.factory_reset_device)
             reset_node = interface.getNode(args.dest, False, **getNode_kwargs)
@@ -2823,55 +2826,55 @@ def onConnected(interface: MeshInterface) -> None:
                 _post_factory_reset_ready_probe(interface)
 
         if args.remove_node:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             interface.getNode(args.dest, False, **getNode_kwargs).removeNode(
                 args.remove_node
             )
 
         if args.set_favorite_node:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             interface.getNode(args.dest, False, **getNode_kwargs).setFavorite(
                 args.set_favorite_node
             )
 
         if args.remove_favorite_node:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             interface.getNode(args.dest, False, **getNode_kwargs).removeFavorite(
                 args.remove_favorite_node
             )
 
         if args.set_ignored_node:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             interface.getNode(args.dest, False, **getNode_kwargs).setIgnored(
                 args.set_ignored_node
             )
 
         if args.remove_ignored_node:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             interface.getNode(args.dest, False, **getNode_kwargs).removeIgnored(
                 args.remove_ignored_node
             )
 
         if args.reset_nodedb:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             interface.getNode(args.dest, False, **getNode_kwargs).resetNodeDb()
 
         if args.add_contact:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True  # addContactURL() owns the remote ACK wait
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
+            outcome.skip_ack_wait = True  # addContactURL() owns the remote ACK wait
             interface.getNode(args.dest, False, **getNode_kwargs).addContactURL(
                 args.add_contact
             )
 
         if args.sendtext:
-            closeNow = True
+            outcome.close_now = True
             channelIndex = mt_config.channel_index or 0
             if checkChannel(interface, channelIndex):
                 _cli_print(
@@ -2965,7 +2968,7 @@ def onConnected(interface: MeshInterface) -> None:
                         f"Writing GPIO mask 0x{bitmask:x} with value 0x{bitval:x} to {args.dest}"
                     )
                     rhc.writeGPIOs(args.dest, bitmask, bitval)
-                    closeNow = True
+                    outcome.close_now = True
 
                 if args.gpio_rd:
                     bitmask = int(args.gpio_rd, 16)
@@ -2990,26 +2993,26 @@ def onConnected(interface: MeshInterface) -> None:
 
         # handle settings
         if args.set:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             _handle_set_command(interface, args, getNode_kwargs)
 
         if args.configure:
-            closeNow = True
-            waitForAckNak = True
+            outcome.close_now = True
+            outcome.wait_for_ack_nak = True
             _settings_transaction_started, _phase1_channel_url_applied = (
                 _handle_configure_command(interface, args, getNode_kwargs)
             )
             if _settings_transaction_started or _phase1_channel_url_applied:
-                waitForAckNak = False
-                skip_ack_wait = True
+                outcome.wait_for_ack_nak = False
+                outcome.skip_ack_wait = True
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:
                 print("Exporting configuration of remote nodes is not supported.")
                 return
 
-            closeNow = True
+            outcome.close_now = True
             config_txt = exportConfig(interface)
 
             if args.export_config == "-":
@@ -3024,7 +3027,7 @@ def onConnected(interface: MeshInterface) -> None:
                     _cli_exit(f"ERROR: Failed to write config file: {e}")
 
         if args.ch_set_url:
-            closeNow = True
+            outcome.close_now = True
             interface.getNode(args.dest, **getNode_kwargs).setURL(
                 args.ch_set_url, addOnly=False
             )
@@ -3032,7 +3035,7 @@ def onConnected(interface: MeshInterface) -> None:
         # handle changing channels
 
         if args.ch_add_url:
-            closeNow = True
+            outcome.close_now = True
             interface.getNode(args.dest, **getNode_kwargs).setURL(
                 args.ch_add_url, addOnly=True
             )
@@ -3046,7 +3049,7 @@ def onConnected(interface: MeshInterface) -> None:
                     "remove --ch-index and retry. Use --ch-set, --ch-del, --ch-enable, "
                     "or --ch-disable when targeting a specific index."
                 )
-            closeNow = True
+            outcome.close_now = True
             if len(args.ch_add) > 10:
                 _cli_exit("Warning: Channel name must be shorter. Channel not added.")
             n = interface.getNode(args.dest, **getNode_kwargs)
@@ -3073,7 +3076,7 @@ def onConnected(interface: MeshInterface) -> None:
                 mt_config.channel_index = ch.index
 
         if args.ch_del:
-            closeNow = True
+            outcome.close_now = True
 
             ch_del_idx = mt_config.channel_index
             if ch_del_idx is None:
@@ -3145,7 +3148,7 @@ def onConnected(interface: MeshInterface) -> None:
             _set_simple_config(preset_val)
 
         if args.ch_set or args.ch_enable or args.ch_disable:
-            closeNow = True
+            outcome.close_now = True
 
             _idx: int | None = mt_config.channel_index
             if _idx is None:
@@ -3234,7 +3237,7 @@ def onConnected(interface: MeshInterface) -> None:
                 )
 
         if args.get_canned_message:
-            closeNow = True
+            outcome.close_now = True
             print("")
             messages = interface.getNode(
                 args.dest, **getNode_kwargs
@@ -3242,13 +3245,13 @@ def onConnected(interface: MeshInterface) -> None:
             print(f"canned_plugin_message:{messages}")
 
         if args.get_ringtone:
-            closeNow = True
+            outcome.close_now = True
             print("")
             ringtone = interface.getNode(args.dest, **getNode_kwargs).get_ringtone()
             print(f"ringtone:{ringtone}")
 
         if args.show_region_presets:
-            closeNow = True
+            outcome.close_now = True
             if not _is_local_destination(interface, args.dest):
                 print(
                     "Region/preset capabilities are available only from the local node."
@@ -3302,7 +3305,7 @@ def onConnected(interface: MeshInterface) -> None:
             None,
         )
         if lockdown_action is not None:
-            closeNow = True
+            outcome.close_now = True
             if not _is_local_destination(interface, args.dest):
                 _cli_exit(
                     "Lockdown commands apply only to the directly connected local node."
@@ -3385,7 +3388,7 @@ def onConnected(interface: MeshInterface) -> None:
                 interface.showInfo()
                 print("")
                 interface.getNode(args.dest, **getNode_kwargs).showInfo()
-                closeNow = True
+                outcome.close_now = True
                 print("")
                 pypi_version = meshtastic.util.check_if_newer_version()
                 if pypi_version:
@@ -3400,7 +3403,7 @@ def onConnected(interface: MeshInterface) -> None:
                 )
 
         if args.get:
-            closeNow = True
+            outcome.close_now = True
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             found = False
             for pref in args.get:
@@ -3410,7 +3413,7 @@ def onConnected(interface: MeshInterface) -> None:
                 _cli_print("Completed getting preferences")
 
         if args.nodes:
-            closeNow = True
+            outcome.close_now = True
             if args.dest != BROADCAST_ADDR:
                 print("Showing node list of a remote node is not supported.")
                 return
@@ -3423,7 +3426,7 @@ def onConnected(interface: MeshInterface) -> None:
             return
 
         if args.qr or args.qr_all:
-            closeNow = True
+            outcome.close_now = True
             url = interface.getNode(args.dest, True, **getNode_kwargs).getURL(
                 includeAll=args.qr_all
             )
@@ -3439,7 +3442,7 @@ def onConnected(interface: MeshInterface) -> None:
                 print("Install pyqrcode to view a QR code printed to terminal.")
 
         if args.contact_qr:
-            closeNow = True
+            outcome.close_now = True
             url = interface.localNode.getContactURL(
                 args.contact_qr,
                 should_ignore=args.contact_ignore,
@@ -3476,7 +3479,7 @@ def onConnected(interface: MeshInterface) -> None:
                         )
                     stress = PowerStress(interface)
                     stress.run()
-                    closeNow = True  # exit immediately after stress test
+                    outcome.close_now = True  # exit immediately after stress test
             else:
                 _cli_exit(
                     "The powermon module could not be loaded. "
@@ -3485,14 +3488,14 @@ def onConnected(interface: MeshInterface) -> None:
                 )
 
         if args.listen:
-            closeNow = False
+            outcome.close_now = False
 
         have_tunnel = platform.system() == "Linux"
         if have_tunnel and args.tunnel:
             if args.dest != BROADCAST_ADDR:
                 _cli_exit("A tunnel can only be created using the local node.", 1)
             # Even if others said we could close, stay open if the user asked for a tunnel
-            closeNow = False
+            outcome.close_now = False
             if interface.noProto:
                 logger.warning("Not starting Tunnel - disabled by noProto")
             else:
@@ -3503,13 +3506,13 @@ def onConnected(interface: MeshInterface) -> None:
                 else:
                     tunnel.Tunnel(interface)
 
-        if not skip_ack_wait and (
-            args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak)
+        if not outcome.skip_ack_wait and (
+            args.ack or (args.dest != BROADCAST_ADDR and outcome.wait_for_ack_nak)
         ):
             _cli_print(
                 "Waiting for an acknowledgment from remote node (this could take a while)"
             )
-            interface.getNode(args.dest, False, **getNode_kwargs).iface.waitForAckNak()
+            interface.getNode(args.dest, False, **getNode_kwargs).iface.outcome.wait_for_ack_nak()
 
         if args.wait_to_disconnect:
             _cli_print(
@@ -3518,7 +3521,7 @@ def onConnected(interface: MeshInterface) -> None:
             time.sleep(int(args.wait_to_disconnect))
 
         # if the user didn't ask for serial debugging output, we might want to exit after we've done our operation
-        if (not args.seriallog) and closeNow:
+        if (not args.seriallog) and outcome.close_now:
             try:
                 interface.close()
             except Exception:
