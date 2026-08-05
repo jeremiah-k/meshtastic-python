@@ -518,6 +518,7 @@ def test_transient_retry_revalidates_concurrent_counter_reset(
     assert state.read_retry_count == 1
     assert delay_attempts == [0]
 
+
 def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock() -> None:
     """Deferred restart scheduling must not begin while the session lock is held."""
     from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
@@ -586,7 +587,9 @@ def test_receive_lifecycle_thread_probes_run_outside_session_lock() -> None:
     coordinator = BLEReceiveLifecycleCoordinator(  # type: ignore[arg-type]
         iface, session_state=state
     )
-    staged = SimpleNamespace(name="ReplacementReceive", ident=None, is_alive=lambda: False)
+    staged = SimpleNamespace(
+        name="ReplacementReceive", ident=None, is_alive=lambda: False
+    )
 
     created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
         name="ReplacementReceive",
@@ -1119,6 +1122,7 @@ def test_transient_retry_revalidation_is_bounded_under_continuous_churn(
 
     assert len(policy_attempts) == TRANSIENT_RETRY_POLICY_REVALIDATION_MAX_ATTEMPTS
     assert delay_attempts == []
+    assert "decision superseded by concurrent retry-state changes" in caplog.text
 
 
 def test_disconnect_reconnect_closing_probe_runs_outside_session_lock() -> None:

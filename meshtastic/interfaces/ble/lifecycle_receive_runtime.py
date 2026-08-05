@@ -247,6 +247,21 @@ class BLEReceiveLifecycleCoordinator:
         session lock.  The state snapshot is revalidated before any mutation so
         arbitrary collaborator code cannot extend the critical section without
         allowing a stale probe result to overwrite newer lifecycle state.
+
+        Parameters
+        ----------
+        name : str
+            Thread name used for diagnostics and deferred restart helpers.
+        reset_recovery : bool
+            Whether recovery attempts should reset after a successful start.
+        create_runtime_thread : Callable[..., ThreadLike]
+            Factory used to create the staged receive thread.
+
+        Returns
+        -------
+        tuple[ThreadLike | None, int | None]
+            Staged thread and the pre-start recovery-attempt snapshot, or
+            ``(None, None)`` when no thread should start.
         """
         iface = self._iface
         expected_existing: ThreadLike | None = None

@@ -1078,7 +1078,7 @@ class BLEReceiveRecoveryController:
                     next_retry_count = 0
                 break
         else:
-            logger.debug(
+            logger.warning(
                 "Transient BLE read error decision superseded by concurrent retry-state changes after %d attempts; ignoring stale error.",
                 TRANSIENT_RETRY_POLICY_REVALIDATION_MAX_ATTEMPTS,
             )
