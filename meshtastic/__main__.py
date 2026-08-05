@@ -28,6 +28,7 @@ import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.channel_contact_actions as cli_channel_contact_actions
 import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
+import meshtastic.cli.dispatch as cli_dispatch
 import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.runtime as cli_runtime
 from meshtastic.cli.context import ActionOutcome, CliContext
@@ -1619,173 +1620,83 @@ def _validate_cli_show_fields(interface: MeshInterface, show_fields: list[str]) 
         )
 
 
+def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
+    """Build connected-action hooks from historical ``__main__`` seams."""
+    device_hooks = cli_device_actions.DeviceActionHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        set_pref=setPref,
+        is_local_destination=_is_local_destination,
+        send_local_factory_reset_and_wait=_send_local_factory_reset_and_wait,
+        post_factory_reset_ready_probe=_post_factory_reset_ready_probe,
+        handle_ota_update=_handle_ota_update,
+        build_lockdown_auth=build_lockdown_auth,
+        read_lockdown_passphrase_file=read_lockdown_passphrase_file,
+        send_lockdown_auth=send_lockdown_auth,
+        validate_lockdown_passphrase=validate_lockdown_passphrase,
+    )
+    channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        get_channel_index=lambda: mt_config.channel_index,
+        set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
+        resolve_pref=_resolve_pref,
+        set_pref=setPref,
+        fatal_preference_value_errors=_fatal_preference_value_errors,
+        preference_value_error=_PreferenceValueError,
+        print_channel_field_choices=_print_channel_field_choices,
+        is_local_destination=_is_local_destination,
+        modem_preset_shorthands=_MODEM_PRESET_SHORTHANDS,
+        qr_create=pyqrcode.create if pyqrcode is not None else None,
+    )
+    configure_hooks = cli_configure_actions.ConfigureActionHooks(
+        handle_set_command=_handle_set_command,
+        handle_configure_command=_handle_configure_command,
+        export_config=exportConfig,
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+    )
+    service_hooks = cli_messaging_service_actions.MessagingServiceHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        get_channel_index=lambda: mt_config.channel_index,
+        check_channel=checkChannel,
+        remote_hardware_client=remote_hardware.RemoteHardwareClient,
+        get_pref=getPref,
+        validate_cli_show_fields=_validate_cli_show_fields,
+        newer_version=meshtastic.util.check_if_newer_version,
+        install_upgrade_hint=INSTALL_UPGRADE_HINT,
+        powermon_available=lambda: have_powermon,
+        powermon_error=lambda: powermon_exception,
+        log_set_factory=LogSet,
+        power_stress_factory=PowerStress,
+        get_meter=lambda: meter,
+    )
+    return cli_dispatch.DispatchHooks(
+        cli_print=_cli_print,
+        device=device_hooks,
+        channel_contact=channel_contact_hooks,
+        configure=configure_hooks,
+        services=service_hooks,
+    )
+
+
 def onConnected(interface: MeshInterface) -> None:
-    """Execute CLI actions specified by parsed command-line arguments using the provided MeshInterface.
-
-    Performs whichever device or network operations were requested via mt_config.args (for
-    example: updating time or owner, configuring position or channels, sending
-    text/telemetry/position messages, node administration, exporting/importing
-    configuration, reboot/shutdown, starting tunnels or power-monitoring, and related
-    read/write operations). Actions may modify remote devices, start long-running
-    services, wait for acknowledgments, close the interface, or exit the process on
-    fatal errors.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        An established mesh interface used to perform the requested device and network operations.
-
-    Raises
-    ------
-    RuntimeError
-        If `mt_config.args` is not set up before calling this function.
-    """
+    """Execute parsed connected CLI actions on an established interface."""
     try:
         args = mt_config.args
         if args is None:
             raise RuntimeError("onConnected called without args being set up")
-
-        # convenient place to store any keyword args we pass to getNode
-        getNode_kwargs = {
-            "requestChannelAttempts": args.channel_fetch_attempts,
-            "timeout": args.timeout,
-        }
         context = CliContext(
             interface=interface,
             args=args,
-            get_node_kwargs=getNode_kwargs,
+            get_node_kwargs={
+                "requestChannelAttempts": args.channel_fetch_attempts,
+                "timeout": args.timeout,
+            },
             outcome=ActionOutcome(wait_for_ack_nak=False),
         )
-        outcome = context.outcome
-
-        # do not print this line if we are exporting the config
-        if not args.export_config:
-            dev_path = getattr(interface, "devPath", "")
-            if dev_path:
-                tty_name = os.path.basename(dev_path)
-                stable_path = getattr(interface, "_stable_path", None)
-                if stable_path and stable_path != dev_path:
-                    _cli_print(
-                        f"Connected to radio on {tty_name} (stable: {stable_path})"
-                    )
-                else:
-                    _cli_print(f"Connected to radio on {tty_name}")
-            else:
-                _cli_print("Connected to radio")
-
-        device_hooks = cli_device_actions.DeviceActionHooks(
-            cli_exit=_cli_exit,
-            cli_print=_cli_print,
-            set_pref=setPref,
-            is_local_destination=_is_local_destination,
-            send_local_factory_reset_and_wait=_send_local_factory_reset_and_wait,
-            post_factory_reset_ready_probe=_post_factory_reset_ready_probe,
-            handle_ota_update=_handle_ota_update,
-            build_lockdown_auth=build_lockdown_auth,
-            read_lockdown_passphrase_file=read_lockdown_passphrase_file,
-            send_lockdown_auth=send_lockdown_auth,
-            validate_lockdown_passphrase=validate_lockdown_passphrase,
-        )
-        cli_device_actions.handle_device_actions(context, device_hooks)
-        if outcome.stop_processing:
-            return
-
-        channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
-            cli_exit=_cli_exit,
-            cli_print=_cli_print,
-            get_channel_index=lambda: mt_config.channel_index,
-            set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
-            resolve_pref=_resolve_pref,
-            set_pref=setPref,
-            fatal_preference_value_errors=_fatal_preference_value_errors,
-            preference_value_error=_PreferenceValueError,
-            print_channel_field_choices=_print_channel_field_choices,
-            is_local_destination=_is_local_destination,
-            modem_preset_shorthands=_MODEM_PRESET_SHORTHANDS,
-            qr_create=pyqrcode.create if pyqrcode is not None else None,
-        )
-        service_hooks = cli_messaging_service_actions.MessagingServiceHooks(
-            cli_exit=_cli_exit,
-            cli_print=_cli_print,
-            get_channel_index=lambda: mt_config.channel_index,
-            check_channel=checkChannel,
-            remote_hardware_client=remote_hardware.RemoteHardwareClient,
-            get_pref=getPref,
-            validate_cli_show_fields=_validate_cli_show_fields,
-            newer_version=meshtastic.util.check_if_newer_version,
-            install_upgrade_hint=INSTALL_UPGRADE_HINT,
-            powermon_available=lambda: have_powermon,
-            powermon_error=lambda: powermon_exception,
-            log_set_factory=LogSet,
-            power_stress_factory=PowerStress,
-            get_meter=lambda: meter,
-        )
-        cli_channel_contact_actions.handle_contact_import(context)
-        cli_messaging_service_actions.handle_messaging_actions(context, service_hooks)
-
-        # handle settings
-        configure_action_hooks = cli_configure_actions.ConfigureActionHooks(
-            handle_set_command=_handle_set_command,
-            handle_configure_command=_handle_configure_command,
-            export_config=exportConfig,
-            cli_exit=_cli_exit,
-            cli_print=_cli_print,
-        )
-        cli_configure_actions.handle_configure_actions(context, configure_action_hooks)
-        if outcome.stop_processing:
-            return
-
-        cli_channel_contact_actions.handle_channel_mutations(
-            context, channel_contact_hooks
-        )
-
-        cli_messaging_service_actions.handle_content_reads(context)
-
-        cli_channel_contact_actions.handle_region_preset_display(
-            context, channel_contact_hooks
-        )
-
-        cli_device_actions.handle_lockdown_action(context, device_hooks)
-
-        cli_messaging_service_actions.handle_information_actions(
-            context, service_hooks
-        )
-        if outcome.stop_processing:
-            return
-
-        cli_channel_contact_actions.handle_channel_contact_display(
-            context, channel_contact_hooks
-        )
-
-        cli_messaging_service_actions.handle_long_running_services(
-            context, service_hooks
-        )
-
-        if not outcome.skip_ack_wait and (
-            args.ack or (args.dest != BROADCAST_ADDR and outcome.wait_for_ack_nak)
-        ):
-            _cli_print(
-                "Waiting for an acknowledgment from remote node (this could take a while)"
-            )
-            interface.getNode(args.dest, False, **getNode_kwargs).iface.waitForAckNak()
-
-        if args.wait_to_disconnect:
-            _cli_print(
-                f"Waiting {args.wait_to_disconnect} seconds before disconnecting"
-            )
-            time.sleep(int(args.wait_to_disconnect))
-
-        # if the user didn't ask for serial debugging output, we might want to exit after we've done our operation
-        if (not args.seriallog) and outcome.close_now:
-            try:
-                interface.close()
-            except Exception:
-                logger.debug("Error during interface close", exc_info=True)
-
-        # Release resources retained by connected long-running actions.
-        for cleanup in reversed(outcome.cleanup_callbacks):
-            cleanup()
-
+        cli_dispatch.dispatch_connected(context, _build_connected_dispatch_hooks())
     except Exception as ex:
         logger.exception("Unhandled exception in onConnected: %s", ex)
         _cli_exit(f"Aborting due to: {ex}", 1)
