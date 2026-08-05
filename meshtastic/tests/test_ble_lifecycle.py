@@ -213,12 +213,13 @@ class TestLifecycleStateAccess:
         """Lifecycle fakes should model the production shared-lock contract."""
         assert mock_iface._state_manager.lock is not None
 
-    def test_is_connected_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
-    ) -> None:
+    def test_is_connected_via_public_callable(self) -> None:
         """Test is_connected via public callable."""
-        mock_iface._state_manager.connected = True
+        probe = MagicMock(return_value=True)
+        state_access = _LifecycleStateAccess(SimpleNamespace(is_connected=probe))
+
         assert state_access.is_connected() is True
+        probe.assert_called_once_with()
 
     def test_is_connected_via_public_bool(
         self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
@@ -273,12 +274,13 @@ class TestLifecycleStateAccess:
         with pytest.raises(AttributeError, match=STATE_MANAGER_MISSING_CONNECTED_MSG):
             state_access.is_connected()
 
-    def test_current_state_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
-    ) -> None:
+    def test_current_state_via_public_callable(self) -> None:
         """Test current_state via public callable."""
-        mock_iface._state_manager.state = ConnectionState.CONNECTED
+        probe = MagicMock(return_value=ConnectionState.CONNECTED)
+        state_access = _LifecycleStateAccess(SimpleNamespace(current_state=probe))
+
         assert state_access.current_state() == ConnectionState.CONNECTED
+        probe.assert_called_once_with()
 
     def test_current_state_via_public_attribute(
         self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
@@ -395,12 +397,43 @@ class TestLifecycleStateAccess:
         mock_iface._state_manager._reset_to_disconnected = MagicMock(return_value=True)
         assert state_access.reset_to_disconnected() is True
 
-    def test_is_closing_via_public_callable(
-        self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace
-    ) -> None:
+    def test_transition_non_bool_public_result_does_not_repeat_mutation(self) -> None:
+        """A successful public transition must not invoke the legacy mutator too."""
+        public_transition = MagicMock(return_value=None)
+        legacy_transition = MagicMock(return_value=True)
+        state_access = _LifecycleStateAccess(
+            SimpleNamespace(
+                transition_to=public_transition,
+                _transition_to=legacy_transition,
+            )
+        )
+
+        assert state_access.transition_to(ConnectionState.CONNECTING) is True
+        public_transition.assert_called_once_with(ConnectionState.CONNECTING)
+        legacy_transition.assert_not_called()
+
+    def test_reset_non_bool_public_result_does_not_repeat_mutation(self) -> None:
+        """A successful public reset must not invoke the legacy mutator too."""
+        public_reset = MagicMock(return_value=None)
+        legacy_reset = MagicMock(return_value=True)
+        state_access = _LifecycleStateAccess(
+            SimpleNamespace(
+                reset_to_disconnected=public_reset,
+                _reset_to_disconnected=legacy_reset,
+            )
+        )
+
+        assert state_access.reset_to_disconnected() is True
+        public_reset.assert_called_once_with()
+        legacy_reset.assert_not_called()
+
+    def test_is_closing_via_public_callable(self) -> None:
         """Test is_closing via public callable."""
-        mock_iface._state_manager.closing = True
+        probe = MagicMock(return_value=True)
+        state_access = _LifecycleStateAccess(SimpleNamespace(is_closing=probe))
+
         assert state_access.is_closing() is True
+        probe.assert_called_once_with()
 
     def test_is_closing_via_public_bool(
         self, state_access: _LifecycleStateAccess, mock_iface: SimpleNamespace

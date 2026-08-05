@@ -4,6 +4,7 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from meshtastic._core_constants import LAST_DISCONNECT_SOURCE_TYPE_ERROR
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_lock,
     _get_declared_member,
@@ -208,8 +209,9 @@ class _BLESessionStateCompatMixin:
     def _last_disconnect_source(self, value: str | None) -> None:
         if value is not None and not isinstance(value, str):
             raise TypeError(
-                "_last_disconnect_source must be a str or None, "
-                f"got {type(value).__name__}"
+                LAST_DISCONNECT_SOURCE_TYPE_ERROR.format(
+                    type_name=type(value).__name__
+                )
             )
         self._get_session_state().last_disconnect_source = value
 

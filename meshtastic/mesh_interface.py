@@ -22,7 +22,11 @@ from pubsub import pub
 
 import meshtastic.node
 from meshtastic._publishing import publishing_thread as publishingThread
-from meshtastic._core_constants import BROADCAST_ADDR, NODELESS_WANT_CONFIG_ID
+from meshtastic._core_constants import (
+    BROADCAST_ADDR,
+    LAST_DISCONNECT_SOURCE_TYPE_ERROR,
+    NODELESS_WANT_CONFIG_ID,
+)
 from meshtastic._response_types import ResponseHandler
 from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
@@ -266,8 +270,9 @@ class MeshInterface:  # pylint: disable=R0902
     def _last_disconnect_source(self, value: str | None) -> None:
         if value is not None and not isinstance(value, str):
             raise TypeError(
-                "_last_disconnect_source must be a str or None, "
-                f"got {type(value).__name__}"
+                LAST_DISCONNECT_SOURCE_TYPE_ERROR.format(
+                    type_name=type(value).__name__
+                )
             )
         self.__dict__["_last_disconnect_source"] = value
 
@@ -448,7 +453,7 @@ class MeshInterface:  # pylint: disable=R0902
             return f"interface failure: {self.failure}"
         if self._closing:
             return "interface is closing"
-        disconnect_source = getattr(self, "_last_disconnect_source", None)
+        disconnect_source = self._last_disconnect_source
         if disconnect_source and not self.isConnected.is_set():
             return f"interface disconnected ({disconnect_source})"
         return None
@@ -1571,7 +1576,7 @@ class MeshInterface:  # pylint: disable=R0902
                             abort_reason,
                             self.isConnected.is_set(),
                             self.failure,
-                            getattr(self, "_last_disconnect_source", None) or "unknown",
+                            self._last_disconnect_source or "unknown",
                         )
                         raise MeshInterface.MeshInterfaceError(abort_reason)
             if not connected:
@@ -1586,7 +1591,7 @@ class MeshInterface:  # pylint: disable=R0902
                             abort_reason_str,
                             self.isConnected.is_set(),
                             self.failure,
-                            getattr(self, "_last_disconnect_source", None) or "unknown",
+                            self._last_disconnect_source or "unknown",
                         )
                         raise MeshInterface.MeshInterfaceError(abort_reason_str)
                 logger.log(
@@ -1594,7 +1599,7 @@ class MeshInterface:  # pylint: disable=R0902
                     "Timed out waiting for connection completion (isConnected=%s, failure=%r, last_disconnect_source=%s)",
                     self.isConnected.is_set(),
                     self.failure,
-                    getattr(self, "_last_disconnect_source", None) or "unknown",
+                    self._last_disconnect_source or "unknown",
                 )
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for connection completion"

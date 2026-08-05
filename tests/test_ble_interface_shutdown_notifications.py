@@ -1454,7 +1454,7 @@ def test_register_notifications_rolls_back_backend_if_local_tracking_fails(
 ) -> None:
     """A local FROMNUM tracking failure must unwind the active backend notify."""
     client = _FromNumRegistrationClient()
-    iface = _build_interface(monkeypatch, client)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
     try:
         _prepare_provisional_notification_registration(iface, published_client=None)
 

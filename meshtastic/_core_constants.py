@@ -8,6 +8,7 @@ __all__ = (
     "BROADCAST_ADDR",
     "BROADCAST_NUM",
     "DECODE_ERROR_KEY",
+    "LAST_DISCONNECT_SOURCE_TYPE_ERROR",
     "LOCAL_ADDR",
     "NODELESS_WANT_CONFIG_ID",
     "OUR_APP_VERSION",
@@ -31,3 +32,8 @@ NODELESS_WANT_CONFIG_ID = 69420
 
 DECODE_ERROR_KEY = "error"
 """Dictionary key used to retain protobuf decode failures in packet data."""
+
+LAST_DISCONNECT_SOURCE_TYPE_ERROR = (
+    "_last_disconnect_source must be a str or None, got {type_name}"
+)
+"""Stable validation message for disconnect-source compatibility views."""

@@ -167,7 +167,13 @@ class _LifecycleStateAccess:
     def _call_bool(
         self, missing_message: str, names: tuple[str, ...], *args: object
     ) -> bool:
-        """Call public/legacy state-manager members until one returns ``bool``."""
+        """Call the first successful public/legacy mutating state hook.
+
+        A successful mutation is authoritative even when a legacy-compatible
+        hook returns ``None`` or another non-boolean value. Falling through to
+        the next hook after such a call can apply the same transition twice.
+        Exceptions still fall through to the next declared compatibility hook.
+        """
         for member_name, candidate in _iter_declared_callables(
             self._state_manager, *names
         ):
@@ -182,6 +188,7 @@ class _LifecycleStateAccess:
                 continue
             if isinstance(result, bool):
                 return result
+            return True
         raise AttributeError(missing_message)
 
     def is_connected(self) -> bool:
