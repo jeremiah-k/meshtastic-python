@@ -16,7 +16,6 @@ import os
 import platform
 import sys
 import textwrap
-import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
@@ -28,6 +27,7 @@ from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
 import meshtastic.cli.config_io as cli_config_io
+import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.runtime as cli_runtime
 from meshtastic.cli.context import ActionOutcome, CliContext
 import meshtastic.ota
@@ -35,7 +35,7 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import mt_config, remote_hardware
-from meshtastic._core_constants import BROADCAST_ADDR, LOCAL_ADDR
+from meshtastic._core_constants import BROADCAST_ADDR, LOCAL_ADDR  # noqa: F401
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
@@ -78,7 +78,7 @@ from meshtastic.lockdown import (
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime import node_data
 from meshtastic.protobuf import (
-    admin_pb2,
+    admin_pb2,  # noqa: F401 - legacy __main__ compatibility export
     channel_pb2,
     config_pb2,
     localonly_pb2,
@@ -232,13 +232,13 @@ CONFIG_RECONNECT_WAIT_SECONDS = 15.0
 SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
 """Timeout for post-setURL transport stability before opening Phase 2 writes."""
 
-FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
+FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = cli_device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
 """Timeout for post-reset reconnect probe inside factory-reset command."""
 
-FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = cli_device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
 """Maximum time to observe a local reset ACK/NAK or reboot disconnect."""
 
-FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = 0.05
+FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = cli_device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
 """Polling interval while waiting for local reset command acceptance."""
 
 CONFIGURE_PHASE1_HEADER = (
@@ -273,9 +273,9 @@ GPIO_READ_MAX_POLLS = 10
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
 
 # OTA CLI timing and retry delay
-OTA_REBOOT_WAIT_SECONDS: float = 5.0
-OTA_RETRY_DELAY_SECONDS: float = 2.0
-OTA_MAX_RETRIES: int = 5
+OTA_REBOOT_WAIT_SECONDS = cli_device_actions.OTA_REBOOT_WAIT_SECONDS
+OTA_RETRY_DELAY_SECONDS = cli_device_actions.OTA_RETRY_DELAY_SECONDS
+OTA_MAX_RETRIES = cli_device_actions.OTA_MAX_RETRIES
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 """Sleep duration for the CLI main loop when listening on non-serial interfaces."""
@@ -620,241 +620,27 @@ def _send_local_factory_reset_and_wait(
     full: bool,
     timeout: float | None = None,
 ) -> mesh_pb2.MeshPacket | None:
-    """Send a local factory reset and wait for ACK/NAK or reboot transport loss.
+    """Compatibility wrapper for the canonical device reset helper."""
+    return cli_device_actions.send_local_factory_reset_and_wait(
+        reset_node, full=full, timeout=timeout, cli_print=_cli_print
+    )
 
-    Firmware 2.7 can execute the reset and schedule its reboot without forwarding
-    the resulting routing ACK to PhoneAPI after the reset clears the channel
-    table.  Firmware 2.8 normally forwards the ACK.  For this destructive local
-    operation, a transport interruption observed *after* the request was queued
-    is therefore also evidence that firmware accepted the command.
-
-    Explicit routing errors and a deadline with neither signal remain hard
-    failures.  The caller still reconnects and verifies the post-reset state.
-    """
-    reset_interface = reset_node.iface
-    disconnect_observed = threading.Event()
-    request_queued = threading.Event()
-
-    def _on_connection_lost(interface: MeshInterface) -> None:
-        if request_queued.is_set() and interface is reset_interface:
-            disconnect_observed.set()
-
-    acknowledgment = getattr(reset_interface, "_acknowledgment", None)
-    reset_acknowledgment = getattr(acknowledgment, "reset", None)
-    if callable(reset_acknowledgment):
-        # A stale compatibility flag from an earlier command must never satisfy
-        # this destructive request's acceptance wait.
-        reset_acknowledgment()
-
-    pub.subscribe(_on_connection_lost, "meshtastic.connection.lost")
-    request: mesh_pb2.MeshPacket | None = None
-    request_id: int | None = None
-    try:
-        request = reset_node.factoryReset(full=full)
-        if request is None:
-            return None
-
-        raw_request_id = getattr(request, "id", None)
-        if isinstance(raw_request_id, int) and not isinstance(raw_request_id, bool):
-            request_id = raw_request_id if raw_request_id > 0 else None
-        request_queued.set()
-
-        # Snapshot the active transport only after sendData returned a concrete
-        # packet.  A stale disconnect or reconnect that happened before the send
-        # completed cannot prove this reset was accepted.
-        missing_transport = object()
-        socket_after_send = getattr(reset_interface, "socket", missing_transport)
-        stream_after_send = getattr(reset_interface, "stream", missing_transport)
-
-        acceptance_timeout = (
-            FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
-            if timeout is None
-            else float(timeout)
-        )
-        if acceptance_timeout <= 0:
-            raise ValueError("factory reset acceptance timeout must be positive")
-
-        wait_for_request_ack = getattr(reset_interface, "_wait_for_request_ack", None)
-        raise_wait_error = getattr(
-            reset_interface, "_raise_wait_error_if_present", None
-        )
-        scoped_wait_available = (
-            request_id is not None
-            and callable(wait_for_request_ack)
-            and callable(raise_wait_error)
-        )
-
-        _cli_print("Waiting for factory reset acknowledgment or reboot disconnect")
-        deadline = time.monotonic() + acceptance_timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-
-            if (
-                scoped_wait_available
-                and callable(wait_for_request_ack)
-                and callable(raise_wait_error)
-            ):
-                completed = wait_for_request_ack(
-                    "receivedNak",
-                    request_id,
-                    timeout_seconds=min(
-                        FACTORY_RESET_ACCEPTANCE_POLL_SECONDS,
-                        remaining,
-                    ),
-                )
-                if completed:
-                    # Request-scoped wait state distinguishes a successful ACK
-                    # from an explicit routing error.  The legacy receivedNak
-                    # attribute is only a completion latch and is not itself
-                    # evidence of rejection.
-                    raise_wait_error("receivedNak", request_id=request_id)
-                    return request
-            else:
-                # Compatibility fallback for minimal/legacy interfaces without
-                # request-scoped wait helpers.  Check actual ACK kinds before the
-                # shared receivedNak completion flag because implicit ACK handling
-                # can set both in older runtimes.
-                if callable(raise_wait_error):
-                    raise_wait_error("receivedNak", request_id=request_id)
-                received_ack = bool(getattr(acknowledgment, "receivedAck", False))
-                received_implicit_ack = bool(
-                    getattr(acknowledgment, "receivedImplAck", False)
-                )
-                if received_ack or received_implicit_ack:
-                    return request
-                if bool(getattr(acknowledgment, "receivedNak", False)):
-                    raise reset_interface.MeshInterfaceError(
-                        "Factory reset request was rejected by the device"
-                    )
-                time.sleep(
-                    min(
-                        FACTORY_RESET_ACCEPTANCE_POLL_SECONDS,
-                        remaining,
-                    )
-                )
-
-            connected_event = getattr(reset_interface, "isConnected", None)
-            connected = True
-            is_set = getattr(connected_event, "is_set", None)
-            if callable(is_set):
-                connected = bool(is_set())
-
-            current_socket = getattr(reset_interface, "socket", missing_transport)
-            current_stream = getattr(reset_interface, "stream", missing_transport)
-            socket_replaced = (
-                socket_after_send is not missing_transport
-                and current_socket is not socket_after_send
-            )
-            stream_replaced = (
-                stream_after_send is not missing_transport
-                and current_stream is not stream_after_send
-            )
-            if (
-                disconnect_observed.is_set()
-                or not connected
-                or socket_replaced
-                or stream_replaced
-            ):
-                # Check request-scoped errors one final time so an explicit NAK
-                # wins over a nearly simultaneous transport loss.
-                if callable(raise_wait_error):
-                    raise_wait_error("receivedNak", request_id=request_id)
-                logger.info(
-                    "Device transport changed after local factory reset request; "
-                    "treating reboot as command acceptance."
-                )
-                return request
-
-        if callable(raise_wait_error):
-            raise_wait_error("receivedNak", request_id=request_id)
-        raise reset_interface.MeshInterfaceError(
-            "Timed out waiting for a factory reset acknowledgment or reboot disconnect"
-        )
-    finally:
-        retire_wait = getattr(reset_interface, "_retire_wait_request", None)
-        if callable(retire_wait) and request_id is not None:
-            retire_wait("receivedNak", request_id=request_id)
-        if callable(reset_acknowledgment):
-            reset_acknowledgment()
-        try:
-            pub.unsubscribe(_on_connection_lost, "meshtastic.connection.lost")
-        except Exception:
-            logger.debug(
-                "Factory reset: failed to remove connection-loss observer.",
-                exc_info=True,
-            )
-
-    return None
 
 
 @contextlib.contextmanager
 def _temporary_instance_attributes(
     instance: Any, overrides: dict[str, Any]
 ) -> Iterator[None]:
-    """Temporarily override instance attributes and restore their exact prior state."""
-    missing = object()
-    instance_values = vars(instance)
-    previous_values = {name: instance_values.get(name, missing) for name in overrides}
-    try:
-        for name, value in overrides.items():
-            setattr(instance, name, value)
+    """Compatibility wrapper for temporary instance attribute overrides."""
+    with cli_device_actions.temporary_instance_attributes(instance, overrides):
         yield
-    finally:
-        for name, previous in previous_values.items():
-            if previous is missing:
-                with contextlib.suppress(AttributeError):
-                    delattr(instance, name)
-            else:
-                setattr(instance, name, previous)
+
 
 
 def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
-    """Close, briefly probe serial readiness, then release the port for the next command."""
-    if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
-        return
+    """Compatibility wrapper for the canonical factory-reset readiness probe."""
+    cli_device_actions.post_factory_reset_ready_probe(interface)
 
-    logger.debug("Factory reset: closing serial interface to release port.")
-    try:
-        interface.close()
-    except Exception:
-        logger.debug(
-            "Factory reset: initial serial close failed.",
-            exc_info=True,
-        )
-
-    logger.debug(
-        "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
-        FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
-    )
-    probe_overrides = {
-        "_connect_wait_timeout_seconds": FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
-        "_connect_retry_budget_seconds": FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
-        "_suppress_connect_failure_logging": True,
-    }
-    probe_start = time.monotonic()
-    with _temporary_instance_attributes(interface, probe_overrides):
-        try:
-            interface.connect()
-            logger.debug(
-                "Factory reset: reconnect probe succeeded in %.2fs.",
-                time.monotonic() - probe_start,
-            )
-        except Exception as exc:
-            logger.info(
-                "Factory reset accepted; device is still rebooting after %.1fs "
-                "and the next command will reconnect normally (%s).",
-                time.monotonic() - probe_start,
-                exc,
-            )
-    try:
-        interface.close()
-    except Exception:
-        logger.debug(
-            "Factory reset: final serial close failed.",
-            exc_info=True,
-        )
 
 
 def _validate_non_empty_mapping_sections(
@@ -1828,56 +1614,16 @@ def _handle_ota_update(
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> None:
-    """Initiate a Wi-Fi OTA update for the directly connected local node.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        TCP interface connected to the target node.
-    args : Any
-        CLI arguments containing the OTA update path and destination.
-    getNode_kwargs : dict[str, Any]
-        Additional arguments for retrieving the local node.
-    """
-    if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-        _cli_exit(
-            "Error: OTA update currently requires a TCP connection to the node (use --host)."
-        )
-    if not _is_local_destination(interface, args.dest):
-        _cli_exit(
-            "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
-        )
-    ota_dest = LOCAL_ADDR
-
-    try:
-        ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
-    except meshtastic.ota.OTAError as e:
-        _cli_exit(f"OTA update failed: {e}")
-
-    _cli_print(f"Triggering OTA update on {interface.hostname}...")
-    interface.getNode(ota_dest, requestChannels=False, **getNode_kwargs).startOTA(
-        mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
+    """Compatibility wrapper for the canonical Wi-Fi OTA action."""
+    cli_device_actions.handle_ota_update(
+        interface,
+        args,
+        getNode_kwargs,
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        is_local_destination=_is_local_destination,
     )
 
-    _cli_print("Waiting for device to reboot into OTA mode...")
-    time.sleep(OTA_REBOOT_WAIT_SECONDS)
-
-    retries = OTA_MAX_RETRIES
-    while retries > 0:
-        try:
-            ota.update()
-            break
-
-        except meshtastic.ota.OTATransportError as e:
-            retries -= 1
-            if retries == 0:
-                _cli_exit(f"OTA update failed: {e}")
-
-            time.sleep(OTA_RETRY_DELAY_SECONDS)
-        except meshtastic.ota.OTAError as e:
-            _cli_exit(f"OTA update failed: {e}")
-
-    _cli_print("\nOTA update completed successfully!")
 
 
 def _print_set_field_choices(node: Any, pref_names: Sequence[str]) -> None:
@@ -2593,277 +2339,22 @@ def onConnected(interface: MeshInterface) -> None:
             else:
                 _cli_print("Connected to radio")
 
-        if args.set_time is not None:
-            interface.getNode(args.dest, False, **getNode_kwargs).setTime(args.set_time)
-
-        if args.remove_position:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-
-            _cli_print("Removing fixed position and disabling fixed position setting")
-            interface.getNode(args.dest, False, **getNode_kwargs).removeFixedPosition()
-        elif args.setlat or args.setlon or args.setalt:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-
-            alt = 0
-            lat = 0.0
-            lon = 0.0
-            if args.setalt:
-                alt = int(args.setalt)
-                _cli_print(f"Fixing altitude at {alt} meters")
-            if args.setlat:
-                try:
-                    lat = int(args.setlat)
-                except ValueError:
-                    lat = float(args.setlat)
-                _cli_print(f"Fixing latitude at {lat} degrees")
-            if args.setlon:
-                try:
-                    lon = int(args.setlon)
-                except ValueError:
-                    lon = float(args.setlon)
-                _cli_print(f"Fixing longitude at {lon} degrees")
-
-            _cli_print("Setting device position and enabling fixed position setting")
-            # can include lat/long/alt etc: latitude = 37.5, longitude = -122.1
-            interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
-                lat, lon, alt
-            )
-
-        if args.set_owner or args.set_owner_short or args.set_is_unmessageable:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-
-            long_name = args.set_owner.strip() if args.set_owner else None
-            short_name = args.set_owner_short.strip() if args.set_owner_short else None
-
-            if long_name is not None and not long_name:
-                _cli_exit(
-                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
-                )
-
-            if short_name is not None and not short_name:
-                _cli_exit(
-                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                )
-
-            if long_name and short_name:
-                _cli_print(
-                    f"Setting device owner to {long_name} and short name to {short_name}"
-                )
-            elif long_name:
-                _cli_print(f"Setting device owner to {long_name}")
-            elif short_name:
-                _cli_print(f"Setting device owner short to {short_name}")
-
-            unmessagable = None
-            if args.set_is_unmessageable is not None:
-                unmessagable = (
-                    meshtastic.util.fromStr(args.set_is_unmessageable)
-                    if isinstance(args.set_is_unmessageable, str)
-                    else args.set_is_unmessageable
-                )
-                _cli_print(f"Setting device owner is_unmessageable to {unmessagable}")
-
-            interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                long_name=long_name, short_name=short_name, is_unmessagable=unmessagable
-            )
-
-        if args.set_canned_message:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            if node.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-                _cli_print(
-                    f"Setting canned plugin message to {args.set_canned_message}"
-                )
-                node.set_canned_message(args.set_canned_message)
-            else:
-                logger.warning(
-                    "Canned Message module is excluded by firmware; skipping set."
-                )
-
-        if args.set_ringtone:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            if node.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-                _cli_print(f"Setting ringtone to {args.set_ringtone}")
-                node.set_ringtone(args.set_ringtone)
-            else:
-                logger.warning(
-                    "External Notification is excluded by firmware; skipping ringtone set."
-                )
-
-        if args.pos_fields:
-            # If --pos-fields invoked with args, set position fields
-            outcome.close_now = True
-            positionConfig = interface.getNode(
-                args.dest, **getNode_kwargs
-            ).localConfig.position
-            allFields = 0
-
-            try:
-                for field in args.pos_fields:
-                    v_field = positionConfig.PositionFlags.Value(field)
-                    allFields |= v_field
-
-            except ValueError:
-                print("ERROR: supported position fields are:")
-                print(positionConfig.PositionFlags.keys())
-                print(
-                    "If no fields are specified, will read and display current value."
-                )
-
-            else:
-                _cli_print(f"Setting position fields to {allFields}")
-                setPref(positionConfig, "position_flags", f"{allFields:d}")
-                _cli_print("Writing modified preferences to device")
-                interface.getNode(args.dest, **getNode_kwargs).writeConfig("position")
-
-        elif args.pos_fields is not None:
-            # If --pos-fields invoked without args, read and display current value
-            outcome.close_now = True
-            positionConfig = interface.getNode(
-                args.dest, **getNode_kwargs
-            ).localConfig.position
-
-            fieldNames = []
-            for bit in positionConfig.PositionFlags.values():
-                if positionConfig.position_flags & bit:
-                    fieldNames.append(positionConfig.PositionFlags.Name(bit))
-            print(" ".join(fieldNames))
-
-        if args.set_ham:
-            ham_id = args.set_ham.strip()
-            if not ham_id:
-                _cli_exit(
-                    "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
-                )
-            outcome.close_now = True
-            _cli_print(f"Setting Ham ID to {ham_id} and turning off encryption")
-            interface.getNode(args.dest, **getNode_kwargs).setOwner(
-                ham_id, is_licensed=True
-            )
-            # Must turn off encryption on primary channel
-            interface.getNode(
-                args.dest, **getNode_kwargs
-            ).turnOffEncryptionOnPrimaryChannel()
-
-        if args.reboot:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            outcome.skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).reboot()
-
-        if args.reboot_ota:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            outcome.skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).rebootOTA()
-
-        if args.ota_update:
-            outcome.close_now = True
-            outcome.skip_ack_wait = True
-            _handle_ota_update(interface, args, getNode_kwargs)
+        device_hooks = cli_device_actions.DeviceActionHooks(
+            cli_exit=_cli_exit,
+            cli_print=_cli_print,
+            set_pref=setPref,
+            is_local_destination=_is_local_destination,
+            send_local_factory_reset_and_wait=_send_local_factory_reset_and_wait,
+            post_factory_reset_ready_probe=_post_factory_reset_ready_probe,
+            handle_ota_update=_handle_ota_update,
+            build_lockdown_auth=build_lockdown_auth,
+            read_lockdown_passphrase_file=read_lockdown_passphrase_file,
+            send_lockdown_auth=send_lockdown_auth,
+            validate_lockdown_passphrase=validate_lockdown_passphrase,
+        )
+        cli_device_actions.handle_device_actions(context, device_hooks)
+        if outcome.stop_processing:
             return
-
-        if args.enter_dfu:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            outcome.skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).enterDFUMode()
-
-        if args.shutdown:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            outcome.skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).shutdown()
-
-        if args.device_metadata:
-            outcome.close_now = True
-            interface.getNode(args.dest, False, **getNode_kwargs).getMetadata()
-
-        if args.begin_edit:
-            outcome.close_now = True
-            interface.getNode(
-                args.dest, False, **getNode_kwargs
-            ).beginSettingsTransaction()
-
-        if args.commit_edit:
-            outcome.close_now = True
-            interface.getNode(
-                args.dest, False, **getNode_kwargs
-            ).commitSettingsTransaction()
-
-        if args.factory_reset or args.factory_reset_device:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            outcome.skip_ack_wait = True
-
-            full = bool(args.factory_reset_device)
-            reset_node = interface.getNode(args.dest, False, **getNode_kwargs)
-            is_local_reset = _is_local_destination(interface, args.dest)
-            if is_local_reset:
-                _send_local_factory_reset_and_wait(
-                    reset_node,
-                    full=full,
-                )
-            else:
-                # Remote Node.factoryReset() owns its ACK wait.
-                reset_node.factoryReset(full=full)
-            # Guard the isinstance check: SerialInterface may be a mock or not resolve in tests.
-            _serial_interface_cls = getattr(
-                meshtastic.serial_interface, "SerialInterface", None
-            )
-            if (
-                full
-                and _is_local_destination(interface, args.dest)
-                and isinstance(_serial_interface_cls, type)
-                and isinstance(interface, _serial_interface_cls)
-            ):
-                _post_factory_reset_ready_probe(interface)
-
-        if args.remove_node:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeNode(
-                args.remove_node
-            )
-
-        if args.set_favorite_node:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).setFavorite(
-                args.set_favorite_node
-            )
-
-        if args.remove_favorite_node:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeFavorite(
-                args.remove_favorite_node
-            )
-
-        if args.set_ignored_node:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).setIgnored(
-                args.set_ignored_node
-            )
-
-        if args.remove_ignored_node:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeIgnored(
-                args.remove_ignored_node
-            )
-
-        if args.reset_nodedb:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).resetNodeDb()
 
         if args.add_contact:
             outcome.close_now = True
@@ -3291,95 +2782,7 @@ def onConnected(interface: MeshInterface) -> None:
                         f"presets={','.join(preset_names)}"
                     )
 
-        lockdown_action = next(
-            (
-                name
-                for name, enabled in (
-                    ("provision", args.lockdown_provision),
-                    ("unlock", args.lockdown_unlock),
-                    ("lock-now", args.lockdown_lock_now),
-                    ("disable", args.lockdown_disable),
-                )
-                if enabled
-            ),
-            None,
-        )
-        if lockdown_action is not None:
-            outcome.close_now = True
-            if not _is_local_destination(interface, args.dest):
-                _cli_exit(
-                    "Lockdown commands apply only to the directly connected local node."
-                )
-            if (
-                lockdown_action in {"provision", "lock-now", "disable"}
-                and not args.lockdown_yes
-            ):
-                confirmation = (
-                    input(f"Type 'yes' to confirm lockdown {lockdown_action}: ")
-                    .strip()
-                    .casefold()
-                )
-                if confirmation != "yes":
-                    _cli_exit("Aborted.")
-            try:
-                passphrase = b""
-                if lockdown_action != "lock-now":
-                    if args.lockdown_passphrase_file:
-                        passphrase = read_lockdown_passphrase_file(
-                            args.lockdown_passphrase_file
-                        )
-                    elif args.lockdown_passphrase is not None:
-                        if not args.insecure_lockdown_passphrase_on_command_line:
-                            _cli_exit(
-                                "--lockdown-passphrase requires "
-                                "--insecure-lockdown-passphrase-on-command-line; "
-                                "prefer an operator-only file or interactive entry."
-                            )
-                        passphrase = validate_lockdown_passphrase(
-                            args.lockdown_passphrase.encode("utf-8")
-                        )
-                    else:
-                        entered = getpass.getpass("Lockdown passphrase: ")
-                        if lockdown_action == "provision":
-                            confirmed = getpass.getpass(
-                                "Lockdown passphrase (confirm): "
-                            )
-                            if entered != confirmed:
-                                _cli_exit("Lockdown passphrases do not match.")
-                        passphrase = validate_lockdown_passphrase(
-                            entered.encode("utf-8")
-                        )
-                auth = build_lockdown_auth(
-                    passphrase,
-                    boots_remaining=args.lockdown_boots,
-                    valid_until_epoch=args.lockdown_valid_until,
-                    max_session_seconds=args.lockdown_max_session_seconds,
-                    lock_now=lockdown_action == "lock-now",
-                    disable=lockdown_action == "disable",
-                )
-            except (OSError, ValueError) as exc:
-                _cli_exit(f"Invalid lockdown options: {exc}")
-            try:
-                status = send_lockdown_auth(
-                    interface,
-                    auth,
-                    timeout=args.lockdown_wait,
-                    allow_reboot_without_status=lockdown_action == "lock-now",
-                )
-            except (TimeoutError, ValueError, RuntimeError) as exc:
-                _cli_exit(f"Lockdown command failed: {exc}")
-            if status is None:
-                print("Lockdown command accepted; device may already be rebooting.")
-            else:
-                try:
-                    state_name = mesh_pb2.LockdownStatus.State.Name(status.state)
-                except ValueError:
-                    state_name = f"STATE_{status.state}"
-                print(f"Lockdown status: {state_name}")
-                if status.backoff_seconds:
-                    print(f"Retry backoff: {status.backoff_seconds}s")
-                if status.state == mesh_pb2.LockdownStatus.UNLOCK_FAILED:
-                    _cli_exit("Lockdown authentication failed.")
+        cli_device_actions.handle_lockdown_action(context, device_hooks)
 
         if args.info:
             print("")
@@ -3512,7 +2915,7 @@ def onConnected(interface: MeshInterface) -> None:
             _cli_print(
                 "Waiting for an acknowledgment from remote node (this could take a while)"
             )
-            interface.getNode(args.dest, False, **getNode_kwargs).iface.outcome.wait_for_ack_nak()
+            interface.getNode(args.dest, False, **getNode_kwargs).iface.waitForAckNak()
 
         if args.wait_to_disconnect:
             _cli_print(

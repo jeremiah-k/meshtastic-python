@@ -28,11 +28,14 @@ class ActionOutcome:
     skip_ack_wait : bool
         Whether an action owns its acknowledgment/reboot completion and the
         shared final ACK/NAK wait must be skipped.
+    stop_processing : bool
+        Whether action dispatch should return immediately after the current group.
     """
 
     close_now: bool = False
     wait_for_ack_nak: bool = True
     skip_ack_wait: bool = False
+    stop_processing: bool = False
 
 
 @dataclass(slots=True)
