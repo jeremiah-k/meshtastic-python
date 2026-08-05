@@ -840,6 +840,46 @@ def test_register_notifications_rolls_back_if_session_changes_during_start(
         iface.close()
 
 
+@pytest.mark.parametrize("characteristic", [LEGACY_LOGRADIO_UUID, LOGRADIO_UUID])
+def test_register_notifications_stale_optional_subscription_stops_once(
+    monkeypatch: pytest.MonkeyPatch,
+    characteristic: str,
+) -> None:
+    """A stale optional subscription should be stopped exactly once."""
+    iface_holder: dict[str, ble_mod.BLEInterface] = {}
+
+    class _OptionalStaleClient(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.start_notify_calls: list[str] = []
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == characteristic
+
+        def start_notify(self, *args: object, **_kwargs: object) -> None:
+            if not args:
+                return
+            started = cast(str, args[0])
+            self.start_notify_calls.append(started)
+            if started == characteristic:
+                iface = iface_holder["iface"]
+                with iface._state_lock:
+                    iface._connection_session_epoch += 1
+
+    client = _OptionalStaleClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    iface_holder["iface"] = iface
+    try:
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [characteristic]
+        assert client.stop_notify_calls == [characteristic]
+        assert not iface._notification_dispatcher._started_notify_characteristics
+        assert iface._fromnum_notify_enabled is False
+    finally:
+        iface.close()
+
+
 def test_register_notifications_rolls_back_if_client_disconnects_during_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

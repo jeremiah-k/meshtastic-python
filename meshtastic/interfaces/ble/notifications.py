@@ -668,21 +668,6 @@ class BLENotificationDispatcher:
                 )
                 return False
 
-        def _rollback_stale_registration(*characteristics: str) -> None:
-            for characteristic in characteristics:
-                try:
-                    client.stop_notify(
-                        characteristic,
-                        timeout=NOTIFICATION_START_TIMEOUT,
-                    )
-                except Exception:  # noqa: BLE001 - stale rollback must stay best effort
-                    logger.debug(
-                        "Error stopping stale notification subscription for %s",
-                        characteristic,
-                        exc_info=True,
-                    )
-            _rollback_registration_state(stop_client=client)
-
         if self._registered_notification_session_epoch != current_session_epoch:
             _rollback_registration_state(stop_client=client)
             self._registered_notification_session_epoch = current_session_epoch
@@ -865,7 +850,7 @@ class BLENotificationDispatcher:
                 else:
                     self._started_notify_characteristics.add(LEGACY_LOGRADIO_UUID)
                     if not _registration_still_current():
-                        _rollback_stale_registration(LEGACY_LOGRADIO_UUID)
+                        _rollback_registration_state(stop_client=client)
                         return
 
         try:
@@ -901,7 +886,7 @@ class BLENotificationDispatcher:
                 else:
                     self._started_notify_characteristics.add(LOGRADIO_UUID)
                     if not _registration_still_current():
-                        _rollback_stale_registration(LOGRADIO_UUID)
+                        _rollback_registration_state(stop_client=client)
                         return
 
         ingress_handler = _get_or_create_cached_handler(
@@ -968,15 +953,19 @@ class BLENotificationDispatcher:
                 _rollback_fromnum_registration_state()
                 return
             else:
+                # Track the active backend subscription immediately after start_notify
+                # succeeds. Any later validation or local callback-registration failure
+                # can then unwind through the single centralized rollback path exactly
+                # once per started characteristic.
+                self._started_notify_characteristics.add(FROMNUM_UUID)
                 current_ingress_handler = self._notification_manager._get_callback(
                     FROMNUM_UUID
                 )
                 if current_ingress_handler is not ingress_handler:
                     self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
                 if not _registration_still_current():
-                    _rollback_stale_registration(FROMNUM_UUID)
+                    _rollback_registration_state(stop_client=client)
                     return
-                self._started_notify_characteristics.add(FROMNUM_UUID)
                 self.fromnum_notify_enabled = True
                 self._registered_notification_session_epoch = current_session_epoch
                 logger.debug(
