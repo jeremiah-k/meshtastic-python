@@ -977,6 +977,28 @@ def test_fromnum_notify_enabled_property(
 
 
 @pytest.mark.unit
+def test_fromnum_notify_enabled_reads_do_not_enter_registration_lock(
+    notification_dispatcher: BLENotificationDispatcher,
+) -> None:
+    """Hot receive-path flag reads must not wait on registration serialization."""
+
+    class _RejectingLock:
+        def __enter__(self) -> None:
+            raise AssertionError("flag reads must not acquire the registration lock")
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    dispatcher = notification_dispatcher
+    dispatcher._registration_lock = _RejectingLock()  # type: ignore[assignment]  # noqa: SLF001
+
+    assert dispatcher.fromnum_notify_enabled is False
+
+    with pytest.raises(AssertionError, match="registration lock"):
+        dispatcher.fromnum_notify_enabled = True
+
+
+@pytest.mark.unit
 def test_notification_manager_len(notification_manager: NotificationManager) -> None:
     """Test NotificationManager __len__ method."""
     manager = notification_manager

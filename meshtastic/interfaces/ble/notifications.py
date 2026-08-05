@@ -302,7 +302,7 @@ class BLENotificationDispatcher:
         self._fromnum_notify_enabled = False
         self._malformed_notification_count = 0
         self._malformed_notification_lock = RLock()
-        self._malformed_notification_state_lock = Lock()
+        self._notification_state_lock = Lock()
         self._malformed_notification_handling_started = False
         self._current_legacy_log_handler: Callable[[Any, Any], None] | None = None
         self._current_log_handler: Callable[[Any, Any], None] | None = None
@@ -316,14 +316,15 @@ class BLENotificationDispatcher:
     @property
     def fromnum_notify_enabled(self) -> bool:
         """Return whether FROMNUM notifications are currently active."""
-        with self._registration_lock:
+        with self._notification_state_lock:
             return self._fromnum_notify_enabled
 
     @fromnum_notify_enabled.setter
     def fromnum_notify_enabled(self, enabled: bool) -> None:
         """Set FROMNUM notification-active flag."""
         with self._registration_lock:
-            self._fromnum_notify_enabled = enabled
+            with self._notification_state_lock:
+                self._fromnum_notify_enabled = enabled
 
     @property
     def malformed_notification_count(self) -> int:
@@ -345,7 +346,7 @@ class BLENotificationDispatcher:
     @malformed_notification_lock.setter
     def malformed_notification_lock(self, lock: RLock) -> None:
         """Set malformed-notification lock for compatibility callers."""
-        with self._malformed_notification_state_lock:
+        with self._notification_state_lock:
             if self._malformed_notification_handling_started:
                 raise RuntimeError(
                     "Cannot replace malformed_notification_lock after notification handling starts."
@@ -354,7 +355,7 @@ class BLENotificationDispatcher:
 
     def handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications and emit threshold warnings."""
-        with self._malformed_notification_state_lock:
+        with self._notification_state_lock:
             self._malformed_notification_handling_started = True
         with self._malformed_notification_lock:
             self._malformed_notification_count += 1
@@ -595,7 +596,7 @@ class BLENotificationDispatcher:
 
     def from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Parse FROMNUM payload, reset malformed counter, and wake read loop."""
-        with self._malformed_notification_state_lock:
+        with self._notification_state_lock:
             self._malformed_notification_handling_started = True
         try:
             if len(b) != 4:
