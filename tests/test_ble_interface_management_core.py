@@ -912,10 +912,11 @@ def test_ble_client_management_ignores_synthesized_optional_method() -> None:
     client = BLEClient.__new__(BLEClient)
     client.bleak_client = _DynamicBleakClient()  # type: ignore[assignment]
 
-    with pytest.raises(BLEClient.BLEError, match=re.escape("pair unsupported")):
+    with pytest.raises(BLEClient.BLEError) as exc_info:
         client._run_optional_management_method(  # noqa: SLF001
             method_name="pair",
             await_timeout=1.0,
             not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
             unsupported_error="pair unsupported",
         )
+    assert str(exc_info.value) == "pair unsupported"
