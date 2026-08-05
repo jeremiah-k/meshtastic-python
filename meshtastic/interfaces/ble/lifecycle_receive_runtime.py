@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 RECEIVE_START_PENDING_TIMEOUT_SECONDS = 1.0
+RECEIVE_START_SNAPSHOT_MAX_ATTEMPTS = 16
 
 
 class BLEReceiveLifecycleCoordinator:
@@ -237,7 +238,7 @@ class BLEReceiveLifecycleCoordinator:
         schedule_deferred_restart_for: ThreadLike | None = None
         inconclusive_probe_thread: ThreadLike | None = None
 
-        while True:
+        for _snapshot_attempt in range(RECEIVE_START_SNAPSHOT_MAX_ATTEMPTS):
             with self._session.lock:
                 if self._session.closed or not self._session.want_receive:
                     logger.debug(
@@ -402,6 +403,13 @@ class BLEReceiveLifecycleCoordinator:
                         else None
                     )
                 break
+        else:
+            logger.debug(
+                "Skipping receive thread start (%s): lifecycle state changed during %d consecutive liveness snapshots.",
+                name,
+                RECEIVE_START_SNAPSHOT_MAX_ATTEMPTS,
+            )
+            return None, None
 
         if inconclusive_probe_thread is not None:
             self._schedule_deferred_receive_restart(

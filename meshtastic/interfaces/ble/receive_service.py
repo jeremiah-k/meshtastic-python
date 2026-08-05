@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 COORDINATOR_WAIT_FALLBACK_SLEEP_SEC = 0.001
+TRANSIENT_RETRY_POLICY_REVALIDATION_MAX_ATTEMPTS = 4
 RECEIVE_THREAD_FATAL_REASON = "receive_thread_fatal"
 _INTERFACE_MODULE_NAME = "meshtastic.interfaces.ble.interface"
 _DEFAULT_RECURSIVE_IFACE_RECEIVE_HOOK_QUALNAMES = {
@@ -1041,23 +1042,38 @@ class BLEReceiveRecoveryController:
             override_handle_transient_read_error(error)
             return
         transient_policy = iface._transient_read_policy
-        with self._session.lock:
-            retry_count = self._session.read_retry_count
-        should_retry = iface._retry_policy_should_retry(transient_policy, retry_count)
         attempt_index = 0
         next_retry_count = 0
-        with self._session.lock:
-            if should_retry:
-                # A successful receive/recovery path may reset the shared
-                # counter while the caller-supplied retry policy runs outside
-                # this lock. Advance from the current value so a stale snapshot
-                # cannot resurrect a reset counter.
-                attempt_index = self._session.read_retry_count
-                self._session.read_retry_count = attempt_index + 1
-                next_retry_count = self._session.read_retry_count
-            else:
-                self._session.read_retry_count = 0
-                next_retry_count = 0
+        should_retry = False
+        for _decision_attempt in range(
+            TRANSIENT_RETRY_POLICY_REVALIDATION_MAX_ATTEMPTS
+        ):
+            with self._session.lock:
+                retry_count = self._session.read_retry_count
+            should_retry = iface._retry_policy_should_retry(
+                transient_policy, retry_count
+            )
+            with self._session.lock:
+                if self._session.read_retry_count != retry_count:
+                    # Successful receive/recovery work can reset this shared
+                    # counter while the caller-supplied policy runs without the
+                    # session lock. Re-evaluate from the new state so neither a
+                    # stale retry nor a stale terminal decision is applied.
+                    continue
+                if should_retry:
+                    attempt_index = retry_count
+                    self._session.read_retry_count = retry_count + 1
+                    next_retry_count = self._session.read_retry_count
+                else:
+                    self._session.read_retry_count = 0
+                    next_retry_count = 0
+                break
+        else:
+            logger.debug(
+                "Transient BLE read error decision superseded by concurrent retry-state changes after %d attempts; ignoring stale error.",
+                TRANSIENT_RETRY_POLICY_REVALIDATION_MAX_ATTEMPTS,
+            )
+            return
         if should_retry:
             logger.debug(
                 "Transient BLE read error, retrying (%d/%d)",

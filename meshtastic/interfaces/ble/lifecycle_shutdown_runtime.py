@@ -88,8 +88,10 @@ class BLEShutdownLifecycleCoordinator:
             ``True`` when the interface is in closing/closed state; otherwise
             ``False``.
         """
+        if self._state_access.is_closing():
+            return True
         with self._session.lock:
-            return self._state_access.is_closing() or self._session.closed
+            return self._session.closed
 
     def _cleanup_thread_coordinator(
         self,
@@ -234,6 +236,17 @@ class BLEShutdownLifecycleCoordinator:
         should_transition_to_disconnecting = False
         disconnect_alias_key: str | None = None
         management_wait_started = time.monotonic()
+        with self._session.lock:
+            if self._session.closed:
+                logger.debug(
+                    "BLEInterface.close called on already closed interface; ignoring"
+                )
+                return None
+        # Compatibility/state-manager probes may execute collaborator code. They
+        # do not participate in the atomic closed-state claim below, so evaluate
+        # closing state without interface/session locks, then revalidate closed
+        # state after acquiring the normal shutdown lock order.
+        was_closing = get_is_closing()
         with iface._management_lock:
             with self._session.lock:
                 if self._session.closed:
@@ -241,7 +254,6 @@ class BLEShutdownLifecycleCoordinator:
                         "BLEInterface.close called on already closed interface; ignoring"
                     )
                     return None
-                was_closing = get_is_closing()
                 self._session.closed = True
                 if was_closing:
                     logger.debug(
