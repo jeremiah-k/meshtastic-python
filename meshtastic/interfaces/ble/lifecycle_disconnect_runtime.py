@@ -2,7 +2,7 @@
 
 import threading
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bleak import BleakClient as BleakRootClient
 
@@ -26,7 +26,7 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleStateAccess,
     _LifecycleThreadAccess,
 )
-from meshtastic.interfaces.ble.state import ConnectionState
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _sleep,
     _thread_start_probe,
@@ -199,18 +199,39 @@ class BLEDisconnectLifecycleCoordinator:
             self._state_access.reset_to_disconnected
         )
         target_client = client
+        should_reconnect = False
+
+        state_manager = _get_declared_member(iface, "_state_manager")
+        canonical_state_manager = (
+            state_manager
+            if type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
+            and state_manager.lock is self._session.lock
+            and current_state_getter is None
+            and transition_to_disconnected is None
+            and reset_to_disconnected is None
+            else None
+        )
 
         # Compatibility closing probes may execute collaborator code. Shutdown
         # claims ``session.closed`` under this same lock, so combining the
         # lock-free compatibility snapshot with the locked terminal flag avoids
         # holding shared lifecycle state around that probe.
         compatibility_is_closing = get_is_closing()
+        compatibility_current_state = (
+            None if canonical_state_manager is not None else get_current_state()
+        )
         with self._session.lock:
             # Connection state and session ownership share this RLock on the real
             # interface. Keep the state transition atomic with clearing the owned
-            # client/session fields; only non-owner address/registry work is
-            # deferred until after the critical section.
-            current_state = get_current_state()
+            # client/session fields. Compatibility probes/callbacks are excluded
+            # from this critical section; the exact BLEStateManager uses its
+            # lock-owned primitive instead.
+            current_state = cast(
+                ConnectionState,
+                BLEStateManager._current_state_unlocked(canonical_state_manager)
+                if canonical_state_manager is not None
+                else compatibility_current_state,
+            )
             current_client = iface.client
             is_closing = compatibility_is_closing or self._session.closed
             was_publish_pending = self._session.client_publish_pending
@@ -278,6 +299,33 @@ class BLEDisconnectLifecycleCoordinator:
             self._session.client_replacement_pending = False
             self._session.disconnect_notified = True
             self._session.connection_alias_key = None
+            if canonical_state_manager is not None:
+                transitioned = BLEStateManager._transition_to_unlocked(
+                    canonical_state_manager, ConnectionState.DISCONNECTED
+                )
+                if not transitioned:
+                    logger.error(
+                        "Failed state transition to %s during disconnect target resolution (alias=%s current=%s); forcing reset.",
+                        ConnectionState.DISCONNECTED.value,
+                        alias_key,
+                        getattr(current_state, "value", current_state),
+                    )
+                    reset_succeeded = BLEStateManager._reset_to_disconnected_unlocked(
+                        canonical_state_manager
+                    )
+                    if not reset_succeeded:
+                        fallback_state = BLEStateManager._current_state_unlocked(
+                            canonical_state_manager
+                        )
+                        logger.error(
+                            "Failed forced reset to %s during disconnect target resolution (alias=%s current=%s).",
+                            ConnectionState.DISCONNECTED.value,
+                            alias_key,
+                            getattr(fallback_state, "value", fallback_state),
+                        )
+                should_reconnect = iface.auto_reconnect
+
+        if canonical_state_manager is None:
             if not do_transition_to_disconnected():
                 logger.error(
                     "Failed state transition to %s during disconnect target resolution (alias=%s current=%s); forcing reset.",

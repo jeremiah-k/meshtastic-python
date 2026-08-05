@@ -985,8 +985,105 @@ def test_disconnect_planning_runs_address_helpers_outside_session_lock() -> None
     assert all(held is False for _operation, held in helper_lock_states)
 
 
+def test_disconnect_compatibility_state_callbacks_run_outside_session_lock() -> None:
+    """Legacy state probes and mutations must not execute under session ownership."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+
+    lock = _TrackingRLock()
+    state = BLESessionState(lock=lock)
+    previous_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    state.connection_alias_key = "AA:BB:CC:DD:EE:FF"
+    callback_lock_states: list[tuple[str, bool]] = []
+    current_states = iter((ConnectionState.CONNECTED, ConnectionState.ERROR))
+
+    def _current_state() -> ConnectionState:
+        callback_lock_states.append(("current", lock.held))
+        return next(current_states)
+
+    def _transition() -> bool:
+        callback_lock_states.append(("transition", lock.held))
+        return False
+
+    def _reset() -> bool:
+        callback_lock_states.append(("reset", lock.held))
+        return False
+
+    iface = SimpleNamespace(
+        auto_reconnect=False,
+        client=previous_client,
+        address="AA:BB:CC:DD:EE:FF",
+        _extract_client_address=lambda _client: "AA:BB:CC:DD:EE:FF",
+        _sorted_address_keys=lambda *keys: [key for key in keys if key],
+    )
+    coordinator = BLEDisconnectLifecycleCoordinator(  # type: ignore[arg-type]
+        iface, session_state=state
+    )
+
+    plan = coordinator._resolve_disconnect_target(  # noqa: SLF001
+        "test",
+        client=previous_client,  # type: ignore[arg-type]
+        bleak_client=None,
+        current_state_getter=_current_state,
+        is_closing_getter=lambda: False,
+        transition_to_disconnected=_transition,
+        reset_to_disconnected=_reset,
+    )
+
+    assert plan.early_return is None
+    assert callback_lock_states == [
+        ("current", False),
+        ("transition", False),
+        ("reset", False),
+        ("current", False),
+    ]
+
+
+def test_disconnect_canonical_state_manager_keeps_state_and_session_atomic() -> None:
+    """Owned state-manager transitions should use lock-safe canonical primitives."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+
+    state_manager = BLEStateManager()
+    assert state_manager.transition_to(ConnectionState.CONNECTING)
+    assert state_manager.transition_to(ConnectionState.CONNECTED)
+    state = BLESessionState(lock=state_manager.lock)
+    previous_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    iface = SimpleNamespace(
+        auto_reconnect=False,
+        client=previous_client,
+        address="AA:BB:CC:DD:EE:FF",
+        _state_manager=state_manager,
+        _extract_client_address=lambda _client: "AA:BB:CC:DD:EE:FF",
+        _sorted_address_keys=lambda *keys: [key for key in keys if key],
+    )
+    coordinator = BLEDisconnectLifecycleCoordinator(  # type: ignore[arg-type]
+        iface, session_state=state
+    )
+    coordinator._state_access.current_state = lambda: (_ for _ in ()).throw(  # type: ignore[method-assign]  # noqa: SLF001
+        AssertionError("canonical state read must not use compatibility dispatch")
+    )
+    coordinator._state_access.transition_to = lambda _state: (_ for _ in ()).throw(  # type: ignore[method-assign]  # noqa: SLF001
+        AssertionError("canonical transition must not use compatibility dispatch")
+    )
+
+    plan = coordinator._resolve_disconnect_target(  # noqa: SLF001
+        "test",
+        client=previous_client,  # type: ignore[arg-type]
+        bleak_client=None,
+    )
+
+    assert plan.early_return is None
+    assert iface.client is None
+    assert state.disconnect_notified is True
+    assert state_manager.current_state == ConnectionState.DISCONNECTED
+
+
 def test_transient_retry_revalidation_is_bounded_under_continuous_churn(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A pathological policy/state race must not spin the receive thread forever."""
     import meshtastic.interfaces.ble.receive_service as receive_service_module

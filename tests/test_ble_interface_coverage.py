@@ -1200,6 +1200,60 @@ def test_get_or_create_collaborator_lockless_fallback_converges_racing_callers()
     assert iface._test_collaborator is results[0]
 
 
+def test_notification_registration_compat_state_probe_revalidates_outside_lock() -> None:
+    """Fallback registration probes must release and then revalidate state ownership."""
+
+    class _TrackingLock:
+        def __init__(self) -> None:
+            self._lock = threading.RLock()
+            self._depth = 0
+
+        @property
+        def held(self) -> bool:
+            return self._depth > 0
+
+        def __enter__(self) -> "_TrackingLock":
+            self._lock.acquire()
+            self._depth += 1
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            self._depth -= 1
+            self._lock.release()
+
+    class _Client:
+        def isConnected(self) -> bool:  # noqa: N802 - compatibility spelling
+            return True
+
+    lock = _TrackingLock()
+    client = _Client()
+    iface = SimpleNamespace(
+        _state_lock=lock,
+        _state_manager=SimpleNamespace(lock=lock),
+        _closed=False,
+        _connection_session_epoch=7,
+        client=None,
+        _client_publish_pending=True,
+    )
+    probe_lock_states: list[bool] = []
+
+    def _current_state() -> ConnectionState:
+        probe_lock_states.append(lock.held)
+        with lock:
+            iface._connection_session_epoch += 1
+        return ConnectionState.CONNECTING
+
+    iface._state_manager_current_state = _current_state
+
+    assert (
+        BLEInterface._is_notification_registration_current(  # noqa: SLF001
+            iface, client, 7  # type: ignore[arg-type]
+        )
+        is False
+    )
+    assert probe_lock_states == [False]
+
+
 # ============================================================================
 # Retry Policy Tests
 # ============================================================================

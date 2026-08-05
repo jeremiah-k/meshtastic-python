@@ -1234,13 +1234,43 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         bool
             ``True`` only while the registration belongs to the same live session.
         """
+        state_manager = self._state_manager
+        canonical_locked_probe = (
+            type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
+            and state_manager.lock is self._state_lock
+        )
         with self._state_lock:
             if self._closed or self._connection_session_epoch != expected_session_epoch:
                 return False
-            lifecycle_owner_is_current = self.client is client or (
-                self._client_publish_pending
-                and self._state_manager_current_state() == ConnectionState.CONNECTING
-            )
+            if self.client is client:
+                lifecycle_owner_is_current = True
+            elif not self._client_publish_pending:
+                lifecycle_owner_is_current = False
+            elif canonical_locked_probe:
+                lifecycle_owner_is_current = (
+                    BLEStateManager._current_state_unlocked(state_manager)
+                    == ConnectionState.CONNECTING
+                )
+            else:
+                lifecycle_owner_is_current = None
+
+        if lifecycle_owner_is_current is None:
+            # Compatibility state probes can execute arbitrary collaborator code.
+            # Run them outside the shared lock, then revalidate the complete
+            # registration ownership snapshot before accepting the result.
+            current_state = self._state_manager_current_state()
+            with self._state_lock:
+                lifecycle_owner_is_current = (
+                    not self._closed
+                    and self._connection_session_epoch == expected_session_epoch
+                    and (
+                        self.client is client
+                        or (
+                            self._client_publish_pending
+                            and current_state == ConnectionState.CONNECTING
+                        )
+                    )
+                )
         if not lifecycle_owner_is_current:
             return False
         return ConnectionValidator._client_is_connected(client)

@@ -134,6 +134,20 @@ class BLEStateManager:
         with self._state_lock:
             return self._state
 
+    def _current_state_unlocked(self) -> ConnectionState:
+        """Return current state when the caller already owns ``lock``.
+
+        This internal primitive exists for lifecycle code that must update
+        connection state and session ownership atomically under the one shared
+        state-manager/session lock. Callers must already hold :attr:`lock`.
+
+        Returns
+        -------
+        ConnectionState
+            Current connection state without acquiring the lock again.
+        """
+        return self._state
+
     @property
     # COMPAT_STABLE_SHIM: public-first alias for `_current_state`.
     def current_state(self) -> ConnectionState:
@@ -402,9 +416,19 @@ class BLEStateManager:
             `True` if the transition succeeded or was a no-op (state is DISCONNECTED after the call), `False` otherwise.
         """
         with self._state_lock:
-            # Prefer validated transition semantics; this is a no-op when already
-            # disconnected and remains resilient to future transition-map edits.
-            return self._transition_to_unlocked(ConnectionState.DISCONNECTED)
+            return self._reset_to_disconnected_unlocked()
+
+    def _reset_to_disconnected_unlocked(self) -> bool:
+        """Reset to DISCONNECTED when the caller already owns ``lock``.
+
+        Returns
+        -------
+        bool
+            ``True`` when DISCONNECTED is reached, including a valid no-op.
+        """
+        # Prefer validated transition semantics; this is a no-op when already
+        # disconnected and remains resilient to future transition-map edits.
+        return self._transition_to_unlocked(ConnectionState.DISCONNECTED)
 
     # COMPAT_STABLE_SHIM: public-first alias for `_reset_to_disconnected`.
     def reset_to_disconnected(self) -> bool:
