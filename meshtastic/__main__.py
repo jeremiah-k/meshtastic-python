@@ -18,13 +18,14 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
-from typing import Any, NoReturn, Protocol, cast
+from typing import Any, NoReturn, Protocol
 
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
 import meshtastic.cli.config_io as cli_config_io
+import meshtastic.cli.channel_contact_actions as cli_channel_contact_actions
 import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.runtime as cli_runtime
@@ -1688,13 +1689,21 @@ def onConnected(interface: MeshInterface) -> None:
         if outcome.stop_processing:
             return
 
-        if args.add_contact:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            outcome.skip_ack_wait = True  # addContactURL() owns the remote ACK wait
-            interface.getNode(args.dest, False, **getNode_kwargs).addContactURL(
-                args.add_contact
-            )
+        channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
+            cli_exit=_cli_exit,
+            cli_print=_cli_print,
+            get_channel_index=lambda: mt_config.channel_index,
+            set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
+            resolve_pref=_resolve_pref,
+            set_pref=setPref,
+            fatal_preference_value_errors=_fatal_preference_value_errors,
+            preference_value_error=_PreferenceValueError,
+            print_channel_field_choices=_print_channel_field_choices,
+            is_local_destination=_is_local_destination,
+            modem_preset_shorthands=_MODEM_PRESET_SHORTHANDS,
+            qr_create=pyqrcode.create if pyqrcode is not None else None,
+        )
+        cli_channel_contact_actions.handle_contact_import(context)
 
         if args.sendtext:
             outcome.close_now = True
@@ -1826,215 +1835,9 @@ def onConnected(interface: MeshInterface) -> None:
         if outcome.stop_processing:
             return
 
-        if args.ch_set_url:
-            outcome.close_now = True
-            interface.getNode(args.dest, **getNode_kwargs).setURL(
-                args.ch_set_url, addOnly=False
-            )
-
-        # handle changing channels
-
-        if args.ch_add_url:
-            outcome.close_now = True
-            interface.getNode(args.dest, **getNode_kwargs).setURL(
-                args.ch_add_url, addOnly=True
-            )
-
-        if args.ch_add:
-            ch_add_idx = mt_config.channel_index
-            if ch_add_idx is not None:
-                # Since we set the channel index after adding a channel, don't allow --ch-index
-                _cli_exit(
-                    "Warning: --ch-add chooses the next free channel index automatically; "
-                    "remove --ch-index and retry. Use --ch-set, --ch-del, --ch-enable, "
-                    "or --ch-disable when targeting a specific index."
-                )
-            outcome.close_now = True
-            if len(args.ch_add) > 10:
-                _cli_exit("Warning: Channel name must be shorter. Channel not added.")
-            n = interface.getNode(args.dest, **getNode_kwargs)
-            ch = n.getChannelByName(args.ch_add)
-            if ch:
-                _cli_exit(
-                    f"Warning: This node already has a '{args.ch_add}' channel. No changes were made."
-                )
-            else:
-                # get the first channel that is disabled (i.e., available)
-                ch = n.getDisabledChannel()
-                if not ch:
-                    _cli_exit("Warning: No free channels were found")
-                chs = channel_pb2.ChannelSettings()
-                chs.psk = meshtastic.util.genPSK256()
-                chs.name = args.ch_add
-                ch.settings.CopyFrom(chs)
-                ch.role = channel_pb2.Channel.Role.SECONDARY
-                _cli_print("Writing modified channels to device")
-                n.writeChannel(ch.index)
-                _cli_print(
-                    f"Setting newly-added channel's {ch.index} as '--ch-index' for further modifications"
-                )
-                mt_config.channel_index = ch.index
-
-        if args.ch_del:
-            outcome.close_now = True
-
-            ch_del_idx = mt_config.channel_index
-            if ch_del_idx is None:
-                _cli_exit("Warning: Need to specify '--ch-index' for '--ch-del'.", 1)
-            else:
-                if ch_del_idx == 0:
-                    _cli_exit("Warning: Cannot delete primary channel.", 1)
-                else:
-                    _cli_print(f"Deleting channel {ch_del_idx}")
-                    interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
-                        ch_del_idx
-                    )
-
-        def _set_simple_config(
-            modem_preset: config_pb2.Config.LoRaConfig.ModemPreset.ValueType,
-        ) -> None:
-            """Set and persist the LORA modem preset on the device's primary channel.
-
-            If the configured channel is not the primary channel, the function exits
-            with a warning and does not change device state. When applied, the modem
-            preset is written into the node's local LORA configuration and
-            persisted to the device.
-
-            Parameters
-            ----------
-            modem_preset : int | EnumValue
-                Modem preset identifier to apply (numeric index or enum value understood by firmware).
-            """
-            channelIndex = mt_config.channel_index
-            if channelIndex is not None and channelIndex > 0:
-                _cli_exit("Warning: Cannot set modem preset for non-primary channel", 1)
-            # Overwrite modem_preset
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            if len(node.localConfig.ListFields()) == 0:
-                lora_descriptor = node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
-                if lora_descriptor is None:
-                    _cli_exit(
-                        "The active protobuf schema does not provide LoRa configuration",
-                        1,
-                    )
-                node.requestConfig(lora_descriptor)
-            node.localConfig.lora.modem_preset = modem_preset
-            node.writeConfig("lora")
-
-        # Resolve the final modem preset across historical shorthands (later
-        # wins) and the schema-driven --ch-preset, then write exactly once.
-        preset_val = None
-        for _, destination, preset_name, _ in _MODEM_PRESET_SHORTHANDS:
-            if getattr(args, destination, False):
-                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(preset_name)
-
-        generic_preset_name = getattr(args, "ch_preset", None)
-        if generic_preset_name is not None:
-            # Accept integer enum values from programmatic callers; CLI always
-            # produces a string via _parse_modem_preset_name.
-            if isinstance(generic_preset_name, int):
-                # Validate by round-tripping through the name so bad integers
-                # fail with a clear error instead of silently corrupting config.
-                config_pb2.Config.LoRaConfig.ModemPreset.Name(
-                    generic_preset_name  # type: ignore[arg-type]
-                )
-                preset_val = generic_preset_name  # type: ignore[assignment]
-            else:
-                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(
-                    generic_preset_name
-                )
-
-        if preset_val is not None:
-            _set_simple_config(preset_val)
-
-        if args.ch_set or args.ch_enable or args.ch_disable:
-            outcome.close_now = True
-
-            _idx: int | None = mt_config.channel_index
-            if _idx is None:
-                _cli_exit("Warning: Need to specify '--ch-index'.", 1)
-            # _idx is now narrowed to int due to NoReturn from _cli_exit
-            node = interface.getNode(args.dest, **getNode_kwargs)
-            channels = node.channels
-            if channels is None:
-                _cli_exit("Warning: Device channels are not available.", 1)
-            # Reject negative indices explicitly (security fix)
-            if _idx < 0:
-                _cli_exit(
-                    f"Warning: Channel index {_idx} is out of range.",
-                    1,
-                )
-            # Try to access channel - IndexError catches out-of-range positive indices
-            # TypeError handles case where channels is not indexable (e.g., mocked in tests)
-            try:
-                ch = channels[_idx]
-            except (IndexError, TypeError):
-                _cli_exit(
-                    f"Warning: Channel index {_idx} is out of range.",
-                    1,
-                )
-
-            enable: bool = True  # default to enable
-            if args.ch_enable or args.ch_disable:
-                _cli_print(
-                    "Warning: --ch-enable and --ch-disable can produce noncontiguous channels, "
-                    "which can cause errors in some clients. Whenever possible, use --ch-add and --ch-del instead."
-                )
-                if _idx == 0:
-                    _cli_exit("Warning: Cannot enable/disable PRIMARY channel.")
-
-                enable = True  # default to enable
-                if args.ch_enable:
-                    enable = True
-                if args.ch_disable:
-                    enable = False
-
-            # Validate channel settings on a copy so a later invalid entry cannot
-            # leave earlier values partially mutated in the local cache.
-            pending_settings = type(ch.settings)()
-            pending_settings.CopyFrom(ch.settings)
-            channel_update_valid = True
-            for pref in args.ch_set or []:
-                if pref[0] == "psk":
-                    try:
-                        pending_settings.psk = meshtastic.util.fromPSK(pref[1])
-                    except ValueError as exc:
-                        _cli_exit(f"Invalid channel PSK: {exc}", 1)
-                else:
-                    if not _resolve_pref(pending_settings, pref[0]):
-                        _print_channel_field_choices(pending_settings, pref[0])
-                        channel_update_valid = False
-                        continue
-                    try:
-                        with _fatal_preference_value_errors():
-                            found = setPref(pending_settings, pref[0], pref[1])
-                    except _PreferenceValueError as exc:
-                        _cli_exit(str(exc), 1)
-                    if not found:
-                        _cli_exit(f"Invalid value for channel setting {pref[0]}.", 1)
-
-                enable = True  # If we set any pref, assume the user wants to enable the channel
-
-            if channel_update_valid:
-                if args.ch_set:
-                    ch.settings.CopyFrom(pending_settings)
-
-                if enable:
-                    ch.role = (
-                        channel_pb2.Channel.Role.PRIMARY
-                        if (_idx == 0)
-                        else channel_pb2.Channel.Role.SECONDARY
-                    )
-                else:
-                    ch.role = channel_pb2.Channel.Role.DISABLED
-
-                _cli_print("Writing modified channels to device")
-                node.writeChannel(_idx)
-            else:
-                _cli_exit(
-                    "Warning: Unknown channel setting name. No changes were made.",
-                    1,
-                )
+        cli_channel_contact_actions.handle_channel_mutations(
+            context, channel_contact_hooks
+        )
 
         if args.get_canned_message:
             outcome.close_now = True
@@ -2050,46 +1853,9 @@ def onConnected(interface: MeshInterface) -> None:
             ringtone = interface.getNode(args.dest, **getNode_kwargs).get_ringtone()
             print(f"ringtone:{ringtone}")
 
-        if args.show_region_presets:
-            outcome.close_now = True
-            if not _is_local_destination(interface, args.dest):
-                print(
-                    "Region/preset capabilities are available only from the local node."
-                )
-            elif not interface.regionPresets:
-                print(
-                    "This firmware did not provide usable region/preset compatibility metadata; "
-                    "preset choices remain unconstrained."
-                )
-            else:
-                for region, info in sorted(interface.regionPresets.items()):
-                    try:
-                        region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(
-                            cast(Any, region)
-                        )
-                    except ValueError:
-                        region_name = f"REGION_{region}"
-                    preset_names = []
-                    for value in info.presets:
-                        try:
-                            preset_names.append(
-                                config_pb2.Config.LoRaConfig.ModemPreset.Name(
-                                    cast(Any, value)
-                                )
-                            )
-                        except ValueError:
-                            preset_names.append(f"PRESET_{value}")
-                    try:
-                        default_name = config_pb2.Config.LoRaConfig.ModemPreset.Name(
-                            cast(Any, info.default_preset)
-                        )
-                    except ValueError:
-                        default_name = f"PRESET_{info.default_preset}"
-                    license_note = " licensed-only" if info.licensed_only else ""
-                    print(
-                        f"{region_name}: default={default_name}{license_note}; "
-                        f"presets={','.join(preset_names)}"
-                    )
+        cli_channel_contact_actions.handle_region_preset_display(
+            context, channel_contact_hooks
+        )
 
         cli_device_actions.handle_lockdown_action(context, device_hooks)
 
@@ -2137,35 +1903,9 @@ def onConnected(interface: MeshInterface) -> None:
             print("--show-fields can only be used with --nodes")
             return
 
-        if args.qr or args.qr_all:
-            outcome.close_now = True
-            url = interface.getNode(args.dest, True, **getNode_kwargs).getURL(
-                includeAll=args.qr_all
-            )
-            if args.qr_all:
-                urldesc = "Complete URL (includes all channels)"
-            else:
-                urldesc = "Primary channel URL"
-            print(f"{urldesc}: {url}")
-            if pyqrcode is not None:
-                qr = pyqrcode.create(url)
-                print(qr.terminal())
-            else:
-                print("Install pyqrcode to view a QR code printed to terminal.")
-
-        if args.contact_qr:
-            outcome.close_now = True
-            url = interface.localNode.getContactURL(
-                args.contact_qr,
-                should_ignore=args.contact_ignore,
-                manually_verified=args.contact_verified,
-            )
-            print(f"Contact URL: {url}")
-            if pyqrcode is not None:
-                qr = pyqrcode.create(url)
-                print(qr.terminal())
-            else:
-                print("Install pyqrcode to view a QR code printed to terminal.")
+        cli_channel_contact_actions.handle_channel_contact_display(
+            context, channel_contact_hooks
+        )
 
         log_set: Any = None
         # we need to keep a reference to the logset so it doesn't get GCed early
