@@ -783,6 +783,71 @@ def test_register_notifications_keeps_fromnum_during_provisional_connect(
         iface.close()
 
 
+def test_register_notifications_serializes_overlapping_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One dispatcher must not overlap backend registration transactions."""
+    client = _FromNumRegistrationClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    _prepare_provisional_notification_registration(iface, published_client=None)
+
+    first_backend_started = threading.Event()
+    second_backend_started = threading.Event()
+    release_first_backend = threading.Event()
+    start_barrier = threading.Barrier(3)
+    start_count_lock = threading.Lock()
+    start_count = 0
+    failures: list[BaseException] = []
+    original_start_notify = client.start_notify
+
+    def _blocking_start_notify(*args: object, **kwargs: object) -> None:
+        nonlocal start_count
+        original_start_notify(*args, **kwargs)
+        if not args or args[0] != FROMNUM_UUID:
+            return
+        with start_count_lock:
+            start_count += 1
+            current_start = start_count
+        if current_start == 1:
+            first_backend_started.set()
+            assert release_first_backend.wait(timeout=2.0)
+        else:
+            second_backend_started.set()
+
+    client.start_notify = _blocking_start_notify  # type: ignore[method-assign]
+
+    def _register() -> None:
+        try:
+            start_barrier.wait(timeout=2.0)
+            iface._register_notifications(cast(BLEClient, client))
+        except BaseException as exc:  # noqa: BLE001 - surfaced below
+            failures.append(exc)
+
+    workers = [threading.Thread(target=_register) for _ in range(2)]
+    try:
+        for worker in workers:
+            worker.start()
+        start_barrier.wait(timeout=2.0)
+        assert first_backend_started.wait(timeout=2.0)
+        assert not second_backend_started.wait(timeout=0.1)
+        release_first_backend.set()
+        for worker in workers:
+            worker.join(timeout=2.0)
+
+        assert all(not worker.is_alive() for worker in workers)
+        assert not failures, failures
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is True
+    finally:
+        release_first_backend.set()
+        for worker in workers:
+            worker.join(timeout=2.0)
+        with iface._state_lock:
+            iface.client = client
+            iface._client_publish_pending = False
+        iface.close()
+
+
 def test_register_notifications_keeps_fromnum_during_client_replacement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1186,7 +1251,7 @@ def test_reconnect_worker_successful_attempt() -> None:
             self.reset_called = False
             self._attempt_count = 0
 
-        def _reset(self) -> None:
+        def reset(self) -> None:
             """Reset the retry policy to its initial state.
 
             Sets the internal attempt counter to 0 and records that a reset occurred by setting `reset_called` to True.
@@ -1194,11 +1259,11 @@ def test_reconnect_worker_successful_attempt() -> None:
             self.reset_called = True
             self._attempt_count = 0
 
-        def _get_attempt_count(self) -> int:
+        def get_attempt_count(self) -> int:
             """Return the internal attempt count for ReconnectWorker tests."""
             return self._attempt_count
 
-        def _next_attempt(self) -> tuple[float, bool]:
+        def next_attempt(self) -> tuple[float, bool]:
             """Determine the delay before the next retry and whether another attempt should be made.
 
             Increments the internal attempt counter as a side effect.
@@ -1342,7 +1407,7 @@ def test_reconnect_worker_respects_retry_limits(
             self.reset_called = False
             self.attempts = 0
 
-        def _reset(self) -> None:
+        def reset(self) -> None:
             """Mark the retry policy as reset and clear its attempt counter.
 
             Sets the internal `reset_called` flag to True and resets `attempts` to 0.
@@ -1350,11 +1415,11 @@ def test_reconnect_worker_respects_retry_limits(
             self.reset_called = True
             self.attempts = 0
 
-        def _get_attempt_count(self) -> int:
+        def get_attempt_count(self) -> int:
             """Return the internal attempt count for ReconnectWorker tests."""
             return self.attempts
 
-        def _next_attempt(self) -> tuple[float, bool]:
+        def next_attempt(self) -> tuple[float, bool]:
             """Return the delay before the next retry and whether another retry should be attempted.
 
             Returns

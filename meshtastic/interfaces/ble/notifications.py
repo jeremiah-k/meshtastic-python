@@ -298,6 +298,7 @@ class BLENotificationDispatcher:
         self._error_handler_provider = error_handler_provider
         self._trigger_read_event = trigger_read_event
         self._registration_current_provider = registration_current_provider
+        self._registration_lock = RLock()
         self._fromnum_notify_enabled = False
         self._malformed_notification_count = 0
         self._malformed_notification_lock = RLock()
@@ -315,12 +316,14 @@ class BLENotificationDispatcher:
     @property
     def fromnum_notify_enabled(self) -> bool:
         """Return whether FROMNUM notifications are currently active."""
-        return self._fromnum_notify_enabled
+        with self._registration_lock:
+            return self._fromnum_notify_enabled
 
     @fromnum_notify_enabled.setter
     def fromnum_notify_enabled(self, enabled: bool) -> None:
         """Set FROMNUM notification-active flag."""
-        self._fromnum_notify_enabled = enabled
+        with self._registration_lock:
+            self._fromnum_notify_enabled = enabled
 
     @property
     def malformed_notification_count(self) -> int:
@@ -627,7 +630,26 @@ class BLENotificationDispatcher:
         log_handler: Callable[[Any, bytes | bytearray], None],
         from_num_handler: Callable[[Any, bytes], None],
     ) -> None:
-        """Register BLE characteristic notification handlers on ``client``."""
+        """Serialize one complete notification-registration transaction."""
+        with self._registration_lock:
+            self._register_notifications_locked(
+                iface,
+                client,
+                legacy_log_handler=legacy_log_handler,
+                log_handler=log_handler,
+                from_num_handler=from_num_handler,
+            )
+
+    def _register_notifications_locked(
+        self,
+        iface: "BLEInterface",
+        client: BLEClient,
+        *,
+        legacy_log_handler: Callable[[Any, bytes | bytearray], None],
+        log_handler: Callable[[Any, bytes | bytearray], None],
+        from_num_handler: Callable[[Any, bytes], None],
+    ) -> None:
+        """Register notification handlers while registration ownership is held."""
         self._current_legacy_log_handler = legacy_log_handler
         self._current_log_handler = log_handler
         self._current_from_num_handler = from_num_handler
