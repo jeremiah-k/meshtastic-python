@@ -537,6 +537,54 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_miss
         iface.close()
 
 
+def test_register_notifications_ignores_synthesized_public_error_reporter() -> None:
+    """A synthesized public reporter must not mask the declared legacy fallback."""
+    from meshtastic.interfaces.ble.notifications import (
+        BLENotificationDispatcher,
+        NotificationManager,
+    )
+
+    client = _ClientWithCallbacks()
+    legacy_errors: list[str] = []
+    dynamic_errors: list[str] = []
+
+    class _Iface:
+        _connection_session_epoch = 1
+        BLEError = BLEClient.BLEError
+
+        def __init__(self) -> None:
+            self.client = client
+
+        def _report_notification_handler_error(self, message: str) -> None:
+            legacy_errors.append(message)
+
+        def __getattr__(self, name: str) -> object:
+            if name == "report_notification_handler_error":
+                return lambda message: dynamic_errors.append(message)
+            raise AttributeError(name)
+
+    iface = _Iface()
+    dispatcher = BLENotificationDispatcher(
+        notification_manager=NotificationManager(),
+        error_handler_provider=lambda: None,
+        trigger_read_event=lambda: None,
+    )
+    dispatcher.register_notifications(
+        iface,  # type: ignore[arg-type]
+        cast(BLEClient, client),
+        legacy_log_handler=lambda _sender, _data: None,
+        log_handler=lambda _sender, _data: (_ for _ in ()).throw(
+            RuntimeError("handler boom")
+        ),
+        from_num_handler=lambda _sender, _data: None,
+    )
+
+    client.callbacks[LOGRADIO_UUID]("sender", b"log")
+
+    assert legacy_errors == ["Error in log notification handler"]
+    assert dynamic_errors == []
+
+
 def test_register_notifications_safe_execute_fallback_still_invokes_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

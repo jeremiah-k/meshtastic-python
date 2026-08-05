@@ -4,6 +4,11 @@ from queue import Empty, Full
 from threading import Event, Thread
 from typing import TYPE_CHECKING, Any, Callable, cast
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+)
+from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleStateAccess
 from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
     MAX_DRAIN_ITERATIONS,
@@ -522,31 +527,13 @@ class BLECompatibilityEventService:
                 )
 
         def _is_iface_closing() -> bool:
-            is_closing = bool(getattr(iface, "_closed", False))
-            state_manager = getattr(iface, "_state_manager", None)
-            raw_is_closing = getattr(state_manager, "is_closing", None)
-            if callable(raw_is_closing):
-                try:
-                    state_probe = raw_is_closing()
-                except Exception:  # noqa: BLE001 - shutdown probe remains best effort
-                    state_probe = None
-                if isinstance(state_probe, bool):
-                    is_closing = is_closing or state_probe
-            elif isinstance(raw_is_closing, bool):
-                is_closing = is_closing or raw_is_closing
-            if is_closing:
+            closed = _get_declared_member(iface, "_closed", False)
+            if closed is True:
                 return True
-            legacy_is_closing = getattr(state_manager, "_is_closing", None)
-            if callable(legacy_is_closing):
-                try:
-                    legacy_probe = legacy_is_closing()
-                except Exception:  # noqa: BLE001 - shutdown probe remains best effort
-                    legacy_probe = None
-                if isinstance(legacy_probe, bool):
-                    is_closing = is_closing or legacy_probe
-            elif isinstance(legacy_is_closing, bool):
-                is_closing = is_closing or legacy_is_closing
-            return is_closing
+            state_manager = _get_declared_member(iface, "_state_manager")
+            if state_manager is None:
+                return False
+            return _LifecycleStateAccess(state_manager).is_closing()
 
         def _publish_status_async(reason: str) -> bool:
             if _is_iface_closing():
@@ -641,8 +628,10 @@ class BLECompatibilityEventService:
         """
         resolved_publishing_thread = publishing_thread
         if resolved_publishing_thread is None:
-            get_publishing_thread = getattr(iface, "_get_publishing_thread", None)
-            if callable(get_publishing_thread):
+            get_publishing_thread = _get_declared_callable(
+                iface, "_get_publishing_thread"
+            )
+            if get_publishing_thread is not None:
                 try:
                     resolved_publishing_thread = get_publishing_thread()
                 except Exception:  # noqa: BLE001 - compatibility shim is best effort

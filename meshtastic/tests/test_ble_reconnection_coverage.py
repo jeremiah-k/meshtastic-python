@@ -194,6 +194,39 @@ class TestReconnectSchedulerHookResolution:
         assert hook is legacy_hook
 
     @pytest.mark.unit
+    def test_resolve_hook_ignores_synthesized_public_member(self) -> None:
+        """A dynamic public hook must not outrank a declared legacy hook."""
+
+        class _Coordinator:
+            def __init__(self) -> None:
+                self.legacy_calls = 0
+
+            def _create_thread(self, **_kwargs: object) -> str:
+                self.legacy_calls += 1
+                return "legacy"
+
+            def __getattr__(self, _name: str) -> object:
+                return lambda **_kwargs: "dynamic"
+
+        coordinator = _Coordinator()
+        scheduler = ReconnectScheduler(
+            state_manager=BLEStateManager(),
+            state_lock=RLock(),
+            thread_coordinator=coordinator,  # type: ignore[arg-type]
+            interface=SimpleNamespace(
+                _is_connection_closing=False,
+                _can_initiate_connection=True,
+            ),  # type: ignore[arg-type]
+        )
+
+        hook = scheduler._resolve_thread_coordinator_hook(
+            "create_thread", "_create_thread"
+        )
+
+        assert hook() == "legacy"
+        assert coordinator.legacy_calls == 1
+
+    @pytest.mark.unit
     def test_resolve_hook_missing_raises(self) -> None:
         """Missing both hooks raises ThreadCoordinatorMissingMethodError."""
         coordinator = SimpleNamespace()
@@ -409,6 +442,30 @@ class TestReconnectWorkerCallPolicy:
         )
         result = worker._call_policy("next_attempt")
         assert result == (1.0, True)
+
+    @pytest.mark.unit
+    def test_call_policy_ignores_synthesized_public_member(self) -> None:
+        """Policy lookup should use a declared legacy hook over dynamic synthesis."""
+
+        class _Policy:
+            def __init__(self) -> None:
+                self.legacy_calls = 0
+
+            def _next_attempt(self) -> tuple[float, bool]:
+                self.legacy_calls += 1
+                return (2.0, True)
+
+            def __getattr__(self, _name: str) -> object:
+                return lambda *_args: (99.0, False)
+
+        policy = _Policy()
+        worker = ReconnectWorker(
+            interface=SimpleNamespace(),  # type: ignore[arg-type]
+            reconnect_policy=policy,  # type: ignore[arg-type]
+        )
+
+        assert worker._call_policy("next_attempt") == (2.0, True)
+        assert policy.legacy_calls == 1
 
     @pytest.mark.unit  # type: ignore[arg-type]
     def test_call_policy_missing_raises(self) -> None:

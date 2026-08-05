@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import _resolve_declared_callable
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.errors import BLEDBusTransportError
@@ -134,14 +135,11 @@ class ReconnectScheduler:
         ThreadCoordinatorMissingMethodError
             If neither hook is available and callable.
         """
-        public_hook = getattr(self.thread_coordinator, public_name, None)
-        if callable(public_hook):
-            return cast(Callable[..., object], public_hook)
-
-        legacy_hook = getattr(self.thread_coordinator, legacy_name, None)
-        if callable(legacy_hook):
-            return cast(Callable[..., object], legacy_hook)
-
+        hook = _resolve_declared_callable(
+            self.thread_coordinator, public_name, legacy_name
+        )
+        if hook is not None:
+            return cast(Callable[..., object], hook)
         raise ThreadCoordinatorMissingMethodError(f"{public_name}/{legacy_name}")
 
     def _thread_create_thread(
@@ -333,16 +331,15 @@ class ReconnectWorker:
         if camel_name not in candidate_names:
             candidate_names.append(camel_name)
 
-        for candidate_name in candidate_names:
-            candidate_method = getattr(self.reconnect_policy, candidate_name, None)
-            if callable(candidate_method):
-                return candidate_method(*args)
-
-        # Backward compatibility for test doubles that only expose underscored methods.
-        for candidate_name in candidate_names:
-            fallback = getattr(self.reconnect_policy, f"_{candidate_name}", None)
-            if callable(fallback):
-                return fallback(*args)
+        compatibility_names = [
+            *candidate_names,
+            *(f"_{candidate_name}" for candidate_name in candidate_names),
+        ]
+        candidate_method = _resolve_declared_callable(
+            self.reconnect_policy, *compatibility_names
+        )
+        if candidate_method is not None:
+            return candidate_method(*args)
         raise ReconnectPolicyMissingMethodError(method_name)
 
     def _should_abort_reconnect(

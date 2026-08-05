@@ -15,6 +15,7 @@ from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
+    _get_declared_member,
     _resolve_declared_callable,
 )
 from meshtastic.interfaces.ble.client import BLEClient
@@ -509,7 +510,7 @@ class DiscoveryManager:
 
         def _probe_connected_state(candidate: object) -> bool | None:
             for method_name in ("isConnected", "is_connected"):
-                probe = getattr(candidate, method_name, None)
+                probe = _get_declared_member(candidate, method_name)
                 if callable(probe):
                     try:
                         result = probe()
@@ -522,7 +523,7 @@ class DiscoveryManager:
                         return None
                     if isinstance(result, bool):
                         return result
-            member_probe = getattr(candidate, "is_connected", None)
+            member_probe = _get_declared_member(candidate, "is_connected")
             if isinstance(member_probe, bool):
                 return member_probe
             return None

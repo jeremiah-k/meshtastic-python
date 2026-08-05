@@ -403,6 +403,99 @@ def test_publish_connection_status_legacy_resolves_default_publishing_thread(
     assert sent == [("meshtastic.connection.status", iface, True)]
 
 
+def test_status_publish_ignores_synthesized_closing_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A synthesized closing hook must not suppress an otherwise valid publish."""
+    import meshtastic.mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble import (
+        compatibility_service as compatibility_service_mod,
+    )
+
+    sent: list[tuple[str, object, bool]] = []
+
+    class _StateManager:
+        _is_closing = False
+
+        def __getattr__(self, name: str) -> object:
+            if name == "is_closing":
+                return lambda: True
+            raise AttributeError(name)
+
+    class _ImmediateThread:
+        def __init__(self, *, target: Any, **_kwargs: object) -> None:
+            self._target = target
+
+        def start(self) -> None:
+            self._target()
+
+    iface = SimpleNamespace(_closed=False, _state_manager=_StateManager())
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(
+            sendMessage=lambda topic, *, interface, connected: sent.append(
+                (topic, interface, connected)
+            )
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        compatibility_service_mod, "Thread", _ImmediateThread, raising=True
+    )
+
+    BLECompatibilityEventService.publish_connection_status(
+        iface,  # type: ignore[arg-type]
+        connected=True,
+        publishing_thread=None,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
+
+
+def test_legacy_status_publish_ignores_synthesized_thread_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy status publishing should only call a declared provider hook."""
+    import meshtastic.mesh_interface as mesh_iface_module
+
+    sent: list[tuple[str, object, bool]] = []
+    fallback_thread = SimpleNamespace(
+        queue=SimpleNamespace(put_nowait=lambda callback: callback()),
+        thread=None,
+    )
+
+    class _Iface:
+        def __getattr__(self, name: str) -> object:
+            if name == "_get_publishing_thread":
+                return lambda: (_ for _ in ()).throw(
+                    AssertionError("synthesized provider must be ignored")
+                )
+            raise AttributeError(name)
+
+    iface = _Iface()
+    monkeypatch.setattr(
+        mesh_iface_module, "publishingThread", fallback_thread, raising=True
+    )
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(
+            sendMessage=lambda topic, *, interface, connected: sent.append(
+                (topic, interface, connected)
+            )
+        ),
+        raising=True,
+    )
+
+    BLECompatibilityEventService.publish_connection_status_legacy(
+        iface,  # type: ignore[arg-type]
+        connected=True,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
+
+
 def test_coordination_inert_thread_start_is_noop() -> None:
     """Starting an inert coordinator thread should only warn and return."""
     coordinator = ThreadCoordinator()

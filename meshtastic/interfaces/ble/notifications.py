@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING, Any, cast
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.compat_adapter import _resolve_declared_callable
+from meshtastic.interfaces.ble.compat_adapter import (
+    _iter_declared_callables,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED,
     FROMNUM_UUID,
@@ -693,20 +696,13 @@ class BLENotificationDispatcher:
                         return False
                     return True
 
-                report_notification_error = getattr(
+                for _member_name, reporter in _iter_declared_callables(
                     iface,
                     "report_notification_handler_error",
-                    None,
-                )
-                if _try_report(report_notification_error):
-                    return
-                legacy_report_notification_error = getattr(
-                    iface,
                     "_report_notification_handler_error",
-                    None,
-                )
-                if _try_report(legacy_report_notification_error):
-                    return
+                ):
+                    if _try_report(reporter):
+                        return
                 self.report_notification_handler_error(error_msg)
 
             def _invoke_handler() -> None:

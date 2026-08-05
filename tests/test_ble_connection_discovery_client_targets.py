@@ -1724,3 +1724,35 @@ def test_bleclient_remaining_hook_and_connection_branches() -> None:
     client._require_bleak_client = lambda _message: _BrokenServices()
     with pytest.raises(BLEClient.BLEError):
         client._get_services()
+
+
+def test_discovery_cached_client_ignores_synthesized_connectivity_probe() -> None:
+    """A dynamic public probe must not override a declared connected-state member."""
+
+    class _CachedDiscoveryClient:
+        bleak_client = object()
+        is_connected = True
+
+        def __init__(self) -> None:
+            self.discover_calls = 0
+
+        def discover(self, **_kwargs: object) -> dict[str, object]:
+            self.discover_calls += 1
+            return {}
+
+        def __getattr__(self, name: str) -> object:
+            if name == "isConnected":
+                return lambda: False
+            raise AttributeError(name)
+
+    cached = _CachedDiscoveryClient()
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("connected cached client should be reused")
+        )
+    )
+    manager._client = cached  # type: ignore[assignment]
+
+    assert manager._discover_devices(None) == []
+    assert manager._client is cached
+    assert cached.discover_calls == 1
