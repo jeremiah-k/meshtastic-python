@@ -1947,6 +1947,21 @@ def test_queue_wait_abort_reason_reports_failure_and_closing() -> None:
 
 
 @pytest.mark.unit
+def test_disconnect_source_property_rejects_non_string_values() -> None:
+    """Disconnect diagnostics should reject values the getter would discard."""
+    iface = MeshInterface.__new__(MeshInterface)
+
+    with pytest.raises(
+        TypeError,
+        match="_last_disconnect_source must be a str or None, got int",
+    ):
+        iface._last_disconnect_source = 7  # type: ignore[assignment]
+
+    iface._last_disconnect_source = None
+    assert iface._last_disconnect_source is None
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_queue_wait_timeout_can_be_overridden_by_transport_subclass() -> None:
     class FastFailInterface(MeshInterface):

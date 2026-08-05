@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, Any, cast
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.compat_adapter import (
+    _iter_declared_callables,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED,
     FROMNUM_UUID,
@@ -22,8 +26,6 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import DecodeError
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
     _is_unexpected_keyword_error,
     _sleep,
 )
@@ -276,6 +278,7 @@ class BLENotificationDispatcher:
         notification_manager: NotificationManager,
         error_handler_provider: Callable[[], object],
         trigger_read_event: Callable[[], None],
+        registration_current_provider: Callable[[BLEClient, int], bool],
     ) -> None:
         """Create a notification-dispatch collaborator.
 
@@ -287,14 +290,19 @@ class BLENotificationDispatcher:
             Function returning the current interface error-handler object.
         trigger_read_event : Callable[[], None]
             Callback that wakes the receive loop after FROMNUM handling.
+        registration_current_provider : Callable[[BLEClient, int], bool]
+            Interface-owned lifecycle predicate that validates whether notification
+            registration still belongs to the current connection attempt.
         """
         self._notification_manager = notification_manager
         self._error_handler_provider = error_handler_provider
         self._trigger_read_event = trigger_read_event
+        self._registration_current_provider = registration_current_provider
+        self._registration_lock = RLock()
         self._fromnum_notify_enabled = False
         self._malformed_notification_count = 0
         self._malformed_notification_lock = RLock()
-        self._malformed_notification_state_lock = Lock()
+        self._notification_state_lock = Lock()
         self._malformed_notification_handling_started = False
         self._current_legacy_log_handler: Callable[[Any, Any], None] | None = None
         self._current_log_handler: Callable[[Any, Any], None] | None = None
@@ -308,12 +316,15 @@ class BLENotificationDispatcher:
     @property
     def fromnum_notify_enabled(self) -> bool:
         """Return whether FROMNUM notifications are currently active."""
-        return self._fromnum_notify_enabled
+        with self._notification_state_lock:
+            return self._fromnum_notify_enabled
 
     @fromnum_notify_enabled.setter
     def fromnum_notify_enabled(self, enabled: bool) -> None:
         """Set FROMNUM notification-active flag."""
-        self._fromnum_notify_enabled = enabled
+        with self._registration_lock:
+            with self._notification_state_lock:
+                self._fromnum_notify_enabled = enabled
 
     @property
     def malformed_notification_count(self) -> int:
@@ -335,7 +346,7 @@ class BLENotificationDispatcher:
     @malformed_notification_lock.setter
     def malformed_notification_lock(self, lock: RLock) -> None:
         """Set malformed-notification lock for compatibility callers."""
-        with self._malformed_notification_state_lock:
+        with self._notification_state_lock:
             if self._malformed_notification_handling_started:
                 raise RuntimeError(
                     "Cannot replace malformed_notification_lock after notification handling starts."
@@ -344,7 +355,7 @@ class BLENotificationDispatcher:
 
     def handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """Track malformed FROMNUM notifications and emit threshold warnings."""
-        with self._malformed_notification_state_lock:
+        with self._notification_state_lock:
             self._malformed_notification_handling_started = True
         with self._malformed_notification_lock:
             self._malformed_notification_count += 1
@@ -363,7 +374,7 @@ class BLENotificationDispatcher:
         -------
         object | None
             Resolved error-handler object, or ``None`` when provider lookup
-            fails or returns an unconfigured mock placeholder.
+            fails or returns no handler.
         """
         try:
             error_handler = self._error_handler_provider()
@@ -372,8 +383,6 @@ class BLENotificationDispatcher:
                 "Error resolving notification error-handler provider.",
                 exc_info=True,
             )
-            return None
-        if _is_unconfigured_mock_member(error_handler):
             return None
         return error_handler
 
@@ -384,40 +393,34 @@ class BLENotificationDispatcher:
             logger.debug(error_msg)
             return
         report_exception: Callable[[str], Any] | None = None
-        for hook_name in ("safe_execute", "_safe_execute"):
-            safe_execute_hook = getattr(error_handler, hook_name, None)
-            if callable(safe_execute_hook) and not _is_unconfigured_mock_callable(
-                safe_execute_hook
-            ):
-                safe_execute_callable = cast(Callable[..., Any], safe_execute_hook)
+        safe_execute_hook = _resolve_declared_callable(
+            error_handler, "safe_execute", "_safe_execute"
+        )
+        if safe_execute_hook is not None:
+            safe_execute_callable = cast(Callable[..., Any], safe_execute_hook)
 
-                def _report_via_safe_execute(
-                    message: str,
-                    *,
-                    _safe_execute_callable: Callable[..., Any] = safe_execute_callable,
-                ) -> None:
-                    def _raise_handler_error() -> None:
-                        raise RuntimeError(message)
+            def _report_via_safe_execute(
+                message: str,
+                *,
+                _safe_execute_callable: Callable[..., Any] = safe_execute_callable,
+            ) -> None:
+                def _raise_handler_error() -> None:
+                    raise RuntimeError(message)
 
-                    BLENotificationDispatcher.invoke_safe_execute_compat(
-                        _safe_execute_callable,
-                        _raise_handler_error,
-                        error_msg=message,
-                        fallback=lambda: logger.debug(message),
-                    )
+                BLENotificationDispatcher.invoke_safe_execute_compat(
+                    _safe_execute_callable,
+                    _raise_handler_error,
+                    error_msg=message,
+                    fallback=lambda: logger.debug(message),
+                )
 
-                report_exception = _report_via_safe_execute
-                break
-        for hook_name in (
-            "handle_unhandled_exception",
-            "_handle_unhandled_exception",
-        ):
-            if report_exception is not None:
-                break
-            hook = getattr(error_handler, hook_name, None)
-            if callable(hook) and not _is_unconfigured_mock_callable(hook):
-                report_exception = hook
-                break
+            report_exception = _report_via_safe_execute
+        if report_exception is None:
+            report_exception = _resolve_declared_callable(
+                error_handler,
+                "handle_unhandled_exception",
+                "_handle_unhandled_exception",
+            )
         if report_exception is not None:
             try:
                 report_exception(error_msg)
@@ -593,7 +596,7 @@ class BLENotificationDispatcher:
 
     def from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Parse FROMNUM payload, reset malformed counter, and wake read loop."""
-        with self._malformed_notification_state_lock:
+        with self._notification_state_lock:
             self._malformed_notification_handling_started = True
         try:
             if len(b) != 4:
@@ -628,7 +631,26 @@ class BLENotificationDispatcher:
         log_handler: Callable[[Any, bytes | bytearray], None],
         from_num_handler: Callable[[Any, bytes], None],
     ) -> None:
-        """Register BLE characteristic notification handlers on ``client``."""
+        """Serialize one complete notification-registration transaction."""
+        with self._registration_lock:
+            self._register_notifications_locked(
+                iface,
+                client,
+                legacy_log_handler=legacy_log_handler,
+                log_handler=log_handler,
+                from_num_handler=from_num_handler,
+            )
+
+    def _register_notifications_locked(
+        self,
+        iface: "BLEInterface",
+        client: BLEClient,
+        *,
+        legacy_log_handler: Callable[[Any, bytes | bytearray], None],
+        log_handler: Callable[[Any, bytes | bytearray], None],
+        from_num_handler: Callable[[Any, bytes], None],
+    ) -> None:
+        """Register notification handlers while registration ownership is held."""
         self._current_legacy_log_handler = legacy_log_handler
         self._current_log_handler = log_handler
         self._current_from_num_handler = from_num_handler
@@ -657,26 +679,17 @@ class BLENotificationDispatcher:
             self.malformed_notification_count = 0
 
         def _registration_still_current() -> bool:
-            return (
-                int(getattr(iface, "_connection_session_epoch", 0))
-                == current_session_epoch
-                and getattr(iface, "client", None) is client
-            )
-
-        def _rollback_stale_registration(*characteristics: str) -> None:
-            for characteristic in characteristics:
-                try:
-                    client.stop_notify(
-                        characteristic,
-                        timeout=NOTIFICATION_START_TIMEOUT,
-                    )
-                except Exception:  # noqa: BLE001 - stale rollback must stay best effort
-                    logger.debug(
-                        "Error stopping stale notification subscription for %s",
-                        characteristic,
-                        exc_info=True,
-                    )
-            _rollback_registration_state(stop_client=client)
+            try:
+                return (
+                    self._registration_current_provider(client, current_session_epoch)
+                    is True
+                )
+            except Exception:  # noqa: BLE001 - stale registration must fail closed
+                logger.debug(
+                    "Error validating BLE notification registration ownership.",
+                    exc_info=True,
+                )
+                return False
 
         if self._registered_notification_session_epoch != current_session_epoch:
             _rollback_registration_state(stop_client=client)
@@ -690,7 +703,7 @@ class BLENotificationDispatcher:
         ) -> None:
             def _report_notification_error() -> None:
                 def _try_report(hook: object | None) -> bool:
-                    if not callable(hook) or _is_unconfigured_mock_callable(hook):
+                    if not callable(hook):
                         return False
                     try:
                         hook(error_msg)
@@ -702,20 +715,13 @@ class BLENotificationDispatcher:
                         return False
                     return True
 
-                report_notification_error = getattr(
+                for _member_name, reporter in _iter_declared_callables(
                     iface,
                     "report_notification_handler_error",
-                    None,
-                )
-                if _try_report(report_notification_error):
-                    return
-                legacy_report_notification_error = getattr(
-                    iface,
                     "_report_notification_handler_error",
-                    None,
-                )
-                if _try_report(legacy_report_notification_error):
-                    return
+                ):
+                    if _try_report(reporter):
+                        return
                 self.report_notification_handler_error(error_msg)
 
             def _invoke_handler() -> None:
@@ -730,14 +736,10 @@ class BLENotificationDispatcher:
                     _report_notification_error()
 
             error_handler = self._resolve_error_handler()
-            safe_execute = getattr(error_handler, "safe_execute", None)
-            if not callable(safe_execute) or _is_unconfigured_mock_callable(
-                safe_execute
-            ):
-                safe_execute = getattr(error_handler, "_safe_execute", None)
-            if not callable(safe_execute) or _is_unconfigured_mock_callable(
-                safe_execute
-            ):
+            safe_execute = _resolve_declared_callable(
+                error_handler, "safe_execute", "_safe_execute"
+            )
+            if safe_execute is None:
                 try:
                     _invoke_handler()
                 except (
@@ -871,7 +873,7 @@ class BLENotificationDispatcher:
                 else:
                     self._started_notify_characteristics.add(LEGACY_LOGRADIO_UUID)
                     if not _registration_still_current():
-                        _rollback_stale_registration(LEGACY_LOGRADIO_UUID)
+                        _rollback_registration_state(stop_client=client)
                         return
 
         try:
@@ -907,19 +909,35 @@ class BLENotificationDispatcher:
                 else:
                     self._started_notify_characteristics.add(LOGRADIO_UUID)
                     if not _registration_still_current():
-                        _rollback_stale_registration(LOGRADIO_UUID)
+                        _rollback_registration_state(stop_client=client)
                         return
 
         ingress_handler = _get_or_create_cached_handler(
             cache_attr="_safe_from_num_handler",
             factory=lambda: _safe_from_num_handler,
         )
-        if FROMNUM_UUID in self._started_notify_characteristics:
-            current_ingress_handler = self._notification_manager._get_callback(
-                FROMNUM_UUID
-            )
-            if current_ingress_handler is not ingress_handler:
+
+        def _track_fromnum_handler() -> bool:
+            try:
+                current_ingress_handler = self._notification_manager._get_callback(
+                    FROMNUM_UUID
+                )
+                if current_ingress_handler is ingress_handler:
+                    return True
                 self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
+            except Exception as err:  # noqa: BLE001 - local/backend state must converge
+                logger.warning(
+                    "Unable to track FROMNUM notification callback for %s: %s; rolling back backend notifications and falling back to polling reads.",
+                    FROMNUM_UUID,
+                    err,
+                )
+                _rollback_registration_state(stop_client=client)
+                return False
+            return True
+
+        if FROMNUM_UUID in self._started_notify_characteristics:
+            if not _track_fromnum_handler():
+                return
             if not _registration_still_current():
                 _rollback_registration_state(stop_client=client)
                 return
@@ -974,17 +992,22 @@ class BLENotificationDispatcher:
                 _rollback_fromnum_registration_state()
                 return
             else:
-                current_ingress_handler = self._notification_manager._get_callback(
-                    FROMNUM_UUID
-                )
-                if current_ingress_handler is not ingress_handler:
-                    self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
-                if not _registration_still_current():
-                    _rollback_stale_registration(FROMNUM_UUID)
-                    return
+                # Track the active backend subscription immediately after start_notify
+                # succeeds. Any later validation or local callback-registration failure
+                # can then unwind through the single centralized rollback path exactly
+                # once per started characteristic.
                 self._started_notify_characteristics.add(FROMNUM_UUID)
+                if not _track_fromnum_handler():
+                    return
+                if not _registration_still_current():
+                    _rollback_registration_state(stop_client=client)
+                    return
                 self.fromnum_notify_enabled = True
                 self._registered_notification_session_epoch = current_session_epoch
+                logger.debug(
+                    "FROMNUM notifications active for BLE session %d; receive loop using notification-driven reads.",
+                    current_session_epoch,
+                )
                 return
 
     def log_radio_handler(self, _: Any, b: bytes | bytearray) -> str | None:

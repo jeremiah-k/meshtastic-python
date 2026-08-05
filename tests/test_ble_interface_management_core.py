@@ -804,7 +804,7 @@ def test_execute_management_command_falls_back_when_existing_client_disappears(
 
     monkeypatch.setattr(
         iface,
-        "_get_management_client_if_available",
+        "_get_management_client_if_available_locked",
         _get_management_client,
     )
     monkeypatch.setattr(
@@ -825,7 +825,7 @@ def test_execute_management_command_requires_resolved_target_address(
     """Management command path should fail when no target address can be resolved."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     monkeypatch.setattr(
-        iface, "_get_management_client_if_available", lambda _address: None
+        iface, "_get_management_client_if_available_locked", lambda _address: None
     )
     monkeypatch.setattr(
         iface, "_resolve_target_address_for_management", lambda _address: None
@@ -897,3 +897,26 @@ def test_dummy_client_management_rejects_cleared_backend(
     else:
         with pytest.raises(BLEClient.BLEError, match=re.escape(expected_error)):
             client.unpair()
+
+
+def test_ble_client_management_ignores_synthesized_optional_method() -> None:
+    """Optional management operations should require a declared backend method."""
+
+    class _DynamicBleakClient:
+        def __getattr__(self, _name: str) -> object:
+            async def _dynamic(**_kwargs: object) -> None:
+                return None
+
+            return _dynamic
+
+    client = BLEClient.__new__(BLEClient)
+    client.bleak_client = _DynamicBleakClient()  # type: ignore[assignment]
+
+    with pytest.raises(BLEClient.BLEError) as exc_info:
+        client._run_optional_management_method(  # noqa: SLF001
+            method_name="pair",
+            await_timeout=1.0,
+            not_initialized_error=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+            unsupported_error="pair unsupported",
+        )
+    assert str(exc_info.value) == "pair unsupported"

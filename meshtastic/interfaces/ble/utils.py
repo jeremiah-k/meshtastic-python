@@ -7,8 +7,11 @@ import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
 from typing import Any, TypeVar, cast
-from unittest.mock import DEFAULT, Mock, NonCallableMock
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_member,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.constants import logger
 
 T = TypeVar("T")
@@ -16,47 +19,6 @@ _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 _POSITIONAL_ONLY_KEYWORD_FRAGMENT = (
     "positional-only arguments passed as keyword arguments"
 )
-
-
-def _is_unconfigured_mock_member(candidate: object) -> bool:
-    """Return whether a candidate is an unconfigured auto-generated mock member.
-
-    Parameters
-    ----------
-    candidate : object
-        Candidate object to inspect.
-
-    Returns
-    -------
-    bool
-        True when the object is a mock member with default return behavior,
-        no side effect, and no recorded calls.
-    """
-    if not isinstance(candidate, (Mock, NonCallableMock)):
-        return False
-    return (
-        getattr(candidate, "_mock_return_value", DEFAULT) is DEFAULT
-        and getattr(candidate, "_mock_wraps", None) is None
-        and getattr(candidate, "side_effect", None) is None
-        and not getattr(candidate, "call_args_list", [])
-    )
-
-
-def _is_unconfigured_mock_callable(candidate: object) -> bool:
-    """Return whether a candidate is an unconfigured callable auto-generated mock.
-
-    Parameters
-    ----------
-    candidate : object
-        Candidate object to inspect.
-
-    Returns
-    -------
-    bool
-        True when candidate is callable and also matches
-        ``_is_unconfigured_mock_member``.
-    """
-    return callable(candidate) and _is_unconfigured_mock_member(candidate)
 
 
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
@@ -163,16 +125,8 @@ def _resolve_safe_execute(iface: object) -> Callable[..., Any] | None:
         Resolved ``safe_execute`` callable when available and configured;
         otherwise ``None``.
     """
-    error_handler = getattr(iface, "error_handler", None)
-    safe_execute = getattr(error_handler, "safe_execute", None)
-    if callable(safe_execute) and not _is_unconfigured_mock_callable(safe_execute):
-        return cast(Callable[..., Any], safe_execute)
-    legacy_safe_execute = getattr(error_handler, "_safe_execute", None)
-    if callable(legacy_safe_execute) and not _is_unconfigured_mock_callable(
-        legacy_safe_execute
-    ):
-        return cast(Callable[..., Any], legacy_safe_execute)
-    return None
+    error_handler = _get_declared_member(iface, "error_handler")
+    return _resolve_declared_callable(error_handler, "safe_execute", "_safe_execute")
 
 
 def _safe_execute_through_adapter(

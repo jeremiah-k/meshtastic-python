@@ -1,7 +1,8 @@
 """Internal leaf constants shared by Meshtastic runtime components.
 
 This module intentionally contains no imports from other ``meshtastic`` modules.
-Public compatibility is provided by re-exports from :mod:`meshtastic`.
+Names listed in ``__all__`` are re-exported from :mod:`meshtastic`;
+other constants in this leaf module remain internal implementation details.
 """
 
 __all__ = (
@@ -31,3 +32,8 @@ NODELESS_WANT_CONFIG_ID = 69420
 
 DECODE_ERROR_KEY = "error"
 """Dictionary key used to retain protobuf decode failures in packet data."""
+
+LAST_DISCONNECT_SOURCE_TYPE_ERROR = (
+    "_last_disconnect_source must be a str or None, got {type_name}"
+)
+"""Stable validation message for disconnect-source compatibility views."""

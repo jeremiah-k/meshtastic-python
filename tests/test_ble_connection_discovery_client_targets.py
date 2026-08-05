@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import builtins
 import contextlib
 from collections.abc import Iterator
 from threading import Event, RLock
@@ -28,12 +27,12 @@ from meshtastic.interfaces.ble.errors import (
     BLEDeviceNotFoundError,
     BLEErrorHandler,
 )
+from meshtastic.interfaces.ble.management_runtime import BLEManagementCommandHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
 
-MOCK_IMPORT_UNAVAILABLE_MSG = "mock import unavailable"
 TEST_BLE_ADDRESS = "AA:BB:CC:DD:EE:FF"
 TEST_CONNECT_TIMEOUT_SECONDS = 5.0
 
@@ -84,25 +83,35 @@ def test_connection_validator_client_is_connected_member_paths() -> None:
     assert ConnectionValidator._client_is_connected(client_unknown) is False
 
 
+def test_connectivity_probes_share_declared_fallback_semantics() -> None:
+    """Connection and management paths should use the same declared fallback."""
+
+    class FallbackConnectivityClient:
+        def __init__(self) -> None:
+            self.preferred_probe_calls = 0
+
+        def isConnected(self) -> bool:  # noqa: N802 - compatibility spelling
+            self.preferred_probe_calls += 1
+            raise RuntimeError("preferred probe failed")
+
+        def _is_connected(self) -> bool:
+            return True
+
+        def __getattr__(self, _name: str) -> object:
+            return lambda: False
+
+    client = FallbackConnectivityClient()
+
+    assert ConnectionValidator._client_is_connected(client) is True  # type: ignore[arg-type]
+    assert client.preferred_probe_calls == 1
+    assert BLEManagementCommandHandler._is_client_connected(client) is True  # type: ignore[arg-type]
+    assert client.preferred_probe_calls == 2
+
+
 def test_connection_helpers_cover_mock_import_and_inline_safe_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Connection helper utilities should handle import fallback and inline cleanup execution."""
-    real_import = builtins.__import__
-
-    def _import_with_mock_failure(
-        name: str,
-        globals_arg: dict[str, object] | None = None,
-        locals_arg: dict[str, object] | None = None,
-        fromlist: tuple[str, ...] = (),
-        level: int = 0,
-    ) -> object:
-        if name == "unittest.mock":
-            raise ImportError(MOCK_IMPORT_UNAVAILABLE_MSG)
-        return real_import(name, globals_arg, locals_arg, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", _import_with_mock_failure)
-    assert connection_mod._is_mock_instance(object()) is False
 
     cleanup_calls: list[str] = []
 
@@ -386,6 +395,27 @@ def test_connection_orchestrator_direct_and_retry_exception_paths(
             orchestrator._compat_find_device(TEST_BLE_ADDRESS)
 
 
+def test_compat_find_device_ignores_synthesized_preferred_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Declared legacy find-device hooks should beat synthesized preferred names."""
+
+    class _LegacyFindDeviceInterface:
+        def __getattr__(self, _name: str) -> object:
+            return lambda _target: (_ for _ in ()).throw(
+                AssertionError("dynamic find-device hook must be ignored")
+            )
+
+        def find_device(self, target: str | None) -> object:
+            return SimpleNamespace(address=target)
+
+    with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
+        orchestrator.interface = _LegacyFindDeviceInterface()
+        result = orchestrator._compat_find_device(TEST_BLE_ADDRESS)
+
+    assert result.address == TEST_BLE_ADDRESS
+
+
 def test_attempt_direct_connect_allows_discovery_for_derived_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -522,7 +552,7 @@ def test_client_error_handler_and_connection_state_branches(
         func()
 
     client.error_handler = SimpleNamespace(
-        safe_cleanup=MagicMock(),
+        safe_cleanup=None,
         _safe_cleanup=_legacy_cleanup,
     )
     client._error_handler_safe_cleanup(lambda: None, "cleanup")
@@ -627,7 +657,7 @@ def test_orchestrator_dispatch_and_event_remaining_branches(
     with _make_orchestrator(monkeypatch) as (_iface, orchestrator):
         assert (
             orchestrator._dispatch_public_or_underscore(
-                target=SimpleNamespace(_legacy=MagicMock()),
+                target=SimpleNamespace(),
                 public_name="public",
                 underscore_name="_legacy",
                 call_member=False,
@@ -1694,3 +1724,35 @@ def test_bleclient_remaining_hook_and_connection_branches() -> None:
     client._require_bleak_client = lambda _message: _BrokenServices()
     with pytest.raises(BLEClient.BLEError):
         client._get_services()
+
+
+def test_discovery_cached_client_ignores_synthesized_connectivity_probe() -> None:
+    """A dynamic public probe must not override a declared connected-state member."""
+
+    class _CachedDiscoveryClient:
+        bleak_client = object()
+        is_connected = True
+
+        def __init__(self) -> None:
+            self.discover_calls = 0
+
+        def discover(self, **_kwargs: object) -> dict[str, object]:
+            self.discover_calls += 1
+            return {}
+
+        def __getattr__(self, name: str) -> object:
+            if name == "isConnected":
+                return lambda: False
+            raise AttributeError(name)
+
+    cached = _CachedDiscoveryClient()
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("connected cached client should be reused")
+        )
+    )
+    manager._client = cached  # type: ignore[assignment]
+
+    assert manager._discover_devices(None) == []
+    assert manager._client is cached
+    assert cached.discover_calls == 1

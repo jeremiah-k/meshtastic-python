@@ -7,7 +7,15 @@ from typing import TYPE_CHECKING, NoReturn, cast
 
 from bleak import BleakClient as BleakRootClient
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _resolve_declared_member,
+)
 from meshtastic.interfaces.ble.coordination import ThreadLike
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
     BLEDisconnectLifecycleCoordinator,
@@ -30,10 +38,7 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
-)
+
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -82,8 +87,7 @@ class BLELifecycleService:
             "start_receive_thread",
         )
         for method_name in required_methods:
-            method = getattr(candidate, method_name, None)
-            if not callable(method) or _is_unconfigured_mock_callable(method):
+            if _get_declared_callable(candidate, method_name) is None:
                 return False
         return True
 
@@ -93,8 +97,7 @@ class BLELifecycleService:
         expected_method: str,
     ) -> bool:
         """Return whether candidate exposes a specific receive-lifecycle method."""
-        method = getattr(candidate, expected_method, None)
-        return callable(method) and not _is_unconfigured_mock_callable(method)
+        return _get_declared_callable(candidate, expected_method) is not None
 
     @staticmethod
     def _receive_lifecycle_coordinator(
@@ -134,33 +137,33 @@ class BLELifecycleService:
                 )
             )
 
-        get_lifecycle_controller = getattr(iface, "_get_lifecycle_controller", None)
-        if callable(get_lifecycle_controller) and not _is_unconfigured_mock_callable(
-            get_lifecycle_controller
-        ):
-            lifecycle_controller = get_lifecycle_controller()
-            if lifecycle_controller is not None and not _is_unconfigured_mock_member(
-                lifecycle_controller
-            ):
-                for attr_name in (
+        get_lifecycle_controller = _get_declared_callable(iface, "_get_lifecycle_controller")
+        if get_lifecycle_controller is not None:
+            try:
+                lifecycle_controller = get_lifecycle_controller()
+            except Exception:  # noqa: BLE001 - compatibility probe falls back
+                _log_ble_failure(
+                    _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                    "BLE lifecycle controller probe failed",
+                )
+                lifecycle_controller = None
+            if lifecycle_controller is not None:
+                receive_coordinator = _resolve_declared_member(
+                    lifecycle_controller,
                     "_receive",
                     "receive_lifecycle_coordinator",
                     "_receive_lifecycle_coordinator",
+                )
+                if (
+                    receive_coordinator is not None
+                    and _matches_receive_candidate(receive_coordinator)
                 ):
-                    receive_coordinator = getattr(lifecycle_controller, attr_name, None)
-                    if (
-                        receive_coordinator is not None
-                        and not _is_unconfigured_mock_member(receive_coordinator)
-                        and _matches_receive_candidate(receive_coordinator)
-                    ):
-                        return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
+                    return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
                 if _matches_receive_candidate(lifecycle_controller):
                     return cast(BLEReceiveLifecycleCoordinator, lifecycle_controller)
 
-        get_or_create = getattr(iface, "_get_or_create_collaborator", None)
-        if callable(get_or_create) and not _is_unconfigured_mock_callable(
-            get_or_create
-        ):
+        get_or_create = _get_declared_callable(iface, "_get_or_create_collaborator")
+        if get_or_create is not None:
             try:
                 signature(get_or_create).bind(
                     "_ble_receive_lifecycle_coordinator",
@@ -176,7 +179,6 @@ class BLELifecycleService:
                 )
                 if (
                     coordinator is not None
-                    and not _is_unconfigured_mock_member(coordinator)
                     and _matches_receive_candidate(coordinator)
                 ):
                     return cast(BLEReceiveLifecycleCoordinator, coordinator)
@@ -209,10 +211,8 @@ class BLELifecycleService:
         iface: "BLEInterface",
     ) -> BLEShutdownLifecycleCoordinator:
         """Return the shared shutdown lifecycle coordinator when available."""
-        get_or_create = getattr(iface, "_get_or_create_collaborator", None)
-        if callable(get_or_create) and not _is_unconfigured_mock_callable(
-            get_or_create
-        ):
+        get_or_create = _get_declared_callable(iface, "_get_or_create_collaborator")
+        if get_or_create is not None:
             try:
                 signature(get_or_create).bind(
                     "_ble_shutdown_lifecycle_coordinator",
@@ -225,9 +225,7 @@ class BLELifecycleService:
                     "_ble_shutdown_lifecycle_coordinator",
                     lambda: BLEShutdownLifecycleCoordinator(iface),
                 )
-                if coordinator is not None and not _is_unconfigured_mock_member(
-                    coordinator
-                ):
+                if coordinator is not None:
                     return cast(BLEShutdownLifecycleCoordinator, coordinator)
         return BLEShutdownLifecycleCoordinator(iface)
 
@@ -1065,7 +1063,7 @@ class BLELifecycleService:
     def _get_connected_client_status_locked(
         iface: "BLEInterface", client: "BLEClient"
     ) -> tuple[bool, bool]:
-        """Return ownership and closing flags for ``client`` under state lock.
+        """Return ownership and closing flags through the historical ``_locked`` shim.
 
         Parameters
         ----------
@@ -1149,9 +1147,7 @@ class BLELifecycleService:
             "_is_currently_connected_elsewhere",
             _is_currently_connected_elsewhere,
         )
-        if not callable(connected_elsewhere) or _is_unconfigured_mock_callable(
-            connected_elsewhere
-        ):
+        if not callable(connected_elsewhere):
             connected_elsewhere = _is_currently_connected_elsewhere
         connected_elsewhere_fn = cast(Callable[..., bool], connected_elsewhere)
 
@@ -1248,17 +1244,23 @@ class BLELifecycleService:
 
     @staticmethod
     def _ever_connected_flag(iface: "BLEInterface") -> bool:
-        """Return a mock-safe boolean view of ``iface._ever_connected``.
+        """Return a strict boolean view of the shared session's ``ever_connected``.
+
+        The result reflects the shared session owner's ``ever_connected`` field
+        as returned by
+        ``BLEConnectionOwnershipLifecycleCoordinator(iface)._has_ever_connected_session()``,
+        rather than ``iface._ever_connected``.
 
         Parameters
         ----------
         iface : BLEInterface
-            Interface containing connection publication state.
+            Interface bound to the shared session owner.
 
         Returns
         -------
         bool
-            ``True`` only when ``_ever_connected`` is explicitly boolean true.
+            ``True`` only when the shared session owner's ``ever_connected``
+            field is explicitly boolean true.
         """
         return BLEConnectionOwnershipLifecycleCoordinator(
             iface

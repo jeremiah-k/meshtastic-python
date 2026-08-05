@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import logging
 import re
+from types import SimpleNamespace
 from collections.abc import Callable
 from typing import Any, cast
-from unittest.mock import MagicMock, Mock, NonCallableMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -29,10 +30,6 @@ from meshtastic.interfaces.ble.management_runtime import (
 )
 from meshtastic.interfaces.ble.receive_compat_service import BLEReceiveRecoveryService
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
-from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
-)
 
 pytestmark = pytest.mark.unit
 
@@ -49,9 +46,14 @@ def configured_mock(return_value: Any = None, side_effect: Any = None) -> MagicM
     return mock
 
 
-def unconfigured_mock() -> Mock:
-    """Create an unconfigured mock for testing detection."""
-    return Mock()
+class _DynamicAttributeProxy:
+    """Test double that synthesizes undeclared attributes dynamically."""
+
+    def __getattr__(self, _name: str) -> _DynamicAttributeProxy:
+        return self
+
+    def __call__(self, *_args: Any, **_kwargs: Any) -> _DynamicAttributeProxy:
+        return self
 
 
 def create_configured_handler_mock():
@@ -136,15 +138,6 @@ class TestBLEManagementCommandsServiceHandlerDetection:
         )
         assert result is True
 
-    def test_has_required_handler_entrypoint_unconfigured_mock(self):
-        """Test that unconfigured mock handler returns False."""
-        mock_handler = unconfigured_mock()
-
-        result = BLEManagementCommandsService._has_required_handler_entrypoint(
-            mock_handler, expected_method="execute_management_command"
-        )
-        assert result is False
-
     def test_has_required_handler_entrypoint_any_method(self):
         """Test checking for any required entrypoint method."""
         handler = create_configured_handler_mock()
@@ -185,12 +178,6 @@ class TestBLEManagementCommandsServiceHandlerDetection:
         result = BLEManagementCommandsService._is_handler_like(handler)
         assert result is False
 
-    def test_is_handler_like_unconfigured_mock(self):
-        """Test unconfigured mock handler returns False."""
-        mock_handler = unconfigured_mock()
-
-        result = BLEManagementCommandsService._is_handler_like(mock_handler)
-        assert result is False
 
 
 class TestBLEManagementCommandsServiceHandlerResolution:
@@ -207,21 +194,16 @@ class TestBLEManagementCommandsServiceHandlerResolution:
 
     def test_handler_for_shim_direct_handler_field(self):
         """Test fallback to direct handler field."""
-        iface = MagicMock()
+        iface = SimpleNamespace()
         handler = create_configured_handler_mock()
-        # _get_management_command_handler is unconfigured mock (will be skipped)
-        iface._get_management_command_handler = unconfigured_mock()
         iface._management_command_handler = handler
 
         result = BLEManagementCommandsService._handler_for_shim(iface)
         assert result is handler
 
-    def test_handler_for_shim_create_new_handler(self):
+    def test_handler_for_shim_create_new_handler(self) -> None:
         """Test creating new handler when no iface-owned handler exists."""
-        iface = MagicMock()
-        iface._get_management_command_handler = unconfigured_mock()
-        iface._management_command_handler = unconfigured_mock()
-        iface._connected_elsewhere_late_bound = None
+        iface = SimpleNamespace(_connected_elsewhere_late_bound=None)
 
         result = BLEManagementCommandsService._handler_for_shim(iface)
         assert isinstance(result, BLEManagementCommandHandler)
@@ -323,7 +305,7 @@ class TestBLEManagementCommandsServiceOperations:
         iface._validate_management_preconditions = MagicMock()
         mock_client = MagicMock(spec=BLEClient)
         expected_result = (mock_client, None)
-        iface._get_management_client_for_target = configured_mock(
+        iface._get_management_client_for_target_locked = configured_mock(
             return_value=mock_client
         )
 
@@ -547,9 +529,9 @@ class TestBLEReceiveRecoveryServiceControllerDetection:
         )
         assert result is True
 
-    def test_is_controller_like_unconfigured_mock(self):
-        """Test unconfigured mock controller returns False."""
-        mock_controller = unconfigured_mock()
+    def test_is_controller_like_dynamic_proxy(self) -> None:
+        """Dynamic-only controller members should not satisfy the contract."""
+        mock_controller = _DynamicAttributeProxy()
 
         result = BLEReceiveRecoveryService._is_controller_like(mock_controller)
         assert result is False
@@ -605,9 +587,9 @@ class TestBLEReceiveRecoveryServiceControllerDetection:
         result = BLEReceiveRecoveryService._resolve_controller_candidate(None)
         assert result is None
 
-    def test_resolve_controller_candidate_unconfigured_mock(self):
-        """Test resolving unconfigured mock returns None."""
-        mock_controller = unconfigured_mock()
+    def test_resolve_controller_candidate_dynamic_proxy(self) -> None:
+        """Dynamic-only controller candidates should resolve to None."""
+        mock_controller = _DynamicAttributeProxy()
 
         result = BLEReceiveRecoveryService._resolve_controller_candidate(
             mock_controller
@@ -635,7 +617,7 @@ class TestBLEReceiveRecoveryServiceControllerForShim:
         iface = MagicMock()
         controller = create_configured_controller_mock()
 
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
         iface._receive_recovery_controller = controller
 
         result = BLEReceiveRecoveryService._controller_for_shim(iface)
@@ -644,8 +626,8 @@ class TestBLEReceiveRecoveryServiceControllerForShim:
     def test_controller_for_shim_create_new_controller(self):
         """Test creating new controller when no cached controller exists."""
         iface = MagicMock()
-        iface._get_receive_recovery_controller = unconfigured_mock()
-        iface._receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
+        iface._receive_recovery_controller = _DynamicAttributeProxy()
         iface._state_lock = None
 
         result = BLEReceiveRecoveryService._controller_for_shim(iface)
@@ -667,8 +649,8 @@ class TestBLEReceiveRecoveryServiceControllerForShim:
     def test_controller_for_shim_with_state_lock(self):
         """Test controller creation with state lock."""
         iface = MagicMock()
-        iface._get_receive_recovery_controller = unconfigured_mock()
-        iface._receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
+        iface._receive_recovery_controller = _DynamicAttributeProxy()
         mock_lock = MagicMock()
         mock_lock.__enter__ = MagicMock(return_value=None)
         mock_lock.__exit__ = MagicMock(return_value=None)
@@ -687,7 +669,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller.handle_read_loop_disconnect = configured_mock(return_value=True)
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         mock_client = MagicMock(spec=BLEClient)
         result = BLEReceiveRecoveryService._handle_read_loop_disconnect(
@@ -725,7 +707,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller._wait_for_read_trigger = configured_mock(return_value=(True, False))
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         coordinator = MagicMock()
         result = BLEReceiveRecoveryService._wait_for_read_trigger(
@@ -742,7 +724,7 @@ class TestBLEReceiveRecoveryServiceOperations:
             return_value=expected_result
         )
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         result = BLEReceiveRecoveryService._snapshot_client_state(iface)
         assert result == expected_result
@@ -753,7 +735,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller._process_client_state = configured_mock(return_value=False)
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         coordinator = MagicMock()
         mock_client = MagicMock(spec=BLEClient)
@@ -774,7 +756,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller._reset_recovery_after_stability = configured_mock()
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         # Should not raise
         BLEReceiveRecoveryService._reset_recovery_after_stability(iface)
@@ -786,7 +768,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller._read_and_handle_payload = configured_mock(return_value=True)
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         mock_client = MagicMock(spec=BLEClient)
         result = BLEReceiveRecoveryService._read_and_handle_payload(
@@ -800,7 +782,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller._handle_payload_read = configured_mock(return_value=(False, False))
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         mock_client = MagicMock(spec=BLEClient)
         result = BLEReceiveRecoveryService._handle_payload_read(
@@ -814,7 +796,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller._run_receive_cycle = configured_mock(return_value=True)
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         coordinator = MagicMock()
         result = BLEReceiveRecoveryService._run_receive_cycle(
@@ -828,7 +810,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller.receive_from_radio_impl = configured_mock()
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         # Should not raise
         BLEReceiveRecoveryService._receive_from_radio_impl(iface)
@@ -840,7 +822,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller.recover_receive_thread = configured_mock()
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         # Should not raise
         BLEReceiveRecoveryService._recover_receive_thread(iface, "test disconnect")
@@ -855,7 +837,7 @@ class TestBLEReceiveRecoveryServiceOperations:
             return_value=expected_data
         )
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         mock_client = MagicMock(spec=BLEClient)
         result = BLEReceiveRecoveryService._read_from_radio_with_retries(
@@ -869,7 +851,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller.handle_transient_read_error = configured_mock()
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         mock_error = MagicMock()
         # Should not raise
@@ -882,7 +864,7 @@ class TestBLEReceiveRecoveryServiceOperations:
         controller = create_configured_controller_mock()
         controller.log_empty_read_warning = configured_mock()
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         # Should not raise
         BLEReceiveRecoveryService._log_empty_read_warning(iface)
@@ -987,8 +969,8 @@ class TestBLEReceiveRecoveryServiceEdgeCases:
     def test_should_poll_without_notify_mock_value(self):
         """Test handling mock value for notify enabled flag."""
         iface = MagicMock()
-        # Set to unconfigured mock (should be treated as False)
-        iface._fromnum_notify_enabled = unconfigured_mock()
+        # A non-bool dynamic proxy must not be treated as notification-enabled.
+        iface._fromnum_notify_enabled = _DynamicAttributeProxy()
         mock_lock = MagicMock()
         mock_lock.__enter__ = MagicMock(return_value=None)
         mock_lock.__exit__ = MagicMock(return_value=None)
@@ -1032,62 +1014,6 @@ class TestBLEReceiveRecoveryServiceEdgeCases:
             controller, required_method="handle_read_loop_disconnect"
         )
         assert result is not None
-
-
-# =============================================================================
-# Mock Utility Function Tests
-# =============================================================================
-
-
-class TestMockUtilityFunctions:
-    """Test the mock utility functions used by compatibility services."""
-
-    def test_is_unconfigured_mock_member_with_mock(self):
-        """Test detecting unconfigured mock member."""
-        mock = Mock()
-        # Default mock without configuration should be detected
-        result = _is_unconfigured_mock_member(mock)
-        assert result is True
-
-    def test_is_unconfigured_mock_member_configured(self):
-        """Test configured mock is not detected as unconfigured."""
-        mock = MagicMock()
-        mock.return_value = "test"
-        result = _is_unconfigured_mock_member(mock)
-        assert result is False
-
-    def test_is_unconfigured_mock_member_non_callable(self):
-        """Test non-callable mock member detection."""
-        mock = NonCallableMock()
-        result = _is_unconfigured_mock_member(mock)
-        assert result is True
-
-    def test_is_unconfigured_mock_member_regular_object(self):
-        """Test regular object is not detected as unconfigured mock."""
-        regular_object = {"key": "value"}
-        result = _is_unconfigured_mock_member(regular_object)
-        assert result is False
-
-    def test_is_unconfigured_mock_callable_with_callable(self):
-        """Test detecting unconfigured callable mock."""
-        mock = Mock()
-        result = _is_unconfigured_mock_callable(mock)
-        assert result is True
-
-    def test_is_unconfigured_mock_callable_non_callable(self):
-        """Test non-callable mock returns False."""
-        mock = NonCallableMock()
-        result = _is_unconfigured_mock_callable(mock)
-        assert result is False
-
-    def test_is_unconfigured_mock_callable_regular_callable(self):
-        """Test regular callable is not detected as unconfigured mock."""
-
-        def regular_function():
-            pass
-
-        result = _is_unconfigured_mock_callable(regular_function)
-        assert result is False
 
 
 # =============================================================================
@@ -1283,7 +1209,7 @@ class TestBLECompatServicesIntegration:
 
         controller = RealisticController()
         iface._receive_recovery_controller = controller
-        iface._get_receive_recovery_controller = unconfigured_mock()
+        iface._get_receive_recovery_controller = _DynamicAttributeProxy()
 
         # Test various operations
         result = BLEReceiveRecoveryService._handle_read_loop_disconnect(

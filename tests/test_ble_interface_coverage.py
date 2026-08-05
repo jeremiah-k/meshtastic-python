@@ -178,6 +178,7 @@ def _build_minimal_interface() -> BLEInterface:
         notification_manager=iface._notification_manager,
         error_handler_provider=lambda: MagicMock(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
     # Set up required attributes for lifecycle controllers
     iface._lifecycle_controller = MagicMock()
@@ -941,6 +942,7 @@ def test_notification_dispatcher_handles_handler_error(
         notification_manager=NotificationManager(),
         error_handler_provider=lambda: MagicMock(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
     dispatcher.handle_malformed_fromnum("Test reason", exc_info=False)
@@ -963,6 +965,7 @@ def test_notification_dispatcher_reports_handler_error(
             handle_unhandled_exception=_report_exception
         ),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
     dispatcher.report_notification_handler_error("Test handler error")
@@ -970,31 +973,27 @@ def test_notification_dispatcher_reports_handler_error(
 
 
 # ============================================================================
-# Compatibility and Mock Handling Tests
+# Compatibility Dispatch Tests
 # ============================================================================
 
 
-def test_set_receive_wanted_handles_unconfigured_mock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_set_receive_wanted should handle unconfigured mock lifecycle controller."""
+def test_set_receive_wanted_delegates_to_explicit_controller_hook() -> None:
+    """_set_receive_wanted should delegate to an explicitly declared lifecycle hook."""
     iface = _build_minimal_interface()
+    calls: list[bool] = []
 
-    # Create a mock that returns unconfigured mock callables
-    mock_controller = MagicMock()
-    mock_controller._set_receive_wanted = MagicMock()
-    mock_controller._set_receive_wanted.side_effect = lambda **kwargs: None
+    class _DeclaredController:
+        def _set_receive_wanted(self, *, want_receive: bool) -> None:
+            calls.append(want_receive)
 
-    iface._lifecycle_controller = mock_controller
+    iface._lifecycle_controller = _DeclaredController()  # type: ignore[assignment]
 
-    # Should not raise when dealing with unconfigured mocks
     iface._set_receive_wanted(True)
+    assert calls == [True]
 
 
-def test_should_run_receive_loop_handles_unconfigured_mock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_should_run_receive_loop should handle unconfigured mock lifecycle controller."""
+def test_should_run_receive_loop_uses_explicit_controller_hook() -> None:
+    """_should_run_receive_loop should use an explicitly declared lifecycle hook."""
     iface = _build_minimal_interface()
 
     iface._lifecycle_controller = SimpleNamespace(should_run_receive_loop=lambda: False)
@@ -1002,10 +1001,8 @@ def test_should_run_receive_loop_handles_unconfigured_mock(
     assert result is False
 
 
-def test_start_receive_thread_handles_unconfigured_mock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_start_receive_thread should handle unconfigured mock lifecycle controller."""
+def test_start_receive_thread_uses_explicit_controller_hook() -> None:
+    """_start_receive_thread should use an explicitly declared lifecycle hook."""
     iface = _build_minimal_interface()
 
     start_receive_thread = MagicMock(side_effect=lambda **kwargs: None)
@@ -1164,6 +1161,99 @@ def test_get_or_create_collaborator_uses_double_checked_locking() -> None:
     assert result1 is result2
 
 
+def test_get_or_create_collaborator_lockless_fallback_converges_racing_callers() -> None:
+    """Partial lockless interfaces must still return one collaborator owner."""
+
+    class _PartialInterface:
+        pass
+
+    iface = _PartialInterface()
+    rendezvous = threading.Barrier(3)
+    created: list[object] = []
+    results: list[object] = []
+
+    def _factory() -> object:
+        candidate = object()
+        created.append(candidate)
+        time.sleep(0.02)
+        return candidate
+
+    def _resolve() -> None:
+        rendezvous.wait(timeout=2.0)
+        results.append(
+            BLEInterface._get_or_create_collaborator(  # noqa: SLF001
+                iface, "_test_collaborator", _factory  # type: ignore[arg-type]
+            )
+        )
+
+    workers = [threading.Thread(target=_resolve) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    rendezvous.wait(timeout=2.0)
+    for worker in workers:
+        worker.join(timeout=2.0)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert len(created) == 1
+    assert len(results) == 2
+    assert results[0] is results[1]
+    assert iface._test_collaborator is results[0]
+
+
+def test_notification_registration_compat_state_probe_revalidates_outside_lock() -> None:
+    """Fallback registration probes must release and then revalidate state ownership."""
+
+    class _TrackingLock:
+        def __init__(self) -> None:
+            self._lock = threading.RLock()
+            self._depth = 0
+
+        @property
+        def held(self) -> bool:
+            return self._depth > 0
+
+        def __enter__(self) -> "_TrackingLock":
+            self._lock.acquire()
+            self._depth += 1
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            self._depth -= 1
+            self._lock.release()
+
+    class _Client:
+        def isConnected(self) -> bool:  # noqa: N802 - compatibility spelling
+            return True
+
+    lock = _TrackingLock()
+    client = _Client()
+    iface = SimpleNamespace(
+        _state_lock=lock,
+        _state_manager=SimpleNamespace(lock=lock),
+        _closed=False,
+        _connection_session_epoch=7,
+        client=None,
+        _client_publish_pending=True,
+    )
+    probe_lock_states: list[bool] = []
+
+    def _current_state() -> ConnectionState:
+        probe_lock_states.append(lock.held)
+        with lock:
+            iface._connection_session_epoch += 1
+        return ConnectionState.CONNECTING
+
+    iface._state_manager_current_state = _current_state
+
+    assert (
+        BLEInterface._is_notification_registration_current(  # noqa: SLF001
+            iface, client, 7  # type: ignore[arg-type]
+        )
+        is False
+    )
+    assert probe_lock_states == [False]
+
+
 # ============================================================================
 # Retry Policy Tests
 # ============================================================================
@@ -1294,19 +1384,19 @@ def test_close_clears_connecting_state_with_exception(
     assert "Failed to clear connecting gates" in caplog.text
 
 
-def test_close_handles_lifecycle_close_exception(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Close should handle exceptions from lifecycle controller close."""
+def test_close_propagates_lifecycle_close_exception() -> None:
+    """Close should preserve failures raised by an explicit lifecycle collaborator."""
+
+    class _FailingLifecycleController:
+        @staticmethod
+        def _close(**_kwargs: object) -> None:
+            raise RuntimeError("Close failed")
+
     iface = _build_minimal_interface()
+    iface._lifecycle_controller = _FailingLifecycleController()  # type: ignore[assignment]
 
-    mock_controller = MagicMock()
-    mock_controller._close = MagicMock(side_effect=Exception("Close failed"))
-
-    iface._lifecycle_controller = mock_controller
-
-    # Should not raise despite exception in lifecycle close
-    iface.close()
+    with pytest.raises(RuntimeError, match="Close failed"):
+        iface.close()
 
 
 # ============================================================================
@@ -1487,6 +1577,55 @@ def test_compat_dispatch_callable_prefers_public_name() -> None:
 
     assert result == "public-result"
     target.public_method.assert_called_once()
+
+
+def test_compat_dispatch_callable_ignores_synthesized_preferred_name() -> None:
+    """Compatibility dispatch should prefer declared legacy hooks over dynamic proxies."""
+
+    class _DynamicCompatibilityTarget:
+        def __getattr__(self, _name: str) -> object:
+            return lambda: "dynamic-result"
+
+        def legacy_method(self) -> str:
+            return "legacy-result"
+
+    result = BLEInterface._compat_dispatch_callable(
+        _DynamicCompatibilityTarget(),
+        public_name="public_method",
+        legacy_name="legacy_method",
+        fallback_attr_name=None,
+        error_message="Method not found",
+    )
+
+    assert result == "legacy-result"
+
+
+def test_lifecycle_wrapper_ignores_synthesized_private_hook() -> None:
+    """Lifecycle wrappers should fall through to a declared public hook."""
+    calls: list[str] = []
+
+    class _DynamicLifecycleController:
+        def __getattr__(self, _name: str) -> object:
+            return lambda *_args, **_kwargs: False
+
+        def handle_disconnect(
+            self,
+            source: str,
+            *,
+            client: object | None = None,
+            bleak_client: object | None = None,
+        ) -> bool:
+            del client, bleak_client
+            calls.append(source)
+            return True
+
+    iface = _build_minimal_interface()
+    iface._get_lifecycle_controller = (  # type: ignore[method-assign]
+        lambda: _DynamicLifecycleController()
+    )
+
+    assert iface._handle_disconnect("declared-fallback") is True
+    assert calls == ["declared-fallback"]
 
 
 def test_compat_dispatch_callable_falls_back_to_legacy() -> None:
@@ -1921,15 +2060,31 @@ def test_client_manager_update_client_reference_dispatches() -> None:
 # ============================================================================
 
 
-def test_get_management_client_if_available_handles_unconfigured_mock_lock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_get_management_client_if_available should handle unconfigured mock lock."""
+class _DynamicOnlyStateLock:
+    """Lock double whose ownership probe exists only through ``__getattr__``."""
+
+    def __init__(self) -> None:
+        self.dynamic_probe_lookups = 0
+
+    def __enter__(self) -> "_DynamicOnlyStateLock":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        if name == "_is_owned":
+            self.dynamic_probe_lookups += 1
+            return lambda: True
+        raise AttributeError(name)
+
+
+def test_get_management_client_if_available_ignores_undeclared_lock_ownership() -> None:
+    """Unlocked management lookup must not inspect private lock-ownership probes."""
     iface = _build_minimal_interface()
 
-    # Make state_lock an unconfigured mock
-    iface._state_lock = MagicMock()
-    iface._state_lock._is_owned = MagicMock()
+    dynamic_lock = _DynamicOnlyStateLock()
+    iface._state_lock = dynamic_lock
 
     handler = MagicMock()
     handler.get_management_client_if_available = MagicMock(return_value=None)
@@ -1937,21 +2092,14 @@ def test_get_management_client_if_available_handles_unconfigured_mock_lock(
 
     result = iface._get_management_client_if_available("test-address")
     assert result is None
+    assert dynamic_lock.dynamic_probe_lookups == 0
 
 
-def test_get_management_client_if_available_uses_locked_version(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_get_management_client_if_available should use locked version when lock owned."""
+def test_get_management_client_if_available_uses_locked_version() -> None:
+    """Locked management lookup should explicitly dispatch to the locked handler."""
     iface = _build_minimal_interface()
 
     expected_client = DummyClient()
-
-    class OwnedStateLock:
-        def _is_owned(self) -> bool:
-            return True
-
-    iface._state_lock = OwnedStateLock()
 
     get_management_client_if_available_locked = MagicMock(return_value=expected_client)
     handler = SimpleNamespace(
@@ -1960,20 +2108,17 @@ def test_get_management_client_if_available_uses_locked_version(
     )
     iface._management_command_handler = handler
 
-    result = iface._get_management_client_if_available("test-address")
+    result = iface._get_management_client_if_available_locked("test-address")
     assert result is expected_client
     get_management_client_if_available_locked.assert_called_once_with("test-address")
 
 
-def test_get_management_client_for_target_handles_unconfigured_mock_lock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_get_management_client_for_target should handle unconfigured mock lock."""
+def test_get_management_client_for_target_ignores_undeclared_lock_ownership() -> None:
+    """Unlocked target lookup must not inspect private lock-ownership probes."""
     iface = _build_minimal_interface()
 
-    # Make state_lock an unconfigured mock
-    iface._state_lock = MagicMock()
-    iface._state_lock._is_owned = MagicMock()
+    dynamic_lock = _DynamicOnlyStateLock()
+    iface._state_lock = dynamic_lock
 
     handler = MagicMock()
     handler.get_management_client_for_target = MagicMock(return_value=None)
@@ -1984,21 +2129,14 @@ def test_get_management_client_for_target_handles_unconfigured_mock_lock(
         prefer_current_client=True,
     )
     assert result is None
+    assert dynamic_lock.dynamic_probe_lookups == 0
 
 
-def test_get_management_client_for_target_uses_locked_version(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_get_management_client_for_target should use locked version when lock owned."""
+def test_get_management_client_for_target_uses_locked_version() -> None:
+    """Locked target lookup should explicitly dispatch to the locked handler."""
     iface = _build_minimal_interface()
 
     expected_client = DummyClient()
-
-    class OwnedStateLock:
-        def _is_owned(self) -> bool:
-            return True
-
-    iface._state_lock = OwnedStateLock()
 
     get_management_client_for_target_locked = MagicMock(return_value=expected_client)
     handler = SimpleNamespace(
@@ -2007,7 +2145,7 @@ def test_get_management_client_for_target_uses_locked_version(
     )
     iface._management_command_handler = handler
 
-    result = iface._get_management_client_for_target(
+    result = iface._get_management_client_for_target_locked(
         "test-address",
         prefer_current_client=True,
     )

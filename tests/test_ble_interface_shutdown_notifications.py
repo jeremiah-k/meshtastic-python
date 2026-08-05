@@ -503,7 +503,7 @@ class _ClientWithCallbacks(DummyClient):
             self.callbacks[uuid] = cast(Callable[[Any, bytes], None], args[1])
 
 
-def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unconfigured(
+def test_register_notifications_safe_call_inline_fallback_when_safe_execute_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Notification wrappers should use inline fallback when safe_execute hooks are unconfigured."""
@@ -511,12 +511,10 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
     client = _ClientWithCallbacks()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
     errors: list[str] = []
-    safe_execute = MagicMock()
-    legacy_safe_execute = MagicMock()
     try:
         iface.error_handler = SimpleNamespace(
-            safe_execute=safe_execute,
-            _safe_execute=legacy_safe_execute,
+            safe_execute=None,
+            _safe_execute=None,
         )
         monkeypatch.setattr(
             iface,
@@ -535,10 +533,57 @@ def test_register_notifications_safe_call_inline_fallback_when_safe_execute_unco
         client.callbacks[LOGRADIO_UUID]("sender", b"log")
 
         assert errors == ["Error in log notification handler"]
-        safe_execute.assert_not_called()
-        legacy_safe_execute.assert_not_called()
     finally:
         iface.close()
+
+
+def test_register_notifications_ignores_synthesized_public_error_reporter() -> None:
+    """A synthesized public reporter must not mask the declared legacy fallback."""
+    from meshtastic.interfaces.ble.notifications import (
+        BLENotificationDispatcher,
+        NotificationManager,
+    )
+
+    client = _ClientWithCallbacks()
+    legacy_errors: list[str] = []
+    dynamic_errors: list[str] = []
+
+    class _Iface:
+        _connection_session_epoch = 1
+        BLEError = BLEClient.BLEError
+
+        def __init__(self) -> None:
+            self.client = client
+
+        def _report_notification_handler_error(self, message: str) -> None:
+            legacy_errors.append(message)
+
+        def __getattr__(self, name: str) -> object:
+            if name == "report_notification_handler_error":
+                return lambda message: dynamic_errors.append(message)
+            raise AttributeError(name)
+
+    iface = _Iface()
+    dispatcher = BLENotificationDispatcher(
+        notification_manager=NotificationManager(),
+        error_handler_provider=lambda: None,
+        trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
+    )
+    dispatcher.register_notifications(
+        iface,  # type: ignore[arg-type]
+        cast(BLEClient, client),
+        legacy_log_handler=lambda _sender, _data: None,
+        log_handler=lambda _sender, _data: (_ for _ in ()).throw(
+            RuntimeError("handler boom")
+        ),
+        from_num_handler=lambda _sender, _data: None,
+    )
+
+    client.callbacks[LOGRADIO_UUID]("sender", b"log")
+
+    assert legacy_errors == ["Error in log notification handler"]
+    assert dynamic_errors == []
 
 
 def test_register_notifications_safe_execute_fallback_still_invokes_handler(
@@ -665,6 +710,280 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
     finally:
         iface.close()
 
+
+class _FromNumRegistrationClient(DummyClient):
+    """Notification-capable client for connection-finalization ownership tests."""
+
+    def __init__(
+        self,
+        address: str = "dummy",
+        *,
+        on_fromnum_start: Callable[["_FromNumRegistrationClient"], None] | None = None,
+    ) -> None:
+        super().__init__()
+        self.address = address
+        assert self.bleak_client is not None
+        self.bleak_client.address = address
+        self.on_fromnum_start = on_fromnum_start
+        self.start_notify_calls: list[str] = []
+
+    def has_characteristic(self, uuid: str) -> bool:
+        """Expose only the critical FROMNUM notification characteristic."""
+        return uuid == FROMNUM_UUID
+
+    def start_notify(self, *args: object, **_kwargs: object) -> None:
+        """Record FROMNUM subscription and optionally mutate lifecycle state."""
+        if not args:
+            return
+        characteristic = cast(str, args[0])
+        self.start_notify_calls.append(characteristic)
+        if characteristic == FROMNUM_UUID and self.on_fromnum_start is not None:
+            self.on_fromnum_start(self)
+
+
+def _prepare_provisional_notification_registration(
+    iface: ble_mod.BLEInterface,
+    *,
+    published_client: DummyClient | None,
+    replacement_pending: bool = False,
+) -> int:
+    """Place an interface in the pre-publication CONNECTING phase."""
+    with iface._state_lock:
+        iface.client = published_client
+        iface._disconnect_notified = False
+        iface._client_publish_pending = True
+        iface._client_replacement_pending = replacement_pending
+        iface._connection_session_epoch += 1
+        iface._state_manager._reset_to_disconnected()
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+        return iface._connection_session_epoch
+
+
+def test_register_notifications_keeps_fromnum_during_provisional_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FROMNUM registration must survive normal pre-publication finalization."""
+    client = _FromNumRegistrationClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == []
+        assert iface._fromnum_notify_enabled is True
+        assert iface._receive_recovery_controller._should_poll_without_notify() is False
+        assert FROMNUM_UUID in iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        with iface._state_lock:
+            iface.client = client
+            iface._client_publish_pending = False
+        iface.close()
+
+
+def test_register_notifications_serializes_overlapping_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One dispatcher must not overlap backend registration transactions."""
+    client = _FromNumRegistrationClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    _prepare_provisional_notification_registration(iface, published_client=None)
+
+    first_backend_started = threading.Event()
+    second_backend_started = threading.Event()
+    release_first_backend = threading.Event()
+    start_barrier = threading.Barrier(3)
+    start_count_lock = threading.Lock()
+    start_count = 0
+    failures: list[BaseException] = []
+    registration_entries = 0
+    registration_entry_lock = threading.Lock()
+    second_worker_entered = threading.Event()
+    dispatcher = iface._get_notification_dispatcher()
+    original_register_notifications = dispatcher.register_notifications
+    original_start_notify = client.start_notify
+
+    def _blocking_start_notify(*args: object, **kwargs: object) -> None:
+        nonlocal start_count
+        original_start_notify(*args, **kwargs)
+        if not args or args[0] != FROMNUM_UUID:
+            return
+        with start_count_lock:
+            start_count += 1
+            current_start = start_count
+        if current_start == 1:
+            first_backend_started.set()
+            assert release_first_backend.wait(timeout=2.0)
+        else:
+            second_backend_started.set()
+
+    client.start_notify = _blocking_start_notify  # type: ignore[method-assign]
+
+    def _observed_register_notifications(*args: object, **kwargs: object) -> None:
+        nonlocal registration_entries
+        with registration_entry_lock:
+            registration_entries += 1
+            if registration_entries == 2:
+                second_worker_entered.set()
+        original_register_notifications(*args, **kwargs)  # type: ignore[arg-type]
+
+    dispatcher.register_notifications = _observed_register_notifications  # type: ignore[method-assign]
+
+    def _register() -> None:
+        try:
+            start_barrier.wait(timeout=2.0)
+            iface._register_notifications(cast(BLEClient, client))
+        except BaseException as exc:  # noqa: BLE001 - surfaced below
+            failures.append(exc)
+
+    workers = [threading.Thread(target=_register) for _ in range(2)]
+    try:
+        for worker in workers:
+            worker.start()
+        start_barrier.wait(timeout=2.0)
+        assert first_backend_started.wait(timeout=2.0)
+        assert second_worker_entered.wait(timeout=2.0)
+        assert not second_backend_started.wait(timeout=0.1)
+        release_first_backend.set()
+        for worker in workers:
+            worker.join(timeout=2.0)
+
+        assert all(not worker.is_alive() for worker in workers)
+        assert not failures, failures
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is True
+    finally:
+        release_first_backend.set()
+        for worker in workers:
+            worker.join(timeout=2.0)
+        with iface._state_lock:
+            iface.client = client
+            iface._client_publish_pending = False
+        iface.close()
+
+
+def test_register_notifications_keeps_fromnum_during_client_replacement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A replacement client may register before replacing the published client."""
+    old_client = _FromNumRegistrationClient("old")
+    new_client = _FromNumRegistrationClient("new")
+    iface = _build_interface(monkeypatch, old_client, start_receive_thread=False)
+    try:
+        _prepare_provisional_notification_registration(
+            iface,
+            published_client=old_client,
+            replacement_pending=True,
+        )
+
+        iface._register_notifications(cast(BLEClient, new_client))
+
+        assert new_client.start_notify_calls == [FROMNUM_UUID]
+        assert new_client.stop_notify_calls == []
+        assert iface._fromnum_notify_enabled is True
+    finally:
+        with iface._state_lock:
+            iface.client = new_client
+            iface._client_publish_pending = False
+            iface._client_replacement_pending = False
+        iface.close()
+
+
+def test_register_notifications_rolls_back_if_session_changes_during_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Session rollover during notification I/O must invalidate registration."""
+    iface_holder: dict[str, ble_mod.BLEInterface] = {}
+
+    def _roll_session(_client: _FromNumRegistrationClient) -> None:
+        iface = iface_holder["iface"]
+        with iface._state_lock:
+            iface._client_publish_pending = False
+            iface._connection_session_epoch += 1
+
+    client = _FromNumRegistrationClient(on_fromnum_start=_roll_session)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    iface_holder["iface"] = iface
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is False
+        assert not iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        with iface._state_lock:
+            iface.client = client
+        iface.close()
+
+
+@pytest.mark.parametrize("characteristic", [LEGACY_LOGRADIO_UUID, LOGRADIO_UUID])
+def test_register_notifications_stale_optional_subscription_stops_once(
+    monkeypatch: pytest.MonkeyPatch,
+    characteristic: str,
+) -> None:
+    """A stale optional subscription should be stopped exactly once."""
+    iface_holder: dict[str, ble_mod.BLEInterface] = {}
+
+    class _OptionalStaleClient(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.start_notify_calls: list[str] = []
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == characteristic
+
+        def start_notify(self, *args: object, **_kwargs: object) -> None:
+            if not args:
+                return
+            started = cast(str, args[0])
+            self.start_notify_calls.append(started)
+            if started == characteristic:
+                iface = iface_holder["iface"]
+                with iface._state_lock:
+                    iface._connection_session_epoch += 1
+
+    client = _OptionalStaleClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    iface_holder["iface"] = iface
+    try:
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [characteristic]
+        assert client.stop_notify_calls == [characteristic]
+        assert not iface._notification_dispatcher._started_notify_characteristics
+        assert iface._fromnum_notify_enabled is False
+    finally:
+        iface.close()
+
+
+def test_register_notifications_rolls_back_if_client_disconnects_during_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disconnected provisional client must not retain its subscription."""
+
+    def _disconnect_candidate(candidate: _FromNumRegistrationClient) -> None:
+        candidate._initialized = False
+        candidate.bleak_client = None
+
+    client = _FromNumRegistrationClient(on_fromnum_start=_disconnect_candidate)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is False
+        assert not iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        with iface._state_lock:
+            iface.client = client
+        iface.close()
 
 def test_register_notifications_retries_fromnum_notify_acquired_once(
     monkeypatch: pytest.MonkeyPatch,
@@ -947,7 +1266,7 @@ def test_reconnect_worker_successful_attempt() -> None:
             self.reset_called = False
             self._attempt_count = 0
 
-        def _reset(self) -> None:
+        def reset(self) -> None:
             """Reset the retry policy to its initial state.
 
             Sets the internal attempt counter to 0 and records that a reset occurred by setting `reset_called` to True.
@@ -955,11 +1274,11 @@ def test_reconnect_worker_successful_attempt() -> None:
             self.reset_called = True
             self._attempt_count = 0
 
-        def _get_attempt_count(self) -> int:
+        def get_attempt_count(self) -> int:
             """Return the internal attempt count for ReconnectWorker tests."""
             return self._attempt_count
 
-        def _next_attempt(self) -> tuple[float, bool]:
+        def next_attempt(self) -> tuple[float, bool]:
             """Determine the delay before the next retry and whether another attempt should be made.
 
             Increments the internal attempt counter as a side effect.
@@ -1103,7 +1422,7 @@ def test_reconnect_worker_respects_retry_limits(
             self.reset_called = False
             self.attempts = 0
 
-        def _reset(self) -> None:
+        def reset(self) -> None:
             """Mark the retry policy as reset and clear its attempt counter.
 
             Sets the internal `reset_called` flag to True and resets `attempts` to 0.
@@ -1111,11 +1430,11 @@ def test_reconnect_worker_respects_retry_limits(
             self.reset_called = True
             self.attempts = 0
 
-        def _get_attempt_count(self) -> int:
+        def get_attempt_count(self) -> int:
             """Return the internal attempt count for ReconnectWorker tests."""
             return self.attempts
 
-        def _next_attempt(self) -> tuple[float, bool]:
+        def next_attempt(self) -> tuple[float, bool]:
             """Return the delay before the next retry and whether another retry should be attempted.
 
             Returns
@@ -1206,3 +1525,41 @@ def test_reconnect_worker_respects_retry_limits(
     assert sleep_calls == [0.25]
     assert iface._reconnect_policy.reset_called is True
     assert iface._reconnect_scheduler.cleared is True
+
+
+@pytest.mark.parametrize("failure_hook", ["get_callback", "subscribe"])
+def test_register_notifications_rolls_back_backend_if_local_tracking_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_hook: str,
+) -> None:
+    """A local FROMNUM tracking failure must unwind the active backend notify."""
+    client = _FromNumRegistrationClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        if failure_hook == "get_callback":
+            monkeypatch.setattr(
+                iface._notification_manager,
+                "_get_callback",
+                lambda _uuid: (_ for _ in ()).throw(
+                    RuntimeError("local callback lookup failed")
+                ),
+            )
+        else:
+            monkeypatch.setattr(
+                iface._notification_manager,
+                "_subscribe",
+                lambda _uuid, _callback: (_ for _ in ()).throw(
+                    RuntimeError("local subscription tracking failed")
+                ),
+            )
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is False
+        assert not iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        iface.close()

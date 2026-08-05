@@ -584,3 +584,69 @@ class TestIsCurrentlyConnectedElsewhere:
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS
+
+
+def test_default_registry_owns_compatibility_collection_aliases() -> None:
+    """Legacy module collections should be identities owned by one registry."""
+    from meshtastic.interfaces.ble import gating
+
+    registry = gating._DEFAULT_REGISTRY
+    assert gating._REGISTRY_LOCK is registry.lock
+    assert gating._ADDR_LOCKS is registry.addr_locks
+    assert gating._CONNECTED_ADDRS is registry.connected_addrs
+    assert gating._CONNECTING_ADDRS is registry.connecting_addrs
+    assert gating._CONNECTED_OWNERS is registry.connected_owners
+    assert gating._CONNECTED_OWNER_IDS is registry.connected_owner_ids
+    assert gating._CONNECTED_MARKED_AT is registry.connected_marked_at
+    assert gating._CONNECTING_OWNERS is registry.connecting_owners
+    assert gating._CONNECTING_OWNER_IDS is registry.connecting_owner_ids
+    assert gating._CONNECTING_MARKED_AT is registry.connecting_marked_at
+    assert gating._LOCK_HOLDERS is registry.lock_holders
+
+
+def test_clear_all_registries_delegates_to_registry_owner() -> None:
+    """Reset helper should clear object-owned collections without rebinding them."""
+    from meshtastic.interfaces.ble import gating
+
+    registry = gating._DEFAULT_REGISTRY
+    addr_locks = registry.addr_locks
+    connected = registry.connected_addrs
+    connecting = registry.connecting_addrs
+    connected_owners = registry.connected_owners
+    connected_owner_ids = registry.connected_owner_ids
+    connected_marked_at = registry.connected_marked_at
+    connecting_owners = registry.connecting_owners
+    connecting_owner_ids = registry.connecting_owner_ids
+    connecting_marked_at = registry.connecting_marked_at
+    lock_holders = registry.lock_holders
+
+    connecting_owner = object()
+    connected_owner = object()
+    try:
+        gating._mark_connecting("AA:BB:CC:DD:EE:FF", owner=connecting_owner)
+        gating._mark_connected("11:22:33:44:55:66", owner=connected_owner)
+        lock_holders["test-holder"] = 1
+        gating._clear_all_registries()
+
+        assert registry.addr_locks is addr_locks
+        assert registry.connected_addrs is connected
+        assert registry.connecting_addrs is connecting
+        assert registry.connected_owners is connected_owners
+        assert registry.connected_owner_ids is connected_owner_ids
+        assert registry.connected_marked_at is connected_marked_at
+        assert registry.connecting_owners is connecting_owners
+        assert registry.connecting_owner_ids is connecting_owner_ids
+        assert registry.connecting_marked_at is connecting_marked_at
+        assert registry.lock_holders is lock_holders
+        assert not registry.addr_locks
+        assert not registry.connected_addrs
+        assert not registry.connecting_addrs
+        assert not registry.connected_owners
+        assert not registry.connected_owner_ids
+        assert not registry.connected_marked_at
+        assert not registry.connecting_owners
+        assert not registry.connecting_owner_ids
+        assert not registry.connecting_marked_at
+        assert not registry.lock_holders
+    finally:
+        gating._clear_all_registries()

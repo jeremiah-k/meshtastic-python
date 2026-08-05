@@ -103,7 +103,7 @@ def test_lifecycle_error_handler_cleanup_and_execute_branches(
             raise RuntimeError("hook post-processing failure")
 
         iface.error_handler = SimpleNamespace(
-            safe_cleanup=MagicMock(),
+            safe_cleanup=None,
             _safe_cleanup=_legacy_cleanup,
         )
 
@@ -1072,31 +1072,36 @@ def test_lifecycle_shutdown_receive_thread_skips_self_join_by_ident(
         iface.close()
 
 
-def test_receive_controller_hook_resolution_helpers(
+def test_receive_controller_hook_resolution_uses_declared_members(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive controller helper resolution should treat null hooks as unusable."""
+    """Receive hook resolution should ignore synthesized members and use declared ones."""
     iface = _make_iface(monkeypatch)
     original_close = iface.close
+
+    class _DynamicHookOwner:
+        public_hook = staticmethod(lambda: "declared")
+
+        def __getattr__(self, _name: str) -> object:
+            return lambda: "dynamic"
+
     try:
         controller = iface._get_receive_recovery_controller()
-        monkeypatch.setattr(
-            controller,
-            "_resolve_iface_receive_hook_override",
-            lambda _name: None,
-            raising=True,
+        hook = controller._resolve_private_public_callable(
+            _DynamicHookOwner(),
+            private_name="private_hook",
+            public_name="public_hook",
         )
-        assert controller._as_usable_callable(None) is None
-        assert controller._is_unusable_mock_value(None) is True
-        assert controller._is_unusable_mock_value("ready") is False
+        assert hook is not None
+        assert hook() == "declared"
     finally:
         original_close()
 
 
-def test_receive_controller_filters_unconfigured_lifecycle_controllers(
+def test_receive_controller_filters_missing_lifecycle_controllers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive controller should treat unconfigured lifecycle controllers as absent."""
+    """Receive controller should treat missing lifecycle controllers as absent."""
     iface = _make_iface(monkeypatch)
     original_close = iface.close
     original_get_lifecycle_controller = iface._get_lifecycle_controller
@@ -1108,9 +1113,7 @@ def test_receive_controller_filters_unconfigured_lifecycle_controllers(
             lambda _name: None,
             raising=True,
         )
-        iface._get_lifecycle_controller = MagicMock()
-        assert controller._get_lifecycle_controller() is None
-        iface._get_lifecycle_controller = lambda: MagicMock()
+        iface._get_lifecycle_controller = lambda: None
         assert controller._get_lifecycle_controller() is None
     finally:
         iface._get_lifecycle_controller = original_get_lifecycle_controller
@@ -1331,7 +1334,7 @@ def test_receive_controller_propagates_lifecycle_should_run_failures(
 def test_receive_controller_has_ever_connected_session_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive controller should expose mock-safe `_ever_connected` fallback behavior."""
+    """Receive controller should expose compatibility `_ever_connected` fallback behavior."""
     iface = _make_iface(monkeypatch)
     original_get_lifecycle_controller = iface._get_lifecycle_controller
     try:
@@ -1527,10 +1530,10 @@ def test_receive_compat_controller_for_shim_accepts_injected_controller_double(
         iface.close()
 
 
-def test_receive_compat_controller_for_shim_rejects_unconfigured_mock(
+def test_receive_compat_controller_for_shim_rejects_dynamic_placeholder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Receive shim should ignore unconfigured mock placeholders."""
+    """Receive shim should ignore dynamically synthesized controller placeholders."""
     iface = _make_iface(monkeypatch)
     try:
         iface._get_receive_recovery_controller = lambda: MagicMock()
@@ -1634,7 +1637,7 @@ def test_receive_service_branch_targets_disconnect_and_wait_paths(
         assert cleared
 
         iface._state_manager = SimpleNamespace(
-            is_connecting=MagicMock(),
+            is_connecting=None,
             _is_connecting=True,
         )
         client, is_connecting, publish_pending, is_closing = (

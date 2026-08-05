@@ -233,6 +233,7 @@ def test_invoke_safe_execute_compat_reports_handler_failure_after_execution() ->
         notification_manager=NotificationManager(),
         error_handler_provider=lambda: SimpleNamespace(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
     reported_errors: list[BaseException] = []
     fallback_runs: list[str] = []
@@ -738,6 +739,13 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     }
 
     class UnderscoreDiscoveryClient:
+        def __getattr__(self, name: str) -> object:
+            if name == "discover":
+                return lambda **_kwargs: (_ for _ in ()).throw(
+                    AssertionError("dynamic discover hook must be ignored")
+                )
+            raise AttributeError(name)
+
         @staticmethod
         def _discover(**_kwargs: object) -> dict[str, Any]:
             return discover_result
@@ -750,10 +758,10 @@ def test_discovery_manager_accepts_discover_underscore_only_factory() -> None:
     assert devices == [filtered_device]
 
 
-def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigured_mock_public_discover() -> (
+def test_discovery_manager_prefers_configured_underscore_discover_when_public_missing() -> (
     None
 ):
-    """Verify discovery prefers configured ``_discover`` over unconfigured ``discover``.
+    """Verify discovery prefers configured ``_discover`` when ``discover`` is absent.
 
     Returns
     -------
@@ -767,20 +775,55 @@ def test_discovery_manager_prefers_configured_underscore_discover_over_unconfigu
         ),
     }
     client = MagicMock()
-    client._discover.return_value = discover_result
+    client.discover = None
+    client._discover = MagicMock(return_value=discover_result)
     manager = DiscoveryManager(client_factory=lambda **_kwargs: client)
 
     devices = manager._discover_devices(address=None)
 
     assert devices == [filtered_device]
     client._discover.assert_called_once()
-    client.discover.assert_not_called()
 
     client._discover.reset_mock()
     devices = manager.discover_devices(address=None)
     assert devices == [filtered_device]
     client._discover.assert_called_once()
-    client.discover.assert_not_called()
+
+
+def test_discovery_manager_ignores_synthesized_await_bridge() -> None:
+    """Declared legacy await bridges should beat synthesized preferred members."""
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+
+    async def _discover() -> dict[str, Any]:
+        return discover_result
+
+    class _LegacyAwaitBridgeClient:
+        def __getattr__(self, name: str) -> object:
+            if name == "async_await":
+                return lambda _awaitable: (_ for _ in ()).throw(
+                    AssertionError("dynamic await bridge must be ignored")
+                )
+            raise AttributeError(name)
+
+        @staticmethod
+        def discover(**_kwargs: object) -> Any:
+            return _discover()
+
+        @staticmethod
+        def _async_await(awaitable: Any) -> dict[str, Any]:
+            return asyncio.run(awaitable)
+
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: _LegacyAwaitBridgeClient()
+    )
+
+    assert manager._discover_devices(address=None) == [filtered_device]
 
 
 def test_discovery_manager_discards_cached_client_on_non_kwarg_typeerror(

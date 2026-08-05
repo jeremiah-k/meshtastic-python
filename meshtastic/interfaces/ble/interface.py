@@ -37,7 +37,6 @@ import time
 from collections.abc import Awaitable, Callable
 from threading import Event
 from typing import IO, Any, NoReturn, TypedDict, TypeVar, cast
-from unittest.mock import Mock
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -46,6 +45,13 @@ from bleak.exc import BleakDBusError, BleakError
 from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic.interfaces.ble import constants as _ble_constants
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_lock,
+    _get_declared_member,
+    _iter_declared_members,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.compatibility_service import (
     BLECompatibilityEventPublisher,
 )
@@ -79,7 +85,7 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
     logger,
 )
-from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
+from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryManager,
     _looks_like_ble_address,
@@ -91,6 +97,10 @@ from meshtastic.interfaces.ble.errors import (
     BLEDiscoveryError,
     BLEErrorHandler,
     MeshtasticBLEError,
+)
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
 )
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
@@ -117,10 +127,12 @@ from meshtastic.interfaces.ble.notifications import (
 from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
+from meshtastic.interfaces.ble.session_state import (
+    BLESessionState,
+    _BLESessionStateCompatMixin,
+)
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
     _is_unexpected_keyword_error,
     _sleep,
     sanitize_address,
@@ -187,7 +199,7 @@ ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE: str = (
 )
 
 
-class BLEInterface(MeshInterface):
+class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     """MeshInterface using BLE to connect to Meshtastic devices.
 
     This class provides a complete BLE interface for Meshtastic communication,
@@ -287,10 +299,9 @@ class BLEInterface(MeshInterface):
         #     only one connection attempt can be in the critical section at a time.
         #     This prevents race conditions when checking existing_client and
         #     managing the connection state machine.
-        self._state_manager = BLEStateManager()  # Centralized state tracking
-        self._state_lock = (
-            self._state_manager.lock
-        )  # `lock` returns the shared RLock instance
+        self._state_manager = BLEStateManager()  # Centralized connection state
+        state_lock = self._state_manager.lock
+        self._session_state = BLESessionState(lock=state_lock)
         self._connect_lock = threading.RLock()  # Serializes connection attempts
         self._management_lock = (
             threading.RLock()
@@ -298,9 +309,6 @@ class BLEInterface(MeshInterface):
         self._management_idle_condition = threading.Condition(self._management_lock)
         self._management_inflight = 0  # Tracks end-to-end management operations.
         self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
-        self._closed: bool = (
-            False  # Tracks completion of shutdown for idempotent close()
-        )
         self._exit_handler: Any | None = None
         self.address = address
         self._last_connection_request: str | None = sanitize_address(address)
@@ -308,18 +316,6 @@ class BLEInterface(MeshInterface):
         if not isinstance(pair_on_connect, bool):
             raise self.BLEError(ERROR_PAIR_ON_CONNECT_BOOL)
         self.pair_on_connect = pair_on_connect
-        self._disconnect_notified = False  # Prevents duplicate disconnect events
-        self._client_publish_pending: bool = False  # Hide provisional clients.
-        self._connected_publish_inflight_client: BLEClient | None = None
-        self._client_replacement_pending = False
-        self._last_disconnect_source: str = (
-            ""  # Set by _handle_disconnect on each disconnect
-        )
-        self._connection_alias_key: str | None = None  # Track alias for cleanup
-        self._prior_publish_was_reconnect = False
-        self._last_connect_pair_override: bool | None = None
-        self._last_connect_timeout_override: float | None = None
-        self._publishing_thread_override: object | None = None
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -330,11 +326,11 @@ class BLEInterface(MeshInterface):
         self._notification_dispatcher = self._create_notification_dispatcher()
         self._discovery_manager: DiscoveryManager | None = DiscoveryManager()
         self._connection_validator = ConnectionValidator(
-            self._state_manager, self._state_lock, self.BLEError
+            self._state_manager, state_lock, self.BLEError
         )
         self._client_manager = ClientManager(
             self._state_manager,
-            self._state_lock,
+            state_lock,
             self.thread_coordinator,
             self.error_handler,
         )
@@ -344,17 +340,19 @@ class BLEInterface(MeshInterface):
             self._client_manager,
             self._discovery_manager,
             self._state_manager,
-            self._state_lock,
+            state_lock,
             self.thread_coordinator,
         )
         self._reconnect_scheduler = ReconnectScheduler(
             self._state_manager,
-            self._state_lock,
+            state_lock,
             self.thread_coordinator,
             self,
         )
         self._lifecycle_controller = BLELifecycleController(self)
-        self._receive_recovery_controller = BLEReceiveRecoveryController(self)
+        self._receive_recovery_controller = BLEReceiveRecoveryController(
+            self, session_state=self._session_state
+        )
         self._compatibility_publisher = BLECompatibilityEventPublisher(
             self,
             publishing_thread_provider=self._get_publishing_thread,
@@ -377,16 +375,8 @@ class BLEInterface(MeshInterface):
         # Whether FROMNUM notifications were successfully registered for the
         # active connection. When false, receive loop falls back to periodic
         # FROMRADIO polling.
-        self._fromnum_notify_enabled = False
-        self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
-        self._ever_connected = (
-            False  # Track first successful connection to tune logging
-        )
         # Monotonic session counter used to suppress stale disconnect side effects.
-        self._connection_session_epoch = 0
         # Recovery throttling to prevent tight crash→spawn loops
-        self._receive_recovery_attempts = 0
-        self._last_recovery_time = 0.0  # monotonic clock
 
         # Initialize parent interface
         super().__init__(
@@ -397,19 +387,11 @@ class BLEInterface(MeshInterface):
         # Policies are immutable presets; cache instances to avoid churn in hot loops.
         self._empty_read_policy = RetryPolicy._empty_read()
         self._transient_read_policy = RetryPolicy._transient_error()
-        self._read_retry_count = 0
-        self._last_empty_read_warning = 0.0
-        self._suppressed_empty_read_warnings = 0
 
         self.client: BLEClient | None = None
 
         # Start background receive thread for inbound packet processing
         logger.debug("Threads starting")
-        with self._state_lock:
-            self._want_receive = True
-            self._receive_start_pending = False
-            self._receive_start_pending_since: float | None = None
-        self._receiveThread: ThreadLike | None = None
         self._start_receive_thread(name="BLEReceive")
         logger.debug("Threads running")
         try:
@@ -476,20 +458,10 @@ class BLEInterface(MeshInterface):
             True to request the receive loop to run, False to stop it.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        set_receive_wanted = getattr(lifecycle_controller, "_set_receive_wanted", None)
-        if callable(set_receive_wanted) and _is_unconfigured_mock_callable(
-            set_receive_wanted
-        ):
-            set_receive_wanted = None
-        if set_receive_wanted is None:
-            set_receive_wanted = getattr(
-                lifecycle_controller, "set_receive_wanted", None
-            )
-            if callable(set_receive_wanted) and _is_unconfigured_mock_callable(
-                set_receive_wanted
-            ):
-                set_receive_wanted = None
-        if callable(set_receive_wanted):
+        set_receive_wanted = _resolve_declared_callable(
+            lifecycle_controller, "_set_receive_wanted", "set_receive_wanted"
+        )
+        if set_receive_wanted is not None:
             set_receive_wanted(want_receive=want_receive)
 
     def _should_run_receive_loop(self) -> bool:
@@ -501,22 +473,12 @@ class BLEInterface(MeshInterface):
             `True` if the receive loop is desired and the interface is not closed, `False` otherwise.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        should_run_receive_loop = getattr(
-            lifecycle_controller, "_should_run_receive_loop", None
+        should_run_receive_loop = _resolve_declared_callable(
+            lifecycle_controller,
+            "_should_run_receive_loop",
+            "should_run_receive_loop",
         )
-        if callable(should_run_receive_loop) and _is_unconfigured_mock_callable(
-            should_run_receive_loop
-        ):
-            should_run_receive_loop = None
-        if should_run_receive_loop is None:
-            should_run_receive_loop = getattr(
-                lifecycle_controller, "should_run_receive_loop", None
-            )
-            if callable(should_run_receive_loop) and _is_unconfigured_mock_callable(
-                should_run_receive_loop
-            ):
-                should_run_receive_loop = None
-        if callable(should_run_receive_loop):
+        if should_run_receive_loop is not None:
             result = should_run_receive_loop()
             return result if isinstance(result, bool) else False
         return False
@@ -534,22 +496,10 @@ class BLEInterface(MeshInterface):
             backoff tracking. Defaults to True.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        start_receive_thread = getattr(
-            lifecycle_controller, "_start_receive_thread", None
+        start_receive_thread = _resolve_declared_callable(
+            lifecycle_controller, "_start_receive_thread", "start_receive_thread"
         )
-        if callable(start_receive_thread) and _is_unconfigured_mock_callable(
-            start_receive_thread
-        ):
-            start_receive_thread = None
-        if start_receive_thread is None:
-            start_receive_thread = getattr(
-                lifecycle_controller, "start_receive_thread", None
-            )
-            if callable(start_receive_thread) and _is_unconfigured_mock_callable(
-                start_receive_thread
-            ):
-                start_receive_thread = None
-        if callable(start_receive_thread):
+        if start_receive_thread is not None:
             start_receive_thread(
                 name=name,
                 reset_recovery=reset_recovery,
@@ -685,12 +635,10 @@ class BLEInterface(MeshInterface):
             are unavailable on compatibility doubles.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        handle_disconnect = getattr(
-            lifecycle_controller,
-            "_handle_disconnect",
-            getattr(lifecycle_controller, "handle_disconnect", None),
+        handle_disconnect = _resolve_declared_callable(
+            lifecycle_controller, "_handle_disconnect", "handle_disconnect"
         )
-        if callable(handle_disconnect):
+        if handle_disconnect is not None:
             result = handle_disconnect(
                 source,
                 client=client,
@@ -708,12 +656,10 @@ class BLEInterface(MeshInterface):
             The Bleak client instance that disconnected.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        on_ble_disconnect = getattr(
-            lifecycle_controller,
-            "_on_ble_disconnect",
-            getattr(lifecycle_controller, "on_ble_disconnect", None),
+        on_ble_disconnect = _resolve_declared_callable(
+            lifecycle_controller, "_on_ble_disconnect", "on_ble_disconnect"
         )
-        if callable(on_ble_disconnect):
+        if on_ble_disconnect is not None:
             on_ble_disconnect(client)
 
     def _schedule_auto_reconnect(self) -> None:
@@ -722,44 +668,24 @@ class BLEInterface(MeshInterface):
         Does nothing if automatic reconnection is disabled or the interface is closing or already closed.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        schedule_auto_reconnect = getattr(
-            lifecycle_controller,
-            "_schedule_auto_reconnect",
-            getattr(lifecycle_controller, "schedule_auto_reconnect", None),
+        schedule_auto_reconnect = _resolve_declared_callable(
+            lifecycle_controller, "_schedule_auto_reconnect", "schedule_auto_reconnect"
         )
-        if callable(schedule_auto_reconnect):
+        if schedule_auto_reconnect is not None:
             schedule_auto_reconnect()
 
     @staticmethod
     def _resolve_thread_event_dispatcher(
         coordinator: object,
     ) -> Callable[[str], None] | None:
-        """Resolve set-event hook with instance-override compatibility behavior."""
-        instance_set_event = getattr(coordinator, "__dict__", {}).get("set_event")
-        if callable(instance_set_event) and not _is_unconfigured_mock_callable(
-            instance_set_event
-        ):
-            return cast(Callable[[str], None], instance_set_event)
-        class_set_event = getattr(type(coordinator), "set_event", None)
-        if callable(class_set_event) and not _is_unconfigured_mock_callable(
-            class_set_event
-        ):
-
-            def _dispatch_class_event(event_name: str) -> None:
-                class_set_event(coordinator, event_name)
-
-            return _dispatch_class_event
-        legacy_set_event = getattr(coordinator, "_set_event", None)
-        if callable(legacy_set_event) and not _is_unconfigured_mock_callable(
-            legacy_set_event
-        ):
-            return cast(Callable[[str], None], legacy_set_event)
-        return None
+        """Resolve a declared current/legacy set-event hook in precedence order."""
+        set_event = _resolve_declared_callable(coordinator, "set_event", "_set_event")
+        return cast(Callable[[str], None], set_event) if set_event is not None else None
 
     def _set_thread_event(self, event_name: str) -> None:
         """Set thread-coordinator event via public-first compatibility dispatch."""
         coordinator = getattr(self, "thread_coordinator", None)
-        if coordinator is None or _is_unconfigured_mock_member(coordinator):
+        if coordinator is None:
             logger.debug(
                 "Thread coordinator is missing set_event/_set_event for event %s",
                 event_name,
@@ -1139,25 +1065,6 @@ class BLEInterface(MeshInterface):
     ) -> BLEClient | None:
         """Return available management client via management collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = getattr(self, "_state_lock", None)
-        if state_lock is None or _is_unconfigured_mock_member(state_lock):
-            return handler.get_management_client_if_available(address)
-        lock_is_owned = getattr(state_lock, "_is_owned", None)
-        if isinstance(lock_is_owned, Mock):
-            return handler.get_management_client_if_available(address)
-        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(
-            lock_is_owned
-        ):
-            owns_lock = False
-            try:
-                owns_lock = bool(lock_is_owned())
-            except Exception:  # noqa: BLE001 - lock probe remains best effort
-                logger.debug(
-                    "Failed to probe _state_lock ownership before management lookup",
-                    exc_info=True,
-                )
-            if owns_lock:
-                return handler.get_management_client_if_available_locked(address)
         return handler.get_management_client_if_available(address)
 
     def _get_management_client_if_available_locked(
@@ -1175,34 +1082,6 @@ class BLEInterface(MeshInterface):
     ) -> BLEClient | None:
         """Return reusable target-matching management client via collaborator."""
         handler = self._get_management_command_handler()
-        state_lock = getattr(self, "_state_lock", None)
-        if state_lock is None or _is_unconfigured_mock_member(state_lock):
-            return handler.get_management_client_for_target(
-                target_address,
-                prefer_current_client=prefer_current_client,
-            )
-        lock_is_owned = getattr(state_lock, "_is_owned", None)
-        if isinstance(lock_is_owned, Mock):
-            return handler.get_management_client_for_target(
-                target_address,
-                prefer_current_client=prefer_current_client,
-            )
-        if callable(lock_is_owned) and not _is_unconfigured_mock_callable(
-            lock_is_owned
-        ):
-            owns_lock = False
-            try:
-                owns_lock = bool(lock_is_owned())
-            except Exception:  # noqa: BLE001 - lock probe remains best effort
-                logger.debug(
-                    "Failed to probe _state_lock ownership before target lookup",
-                    exc_info=True,
-                )
-            if owns_lock:
-                return handler.get_management_client_for_target_locked(
-                    target_address,
-                    prefer_current_client=prefer_current_client,
-                )
         return handler.get_management_client_for_target(
             target_address,
             prefer_current_client=prefer_current_client,
@@ -1252,7 +1131,7 @@ class BLEInterface(MeshInterface):
     def _get_or_create_error_handler(self) -> BLEErrorHandler:
         """Return bound error handler, creating one lazily for partial test doubles."""
         handler = getattr(self, "error_handler", None)
-        if handler is None or _is_unconfigured_mock_member(handler):
+        if handler is None:
             handler = BLEErrorHandler()
             self.error_handler = handler
         return cast(BLEErrorHandler, handler)
@@ -1266,18 +1145,40 @@ class BLEInterface(MeshInterface):
         to lockless initialization for partial test doubles that bypass `__init__`.
         """
         collaborator = getattr(self, attr_name, None)
-        if collaborator is not None and not _is_unconfigured_mock_member(collaborator):
+        if collaborator is not None:
             return cast(T, collaborator)
-        state_lock = getattr(self, "_state_lock", None)
-        if state_lock is None or _is_unconfigured_mock_member(state_lock):
+        state_lock = _get_declared_lock(self, "_state_lock")
+        if state_lock is None:
+            instance_dict = _get_declared_member(self, "__dict__")
+            if isinstance(instance_dict, dict):
+                # Partial test doubles can lack the canonical state lock. A
+                # lazily shared per-instance lock preserves single construction
+                # without imposing a process-wide fallback lock.
+                fallback_lock = instance_dict.setdefault(
+                    "_ble_collaborator_init_lock", threading.RLock()
+                )
+                fallback_lock_type = type(fallback_lock)
+                if (
+                    _get_declared_callable(fallback_lock_type, "__enter__") is None
+                    or _get_declared_callable(fallback_lock_type, "__exit__") is None
+                ):
+                    raise TypeError(
+                        "_ble_collaborator_init_lock must be a context-manager lock"
+                    )
+                with cast(Any, fallback_lock):
+                    collaborator = instance_dict.get(attr_name)
+                    if collaborator is None:
+                        collaborator = factory()
+                        instance_dict[attr_name] = collaborator
+                return cast(T, collaborator)
             collaborator = getattr(self, attr_name, None)
-            if collaborator is None or _is_unconfigured_mock_member(collaborator):
+            if collaborator is None:
                 collaborator = factory()
                 setattr(self, attr_name, collaborator)
             return cast(T, collaborator)
         with state_lock:
             collaborator = getattr(self, attr_name, None)
-            if collaborator is None or _is_unconfigured_mock_member(collaborator):
+            if collaborator is None:
                 collaborator = factory()
                 setattr(self, attr_name, collaborator)
         return cast(T, collaborator)
@@ -1285,15 +1186,14 @@ class BLEInterface(MeshInterface):
     def _create_notification_dispatcher(self) -> BLENotificationDispatcher:
         """Build notification dispatcher with canonical collaborator wiring."""
         notification_manager = getattr(self, "_notification_manager", None)
-        if notification_manager is None or _is_unconfigured_mock_member(
-            notification_manager
-        ):
+        if notification_manager is None:
             notification_manager = NotificationManager()
             self._notification_manager = notification_manager
         return BLENotificationDispatcher(
             notification_manager=notification_manager,
             error_handler_provider=self._get_or_create_error_handler,
             trigger_read_event=lambda: self._set_thread_event(READ_TRIGGER_EVENT),
+            registration_current_provider=self._is_notification_registration_current,
         )
 
     @staticmethod
@@ -1308,6 +1208,73 @@ class BLEInterface(MeshInterface):
         return self._get_or_create_collaborator(
             "_notification_dispatcher", self._create_notification_dispatcher
         )
+
+    def _is_notification_registration_current(
+        self,
+        client: BLEClient,
+        expected_session_epoch: int,
+    ) -> bool:
+        """Return whether notification setup still belongs to the active BLE session.
+
+        Notification registration occurs during connection finalization before the
+        newly connected client is published through ``self.client``. Treat that
+        provisional CONNECTING phase as current when the session epoch still
+        matches and publication is pending. Once the client is published, identity
+        with ``self.client`` becomes the ownership check.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client whose notification subscriptions are being registered.
+        expected_session_epoch : int
+            Connection-attempt epoch captured before notification I/O begins.
+
+        Returns
+        -------
+        bool
+            ``True`` only while the registration belongs to the same live session.
+        """
+        state_manager = self._state_manager
+        lifecycle_owner_is_current: bool | None
+        canonical_locked_probe = (
+            type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
+            and state_manager.lock is self._state_lock
+        )
+        with self._state_lock:
+            if self._closed or self._connection_session_epoch != expected_session_epoch:
+                return False
+            if self.client is client:
+                lifecycle_owner_is_current = True
+            elif not self._client_publish_pending:
+                lifecycle_owner_is_current = False
+            elif canonical_locked_probe:
+                lifecycle_owner_is_current = (
+                    BLEStateManager._current_state_unlocked(state_manager)
+                    == ConnectionState.CONNECTING
+                )
+            else:
+                lifecycle_owner_is_current = None
+
+        if lifecycle_owner_is_current is None:
+            # Compatibility state probes can execute arbitrary collaborator code.
+            # Run them outside the shared lock, then revalidate the complete
+            # registration ownership snapshot before accepting the result.
+            current_state = self._state_manager_current_state()
+            with self._state_lock:
+                lifecycle_owner_is_current = (
+                    not self._closed
+                    and self._connection_session_epoch == expected_session_epoch
+                    and (
+                        self.client is client
+                        or (
+                            self._client_publish_pending
+                            and current_state == ConnectionState.CONNECTING
+                        )
+                    )
+                )
+        if not lifecycle_owner_is_current:
+            return False
+        return ConnectionValidator._client_is_connected(client)
 
     # COMPAT_STABLE_SHIM: internal bridge for historical FROMNUM notify state probes.
     @property
@@ -1644,24 +1611,15 @@ class BLEInterface(MeshInterface):
     ) -> object:
         """Dispatch a callable through public/legacy/fallback compatibility names."""
         kwargs = {} if kwargs is None else kwargs
-        public_member = getattr(target, public_name, None)
-        if callable(public_member) and not _is_unconfigured_mock_callable(
-            public_member
-        ):
-            return public_member(*args, **kwargs)
-        legacy_member = getattr(target, legacy_name, None)
-        if callable(legacy_member) and not _is_unconfigured_mock_callable(
-            legacy_member
-        ):
-            return legacy_member(*args, **kwargs)
-        if fallback_attr_name is None:
+        names = (
+            (public_name, legacy_name)
+            if fallback_attr_name is None
+            else (public_name, legacy_name, fallback_attr_name)
+        )
+        member = _resolve_declared_callable(target, *names)
+        if member is None:
             raise AttributeError(error_message)
-        fallback_member = getattr(target, fallback_attr_name, None)
-        if not callable(fallback_member) or _is_unconfigured_mock_callable(
-            fallback_member
-        ):
-            raise AttributeError(error_message)
-        return fallback_member(*args, **kwargs)
+        return member(*args, **kwargs)
 
     @staticmethod
     def _compat_get_bool_member(
@@ -1673,50 +1631,26 @@ class BLEInterface(MeshInterface):
         error_message: str,
     ) -> bool:
         """Resolve bool members via public/legacy/fallback compatibility names."""
-        public_member = getattr(target, public_name, None)
-        if callable(public_member) and not _is_unconfigured_mock_callable(
-            public_member
-        ):
-            try:
-                resolved_public = public_member()
-            except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
-                resolved_public = None
-            if isinstance(resolved_public, bool):
-                return resolved_public
-        if isinstance(public_member, bool) and not _is_unconfigured_mock_member(
-            public_member
-        ):
-            return public_member
-        legacy_member = getattr(target, legacy_name, None)
-        if callable(legacy_member) and not _is_unconfigured_mock_callable(
-            legacy_member
-        ):
-            try:
-                resolved_legacy = legacy_member()
-            except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
-                resolved_legacy = None
-            if isinstance(resolved_legacy, bool):
-                return resolved_legacy
-        if isinstance(legacy_member, bool) and not _is_unconfigured_mock_member(
-            legacy_member
-        ):
-            return legacy_member
-        if fallback_attr_name is None:
-            raise AttributeError(error_message)
-        fallback_member = getattr(target, fallback_attr_name, None)
-        if callable(fallback_member) and not _is_unconfigured_mock_callable(
-            fallback_member
-        ):
-            try:
-                resolved_fallback = fallback_member()
-            except Exception:  # noqa: BLE001 - probe dispatch must stay best effort
-                resolved_fallback = None
-            if isinstance(resolved_fallback, bool):
-                return resolved_fallback
-        if isinstance(fallback_member, bool) and not _is_unconfigured_mock_member(
-            fallback_member
-        ):
-            return fallback_member
+        names = (
+            (public_name, legacy_name)
+            if fallback_attr_name is None
+            else (public_name, legacy_name, fallback_attr_name)
+        )
+        for member_name, member in _iter_declared_members(target, *names):
+            if callable(member):
+                try:
+                    resolved = member()
+                except Exception:  # noqa: BLE001 - probe dispatch stays best effort
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "Error probing BLE compatibility member %s()",
+                        member_name,
+                    )
+                    continue
+            else:
+                resolved = member
+            if isinstance(resolved, bool):
+                return resolved
         raise AttributeError(error_message)
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
@@ -1772,17 +1706,17 @@ class BLEInterface(MeshInterface):
             self._state_manager,
             public_name="is_connected",
             legacy_name="_is_connected",
-            fallback_attr_name="_is_connected",
+            fallback_attr_name=None,
             error_message=ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED,
         )
 
     def _state_manager_current_state(self) -> ConnectionState:
         """Read current state through lifecycle state-access compatibility dispatch."""
-        return _LifecycleStateAccess(self).current_state()
+        return _LifecycleStateAccess(self._state_manager).current_state()
 
     def _state_manager_is_closing(self) -> bool:
         """Read closing-state flag through lifecycle state-access compatibility dispatch."""
-        return _LifecycleStateAccess(self).is_closing()
+        return _LifecycleStateAccess(self._state_manager).is_closing()
 
     def _validator_check_existing_client(
         self,
@@ -1818,7 +1752,7 @@ class BLEInterface(MeshInterface):
                 self._connection_validator,
                 public_name="check_existing_client",
                 legacy_name="_check_existing_client",
-                fallback_attr_name="check_existing_client",
+                fallback_attr_name=None,
                 error_message=ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT,
                 args=(
                     client,
@@ -1878,7 +1812,7 @@ class BLEInterface(MeshInterface):
                 self._connection_orchestrator,
                 public_name="establish_connection",
                 legacy_name="_establish_connection",
-                fallback_attr_name="establish_connection",
+                fallback_attr_name=None,
                 error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
                 args=args,
                 kwargs=kwargs,
@@ -1894,7 +1828,7 @@ class BLEInterface(MeshInterface):
                 self._connection_orchestrator,
                 public_name="establish_connection",
                 legacy_name="_establish_connection",
-                fallback_attr_name="establish_connection",
+                fallback_attr_name=None,
                 error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
                 args=args,
                 kwargs=legacy_kwargs,
@@ -1930,7 +1864,7 @@ class BLEInterface(MeshInterface):
                 self._client_manager,
                 public_name="safe_close_client",
                 legacy_name="_safe_close_client",
-                fallback_attr_name="safe_close_client",
+                fallback_attr_name=None,
                 error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
                 args=(client,),
                 kwargs={"disconnect_timeout": disconnect_timeout},
@@ -1942,7 +1876,7 @@ class BLEInterface(MeshInterface):
                 self._client_manager,
                 public_name="safe_close_client",
                 legacy_name="_safe_close_client",
-                fallback_attr_name="safe_close_client",
+                fallback_attr_name=None,
                 error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
                 args=(client,),
             )
@@ -1974,7 +1908,7 @@ class BLEInterface(MeshInterface):
             self._client_manager,
             public_name="update_client_reference",
             legacy_name="_update_client_reference",
-            fallback_attr_name="update_client_reference",
+            fallback_attr_name=None,
             error_message=ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE,
             args=(client, previous_client),
         )
@@ -2303,9 +2237,7 @@ class BLEInterface(MeshInterface):
             resolved_dispatcher = self._get_notification_dispatcher()
         except Exception:  # noqa: BLE001 - rollback snapshot is best effort
             resolved_dispatcher = None
-        if resolved_dispatcher is not None and not _is_unconfigured_mock_member(
-            resolved_dispatcher
-        ):
+        if resolved_dispatcher is not None:
             notification_dispatcher = resolved_dispatcher
             try:
                 registered_epoch = (
@@ -2484,11 +2416,7 @@ class BLEInterface(MeshInterface):
 
         def _restore_notification_session_after_rollback() -> None:
             """Best-effort rollback for notification session bookkeeping."""
-            if (
-                notification_dispatcher is None
-                or notification_session_snapshot is None
-                or _is_unconfigured_mock_member(notification_dispatcher)
-            ):
+            if notification_dispatcher is None or notification_session_snapshot is None:
                 return
             with contextlib.suppress(
                 Exception
@@ -2767,12 +2695,12 @@ class BLEInterface(MeshInterface):
     ) -> None:
         """Publish `_connected()` only if ownership is still valid at publish time."""
         lifecycle_controller = self._get_lifecycle_controller()
-        verify_and_publish_connected = getattr(
+        verify_and_publish_connected = _resolve_declared_callable(
             lifecycle_controller,
             "_verify_and_publish_connected",
-            getattr(lifecycle_controller, "verify_and_publish_connected", None),
+            "verify_and_publish_connected",
         )
-        if callable(verify_and_publish_connected):
+        if verify_and_publish_connected is not None:
             verify_and_publish_connected(
                 connected_client,
                 connected_device_key,
@@ -2786,16 +2714,12 @@ class BLEInterface(MeshInterface):
     ) -> None:
         """Emit reconnect signaling/logging only after verified connect publish."""
         lifecycle_controller = self._get_lifecycle_controller()
-        emit_verified_connection_side_effects = getattr(
+        emit_verified_connection_side_effects = _resolve_declared_callable(
             lifecycle_controller,
             "_emit_verified_connection_side_effects",
-            getattr(
-                lifecycle_controller,
-                "emit_verified_connection_side_effects",
-                None,
-            ),
+            "emit_verified_connection_side_effects",
         )
-        if callable(emit_verified_connection_side_effects):
+        if emit_verified_connection_side_effects is not None:
             emit_verified_connection_side_effects(connected_client)
 
     def _discard_invalidated_connected_client(
@@ -2820,16 +2744,12 @@ class BLEInterface(MeshInterface):
             is discarded before ownership is finalized.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        discard_invalidated_connected_client = getattr(
+        discard_invalidated_connected_client = _resolve_declared_callable(
             lifecycle_controller,
             "_discard_invalidated_connected_client",
-            getattr(
-                lifecycle_controller,
-                "discard_invalidated_connected_client",
-                None,
-            ),
+            "discard_invalidated_connected_client",
         )
-        if callable(discard_invalidated_connected_client):
+        if discard_invalidated_connected_client is not None:
             discard_invalidated_connected_client(
                 client,
                 restore_address=restore_address,
@@ -2856,12 +2776,10 @@ class BLEInterface(MeshInterface):
             Optional alias key used when claiming connection gates, or `None` if not used.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        finalize_connection_gates = getattr(
-            lifecycle_controller,
-            "_finalize_connection_gates",
-            getattr(lifecycle_controller, "finalize_connection_gates", None),
+        finalize_connection_gates = _resolve_declared_callable(
+            lifecycle_controller, "_finalize_connection_gates", "finalize_connection_gates"
         )
-        if callable(finalize_connection_gates):
+        if finalize_connection_gates is not None:
             finalize_connection_gates(
                 connected_client,
                 connected_device_key,
@@ -2883,12 +2801,10 @@ class BLEInterface(MeshInterface):
             and the state machine reports CONNECTED.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        is_owned_connected_client = getattr(
-            lifecycle_controller,
-            "_is_owned_connected_client",
-            getattr(lifecycle_controller, "is_owned_connected_client", None),
+        is_owned_connected_client = _resolve_declared_callable(
+            lifecycle_controller, "_is_owned_connected_client", "is_owned_connected_client"
         )
-        if callable(is_owned_connected_client):
+        if is_owned_connected_client is not None:
             result = is_owned_connected_client(client)
             return result if isinstance(result, bool) else False
         return False
@@ -3313,10 +3229,8 @@ class BLEInterface(MeshInterface):
                     exc_info=True,
                 )
         lifecycle_controller = self._get_lifecycle_controller()
-        close = getattr(
-            lifecycle_controller, "_close", getattr(lifecycle_controller, "close", None)
-        )
-        if callable(close):
+        close = _resolve_declared_callable(lifecycle_controller, "_close", "close")
+        if close is not None:
             close_kwargs: dict[str, float | None] = {
                 "management_shutdown_wait_timeout": _MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS,
                 "management_wait_poll_seconds": _MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
@@ -3366,12 +3280,12 @@ class BLEInterface(MeshInterface):
             BLE client to disconnect and close; operation is idempotent and safe to call on already-closed clients.
         """
         lifecycle_controller = self._get_lifecycle_controller()
-        disconnect_and_close_client = getattr(
+        disconnect_and_close_client = _resolve_declared_callable(
             lifecycle_controller,
             "_disconnect_and_close_client",
-            getattr(lifecycle_controller, "disconnect_and_close_client", None),
+            "disconnect_and_close_client",
         )
-        if callable(disconnect_and_close_client):
+        if disconnect_and_close_client is not None:
             try:
                 disconnect_and_close_client(client, timeout=timeout)
             except TypeError as exc:

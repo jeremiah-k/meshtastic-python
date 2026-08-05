@@ -7,6 +7,7 @@ import sys as sys_stdlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable, _get_declared_member)
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
@@ -18,10 +19,6 @@ from meshtastic.interfaces.ble.management_runtime import (
     BLEManagementCommandHandler,
     T,
     _ManagementStartContext,
-)
-from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
 )
 
 if TYPE_CHECKING:
@@ -40,15 +37,12 @@ class BLEManagementCommandsService:
         """Return whether ``candidate`` exposes usable shim entrypoint(s).
 
         When ``expected_method`` is provided, this requires that specific
-        delegated method to be callable/non-mock. Otherwise, it returns ``True``
-        as soon as it finds any callable/non-mock method from the compatibility
+        delegated method to be explicitly declared callable. Otherwise, it returns ``True``
+        as soon as it finds any explicitly declared callable method from the compatibility
         entrypoint list.
         """
-        if _is_unconfigured_mock_member(candidate):
-            return False
         if expected_method is not None:
-            expected = getattr(candidate, expected_method, None)
-            return callable(expected) and not _is_unconfigured_mock_callable(expected)
+            return _get_declared_callable(candidate, expected_method) is not None
         required_entrypoints = (
             "execute_management_command",
             "start_management_phase",
@@ -64,16 +58,14 @@ class BLEManagementCommandsService:
             "run_bluetoothctl_trust_command",
         )
         for method_name in required_entrypoints:
-            method = getattr(candidate, method_name, None)
-            if callable(method) and not _is_unconfigured_mock_callable(method):
+            method = _get_declared_callable(candidate, method_name)
+            if method is not None:
                 return True
         return False
 
     @staticmethod
     def _is_handler_like(candidate: object) -> bool:
         """Return whether ``candidate`` exposes the management handler API surface."""
-        if _is_unconfigured_mock_member(candidate):
-            return False
         required_methods = (
             "resolve_target_address_for_management",
             "management_target_gate",
@@ -98,14 +90,13 @@ class BLEManagementCommandsService:
             "trust",
         )
         for method_name in required_methods:
-            method = getattr(candidate, method_name, None)
-            if not callable(method) or _is_unconfigured_mock_callable(method):
+            if _get_declared_callable(candidate, method_name) is None:
                 return False
         return True
 
     @staticmethod
     def _handler_for_shim(
-        iface: "BLEInterface",
+        iface: object,
         *,
         expected_method: str | None = None,
         ble_client_factory: Callable[..., BLEClient] | None = None,
@@ -116,17 +107,10 @@ class BLEManagementCommandsService:
             ble_client_factory is None and connected_elsewhere is None
         )
         if use_iface_owned_handler:
-            get_handler: object | None = None
-            try:
-                get_handler = getattr(iface, "_get_management_command_handler", None)
-            except AttributeError:
-                logger.debug(
-                    "Error resolving _get_management_command_handler; falling back to direct handler field.",
-                    exc_info=True,
-                )
-            if callable(get_handler) and not _is_unconfigured_mock_callable(
-                get_handler
-            ):
+            get_handler: Callable[..., object] | None = _get_declared_callable(
+                iface, "_get_management_command_handler"
+            )
+            if get_handler is not None:
                 try:
                     resolved = get_handler()
                 except (AttributeError, TypeError):
@@ -137,7 +121,6 @@ class BLEManagementCommandsService:
                 else:
                     if (
                         resolved is not None
-                        and not _is_unconfigured_mock_member(resolved)
                         and (
                             BLEManagementCommandsService._is_handler_like(resolved)
                             # COMPAT_STABLE_SHIM: preserve iface-owned partial
@@ -149,10 +132,9 @@ class BLEManagementCommandsService:
                         )
                     ):
                         return cast(BLEManagementCommandHandler, resolved)
-            direct_handler = getattr(iface, "_management_command_handler", None)
+            direct_handler = _get_declared_member(iface, "_management_command_handler")
             if (
                 direct_handler is not None
-                and not _is_unconfigured_mock_member(direct_handler)
                 and (
                     BLEManagementCommandsService._is_handler_like(direct_handler)
                     # COMPAT_STABLE_SHIM: preserve iface-owned partial
@@ -167,12 +149,10 @@ class BLEManagementCommandsService:
         if ble_client_factory is None:
             ble_client_factory = BLEClient
         if connected_elsewhere is None:
-            iface_connected_elsewhere = getattr(
-                iface, "_connected_elsewhere_late_bound", None
+            iface_connected_elsewhere = _get_declared_callable(
+                iface, "_connected_elsewhere_late_bound"
             )
-            if callable(
-                iface_connected_elsewhere
-            ) and not _is_unconfigured_mock_callable(iface_connected_elsewhere):
+            if iface_connected_elsewhere is not None:
                 connected_elsewhere = cast(
                     Callable[[str | None, object | None], bool],
                     iface_connected_elsewhere,
@@ -186,7 +166,7 @@ class BLEManagementCommandsService:
 
                 connected_elsewhere = _default_connected_elsewhere
         return BLEManagementCommandHandler(
-            iface,
+            cast("BLEInterface", iface),
             ble_client_factory=ble_client_factory,
             connected_elsewhere=connected_elsewhere,
         )

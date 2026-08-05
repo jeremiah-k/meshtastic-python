@@ -19,6 +19,10 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_member,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_OPERATION_FAILED,
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
@@ -49,8 +53,6 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-    _is_unconfigured_mock_member,
     _is_unexpected_keyword_error,
     _safe_execute_through_adapter,
     with_timeout,
@@ -291,13 +293,7 @@ class BLEClient:
         if error_handler is None:
             return None
 
-        hook = getattr(error_handler, public_name, None)
-        if callable(hook) and not _is_unconfigured_mock_callable(hook):
-            return cast(Callable[..., Any], hook)
-        legacy_hook = getattr(error_handler, legacy_name, None)
-        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
-            return cast(Callable[..., Any], legacy_hook)
-        return None
+        return _resolve_declared_callable(error_handler, public_name, legacy_name)
 
     def _error_handler_safe_execute(
         self,
@@ -612,8 +608,8 @@ class BLEClient:
 
         def operation() -> Coroutine[Any, Any, object]:
             bleak_client = self._require_bleak_client(not_initialized_error)
-            method = getattr(bleak_client, method_name, None)
-            if not callable(method) or _is_unconfigured_mock_callable(method):
+            method = _get_declared_member(bleak_client, method_name)
+            if not callable(method):
                 raise self.BLEError(unsupported_error)
             return cast(Coroutine[Any, Any, object], method(**(call_kwargs or {})))
 
@@ -742,13 +738,9 @@ class BLEClient:
             bool
                 `True` if the client reports an active connection, `False` otherwise.
             """
-            connected = getattr(bleak_client, "is_connected", False)
+            connected = _get_declared_member(bleak_client, "is_connected", False)
             if callable(connected):
-                if _is_unconfigured_mock_callable(connected):
-                    return False
                 connected = connected()  # pylint: disable=E1102
-            if _is_unconfigured_mock_member(connected):
-                return False
             return connected if isinstance(connected, bool) else False
 
         result = self._error_handler_safe_execute(

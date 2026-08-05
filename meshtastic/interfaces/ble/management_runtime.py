@@ -1,5 +1,6 @@
 """Management command helpers for BLE interface orchestration."""
 
+import inspect
 import math
 import numbers
 import re
@@ -11,6 +12,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+)
 from meshtastic.interfaces.ble.connection import ConnectionOrchestrator
 from meshtastic.interfaces.ble.constants import (
     ERROR_CONNECTION_SUPPRESSED,
@@ -31,9 +36,9 @@ from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _addr_lock_context,
 )
+from meshtastic.interfaces.ble.lifecycle_primitives import _client_is_connected_compat
 from meshtastic.interfaces.ble.utils import (
     _call_factory_with_optional_kwarg,
-    _is_unconfigured_mock_callable,
     sanitize_address,
 )
 
@@ -273,8 +278,8 @@ class BLEManagementCommandHandler:
         if method_name in active_dispatches:
             return fallback(*args, **kwargs)
 
-        override = getattr(self._iface, method_name, None)
-        if callable(override) and not _is_unconfigured_mock_callable(override):
+        override = _get_declared_callable(self._iface, method_name)
+        if override is not None:
 
             def _invoke_override() -> T:
                 active_dispatches.add(method_name)
@@ -283,14 +288,16 @@ class BLEManagementCommandHandler:
                 finally:
                     active_dispatches.discard(method_name)
 
-            instance_dict = getattr(self._iface, "__dict__", {})
+            instance_dict = _get_declared_member(self._iface, "__dict__", {})
             if isinstance(instance_dict, dict) and method_name in instance_dict:
                 return _invoke_override()
             try:
                 from meshtastic.interfaces.ble.interface import BLEInterface
 
-                base_method = getattr(BLEInterface, method_name, None)
-                class_method = getattr(type(self._iface), method_name, None)
+                base_method = inspect.getattr_static(BLEInterface, method_name, None)
+                class_method = inspect.getattr_static(
+                    type(self._iface), method_name, None
+                )
                 if class_method is not None and class_method is not base_method:
                     return _invoke_override()
             except Exception:  # noqa: BLE001 - lookup fallback
@@ -415,37 +422,10 @@ class BLEManagementCommandHandler:
     @staticmethod
     def _is_client_connected(client: BLEClient | None) -> bool:
         """Return whether a candidate client appears currently connected."""
-        if client is None:
+        try:
+            return _client_is_connected_compat(client)
+        except AttributeError:
             return False
-        callable_probe_seen = False
-        for attr_name in ("isConnected", "is_connected", "_is_connected"):
-            is_connected = getattr(client, attr_name, None)
-            if callable(is_connected) and not _is_unconfigured_mock_callable(
-                is_connected
-            ):
-                try:
-                    connected_result = is_connected()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - connectivity probe must remain best effort
-                    callable_probe_seen = True
-                    logger.debug(
-                        "Error probing BLE client connectivity via %s",
-                        attr_name,
-                        exc_info=True,
-                    )
-                    continue
-                callable_probe_seen = True
-                if isinstance(connected_result, bool):
-                    return connected_result
-                continue
-            if isinstance(is_connected, bool):
-                if callable_probe_seen:
-                    continue
-                return is_connected
-        if callable_probe_seen:
-            return False
-        return False
 
     def get_current_implicit_management_binding_locked(self) -> str | None:
         """Return current implicit management binding while holding state lock."""
@@ -528,7 +508,7 @@ class BLEManagementCommandHandler:
                 self.begin_management_operation_locked()
                 operation_started = True
                 existing_client = self._call_iface_override(
-                    "_get_management_client_if_available",
+                    "_get_management_client_if_available_locked",
                     self.get_management_client_if_available_locked,
                     address,
                 )
@@ -567,7 +547,7 @@ class BLEManagementCommandHandler:
             with iface._connect_lock, iface._management_lock, iface._state_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
-                    "_get_management_client_if_available",
+                    "_get_management_client_if_available_locked",
                     self.get_management_client_if_available_locked,
                     address,
                 )
@@ -590,7 +570,7 @@ class BLEManagementCommandHandler:
             with iface._connect_lock, iface._management_lock, iface._state_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
-                    "_get_management_client_if_available",
+                    "_get_management_client_if_available_locked",
                     self.get_management_client_if_available_locked,
                     address,
                 )
@@ -686,7 +666,7 @@ class BLEManagementCommandHandler:
                     expected_binding=expected_implicit_binding,
                 )
             client_to_use = self._call_iface_override(
-                "_get_management_client_for_target",
+                "_get_management_client_for_target_locked",
                 self.get_management_client_for_target_locked,
                 target_address,
                 prefer_current_client=address is None,

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 
+from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
 from meshtastic.interfaces.ble.lifecycle_compat_service import (
     _ORIGINAL_FINALIZE_CONNECTION_GATES,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
@@ -26,10 +27,8 @@ from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
 from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
-from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
-)
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
@@ -74,10 +73,13 @@ class BLELifecycleController:
             Initializes bound controller collaborators.
         """
         self._iface = iface
-        self._receive = BLEReceiveLifecycleCoordinator(iface)
-        self._disconnect = BLEDisconnectLifecycleCoordinator(iface)
-        self._connection_ownership = BLEConnectionOwnershipLifecycleCoordinator(iface)
-        self._shutdown = BLEShutdownLifecycleCoordinator(iface)
+        session = _session_state_for(iface)
+        self._receive = BLEReceiveLifecycleCoordinator(iface, session_state=session)
+        self._disconnect = BLEDisconnectLifecycleCoordinator(iface, session_state=session)
+        self._connection_ownership = BLEConnectionOwnershipLifecycleCoordinator(
+            iface, session_state=session
+        )
+        self._shutdown = BLEShutdownLifecycleCoordinator(iface, session_state=session)
 
     def _set_receive_wanted(self, *, want_receive: bool) -> None:
         """Request or clear the receive loop on the bound interface."""
@@ -202,10 +204,8 @@ class BLELifecycleController:
             attr_name: str,
             fallback_factory: Callable[[], _HookT],
         ) -> _HookT:
-            raw_hook = getattr(iface, attr_name, None)
-            if not callable(raw_hook) or _is_unconfigured_mock_callable(raw_hook):
-                return fallback_factory()
-            return cast(_HookT, raw_hook)
+            raw_hook = _get_declared_callable(iface, attr_name)
+            return fallback_factory() if raw_hook is None else cast(_HookT, raw_hook)
 
         def _fallback_is_closing() -> Callable[[], bool]:
             def is_closing() -> bool:

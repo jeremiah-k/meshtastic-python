@@ -8,9 +8,14 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
+from meshtastic.interfaces.ble.compat_adapter import _resolve_declared_callable
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.errors import BLEDBusTransportError
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _is_currently_connected_elsewhere,
@@ -18,7 +23,6 @@ from meshtastic.interfaces.ble.gating import (
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
 from meshtastic.interfaces.ble.utils import (
-    _is_unconfigured_mock_callable,
     _thread_start_probe,
 )
 
@@ -26,22 +30,6 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
-
-
-def _camel_to_snake(name: str) -> str:
-    """Convert a lower/upper camelCase identifier to snake_case."""
-    chars: list[str] = []
-    for idx, char in enumerate(name):
-        if char.isupper() and idx > 0:
-            chars.append("_")
-        chars.append(char.lower())
-    return "".join(chars)
-
-
-def _snake_to_camel(name: str) -> str:
-    """Convert snake_case identifier to lower camelCase."""
-    head, *tail = name.split("_")
-    return head + "".join(piece.capitalize() for piece in tail)
 
 
 class ReconnectPolicyMissingMethodError(AttributeError):
@@ -131,14 +119,11 @@ class ReconnectScheduler:
         ThreadCoordinatorMissingMethodError
             If neither hook is available and callable.
         """
-        public_hook = getattr(self.thread_coordinator, public_name, None)
-        if callable(public_hook) and not _is_unconfigured_mock_callable(public_hook):
-            return cast(Callable[..., object], public_hook)
-
-        legacy_hook = getattr(self.thread_coordinator, legacy_name, None)
-        if callable(legacy_hook) and not _is_unconfigured_mock_callable(legacy_hook):
-            return cast(Callable[..., object], legacy_hook)
-
+        hook = _resolve_declared_callable(
+            self.thread_coordinator, public_name, legacy_name
+        )
+        if hook is not None:
+            return cast(Callable[..., object], hook)
         raise ThreadCoordinatorMissingMethodError(f"{public_name}/{legacy_name}")
 
     def _thread_create_thread(
@@ -308,12 +293,12 @@ class ReconnectWorker:
         self.reconnect_policy = reconnect_policy
 
     def _call_policy(self, method_name: str, *args: Any) -> Any:
-        """Call a policy method with compatibility fallbacks for legacy naming styles.
+        """Call one canonical reconnect-policy method.
 
         Parameters
         ----------
         method_name : str
-            Name of the public method to call on the policy.
+            Name of the canonical internal method to call on the policy.
         *args
             Arguments to pass to the policy method.
 
@@ -322,26 +307,11 @@ class ReconnectWorker:
         Any
             The return value from the policy method.
         """
-        candidate_names: list[str] = [method_name]
-        snake_name = _camel_to_snake(method_name)
-        if snake_name != method_name:
-            candidate_names.append(snake_name)
-        camel_name = _snake_to_camel(snake_name)
-        if camel_name not in candidate_names:
-            candidate_names.append(camel_name)
-
-        for candidate_name in candidate_names:
-            candidate_method = getattr(self.reconnect_policy, candidate_name, None)
-            if callable(candidate_method) and not _is_unconfigured_mock_callable(
-                candidate_method
-            ):
-                return candidate_method(*args)
-
-        # Backward compatibility for test doubles that only expose underscored methods.
-        for candidate_name in candidate_names:
-            fallback = getattr(self.reconnect_policy, f"_{candidate_name}", None)
-            if callable(fallback) and not _is_unconfigured_mock_callable(fallback):
-                return fallback(*args)
+        candidate_method = _resolve_declared_callable(
+            self.reconnect_policy, method_name
+        )
+        if candidate_method is not None:
+            return candidate_method(*args)
         raise ReconnectPolicyMissingMethodError(method_name)
 
     def _should_abort_reconnect(
@@ -601,9 +571,11 @@ class ReconnectWorker:
                 except Exception:
                     if self._should_abort_reconnect(context="unexpected error"):
                         return
-                    logger.exception(
+                    _log_ble_failure(
+                        _BLEFailureDisposition.RETRYABLE,
                         "Unexpected error during auto-reconnect attempt %d",
                         attempt_num,
+                        level=logging.ERROR,
                     )
                 else:
                     logger.info(
@@ -641,12 +613,18 @@ class ReconnectWorker:
                 self.reconnect_policy,
             )
         except Exception:
-            logger.exception(
-                "Unexpected error during reconnect loop setup; aborting reconnect"
+            _log_ble_failure(
+                _BLEFailureDisposition.TERMINAL,
+                "Unexpected error during reconnect loop setup; aborting reconnect",
+                level=logging.ERROR,
             )
         finally:
             if on_exit is not None:
                 try:
                     on_exit()
                 except Exception:
-                    logger.exception("Reconnect loop exit callback failed")
+                    _log_ble_failure(
+                        _BLEFailureDisposition.BEST_EFFORT,
+                        "Reconnect loop exit callback failed",
+                        level=logging.ERROR,
+                    )

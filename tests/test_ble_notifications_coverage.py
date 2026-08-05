@@ -40,6 +40,7 @@ def notification_dispatcher() -> BLENotificationDispatcher:
         notification_manager=manager,
         error_handler_provider=lambda: Mock(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
 
@@ -561,6 +562,7 @@ def test_resolve_error_handler_provider_failure() -> None:
         notification_manager=NotificationManager(),
         error_handler_provider=failing_provider,
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
     with patch("meshtastic.interfaces.ble.notifications.logger") as mock_logger:
@@ -575,24 +577,6 @@ def test_resolve_error_handler_provider_failure() -> None:
             if "Error resolving notification error-handler provider" in str(call)
         ]
         assert len(debug_calls) >= 1
-
-
-@pytest.mark.unit
-def test_resolve_error_handler_unconfigured_mock() -> None:
-    """Test error handler resolution with unconfigured mock."""
-
-    unconfigured_mock = Mock()
-
-    dispatcher = BLENotificationDispatcher(
-        notification_manager=NotificationManager(),
-        error_handler_provider=lambda: unconfigured_mock,
-        trigger_read_event=lambda: None,
-    )
-
-    result = dispatcher._resolve_error_handler()
-
-    # Should return None for unconfigured mock
-    assert result is None
 
 
 @pytest.mark.unit
@@ -621,21 +605,38 @@ def test_report_notification_handler_error_with_safe_execute(
     dispatcher = notification_dispatcher
     dispatcher._error_handler_provider = lambda: mock_handler
 
-    # Patch both checks so our mock is considered configured
-    with (
-        patch(
-            "meshtastic.interfaces.ble.notifications._is_unconfigured_mock_member",
-            return_value=False,
-        ),
-        patch(
-            "meshtastic.interfaces.ble.notifications._is_unconfigured_mock_callable",
-            return_value=False,
-        ),
-    ):
-        dispatcher.report_notification_handler_error("Test error")
+    dispatcher.report_notification_handler_error("Test error")
 
-        # safe_execute should have been called
-        assert mock_handler.safe_execute.called
+    assert mock_handler.safe_execute.called
+
+
+@pytest.mark.unit
+def test_report_notification_handler_error_uses_declared_legacy_safe_execute(
+    notification_dispatcher: BLENotificationDispatcher,
+) -> None:
+    """A synthesized public hook must not mask the declared legacy hook."""
+
+    class LegacyErrorHandler:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def _safe_execute(self, func: Callable[[], None], **_kwargs: object) -> None:
+            self.calls += 1
+            try:
+                func()
+            except RuntimeError:
+                pass
+
+        def __getattr__(self, _name: str) -> object:
+            return lambda *_args, **_kwargs: None
+
+    handler = LegacyErrorHandler()
+    dispatcher = notification_dispatcher
+    dispatcher._error_handler_provider = lambda: handler
+
+    dispatcher.report_notification_handler_error("Test error")
+
+    assert handler.calls == 1
 
 
 @pytest.mark.unit
@@ -925,28 +926,19 @@ def test_notification_manager_thread_safety(
 
 
 @pytest.mark.unit
-def test_dispatcher_error_handler_resolution_chain() -> None:
-    """Test error handler resolution tries multiple hooks in order."""
-
-    # Test with handler that has _safe_execute but not safe_execute
-    mock_handler = Mock()
-    # Don't set safe_execute at all
-    mock_handler._safe_execute = Mock(return_value=None)
+def test_dispatcher_resolves_error_handler_from_provider() -> None:
+    """The dispatcher should return the error handler supplied by its provider."""
+    error_handler = object()
 
     dispatcher = BLENotificationDispatcher(
         notification_manager=NotificationManager(),
-        error_handler_provider=lambda: mock_handler,
+        error_handler_provider=lambda: error_handler,
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
-    # Patch _is_unconfigured_mock_member to return False so our handler is considered configured
-    with patch(
-        "meshtastic.interfaces.ble.notifications._is_unconfigured_mock_member",
-        return_value=False,
-    ):
-        result = dispatcher._resolve_error_handler()
-        # _resolve_error_handler returns the handler object, not the safe_execute callable
-        assert result is mock_handler
+    result = dispatcher._resolve_error_handler()
+    assert result is error_handler
 
 
 @pytest.mark.unit
@@ -982,6 +974,28 @@ def test_fromnum_notify_enabled_property(
     # Test setter
     dispatcher.fromnum_notify_enabled = True
     assert dispatcher.fromnum_notify_enabled is True
+
+
+@pytest.mark.unit
+def test_fromnum_notify_enabled_reads_do_not_enter_registration_lock(
+    notification_dispatcher: BLENotificationDispatcher,
+) -> None:
+    """Hot receive-path flag reads must not wait on registration serialization."""
+
+    class _RejectingLock:
+        def __enter__(self) -> None:
+            raise AssertionError("flag reads must not acquire the registration lock")
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    dispatcher = notification_dispatcher
+    dispatcher._registration_lock = _RejectingLock()  # type: ignore[assignment]  # noqa: SLF001
+
+    assert dispatcher.fromnum_notify_enabled is False
+
+    with pytest.raises(AssertionError, match="registration lock"):
+        dispatcher.fromnum_notify_enabled = True
 
 
 @pytest.mark.unit

@@ -292,43 +292,6 @@ class TestBLELifecycleControllerHookResolution:
         configured_hook.assert_called_once_with()
         assert resolved_is_closing == [True]
 
-    def test_resolve_hook_with_unconfigured_mock_returns_fallback(self) -> None:
-        """_resolve_hook should return fallback when hook is an unconfigured mock."""
-        # An unconfigured MagicMock (default behavior)
-        unconfigured_hook = MagicMock()
-        resolved_is_closing: list[bool] = []
-
-        def _discard_invalidated_connected_client(
-            *_args: object,
-            **kwargs: object,
-        ) -> None:
-            is_closing_getter = kwargs.get("is_closing_getter")
-            if callable(is_closing_getter):
-                resolved_is_closing.append(is_closing_getter())
-
-        mock_iface = SimpleNamespace(_state_manager_is_closing=unconfigured_hook)
-        mock_ownership = SimpleNamespace(
-            _discard_invalidated_connected_client=_discard_invalidated_connected_client
-        )
-
-        controller = BLELifecycleController(mock_iface)
-        controller._connection_ownership = mock_ownership  # type: ignore[assignment]
-
-        mock_client = SimpleNamespace(address="test-addr")
-        with patch(
-            "meshtastic.interfaces.ble.lifecycle_service.BLELifecycleService._state_manager_is_closing",
-            return_value=True,
-        ) as state_manager_is_closing:
-            # This should use fallback instead of the unconfigured mock.
-            controller._discard_invalidated_connected_client(
-                mock_client,
-                restore_address=None,
-                restore_last_connection_request=None,
-            )
-
-        state_manager_is_closing.assert_called_once_with(mock_iface)
-        assert resolved_is_closing == [True]
-
     def test_resolve_hook_with_missing_hook_returns_fallback(self) -> None:
         """_resolve_hook should return fallback when hook attribute is missing."""
         mock_iface = SimpleNamespace()  # No _state_manager_is_closing attribute

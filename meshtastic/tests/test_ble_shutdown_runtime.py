@@ -7,6 +7,7 @@ and shutdown client teardown paths.
 from __future__ import annotations
 
 import threading
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +19,28 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+class _TrackingRLock:
+    """Reentrant lock test double exposing aggregate ownership state."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._depth = 0
+
+    @property
+    def held(self) -> bool:
+        """Return whether at least one reentrant acquisition is active."""
+        return self._depth > 0
+
+    def __enter__(self) -> "_TrackingRLock":
+        self._lock.acquire()
+        self._depth += 1
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._depth -= 1
+        self._lock.release()
 
 
 class _ImmediateThread:
@@ -162,11 +185,11 @@ class TestBoundedThreadTOCTOU:
 
         blocker = threading.Event()
 
-        # Use a real function so _is_unconfigured_mock_callable does not skip it.
+        # Use an explicitly declared function so structural hook lookup resolves it.
         def slow_cleanup() -> None:
             blocker.wait()
 
-        iface.thread_coordinator.cleanup = slow_cleanup
+        iface.thread_coordinator = SimpleNamespace(cleanup=slow_cleanup)
 
         coordinator = BLEShutdownLifecycleCoordinator(iface)
         started_threads: list[threading.Thread] = []
@@ -189,6 +212,12 @@ class TestBoundedThreadTOCTOU:
         assert started_count == 1
         blocker.set()
 
+    def test_cleanup_missing_thread_coordinator_is_best_effort(self) -> None:
+        """Missing optional coordinator state must not escape shutdown cleanup."""
+        coordinator = BLEShutdownLifecycleCoordinator(SimpleNamespace())  # type: ignore[arg-type]
+
+        coordinator._cleanup_thread_coordinator()
+
     def test_start_failure_clears_stored_ref(self):
         """If thread.start() fails, the stored ref must be cleared under lock."""
         iface = MagicMock()
@@ -199,7 +228,7 @@ class TestBoundedThreadTOCTOU:
         def real_cleanup() -> None:
             pass
 
-        iface.thread_coordinator.cleanup = real_cleanup
+        iface.thread_coordinator = SimpleNamespace(cleanup=real_cleanup)
 
         coordinator = BLEShutdownLifecycleCoordinator(iface)
 
@@ -223,7 +252,7 @@ class TestBoundedThreadTOCTOU:
         def real_cleanup() -> None:
             pass
 
-        iface.thread_coordinator.cleanup = real_cleanup
+        iface.thread_coordinator = SimpleNamespace(cleanup=real_cleanup)
 
         coordinator = BLEShutdownLifecycleCoordinator(iface)
 
@@ -272,3 +301,124 @@ class TestBoundedThreadTOCTOU:
         coordinator._close_mesh_interface(timeout=1.0)
 
         previous.join.assert_not_called()
+
+
+class TestShutdownStateProbeLocking:
+    """Test shutdown state-manager probes respect the shared lock boundary."""
+
+    def test_current_state_probe_runs_outside_session_lock(self) -> None:
+        """Shutdown must not call state-manager current-state hooks under session lock."""
+        from meshtastic.interfaces.ble.session_state import BLESessionState
+        from meshtastic.interfaces.ble.state import ConnectionState
+
+        lock = _TrackingRLock()
+        session = BLESessionState(lock=lock)
+        iface = MagicMock()
+        iface._management_lock = threading.RLock()
+        iface._management_inflight = 0
+        probe_lock_states: list[bool] = []
+
+        def _current_state() -> ConnectionState:
+            probe_lock_states.append(lock.held)
+            return ConnectionState.DISCONNECTED
+
+        coordinator = BLEShutdownLifecycleCoordinator(
+            iface, session_state=session  # type: ignore[arg-type]
+        )
+
+        result = coordinator._await_management_shutdown(  # noqa: SLF001
+            management_shutdown_wait_timeout=0.1,
+            management_wait_poll_seconds=0.01,
+            current_state_getter=_current_state,
+            is_closing_getter=lambda: False,
+            transition_to_state=lambda _state: True,
+            reset_to_disconnected=lambda: True,
+        )
+
+        assert result is False
+        assert probe_lock_states == [False]
+
+
+class TestReceiveThreadSessionLocking:
+    """Test shutdown receive-thread state capture synchronization."""
+
+    def test_receive_thread_reference_is_read_under_session_lock(self) -> None:
+        """Shutdown should snapshot the current receive thread while holding its owner lock."""
+
+        class _ObservedSession:
+            def __init__(self) -> None:
+                self.lock = _TrackingRLock()
+                self._receive_thread: object | None = None
+                self.receive_start_pending = False
+                self.receive_start_pending_since = None
+                self.receive_thread_reads = 0
+
+            @property
+            def receive_thread(self) -> object | None:
+                assert self.lock.held is True
+                self.receive_thread_reads += 1
+                return self._receive_thread
+
+            @receive_thread.setter
+            def receive_thread(self, value: object | None) -> None:
+                assert self.lock.held is True
+                self._receive_thread = value
+
+        session = _ObservedSession()
+        coordinator = BLEShutdownLifecycleCoordinator(
+            MagicMock(), session_state=session  # type: ignore[arg-type]
+        )
+
+        coordinator._shutdown_receive_thread(
+            wake_waiting_threads=lambda *_events: None,
+            join_thread=lambda *_args, **_kwargs: None,
+        )
+
+        assert session.receive_thread_reads == 1
+
+    def test_receive_thread_liveness_probes_run_outside_session_lock(self) -> None:
+        """Thread-like liveness callbacks must not execute under shared state lock."""
+
+        class _ObservedSession:
+            def __init__(self) -> None:
+                self.lock = _TrackingRLock()
+                self._receive_thread: object | None = None
+                self.receive_start_pending = True
+                self.receive_start_pending_since = 1.0
+
+            @property
+            def receive_thread(self) -> object | None:
+                assert self.lock.held is True
+                return self._receive_thread
+
+            @receive_thread.setter
+            def receive_thread(self, value: object | None) -> None:
+                assert self.lock.held is True
+                self._receive_thread = value
+
+        session = _ObservedSession()
+        probe_lock_states: list[bool] = []
+        probe_results = iter((True, True, False))
+
+        class _ThreadLike:
+            ident = 42
+            name = "ObservedReceive"
+
+            def is_alive(self) -> bool:
+                probe_lock_states.append(session.lock.held)
+                return next(probe_results)
+
+        with session.lock:
+            session.receive_thread = _ThreadLike()
+        coordinator = BLEShutdownLifecycleCoordinator(
+            MagicMock(), session_state=session  # type: ignore[arg-type]
+        )
+
+        coordinator._shutdown_receive_thread(
+            wake_waiting_threads=lambda *_events: None,
+            join_thread=lambda *_args, **_kwargs: None,
+        )
+
+        assert probe_lock_states == [False, False, False]
+        with session.lock:
+            assert session.receive_thread is None
