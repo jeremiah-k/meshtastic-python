@@ -1235,6 +1235,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             ``True`` only while the registration belongs to the same live session.
         """
         state_manager = self._state_manager
+        lifecycle_owner_is_current: bool | None
         canonical_locked_probe = (
             type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
             and state_manager.lock is self._state_lock

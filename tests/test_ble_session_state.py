@@ -1,5 +1,6 @@
 """Tests for owned BLE session-state compatibility views."""
 
+import logging
 import threading
 from types import SimpleNamespace, TracebackType
 
@@ -319,6 +320,7 @@ def test_mixin_promotion_preserves_legacy_values_and_state_manager_lock() -> Non
     adapter = _LegacyBLESessionStateAdapter(iface)
     iface.__dict__["_session_state"] = adapter
 
+    assert adapter.lock is state_manager.lock
     state = iface._get_session_state()
 
     assert isinstance(state, BLESessionState)
@@ -349,12 +351,27 @@ def test_mixin_promotion_preserves_raw_legacy_lock_without_state_manager() -> No
     adapter = _LegacyBLESessionStateAdapter(iface)
     iface.__dict__["_session_state"] = adapter
 
+    assert adapter.lock is legacy_lock
     state = iface._get_session_state()
 
     assert state.lock is legacy_lock
     assert state.closed is True
     assert "_state_lock" not in iface.__dict__
     assert "_closed" not in iface.__dict__
+
+
+def test_mixin_promotion_without_declared_lock_reuses_adapter_fallback() -> None:
+    """Promotion without a declared owner lock must keep the adapter's one lock."""
+    iface = BLEInterface.__new__(BLEInterface)
+    adapter = _LegacyBLESessionStateAdapter(iface)
+    iface.__dict__["_session_state"] = adapter
+
+    fallback_lock = adapter.lock
+    state = iface._get_session_state()
+
+    assert isinstance(state, BLESessionState)
+    assert state.lock is fallback_lock
+    assert adapter.lock is fallback_lock
 
 
 def test_uncacheable_legacy_collaborator_requires_explicit_session() -> None:
@@ -428,12 +445,10 @@ def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
     def _unexpected_create(**_kwargs: object) -> object:
         raise AssertionError("pending session state should suppress thread creation")
 
-    created, recovery_attempts = (
-        coordinator._check_receive_start_conditions(  # noqa: SLF001
-            name="PendingReceive",
-            reset_recovery=False,
-            create_runtime_thread=_unexpected_create,  # type: ignore[arg-type]
-        )
+    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
+        name="PendingReceive",
+        reset_recovery=False,
+        create_runtime_thread=_unexpected_create,  # type: ignore[arg-type]
     )
 
     assert created is None
@@ -503,12 +518,14 @@ def test_transient_retry_revalidates_concurrent_counter_reset(
     iface = SimpleNamespace(
         _transient_read_policy=object(),
         _retry_policy_should_retry=_should_retry,
-        _retry_policy_get_delay=lambda _policy, attempt: delay_attempts.append(attempt)
-        or 0.0,
+        _retry_policy_get_delay=lambda _policy, attempt: (
+            delay_attempts.append(attempt) or 0.0
+        ),
         BLEError=RuntimeError,
     )
     controller = BLEReceiveRecoveryController(
-        iface, session_state=state  # type: ignore[arg-type]
+        iface,
+        session_state=state,  # type: ignore[arg-type]
     )
     monkeypatch.setattr(receive_service_module, "_sleep", lambda _delay: None)
 
@@ -519,7 +536,9 @@ def test_transient_retry_revalidates_concurrent_counter_reset(
     assert delay_attempts == [0]
 
 
-def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock() -> None:
+def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock() -> (
+    None
+):
     """Deferred restart scheduling must not begin while the session lock is held."""
     from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
         BLEReceiveLifecycleCoordinator,
@@ -702,7 +721,8 @@ def test_disconnect_plan_reads_epoch_from_explicit_session_state() -> None:
         _sorted_address_keys=lambda *keys: [key for key in keys if key],
     )
     coordinator = BLEDisconnectLifecycleCoordinator(
-        iface, session_state=state  # type: ignore[arg-type]
+        iface,
+        session_state=state,  # type: ignore[arg-type]
     )
 
     plan = coordinator._resolve_disconnect_target(  # noqa: SLF001
@@ -744,7 +764,8 @@ def test_disconnect_source_write_uses_session_lock() -> None:
     session = _Session()
     iface = SimpleNamespace(client=None)
     coordinator = BLEDisconnectLifecycleCoordinator(
-        iface, session_state=session  # type: ignore[arg-type]
+        iface,
+        session_state=session,  # type: ignore[arg-type]
     )
     plan = _DisconnectPlan(
         early_return=False,
@@ -787,7 +808,8 @@ def test_ownership_cleanup_reads_explicit_session_state() -> None:
         _connection_session_epoch=1,
     )
     coordinator = BLEConnectionOwnershipLifecycleCoordinator(
-        iface, session_state=state  # type: ignore[arg-type]
+        iface,
+        session_state=state,  # type: ignore[arg-type]
     )
 
     coordinator._discard_invalidated_connected_client(  # noqa: SLF001
@@ -890,7 +912,8 @@ def test_ownership_invalidation_closing_probe_runs_outside_session_lock() -> Non
         _last_connection_request="legacy-request",
     )
     coordinator = BLEConnectionOwnershipLifecycleCoordinator(
-        iface, session_state=state  # type: ignore[arg-type]
+        iface,
+        session_state=state,  # type: ignore[arg-type]
     )
     probe_lock_states: list[bool] = []
 
@@ -910,6 +933,75 @@ def test_ownership_invalidation_closing_probe_runs_outside_session_lock() -> Non
     )
 
     assert probe_lock_states == [False]
+
+
+def test_ownership_status_probes_run_outside_session_lock() -> None:
+    """Ownership compatibility/client probes must not run under shared state lock."""
+    from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
+        BLEConnectionOwnershipLifecycleCoordinator,
+    )
+
+    lock = _TrackingRLock()
+    client = object()
+    state = BLESessionState(lock=lock)
+    iface = SimpleNamespace(client=client, _state_manager=SimpleNamespace())
+    coordinator = BLEConnectionOwnershipLifecycleCoordinator(
+        iface,
+        session_state=state,  # type: ignore[arg-type]
+    )
+    probe_lock_states: list[tuple[str, bool]] = []
+
+    def _probe(name: str) -> bool:
+        probe_lock_states.append((name, lock.held))
+        return True
+
+    assert coordinator._get_connected_client_status(  # noqa: SLF001
+        client,  # type: ignore[arg-type]
+        is_closing_getter=lambda: not _probe("closing"),
+        state_connected_getter=lambda: _probe("state"),
+        client_connected_getter=lambda _client: _probe("client"),
+    ) == (True, False)
+    assert probe_lock_states == [
+        ("closing", False),
+        ("state", False),
+        ("client", False),
+    ]
+
+
+def test_ownership_status_provider_revalidates_session_epoch() -> None:
+    """A status result cannot authorize publication after session generation changes."""
+    from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
+        BLEConnectionOwnershipLifecycleCoordinator,
+    )
+
+    lock = _TrackingRLock()
+    client = object()
+    state = BLESessionState(lock=lock, connection_session_epoch=4)
+    iface = SimpleNamespace(
+        client=client,
+        _state_manager=SimpleNamespace(),
+        _has_lost_gate_ownership=lambda *_keys: False,
+    )
+    coordinator = BLEConnectionOwnershipLifecycleCoordinator(
+        iface,
+        session_state=state,  # type: ignore[arg-type]
+    )
+
+    def _racing_status(_client: object) -> tuple[bool, bool]:
+        assert lock.held is False
+        with lock:
+            state.connection_session_epoch += 1
+        return True, False
+
+    snapshot = coordinator._verify_ownership_snapshot(  # noqa: SLF001
+        client,  # type: ignore[arg-type]
+        "device-key",
+        "alias-key",
+        get_connected_client_status_locked=_racing_status,  # type: ignore[arg-type]
+    )
+
+    assert snapshot.still_owned is False
+    assert snapshot.is_closing is False
 
 
 def test_receive_snapshot_compatibility_probes_run_outside_session_lock() -> None:
@@ -936,7 +1028,8 @@ def test_receive_snapshot_compatibility_probes_run_outside_session_lock() -> Non
         ),
     )
     controller = BLEReceiveRecoveryController(
-        iface, session_state=state  # type: ignore[arg-type]
+        iface,
+        session_state=state,  # type: ignore[arg-type]
     )
 
     assert controller._snapshot_client_state() == (None, True, False, False)  # noqa: SLF001
@@ -1109,14 +1202,19 @@ def test_transient_retry_revalidation_is_bounded_under_continuous_churn(
     iface = SimpleNamespace(
         _transient_read_policy=object(),
         _retry_policy_should_retry=_should_retry,
-        _retry_policy_get_delay=lambda _policy, attempt: delay_attempts.append(attempt)
-        or 0.0,
+        _retry_policy_get_delay=lambda _policy, attempt: (
+            delay_attempts.append(attempt) or 0.0
+        ),
         BLEError=RuntimeError,
     )
     controller = BLEReceiveRecoveryController(
-        iface, session_state=state  # type: ignore[arg-type]
+        iface,
+        session_state=state,  # type: ignore[arg-type]
     )
     monkeypatch.setattr(receive_service_module, "_sleep", lambda _delay: None)
+    caplog.set_level(
+        logging.WARNING, logger="meshtastic.interfaces.ble.receive_service"
+    )
 
     controller.handle_transient_read_error(BleakError("transient"))
 

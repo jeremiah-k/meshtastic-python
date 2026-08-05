@@ -1063,7 +1063,7 @@ class BLELifecycleService:
     def _get_connected_client_status_locked(
         iface: "BLEInterface", client: "BLEClient"
     ) -> tuple[bool, bool]:
-        """Return ownership and closing flags for ``client`` under state lock.
+        """Return ownership and closing flags through the historical ``_locked`` shim.
 
         Parameters
         ----------

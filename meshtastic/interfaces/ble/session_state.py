@@ -106,20 +106,7 @@ class _BLESessionStateCompatMixin:
             Canonical session owner installed for this interface.
         """
         instance_dict = self.__dict__
-        state_manager_lock = _get_declared_lock(
-            instance_dict.get("_state_manager"), "lock"
-        )
-        raw_legacy_lock = instance_dict.get("_state_lock")
-        raw_legacy_lock_type = type(raw_legacy_lock)
-        raw_legacy_lock_is_valid = raw_legacy_lock is not None and (
-            _get_declared_callable(raw_legacy_lock_type, "__enter__") is not None
-            and _get_declared_callable(raw_legacy_lock_type, "__exit__") is not None
-        )
-        promotion_lock = state_manager_lock
-        if promotion_lock is None and raw_legacy_lock_is_valid:
-            promotion_lock = cast(_LockPort, raw_legacy_lock)
-        if promotion_lock is None:
-            promotion_lock = state._fallback_lock
+        promotion_lock = state.lock
         with promotion_lock:
             current = instance_dict.get("_session_state")
             if isinstance(current, BLESessionState):
@@ -454,6 +441,32 @@ class _LegacyBLESessionStateAdapter:
             self, "_fallback_lock", cast(_LockPort, threading.RLock())
         )
 
+    def _resolve_lock(self, mapped: str) -> _LockPort:
+        """Return the synchronization owner currently governing legacy state."""
+        iface = self._iface
+        if isinstance(iface, _BLESessionStateCompatMixin):
+            instance_dict = iface.__dict__
+            current_state = instance_dict.get("_session_state")
+            if isinstance(current_state, BLESessionState):
+                return current_state.lock
+            state_manager_lock = _get_declared_lock(
+                instance_dict.get("_state_manager"), "lock"
+            )
+            if state_manager_lock is not None:
+                return state_manager_lock
+            raw_legacy_lock = instance_dict.get(mapped)
+            if raw_legacy_lock is not None:
+                raw_lock_type = type(raw_legacy_lock)
+                if (
+                    _get_declared_callable(raw_lock_type, "__enter__") is not None
+                    and _get_declared_callable(raw_lock_type, "__exit__") is not None
+                ):
+                    return cast(_LockPort, raw_legacy_lock)
+            if current_state is self:
+                return self._fallback_lock
+        declared_lock = _get_declared_lock(iface, mapped)
+        return self._fallback_lock if declared_lock is None else declared_lock
+
     def __getattr__(self, name: str) -> Any:
         mapped = self._FIELD_MAP.get(name)
         if mapped is None:
@@ -461,14 +474,7 @@ class _LegacyBLESessionStateAdapter:
                 f"{type(self).__name__} does not proxy session field {name!r}"
             )
         if name == "lock":
-            if isinstance(self._iface, _BLESessionStateCompatMixin):
-                current_state = self._iface.__dict__.get("_session_state")
-                if current_state is self:
-                    return self._fallback_lock
-                if isinstance(current_state, BLESessionState):
-                    return current_state.lock
-            declared_lock = _get_declared_lock(self._iface, mapped)
-            return self._fallback_lock if declared_lock is None else declared_lock
+            return self._resolve_lock(mapped)
         value = _get_declared_member(self._iface, mapped, _MISSING_SESSION_FIELD)
         if value is not _MISSING_SESSION_FIELD:
             return value
