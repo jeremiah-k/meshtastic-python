@@ -48,6 +48,7 @@ from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_lock,
+    _get_declared_member,
     _iter_declared_members,
     _resolve_declared_callable,
 )
@@ -1199,6 +1200,28 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             return cast(T, collaborator)
         state_lock = _get_declared_lock(self, "_state_lock")
         if state_lock is None:
+            instance_dict = _get_declared_member(self, "__dict__")
+            if isinstance(instance_dict, dict):
+                # Partial test doubles can lack the canonical state lock. A
+                # lazily shared per-instance lock preserves single construction
+                # without imposing a process-wide fallback lock.
+                fallback_lock = instance_dict.setdefault(
+                    "_ble_collaborator_init_lock", threading.RLock()
+                )
+                fallback_lock_type = type(fallback_lock)
+                if (
+                    _get_declared_callable(fallback_lock_type, "__enter__") is None
+                    or _get_declared_callable(fallback_lock_type, "__exit__") is None
+                ):
+                    raise TypeError(
+                        "_ble_collaborator_init_lock must be a context-manager lock"
+                    )
+                with cast(Any, fallback_lock):
+                    collaborator = instance_dict.get(attr_name)
+                    if collaborator is None:
+                        collaborator = factory()
+                        instance_dict[attr_name] = collaborator
+                return cast(T, collaborator)
             collaborator = getattr(self, attr_name, None)
             if collaborator is None:
                 collaborator = factory()
@@ -1703,7 +1726,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             self._state_manager,
             public_name="is_connected",
             legacy_name="_is_connected",
-            fallback_attr_name="_is_connected",
+            fallback_attr_name=None,
             error_message=ERROR_STATE_MANAGER_MISSING_BOOL_IS_CONNECTED,
         )
 
@@ -1749,7 +1772,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
                 self._connection_validator,
                 public_name="check_existing_client",
                 legacy_name="_check_existing_client",
-                fallback_attr_name="check_existing_client",
+                fallback_attr_name=None,
                 error_message=ERROR_CONNECTION_VALIDATOR_MISSING_CHECK_EXISTING_CLIENT,
                 args=(
                     client,
@@ -1809,7 +1832,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
                 self._connection_orchestrator,
                 public_name="establish_connection",
                 legacy_name="_establish_connection",
-                fallback_attr_name="establish_connection",
+                fallback_attr_name=None,
                 error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
                 args=args,
                 kwargs=kwargs,
@@ -1825,7 +1848,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
                 self._connection_orchestrator,
                 public_name="establish_connection",
                 legacy_name="_establish_connection",
-                fallback_attr_name="establish_connection",
+                fallback_attr_name=None,
                 error_message=ERROR_CONNECTION_ORCHESTRATOR_MISSING_ESTABLISH_CONNECTION,
                 args=args,
                 kwargs=legacy_kwargs,
@@ -1861,7 +1884,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
                 self._client_manager,
                 public_name="safe_close_client",
                 legacy_name="_safe_close_client",
-                fallback_attr_name="safe_close_client",
+                fallback_attr_name=None,
                 error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
                 args=(client,),
                 kwargs={"disconnect_timeout": disconnect_timeout},
@@ -1873,7 +1896,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
                 self._client_manager,
                 public_name="safe_close_client",
                 legacy_name="_safe_close_client",
-                fallback_attr_name="safe_close_client",
+                fallback_attr_name=None,
                 error_message=ERROR_CLIENT_MANAGER_MISSING_SAFE_CLOSE_CLIENT,
                 args=(client,),
             )
@@ -1905,7 +1928,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             self._client_manager,
             public_name="update_client_reference",
             legacy_name="_update_client_reference",
-            fallback_attr_name="update_client_reference",
+            fallback_attr_name=None,
             error_message=ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE,
             args=(client, previous_client),
         )

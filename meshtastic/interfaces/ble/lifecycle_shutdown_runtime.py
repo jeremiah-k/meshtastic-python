@@ -442,10 +442,13 @@ class BLEShutdownLifecycleCoordinator:
                 )
             thread_ident = post_join_ident
             thread_is_alive = post_join_is_alive
+        # Thread-like liveness probes can execute collaborator code. Keep them
+        # outside the shared session lock and reserve the critical section for
+        # the identity-checked compare-and-clear below.
+        probe_confirms_stopped = not thread_is_alive
+        if not probe_confirms_stopped:
+            probe_confirms_stopped = _explicitly_not_alive(receive_thread)
         with self._session.lock:
-            probe_confirms_stopped = not thread_is_alive
-            if not probe_confirms_stopped:
-                probe_confirms_stopped = _explicitly_not_alive(receive_thread)
             if self._session.receive_thread is receive_thread and (
                 start_failure_confirmed or probe_confirms_stopped
             ):

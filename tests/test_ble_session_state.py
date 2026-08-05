@@ -4,11 +4,13 @@ import threading
 from types import SimpleNamespace, TracebackType
 
 import pytest
+from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.interfaces.ble.lifecycle_controller_runtime import (
     BLELifecycleController,
 )
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import (
     BLESessionState,
     LEGACY_SESSION_STATE_CACHE_ERROR,
@@ -18,6 +20,33 @@ from meshtastic.interfaces.ble.session_state import (
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 pytestmark = pytest.mark.unit
+
+
+class _TrackingRLock:
+    """Reentrant lock test double exposing aggregate ownership state."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._depth = 0
+
+    @property
+    def held(self) -> bool:
+        """Return whether at least one reentrant acquisition is active."""
+        return self._depth > 0
+
+    def __enter__(self) -> "_TrackingRLock":
+        self._lock.acquire()
+        self._depth += 1
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        self._depth -= 1
+        self._lock.release()
 
 
 def _bare_interface() -> BLEInterface:
@@ -52,6 +81,12 @@ def test_interface_lifecycle_fields_delegate_to_session_state() -> None:
     assert iface._session_state.receive_start_pending is True
     assert iface._session_state.receive_start_pending_since == 12.5
 
+    with pytest.raises(
+        TypeError,
+        match="_last_disconnect_source must be a str or None, got int",
+    ):
+        iface._last_disconnect_source = 7  # type: ignore[assignment]
+
 
 def test_session_state_retry_reset_helpers() -> None:
     """Retry/recovery bookkeeping resets should be explicit and complete."""
@@ -71,6 +106,101 @@ def test_session_state_retry_reset_helpers() -> None:
     assert state.suppressed_empty_read_warnings == 0
     assert state.receive_recovery_attempts == 0
     assert state.last_recovery_time == 0.0
+
+
+def test_lazy_session_state_creation_converges_across_racing_callers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent lazy access must return one canonical session-state owner."""
+    import meshtastic.interfaces.ble.session_state as session_state_module
+
+    iface = BLEInterface.__new__(BLEInterface)
+    rendezvous = threading.Barrier(2)
+    original_get_declared_lock = session_state_module._get_declared_lock
+
+    def _racing_get_declared_lock(target: object, name: str) -> object | None:
+        if target is None and name == "lock":
+            rendezvous.wait(timeout=2.0)
+            return None
+        return original_get_declared_lock(target, name)
+
+    monkeypatch.setattr(
+        session_state_module,
+        "_get_declared_lock",
+        _racing_get_declared_lock,
+    )
+    states: list[BLESessionState] = []
+
+    def _resolve_state() -> None:
+        states.append(iface._get_session_state())  # noqa: SLF001
+
+    workers = [threading.Thread(target=_resolve_state) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=2.0)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert len(states) == 2
+    assert states[0] is states[1]
+    assert iface.__dict__["_session_state"] is states[0]
+
+
+def test_legacy_session_state_resolution_is_atomic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Racing legacy coordinators must converge on one cached adapter owner."""
+    import meshtastic.interfaces.ble.session_state as session_state_module
+
+    iface = SimpleNamespace()
+    rendezvous = threading.Barrier(2)
+    original_adapter = session_state_module._LegacyBLESessionStateAdapter
+
+    class _RacingAdapter(original_adapter):
+        def __init__(self, target: object) -> None:
+            super().__init__(target)
+            rendezvous.wait(timeout=2.0)
+
+    monkeypatch.setattr(
+        session_state_module,
+        "_LegacyBLESessionStateAdapter",
+        _RacingAdapter,
+    )
+    states: list[object] = []
+
+    def _resolve_state() -> None:
+        states.append(session_state_module._session_state_for(iface))
+
+    workers = [threading.Thread(target=_resolve_state) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=2.0)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert len(states) == 2
+    assert states[0] is states[1]
+    assert iface.__dict__["_session_state"] is states[0]
+
+
+def test_legacy_adapter_field_map_matches_session_state_protocol() -> None:
+    """The cast-backed legacy adapter must cover every protocol data field."""
+    protocol_fields = set(_BLESessionStatePort.__annotations__)
+
+    assert set(_LegacyBLESessionStateAdapter._FIELD_MAP) == protocol_fields  # noqa: SLF001
+    assert set(_LegacyBLESessionStateAdapter._FIELD_DEFAULTS) == (  # noqa: SLF001
+        protocol_fields - {"lock"}
+    )
+
+
+def test_legacy_adapter_rejects_unknown_fields_with_context() -> None:
+    """Unsupported adapter fields should fail with an actionable message."""
+    state = _session_state_for(SimpleNamespace())
+
+    with pytest.raises(AttributeError, match="does not proxy session field 'unknown'"):
+        _ = state.unknown  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError, match="does not proxy session field 'unknown'"):
+        state.unknown = True  # type: ignore[attr-defined]
 
 
 def test_lifecycle_controller_shares_owned_session_state() -> None:
@@ -300,36 +430,47 @@ def test_receive_controller_invalid_lifecycle_results_fall_back_to_session() -> 
     assert controller._is_connection_closing() is True  # noqa: SLF001
 
 
+def test_transient_retry_does_not_resurrect_concurrent_counter_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry bookkeeping must advance from the current counter after policy work."""
+    import meshtastic.interfaces.ble.receive_service as receive_service_module
+    from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+
+    state_manager = BLEStateManager()
+    state = BLESessionState(lock=state_manager.lock, read_retry_count=3)
+    delay_attempts: list[int] = []
+
+    def _should_retry(_policy: object, attempt: int) -> bool:
+        assert attempt == 3
+        state._reset_read_retry_count()
+        return True
+
+    iface = SimpleNamespace(
+        _transient_read_policy=object(),
+        _retry_policy_should_retry=_should_retry,
+        _retry_policy_get_delay=lambda _policy, attempt: delay_attempts.append(attempt)
+        or 0.0,
+        BLEError=RuntimeError,
+    )
+    controller = BLEReceiveRecoveryController(
+        iface, session_state=state  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(receive_service_module, "_sleep", lambda _delay: None)
+
+    controller.handle_transient_read_error(BleakError("transient"))
+
+    assert state.read_retry_count == 1
+    assert delay_attempts == [0]
+
+
 def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock() -> None:
     """Deferred restart scheduling must not begin while the session lock is held."""
     from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
         BLEReceiveLifecycleCoordinator,
     )
 
-    class _TrackingLock:
-        def __init__(self) -> None:
-            self._lock = threading.RLock()
-            self._depth = 0
-
-        @property
-        def held(self) -> bool:
-            return self._depth > 0
-
-        def __enter__(self) -> "_TrackingLock":
-            self._lock.acquire()
-            self._depth += 1
-            return self
-
-        def __exit__(
-            self,
-            _exc_type: type[BaseException] | None,
-            _exc_value: BaseException | None,
-            _traceback: TracebackType | None,
-        ) -> None:
-            self._depth -= 1
-            self._lock.release()
-
-    lock = _TrackingLock()
+    lock = _TrackingRLock()
     state = BLESessionState(lock=lock)
     existing = SimpleNamespace(
         name="InconclusiveReceive", ident=None, is_alive=lambda: False
@@ -363,6 +504,78 @@ def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock()
     assert recovery_attempts is None
     assert scheduled == [(existing, True)]
     assert state.receive_start_pending is True
+
+
+def test_receive_lifecycle_thread_probes_run_outside_session_lock() -> None:
+    """Receive-start thread probes should not execute arbitrary code under state lock."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
+    )
+
+    lock = _TrackingRLock()
+    state = BLESessionState(lock=lock)
+    probe_lock_states: list[bool] = []
+
+    class _ExistingThread:
+        name = "PendingReceive"
+        ident = None
+
+        def is_alive(self) -> bool:
+            probe_lock_states.append(lock.held)
+            return False
+
+    existing = _ExistingThread()
+    state.receive_thread = existing  # type: ignore[assignment]
+    state.receive_start_pending = True
+    state.receive_start_pending_since = 0.0
+    iface = SimpleNamespace(_receive_from_radio_impl=lambda: None)
+    coordinator = BLEReceiveLifecycleCoordinator(  # type: ignore[arg-type]
+        iface, session_state=state
+    )
+    staged = SimpleNamespace(name="ReplacementReceive", ident=None, is_alive=lambda: False)
+
+    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
+        name="ReplacementReceive",
+        reset_recovery=False,
+        create_runtime_thread=lambda **_kwargs: staged,  # type: ignore[return-value]
+    )
+
+    assert created is staged
+    assert recovery_attempts is None
+    assert probe_lock_states == [False, False]
+
+
+def test_receive_recovery_reset_probes_thread_outside_session_lock() -> None:
+    """Recovery-reset liveness checks must not run while session state is locked."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
+    )
+
+    lock = _TrackingRLock()
+    state = BLESessionState(lock=lock, receive_recovery_attempts=2)
+    probe_lock_states: list[bool] = []
+
+    class _Thread:
+        ident = 42
+        name = "Receive"
+
+        def is_alive(self) -> bool:
+            probe_lock_states.append(lock.held)
+            return True
+
+    thread = _Thread()
+    state.receive_thread = thread  # type: ignore[assignment]
+    coordinator = BLEReceiveLifecycleCoordinator(  # type: ignore[arg-type]
+        SimpleNamespace(), session_state=state
+    )
+
+    coordinator._maybe_reset_receive_recovery(  # noqa: SLF001
+        thread=thread,  # type: ignore[arg-type]
+        recovery_attempts_before_start=2,
+    )
+
+    assert probe_lock_states == [False]
+    assert state.receive_recovery_attempts == 0
 
 
 def test_disconnect_plan_reads_epoch_from_explicit_session_state() -> None:
@@ -402,6 +615,51 @@ def test_disconnect_plan_reads_epoch_from_explicit_session_state() -> None:
 
     assert plan.session_epoch == 9
     assert iface._connection_session_epoch == 1
+
+
+def test_disconnect_source_write_uses_session_lock() -> None:
+    """Disconnect diagnostics should obey the shared session ownership boundary."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+    from meshtastic.interfaces.ble.lifecycle_primitives import _DisconnectPlan
+
+    class _Session:
+        def __init__(self) -> None:
+            self.lock = _TrackingRLock()
+            self.connection_session_epoch = 5
+            self._last_disconnect_source: str | None = None
+
+        @property
+        def last_disconnect_source(self) -> str | None:
+            return self._last_disconnect_source
+
+        @last_disconnect_source.setter
+        def last_disconnect_source(self, value: str | None) -> None:
+            assert self.lock.held is True
+            self._last_disconnect_source = value
+
+    session = _Session()
+    iface = SimpleNamespace(client=None)
+    coordinator = BLEDisconnectLifecycleCoordinator(
+        iface, session_state=session  # type: ignore[arg-type]
+    )
+    plan = _DisconnectPlan(
+        early_return=False,
+        session_epoch=5,
+        address="AA:BB:CC:DD:EE:FF",
+        was_publish_pending=True,
+    )
+
+    should_reconnect = coordinator._execute_disconnect_side_effects(  # noqa: SLF001
+        plan=plan,
+        source="test",
+        close_previous_client_async=lambda _client: None,
+        clear_events=lambda *_events: None,
+    )
+
+    assert should_reconnect is False
+    assert session.last_disconnect_source == "ble.test"
 
 
 def test_ownership_cleanup_reads_explicit_session_state() -> None:

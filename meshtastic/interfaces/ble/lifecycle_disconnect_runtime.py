@@ -466,7 +466,8 @@ class BLEDisconnectLifecycleCoordinator:
                 return True
 
         logger.debug("BLE client %s disconnected (source: %s).", plan.address, source)
-        self._session.last_disconnect_source = f"ble.{source}"
+        with self._session.lock:
+            self._session.last_disconnect_source = f"ble.{source}"
 
         close_previous(plan.previous_client)
         stale_after_close = False

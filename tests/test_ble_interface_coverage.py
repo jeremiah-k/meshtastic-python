@@ -1160,6 +1160,45 @@ def test_get_or_create_collaborator_uses_double_checked_locking() -> None:
     assert result1 is result2
 
 
+def test_get_or_create_collaborator_lockless_fallback_converges_racing_callers() -> None:
+    """Partial lockless interfaces must still return one collaborator owner."""
+
+    class _PartialInterface:
+        pass
+
+    iface = _PartialInterface()
+    rendezvous = threading.Barrier(3)
+    created: list[object] = []
+    results: list[object] = []
+
+    def _factory() -> object:
+        candidate = object()
+        created.append(candidate)
+        time.sleep(0.02)
+        return candidate
+
+    def _resolve() -> None:
+        rendezvous.wait(timeout=2.0)
+        results.append(
+            BLEInterface._get_or_create_collaborator(  # noqa: SLF001
+                iface, "_test_collaborator", _factory  # type: ignore[arg-type]
+            )
+        )
+
+    workers = [threading.Thread(target=_resolve) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    rendezvous.wait(timeout=2.0)
+    for worker in workers:
+        worker.join(timeout=2.0)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert len(created) == 1
+    assert len(results) == 2
+    assert results[0] is results[1]
+    assert iface._test_collaborator is results[0]
+
+
 # ============================================================================
 # Retry Policy Tests
 # ============================================================================

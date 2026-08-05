@@ -8,6 +8,7 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_lock,
     _get_declared_member,
 )
+from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort, _LockPort
 
@@ -28,11 +29,14 @@ class BLESessionState:  # pylint: disable=too-many-instance-attributes
 
     Synchronization policy
     ----------------------
-    ``lock`` is the same reentrant lock used by ``BLEStateManager``. Callers that
-    perform check-and-act sequences across these fields and connection-state
-    transitions must hold this lock. Simple fields intentionally remain plain
-    attributes so existing lifecycle code can migrate incrementally without
-    introducing nested-lock behavior.
+    Interface-owned construction shares ``lock`` with ``BLEStateManager`` when
+    that manager exposes its declared lock. Partial compatibility objects that
+    have no state-manager lock receive one stable independent session lock and
+    emit a diagnostic recording the degraded cross-owner atomicity guarantee.
+    Callers that perform check-and-act sequences across these fields and
+    connection-state transitions must hold the shared lock when one exists.
+    Simple fields intentionally remain plain attributes so existing lifecycle
+    code can migrate incrementally without introducing nested-lock behavior.
     """
 
     lock: _LockPort
@@ -84,24 +88,62 @@ class _BLESessionStateCompatMixin:
     _state_manager: Any
     _session_state: _BLESessionStatePort
 
+    def _promote_legacy_session_state(
+        self, state: "_LegacyBLESessionStateAdapter"
+    ) -> BLESessionState:
+        """Promote a cached legacy adapter to one canonical owned state.
+
+        Parameters
+        ----------
+        state : _LegacyBLESessionStateAdapter
+            Cached compatibility adapter currently occupying the owner slot.
+
+        Returns
+        -------
+        BLESessionState
+            Canonical session owner installed for this interface.
+        """
+        instance_dict = self.__dict__
+        with state.lock:
+            current = instance_dict.get("_session_state")
+            if isinstance(current, BLESessionState):
+                return current
+            if current is state:
+                promoted = BLESessionState(lock=state.lock)
+                instance_dict["_session_state"] = promoted
+                return promoted
+        return self._get_session_state()
+
     def _get_session_state(self) -> BLESessionState:
         """Return owned lifecycle state, lazily supporting partial interfaces."""
-        state = self.__dict__.get("_session_state")
+        instance_dict = self.__dict__
+        state = instance_dict.get("_session_state")
         if isinstance(state, BLESessionState):
             return state
         if isinstance(state, _LegacyBLESessionStateAdapter):
-            # A legacy adapter can be cached before a partial interface first
-            # reaches a mixin property. Promote it without changing the shared
-            # lock; the adapter continues to proxy fields into this owner.
-            lock = state.lock
-        else:
-            state_manager = self.__dict__.get("_state_manager")
-            lock = _get_declared_lock(state_manager, "lock")
-            if lock is None:
-                lock = cast(_LockPort, threading.RLock())
-        state = BLESessionState(lock=lock)
-        self.__dict__["_session_state"] = state
-        return state
+            return self._promote_legacy_session_state(state)
+        state_manager = self.__dict__.get("_state_manager")
+        lock = _get_declared_lock(state_manager, "lock")
+        if lock is None:
+            logger.debug(
+                "No declared BLE state-manager lock; using an independent "
+                "session lock. Session-state and connection-state updates "
+                "are not mutually atomic."
+            )
+            lock = cast(_LockPort, threading.RLock())
+        candidate = BLESessionState(lock=lock)
+        winner = instance_dict.setdefault("_session_state", candidate)
+        if isinstance(winner, BLESessionState):
+            return winner
+        if isinstance(winner, _LegacyBLESessionStateAdapter):
+            return self._promote_legacy_session_state(winner)
+        # Preserve the historical lazy-initialization behavior for partial test
+        # doubles that pre-populate this private slot with an unrelated value,
+        # while still converging concurrent callers on one replacement owner.
+        if instance_dict.get("_session_state") is winner:
+            instance_dict["_session_state"] = candidate
+            return candidate
+        return self._get_session_state()
 
     @property
     def _state_lock(self) -> _LockPort:
@@ -164,6 +206,11 @@ class _BLESessionStateCompatMixin:
 
     @_last_disconnect_source.setter
     def _last_disconnect_source(self, value: str | None) -> None:
+        if value is not None and not isinstance(value, str):
+            raise TypeError(
+                "_last_disconnect_source must be a str or None, "
+                f"got {type(value).__name__}"
+            )
         self._get_session_state().last_disconnect_source = value
 
     @property
@@ -380,7 +427,9 @@ class _LegacyBLESessionStateAdapter:
     def __getattr__(self, name: str) -> Any:
         mapped = self._FIELD_MAP.get(name)
         if mapped is None:
-            raise AttributeError(name)
+            raise AttributeError(
+                f"{type(self).__name__} does not proxy session field {name!r}"
+            )
         if name == "lock":
             if isinstance(self._iface, _BLESessionStateCompatMixin):
                 current_state = self._iface.__dict__.get("_session_state")
@@ -395,12 +444,16 @@ class _LegacyBLESessionStateAdapter:
             return value
         if name in self._FIELD_DEFAULTS:
             return self._FIELD_DEFAULTS[name]
-        raise AttributeError(name)
+        raise AttributeError(
+            f"{type(self).__name__} has no default for session field {name!r}"
+        )
 
     def __setattr__(self, name: str, value: object) -> None:
         mapped = self._FIELD_MAP.get(name)
         if mapped is None:
-            raise AttributeError(name)
+            raise AttributeError(
+                f"{type(self).__name__} does not proxy session field {name!r}"
+            )
         setattr(self._iface, mapped, value)
 
     def _reset_read_retry_count(self) -> None:
@@ -448,5 +501,13 @@ def _session_state_for(
         raise TypeError(LEGACY_SESSION_STATE_CACHE_ERROR)
 
     legacy_state = _LegacyBLESessionStateAdapter(iface)
-    instance_dict["_session_state"] = legacy_state
-    return cast(_BLESessionStatePort, legacy_state)
+    winner = instance_dict.setdefault("_session_state", legacy_state)
+    if isinstance(winner, (BLESessionState, _LegacyBLESessionStateAdapter)):
+        return cast(_BLESessionStatePort, winner)
+    # Preserve the existing compatibility behavior for an unrelated private
+    # slot value while ensuring the normal empty-slot race converges through
+    # ``setdefault`` on one adapter owner.
+    if instance_dict.get("_session_state") is winner:
+        instance_dict["_session_state"] = legacy_state
+        return cast(_BLESessionStatePort, legacy_state)
+    return _session_state_for(iface)

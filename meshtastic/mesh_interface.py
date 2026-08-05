@@ -264,6 +264,11 @@ class MeshInterface:  # pylint: disable=R0902
 
     @_last_disconnect_source.setter
     def _last_disconnect_source(self, value: str | None) -> None:
+        if value is not None and not isinstance(value, str):
+            raise TypeError(
+                "_last_disconnect_source must be a str or None, "
+                f"got {type(value).__name__}"
+            )
         self.__dict__["_last_disconnect_source"] = value
 
     # Optional instance-only overrides used by bounded reconnect probes.
@@ -1566,7 +1571,7 @@ class MeshInterface:  # pylint: disable=R0902
                             abort_reason,
                             self.isConnected.is_set(),
                             self.failure,
-                            getattr(self, "_last_disconnect_source", "unknown"),
+                            getattr(self, "_last_disconnect_source", None) or "unknown",
                         )
                         raise MeshInterface.MeshInterfaceError(abort_reason)
             if not connected:
@@ -1581,7 +1586,7 @@ class MeshInterface:  # pylint: disable=R0902
                             abort_reason_str,
                             self.isConnected.is_set(),
                             self.failure,
-                            getattr(self, "_last_disconnect_source", "unknown"),
+                            getattr(self, "_last_disconnect_source", None) or "unknown",
                         )
                         raise MeshInterface.MeshInterfaceError(abort_reason_str)
                 logger.log(
@@ -1589,7 +1594,7 @@ class MeshInterface:  # pylint: disable=R0902
                     "Timed out waiting for connection completion (isConnected=%s, failure=%r, last_disconnect_source=%s)",
                     self.isConnected.is_set(),
                     self.failure,
-                    getattr(self, "_last_disconnect_source", "unknown"),
+                    getattr(self, "_last_disconnect_source", None) or "unknown",
                 )
                 raise MeshInterface.MeshInterfaceError(
                     "Timed out waiting for connection completion"

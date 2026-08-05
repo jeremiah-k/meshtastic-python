@@ -1048,8 +1048,12 @@ class BLEReceiveRecoveryController:
         next_retry_count = 0
         with self._session.lock:
             if should_retry:
-                attempt_index = retry_count
-                self._session.read_retry_count = retry_count + 1
+                # A successful receive/recovery path may reset the shared
+                # counter while the caller-supplied retry policy runs outside
+                # this lock. Advance from the current value so a stale snapshot
+                # cannot resurrect a reset counter.
+                attempt_index = self._session.read_retry_count
+                self._session.read_retry_count = attempt_index + 1
                 next_retry_count = self._session.read_retry_count
             else:
                 self._session.read_retry_count = 0

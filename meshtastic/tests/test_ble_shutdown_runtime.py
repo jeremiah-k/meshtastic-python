@@ -20,6 +20,28 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
 pytestmark = pytest.mark.unit
 
 
+class _TrackingRLock:
+    """Reentrant lock test double exposing aggregate ownership state."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._depth = 0
+
+    @property
+    def held(self) -> bool:
+        """Return whether at least one reentrant acquisition is active."""
+        return self._depth > 0
+
+    def __enter__(self) -> "_TrackingRLock":
+        self._lock.acquire()
+        self._depth += 1
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._depth -= 1
+        self._lock.release()
+
+
 class _ImmediateThread:
     """Run thread targets inline for deterministic unit tests."""
 
@@ -280,23 +302,9 @@ class TestReceiveThreadSessionLocking:
     def test_receive_thread_reference_is_read_under_session_lock(self) -> None:
         """Shutdown should snapshot the current receive thread while holding its owner lock."""
 
-        class _TrackingLock:
-            def __init__(self) -> None:
-                self._lock = threading.RLock()
-                self.held = False
-
-            def __enter__(self) -> "_TrackingLock":
-                self._lock.acquire()
-                self.held = True
-                return self
-
-            def __exit__(self, *_args: object) -> None:
-                self.held = False
-                self._lock.release()
-
         class _ObservedSession:
             def __init__(self) -> None:
-                self.lock = _TrackingLock()
+                self.lock = _TrackingRLock()
                 self._receive_thread: object | None = None
                 self.receive_start_pending = False
                 self.receive_start_pending_since = None
@@ -320,3 +328,50 @@ class TestReceiveThreadSessionLocking:
             wake_waiting_threads=lambda *_events: None,
             join_thread=lambda *_args, **_kwargs: None,
         )
+
+    def test_receive_thread_liveness_probes_run_outside_session_lock(self) -> None:
+        """Thread-like liveness callbacks must not execute under shared state lock."""
+
+        class _ObservedSession:
+            def __init__(self) -> None:
+                self.lock = _TrackingRLock()
+                self._receive_thread: object | None = None
+                self.receive_start_pending = True
+                self.receive_start_pending_since = 1.0
+
+            @property
+            def receive_thread(self) -> object | None:
+                assert self.lock.held is True
+                return self._receive_thread
+
+            @receive_thread.setter
+            def receive_thread(self, value: object | None) -> None:
+                assert self.lock.held is True
+                self._receive_thread = value
+
+        session = _ObservedSession()
+        probe_lock_states: list[bool] = []
+        probe_results = iter((True, True, False))
+
+        class _ThreadLike:
+            ident = 42
+            name = "ObservedReceive"
+
+            def is_alive(self) -> bool:
+                probe_lock_states.append(session.lock.held)
+                return next(probe_results)
+
+        with session.lock:
+            session.receive_thread = _ThreadLike()
+        coordinator = BLEShutdownLifecycleCoordinator(
+            MagicMock(), session_state=session  # type: ignore[arg-type]
+        )
+
+        coordinator._shutdown_receive_thread(
+            wake_waiting_threads=lambda *_events: None,
+            join_thread=lambda *_args, **_kwargs: None,
+        )
+
+        assert probe_lock_states == [False, False, False]
+        with session.lock:
+            assert session.receive_thread is None
