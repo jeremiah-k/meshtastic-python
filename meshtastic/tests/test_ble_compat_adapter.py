@@ -142,6 +142,8 @@ def test_declared_lock_rejects_instance_only_context_methods() -> None:
     owner = SimpleNamespace(lock=candidate)
 
     assert _get_declared_lock(owner, "lock") is None
-    with pytest.raises(TypeError):
+    # 3.10 raises the raw AttributeError from the type-level special-method
+    # lookup; 3.11+ wraps it into a TypeError.
+    with pytest.raises((TypeError, AttributeError)):
         with candidate:  # type: ignore[attr-defined]
             pass
