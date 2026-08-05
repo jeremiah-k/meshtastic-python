@@ -1244,17 +1244,23 @@ class BLELifecycleService:
 
     @staticmethod
     def _ever_connected_flag(iface: "BLEInterface") -> bool:
-        """Return a strict boolean view of ``iface._ever_connected``.
+        """Return a strict boolean view of the shared session's ``ever_connected``.
+
+        The result reflects the shared session owner's ``ever_connected`` field
+        as returned by
+        ``BLEConnectionOwnershipLifecycleCoordinator(iface)._has_ever_connected_session()``,
+        rather than ``iface._ever_connected``.
 
         Parameters
         ----------
         iface : BLEInterface
-            Interface containing connection publication state.
+            Interface bound to the shared session owner.
 
         Returns
         -------
         bool
-            ``True`` only when ``_ever_connected`` is explicitly boolean true.
+            ``True`` only when the shared session owner's ``ever_connected``
+            field is explicitly boolean true.
         """
         return BLEConnectionOwnershipLifecycleCoordinator(
             iface

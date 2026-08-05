@@ -1071,7 +1071,9 @@ class BLEReceiveRecoveryController:
             return
         now = time.monotonic()
         cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
-        raw_notify_enabled: object = getattr(iface, "_fromnum_notify_enabled", False)
+        raw_notify_enabled: object = _get_declared_member(
+            iface, "_fromnum_notify_enabled", False
+        )
         notify_enabled = (
             raw_notify_enabled if isinstance(raw_notify_enabled, bool) else False
         )

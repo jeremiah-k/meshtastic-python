@@ -466,11 +466,16 @@ def test_legacy_status_publish_ignores_synthesized_thread_provider(
     )
 
     class _Iface:
+        def __init__(self) -> None:
+            self.synthesized_provider_calls = 0
+
         def __getattr__(self, name: str) -> object:
             if name == "_get_publishing_thread":
-                return lambda: (_ for _ in ()).throw(
-                    AssertionError("synthesized provider must be ignored")
-                )
+                def _synthesized_provider() -> object:
+                    self.synthesized_provider_calls += 1
+                    raise AssertionError("synthesized provider must be ignored")
+
+                return _synthesized_provider
             raise AttributeError(name)
 
     iface = _Iface()
@@ -494,6 +499,7 @@ def test_legacy_status_publish_ignores_synthesized_thread_provider(
     )
 
     assert sent == [("meshtastic.connection.status", iface, True)]
+    assert iface.synthesized_provider_calls == 0
 
 
 def test_coordination_inert_thread_start_is_noop() -> None:
