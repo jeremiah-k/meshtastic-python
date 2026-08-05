@@ -8,7 +8,6 @@ import argparse
 import binascii
 import contextlib
 import contextvars
-import enum
 import getpass
 import importlib
 import logging
@@ -21,12 +20,12 @@ from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
 from typing import Any, NoReturn, Protocol, cast
 
-import yaml
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
 import meshtastic.cli.config_io as cli_config_io
+import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.runtime as cli_runtime
 from meshtastic.cli.context import ActionOutcome, CliContext
@@ -64,8 +63,7 @@ from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compat
     parse_modem_preset_name as _parse_modem_preset_name,
 )
 from meshtastic.configure_verify import (
-    _verify_channel_url_against_state,
-    _verify_requested_fields,
+    _verify_channel_url_against_state,  # noqa: F401 - legacy __main__ compatibility export
 )
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
@@ -214,53 +212,45 @@ BITFIELD_ENUMS = {
 # ==============================================================================
 
 # Delay after applying configuration changes (owner, channel, etc.)
-CONFIG_APPLY_DELAY_SECONDS = 0.5
-CONFIG_WRITE_PACE_SECONDS = 0.1
+CONFIG_APPLY_DELAY_SECONDS = cli_configure_actions.CONFIG_APPLY_DELAY_SECONDS
+CONFIG_WRITE_PACE_SECONDS = cli_configure_actions.CONFIG_WRITE_PACE_SECONDS
 """Short inter-write cadence that drains transport queues without stretching transactions."""
 
 # Delay after setURL operations, which write up to 8 channel snapshots
 # plus LoRa config; the device needs extra time to commit all changes
 # before accepting further admin messages.
-CONFIG_SETURL_DELAY_SECONDS = 2.0
+CONFIG_SETURL_DELAY_SECONDS = cli_configure_actions.CONFIG_SETURL_DELAY_SECONDS
 
-CONFIG_COMMIT_SETTLE_SECONDS = 1.0
+CONFIG_COMMIT_SETTLE_SECONDS = cli_configure_actions.CONFIG_COMMIT_SETTLE_SECONDS
 """Settle delay after commitSettingsTransaction before assuming the session may end."""
 
-CONFIG_RECONNECT_WAIT_SECONDS = 15.0
+CONFIG_RECONNECT_WAIT_SECONDS = cli_configure_actions.CONFIG_RECONNECT_WAIT_SECONDS
 """Maximum time to wait for device reconnect after a reboot-capable configure commit."""
 
-SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
+SETURL_STABILITY_TIMEOUT_SECONDS = (
+    cli_configure_actions.SETURL_STABILITY_TIMEOUT_SECONDS
+)
 """Timeout for post-setURL transport stability before opening Phase 2 writes."""
 
-FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = cli_device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
+FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = (
+    cli_device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
+)
 """Timeout for post-reset reconnect probe inside factory-reset command."""
 
-FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = cli_device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = (
+    cli_device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
+)
 """Maximum time to observe a local reset ACK/NAK or reboot disconnect."""
 
-FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = cli_device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
+FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = (
+    cli_device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
+)
 """Polling interval while waiting for local reset command acceptance."""
 
-CONFIGURE_PHASE1_HEADER = (
-    "Phase 1: Applying direct configuration "
-    "(channel URL updates may trigger reconnect/reboot)..."
-)
+CONFIGURE_PHASE1_HEADER = cli_configure_actions.CONFIGURE_PHASE1_HEADER
 """Printed once when --configure starts applying Phase 1 settings."""
 
-_ALLOWED_CONFIGURE_KEYS = frozenset(
-    {
-        "owner",
-        "owner_short",
-        "ownerShort",
-        "channel_url",
-        "channelUrl",
-        "canned_messages",
-        "ringtone",
-        "location",
-        "config",
-        "module_config",
-    }
-)
+_ALLOWED_CONFIGURE_KEYS = cli_configure_actions.ALLOWED_CONFIGURE_KEYS
 
 # Delay between GPIO watch iterations
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
@@ -391,11 +381,22 @@ def supportInfo() -> None:
     print("Please add the output from the command: meshtastic --info")
 
 
-class _ConfigureReconnectResult(enum.Enum):
-    RECONNECT_FAILED = "reconnect_failed"
-    CONFIG_RELOAD_FAILED = "config_reload_failed"
-    VERIFICATION_INCOMPLETE = "verification_incomplete"
-    VERIFIED = "verified"
+_ConfigureReconnectResult = cli_configure_actions.ConfigureReconnectResult
+
+
+def _configure_hooks() -> cli_configure_actions.ConfigureHooks:
+    """Build configure dependencies from current entrypoint compatibility seams."""
+    return cli_configure_actions.ConfigureHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        traverse_config=traverseConfig,
+        preflight_mode=_CONFIGURE_PREFLIGHT_MODE,
+        is_local_destination=_is_local_destination,
+        post_seturl_stability_check=_post_seturl_stability_check,
+        post_configure_reconnect_and_verify=_post_configure_reconnect_and_verify,
+        channel_url_matches_current_device_state=_channel_url_matches_current_device_state,
+        pace_configure_write=_pace_configure_write,
+    )
 
 
 def _post_configure_reconnect_and_verify(
@@ -407,211 +408,25 @@ def _post_configure_reconnect_and_verify(
     verify_config_fields: dict[str, dict[str, Any]] | None = None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
-    """Reconnect after a configure commit, reload config, and verify values.
-
-    After ``commitSettingsTransaction()``, the firmware may reboot the device.
-    This helper:
-
-    1. Waits for the interface to disconnect and reconnect within *timeout*.
-    2. Calls ``waitForConfig()`` to reload the device configuration.
-    3. If any verification targets were provided (channel URL, config fields,
-       or module config fields), performs value-aware comparison of the
-       explicitly requested settings against what the device reports.
-
-    Returns a _ConfigureReconnectResult indicating the outcome.
-    """
-    deadline = time.monotonic() + timeout
-
-    disconnect_window = 2.0
-    logger.debug(
-        "Waiting up to %.1fs for device disconnect (reboot indication)...",
-        disconnect_window,
+    """Compatibility wrapper for configure reconnect verification."""
+    return cli_configure_actions._post_configure_reconnect_and_verify(
+        interface,
+        timeout=timeout,
+        node_dest=node_dest,
+        verify_channel_url=verify_channel_url,
+        verify_config_fields=verify_config_fields,
+        verify_module_config_fields=verify_module_config_fields,
+        verify_channel_url_against_state=_verify_channel_url_against_state,
     )
-    disconnect_deadline = time.monotonic() + disconnect_window
-    disconnected = False
-    while time.monotonic() < disconnect_deadline:
-        if not interface.isConnected.is_set():
-            disconnected = True
-            logger.info("Device disconnected (reboot indication received).")
-            break
-        time.sleep(0.2)
-
-    if not disconnected:
-        logger.debug(
-            "No disconnect detected within %.1fs; device may not require reboot.",
-            disconnect_window,
-        )
-
-    reconnect_deadline = deadline
-    if disconnected:
-        logger.debug(
-            "Waiting up to %.1fs for device reconnect...",
-            reconnect_deadline - time.monotonic(),
-        )
-    while time.monotonic() < reconnect_deadline:
-        if interface.isConnected.is_set():
-            logger.info("Device reconnected.")
-            break
-        time.sleep(0.2)
-
-    if not interface.isConnected.is_set():
-        logger.warning(
-            "Device did not reconnect within %.1fs after configure commit. "
-            "Configuration may still be applying.",
-            timeout,
-        )
-        return _ConfigureReconnectResult.RECONNECT_FAILED
-
-    try:
-        interface.waitForConfig()
-        logger.info("Device config reloaded after reboot.")
-    except Exception:
-        logger.warning(
-            "Device reconnected but config reload failed; "
-            "configuration may still be applying.",
-            exc_info=True,
-        )
-        return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
-
-    has_verification = (
-        verify_channel_url or verify_config_fields or verify_module_config_fields
-    )
-    if not has_verification:
-        return _ConfigureReconnectResult.VERIFIED
-
-    if not disconnected:
-        try:
-            _refresh_no_disconnect_verify_state(
-                interface.getNode(node_dest),
-                verify_channel_url=verify_channel_url,
-                verify_config_fields=verify_config_fields,
-                verify_module_config_fields=verify_module_config_fields,
-            )
-            interface.waitForConfig()
-            logger.debug(
-                "No disconnect observed; touched config/channel state refreshed before verification."
-            )
-        except Exception:
-            logger.warning(
-                "No-disconnect verify refresh failed while reloading config.",
-                exc_info=True,
-            )
-            return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
-
-    try:
-        result = _verify_post_reconnect_config(
-            interface,
-            node_dest,
-            verify_channel_url=verify_channel_url,
-            verify_config_fields=verify_config_fields,
-            verify_module_config_fields=verify_module_config_fields,
-        )
-    except Exception:
-        logger.warning(
-            "Post-reconnect verification failed unexpectedly.",
-            exc_info=True,
-        )
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    return result
 
 
 def _post_seturl_stability_check(
-    interface: MeshInterface,
-    *,
-    timeout: float = 15.0,
+    interface: MeshInterface, *, timeout: float = 15.0
 ) -> bool:
-    _MAX_STABILITY_ATTEMPTS = 3
-    _STABILITY_WINDOW_SECONDS = 1.5
-    _RECONNECT_WAIT_SECONDS = 10.0
-
-    deadline = time.monotonic() + timeout
-
-    is_connected_event = getattr(interface, "isConnected", None)
-
-    def _event_is_set() -> bool:
-        return bool(
-            is_connected_event is not None
-            and hasattr(is_connected_event, "is_set")
-            and is_connected_event.is_set()
-        )
-
-    def _event_wait(timeout_seconds: float) -> bool:
-        return bool(
-            is_connected_event is not None
-            and hasattr(is_connected_event, "wait")
-            and is_connected_event.wait(timeout_seconds)
-        )
-
-    def _trigger_reconnect() -> bool:
-        reconnect = getattr(interface, "_attempt_reconnect", None)
-        if callable(reconnect):
-            try:
-                if reconnect():
-                    return _event_is_set()
-            except Exception:
-                logger.debug(
-                    "post-setURL reconnect hook failed.",
-                    exc_info=True,
-                )
-        connect = getattr(interface, "connect", None)
-        if callable(connect):
-            try:
-                connect()
-            except Exception:
-                logger.debug(
-                    "post-setURL connect() trigger failed.",
-                    exc_info=True,
-                )
-        return _event_is_set()
-
-    for _attempt in range(_MAX_STABILITY_ATTEMPTS):
-        if time.monotonic() >= deadline:
-            return False
-
-        if not _event_is_set():
-            _trigger_reconnect()
-            remaining = deadline - time.monotonic()
-            if remaining > 0:
-                _event_wait(min(_RECONNECT_WAIT_SECONDS, remaining))
-
-        if not _event_is_set():
-            logger.warning(
-                "Transport not connected after setURL (attempt %d/%d)",
-                _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
-            )
-            continue
-
-        stability_end = time.monotonic() + _STABILITY_WINDOW_SECONDS
-        stable = True
-        while time.monotonic() < stability_end:
-            if not _event_is_set():
-                stable = False
-                break
-            time.sleep(0.1)
-
-        if not stable:
-            logger.warning(
-                "Transport dropped during stability window (attempt %d/%d)",
-                _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
-            )
-            continue
-
-        try:
-            interface.waitForConfig()
-            return True
-        except Exception:
-            logger.warning(
-                "Config reload failed after setURL (attempt %d/%d)",
-                _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
-                exc_info=True,
-            )
-            continue
-
-    return False
+    """Compatibility wrapper for post-SetURL transport stabilization."""
+    return cli_configure_actions._post_seturl_stability_check(
+        interface, timeout=timeout
+    )
 
 
 def _send_local_factory_reset_and_wait(
@@ -626,7 +441,6 @@ def _send_local_factory_reset_and_wait(
     )
 
 
-
 @contextlib.contextmanager
 def _temporary_instance_attributes(
     instance: Any, overrides: dict[str, Any]
@@ -636,32 +450,20 @@ def _temporary_instance_attributes(
         yield
 
 
-
 def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
     """Compatibility wrapper for the canonical factory-reset readiness probe."""
     cli_device_actions.post_factory_reset_ready_probe(interface)
 
 
-
 def _validate_non_empty_mapping_sections(
-    *,
-    top_level_key: str,
-    section_mapping: dict[str, Any],
+    *, top_level_key: str, section_mapping: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
-    """Validate that each section payload is a mapping.
-
-    Empty mappings (e.g., ``audio: {}``) are allowed — they represent
-    protobuf default values and are emitted by ``--export-config``.
-    """
-    validated_sections: dict[str, dict[str, Any]] = {}
-    for section_name, section_value in section_mapping.items():
-        if not isinstance(section_value, dict):
-            _cli_exit(
-                f"ERROR: '{top_level_key}.{section_name}' must be a non-empty mapping, got "
-                f"{type(section_value).__name__}"
-            )
-        validated_sections[section_name] = section_value
-    return validated_sections
+    """Compatibility wrapper for configure section validation."""
+    return cli_configure_actions._validate_non_empty_mapping_sections(
+        _configure_hooks(),
+        top_level_key=top_level_key,
+        section_mapping=section_mapping,
+    )
 
 
 def _preflight_configure_sections(
@@ -670,37 +472,13 @@ def _preflight_configure_sections(
     config_sections: dict[str, dict[str, Any]],
     module_config_sections: dict[str, dict[str, Any]],
 ) -> None:
-    """Validate configuration values on protobuf copies before device mutation."""
-    roots = (
-        ("config", target_node.localConfig, config_sections),
-        ("module_config", target_node.moduleConfig, module_config_sections),
+    """Compatibility wrapper for configure preflight validation."""
+    cli_configure_actions._preflight_configure_sections(
+        _configure_hooks(),
+        target_node,
+        config_sections=config_sections,
+        module_config_sections=module_config_sections,
     )
-    token = _CONFIGURE_PREFLIGHT_MODE.set(True)
-    try:
-        for top_level_key, source_message, sections in roots:
-            if not sections:
-                continue
-            candidate = type(source_message)()
-            candidate.CopyFrom(source_message)
-            for section, section_values in sections.items():
-                failed_fields: list[str] = []
-                applied = traverseConfig(
-                    section,
-                    section_values,
-                    candidate,
-                    failed_fields=failed_fields,
-                )
-                if applied:
-                    continue
-                field_suffix = (
-                    f" Invalid field: {failed_fields[0]}." if failed_fields else ""
-                )
-                _cli_exit(
-                    f"Failed to apply {top_level_key} section {section!r} "
-                    f"due to structural errors.{field_suffix}"
-                )
-    finally:
-        _CONFIGURE_PREFLIGHT_MODE.reset(token)
 
 
 def _refresh_no_disconnect_verify_state(
@@ -710,74 +488,29 @@ def _refresh_no_disconnect_verify_state(
     verify_config_fields: dict[str, dict[str, Any]] | None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None,
 ) -> None:
-    """Invalidate touched cached state and request fresh values for Phase 3 verification."""
-    request_config = getattr(target_node, "requestConfig", None)
-
-    for section_name in verify_config_fields or {}:
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(
-            section_snake
-        )
-        if field_desc is None:
-            logger.warning(
-                "Skipping config refresh for unknown section %r.",
-                section_name,
-            )
-            continue
-        target_node.localConfig.ClearField(section_snake)
-        if callable(request_config):
-            request_config(field_desc)
-
-    for section_name in verify_module_config_fields or {}:
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        field_desc = target_node.moduleConfig.DESCRIPTOR.fields_by_name.get(
-            section_snake
-        )
-        if field_desc is None:
-            logger.warning(
-                "Skipping module_config refresh for unknown section %r.",
-                section_name,
-            )
-            continue
-        target_node.moduleConfig.ClearField(section_snake)
-        if callable(request_config):
-            request_config(field_desc)
-
-    if verify_channel_url:
-        target_node.channels = None
-        target_node.partialChannels = []
-        request_channels = getattr(target_node, "requestChannels", None)
-        if callable(request_channels):
-            request_channels(0)
+    """Compatibility wrapper for touched-state refresh before verification."""
+    cli_configure_actions._refresh_no_disconnect_verify_state(
+        target_node,
+        verify_channel_url=verify_channel_url,
+        verify_config_fields=verify_config_fields,
+        verify_module_config_fields=verify_module_config_fields,
+    )
 
 
 def _channel_url_matches_current_device_state(
-    target_node: Any,
-    requested_channel_url: str,
+    target_node: Any, requested_channel_url: str
 ) -> bool:
-    """Return True when requested channel URL already matches loaded device state."""
-    local_config = getattr(target_node, "localConfig", None)
-    has_field = getattr(local_config, "HasField", None)
-    if local_config is None or not callable(has_field) or not has_field("lora"):
-        return False
-    return _verify_channel_url_against_state(
+    """Compatibility wrapper for channel URL equality checks."""
+    return cli_configure_actions._channel_url_matches_current_device_state(
+        target_node,
         requested_channel_url,
-        device_channels=getattr(target_node, "channels", None),
-        device_lora_config=local_config.lora,
-        emit_warnings=False,
+        verify_channel_url_against_state=_verify_channel_url_against_state,
     )
 
 
 def _flatten_leaf_paths(prefix: str, mapping: dict[str, Any]) -> list[str]:
-    """Recursively flatten a nested mapping into dotted leaf paths."""
-    paths: list[str] = []
-    for key, value in mapping.items():
-        dotted = f"{prefix}.{key}"
-        if isinstance(value, dict) and value:
-            paths.extend(_flatten_leaf_paths(dotted, value))
-        else:
-            paths.append(dotted)
-    return paths
+    """Compatibility wrapper for configure verification path flattening."""
+    return cli_configure_actions._flatten_leaf_paths(prefix, mapping)
 
 
 def _verify_config_sections(
@@ -786,33 +519,10 @@ def _verify_config_sections(
     label: str,
     verified_fields: list[str] | None = None,
 ) -> bool:
-    for section_name, yaml_values in config_fields.items():
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        if not proto_config.HasField(section_snake):
-            logger.warning(
-                "%s section %r not present after reload.",
-                label,
-                section_name,
-            )
-            return False
-        proto_section = getattr(proto_config, section_snake)
-        mismatches = _verify_requested_fields(yaml_values, proto_section, section_name)
-        if mismatches:
-            logger.warning(
-                "%s section %r field mismatches: %s",
-                label,
-                section_name,
-                ", ".join(mismatches),
-            )
-            return False
-        if verified_fields is not None:
-            verified_fields.extend(_flatten_leaf_paths(section_snake, yaml_values))
-        logger.debug(
-            "%s section %r verified (all requested field values match).",
-            label,
-            section_name,
-        )
-    return True
+    """Compatibility wrapper for protobuf section verification."""
+    return cli_configure_actions._verify_config_sections(
+        config_fields, proto_config, label, verified_fields=verified_fields
+    )
 
 
 def _verify_post_reconnect_config(
@@ -823,58 +533,15 @@ def _verify_post_reconnect_config(
     verify_config_fields: dict[str, dict[str, Any]] | None = None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
-    if not interface.isConnected.is_set():
-        logger.warning("Post-reconnect verification skipped: transport disconnected.")
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    target_node = interface.getNode(node_dest)
-    verified_fields: list[str] = []
-
-    if verify_channel_url:
-        local_config = getattr(target_node, "localConfig", None)
-        has_field = getattr(local_config, "HasField", None)
-        device_lora_config = (
-            local_config.lora
-            if local_config is not None and callable(has_field) and has_field("lora")
-            else None
-        )
-        if not _verify_channel_url_against_state(
-            verify_channel_url,
-            device_channels=getattr(target_node, "channels", None),
-            device_lora_config=device_lora_config,
-        ):
-            logger.warning(
-                "Channel URL verification: device state does not match requested URL."
-            )
-            return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-        verified_fields.append("channel_url")
-
-    if verify_config_fields and not _verify_config_sections(
-        verify_config_fields,
-        target_node.localConfig,
-        "Config",
-        verified_fields=verified_fields,
-    ):
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if verify_module_config_fields and not _verify_config_sections(
-        verify_module_config_fields,
-        target_node.moduleConfig,
-        "Module config",
-        verified_fields=verified_fields,
-    ):
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if not interface.isConnected.is_set():
-        logger.warning(
-            "Post-reconnect verification did not complete: transport disconnected."
-        )
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if verified_fields:
-        logger.info("Verified: %s", ", ".join(verified_fields))
-
-    return _ConfigureReconnectResult.VERIFIED
+    """Compatibility wrapper for post-reconnect value verification."""
+    return cli_configure_actions._verify_post_reconnect_config(
+        interface,
+        node_dest,
+        verify_channel_url=verify_channel_url,
+        verify_config_fields=verify_config_fields,
+        verify_module_config_fields=verify_module_config_fields,
+        verify_channel_url_against_state=_verify_channel_url_against_state,
+    )
 
 
 # COMPAT_STABLE_SHIM: historical snake_case helper name.
@@ -1625,7 +1292,6 @@ def _handle_ota_update(
     )
 
 
-
 def _print_set_field_choices(node: Any, pref_names: Sequence[str]) -> None:
     """Print historical field-not-found guidance for one or more --set names.
 
@@ -1690,8 +1356,7 @@ def _format_set_preflight_exception(pref_name: str, exc: Exception) -> str:
         return str(exc)
     if _is_secret_pref(pref_name):
         return (
-            f"{pref_name}: invalid value {_REDACTED_PREF_VALUE} "
-            f"({type(exc).__name__})"
+            f"{pref_name}: invalid value {_REDACTED_PREF_VALUE} ({type(exc).__name__})"
         )
     return f"{pref_name}: {exc}"
 
@@ -1881,8 +1546,7 @@ def _handle_set_command(
         except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
             detail = _format_set_preflight_exception(normalized_pref_name, exc)
             _cli_exit(
-                "ERROR: --set apply diverged after successful preflight:\n"
-                f"  - {detail}"
+                f"ERROR: --set apply diverged after successful preflight:\n  - {detail}"
             )
         if not found:
             _cli_exit(
@@ -1904,359 +1568,27 @@ def _handle_set_command(
 
 
 def _pace_configure_write(
-    remaining_writes: int,
-    *,
-    sleep_fn: Callable[[float], None] = time.sleep,
+    remaining_writes: int, *, sleep_fn: Callable[[float], None] = time.sleep
 ) -> None:
-    """Yield briefly between section writes while keeping transactions short."""
-    if remaining_writes > 0:
-        sleep_fn(CONFIG_WRITE_PACE_SECONDS)
+    """Compatibility wrapper for configure write pacing."""
+    cli_configure_actions._pace_configure_write(remaining_writes, sleep_fn=sleep_fn)
 
 
 def _apply_configure_channel_url(
-    target_node: Any,
-    raw_channel_url: Any,
-    *,
-    config_key: str,
+    target_node: Any, raw_channel_url: Any, *, config_key: str
 ) -> bool:
-    """Validate and apply one configured channel URL without exposing it."""
-    if not isinstance(raw_channel_url, str):
-        _cli_exit(f"ERROR: {config_key} must be a string.")
-    requested_channel_url = raw_channel_url.strip()
-    if not requested_channel_url:
-        _cli_exit(f"ERROR: {config_key} must not be blank.")
-
-    if _channel_url_matches_current_device_state(target_node, requested_channel_url):
-        _cli_print("Channel url already matches device state; skipping apply.")
-        logger.info("Skipping setURL apply because channel URL already matches.")
-        return False
-
-    _cli_print("Setting channel url to <redacted>")
-    target_node.setURL(requested_channel_url)
-    time.sleep(CONFIG_SETURL_DELAY_SECONDS)
-    return True
+    """Compatibility wrapper for configure channel URL application."""
+    return cli_configure_actions._apply_configure_channel_url(
+        _configure_hooks(), target_node, raw_channel_url, config_key=config_key
+    )
 
 
 def _handle_configure_command(
-    interface: MeshInterface,
-    args: Any,
-    getNode_kwargs: dict[str, Any],
+    interface: MeshInterface, args: Any, getNode_kwargs: dict[str, Any]
 ) -> tuple[bool, bool]:
-    try:
-        with open(args.configure[0], encoding="utf8") as file:
-            raw_text = file.read()
-        configuration = yaml.safe_load(raw_text)
-    except (yaml.YAMLError, UnicodeDecodeError) as exc:
-        _cli_exit(f"ERROR: Failed to parse YAML configuration: {exc}")
-
-    if configuration is None:
-        _cli_exit("ERROR: YAML configuration file is empty")
-    if not isinstance(configuration, dict):
-        _cli_exit(
-            f"ERROR: YAML configuration must be a mapping/dictionary, got {type(configuration).__name__}"
-        )
-    if not configuration:
-        _cli_exit("ERROR: Configuration file is empty; nothing to configure.")
-    _unknown_keys = set(configuration.keys()) - _ALLOWED_CONFIGURE_KEYS
-    if _unknown_keys:
-        _cli_exit(
-            f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(_unknown_keys))}"
-        )
-
-    if "channel_url" in configuration and "channelUrl" in configuration:
-        _cli_exit(
-            "ERROR: Cannot specify both 'channel_url' and 'channelUrl' in the same configuration file; use one."
-        )
-    if "owner_short" in configuration and "ownerShort" in configuration:
-        _cli_exit(
-            "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same configuration file; use one."
-        )
-
-    # Pre-validate config/module_config shapes before any Phase-1 mutations.
-    validated_config_sections: dict[str, dict[str, Any]] = {}
-    validated_module_config_sections: dict[str, dict[str, Any]] = {}
-    if "config" in configuration:
-        _cfg_val = configuration["config"]
-        if not isinstance(_cfg_val, dict) or not _cfg_val:
-            _cli_exit(
-                f"ERROR: 'config' must be a non-empty mapping, got "
-                f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
-            )
-        validated_config_sections = _validate_non_empty_mapping_sections(
-            top_level_key="config",
-            section_mapping=_cfg_val,
-        )
-    if "module_config" in configuration:
-        _mcfg_val = configuration["module_config"]
-        if not isinstance(_mcfg_val, dict) or not _mcfg_val:
-            _cli_exit(
-                f"ERROR: 'module_config' must be a non-empty mapping, got "
-                f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
-            )
-        validated_module_config_sections = _validate_non_empty_mapping_sections(
-            top_level_key="module_config",
-            section_mapping=_mcfg_val,
-        )
-
-    target_node = interface.getNode(args.dest, False, **getNode_kwargs)
-    if validated_config_sections or validated_module_config_sections:
-        _preflight_configure_sections(
-            target_node,
-            config_sections=validated_config_sections,
-            module_config_sections=validated_module_config_sections,
-        )
-
-    phase1_started = False
-    phase1_may_reconnect = False
-    seturl_executed = False
-
-    if "owner" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_name = str(configuration["owner"]).strip()
-        if not owner_name:
-            _cli_exit(
-                "ERROR: Long Name cannot be empty or contain only whitespace characters"
-            )
-        _cli_print(f"Setting device owner to {owner_name}")
-        target_node.setOwner(long_name=owner_name)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "owner_short" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_short_name = str(configuration["owner_short"]).strip()
-        if not owner_short_name:
-            _cli_exit(
-                "ERROR: Short Name cannot be empty or contain only whitespace characters"
-            )
-        _cli_print(f"Setting device owner short to {owner_short_name}")
-        target_node.setOwner(long_name=None, short_name=owner_short_name)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "ownerShort" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_short_name = str(configuration["ownerShort"]).strip()
-        if not owner_short_name:
-            _cli_exit(
-                "ERROR: Short Name cannot be empty or contain only whitespace characters"
-            )
-        _cli_print(f"Setting device owner short to {owner_short_name}")
-        target_node.setOwner(long_name=None, short_name=owner_short_name)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "location" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        _loc = configuration["location"]
-        if not isinstance(_loc, dict) or not _loc:
-            _cli_exit(
-                "location must be a non-empty mapping with lat, lon, and optional alt"
-            )
-        _allowed_loc_keys = {"lat", "lon", "alt"}
-        _unknown_loc_keys = set(_loc.keys()) - _allowed_loc_keys
-        if _unknown_loc_keys:
-            _cli_exit(
-                f"location contains unknown keys: {', '.join(sorted(_unknown_loc_keys))}. "
-                f"Allowed: lat, lon, alt"
-            )
-        if "lat" not in _loc or "lon" not in _loc:
-            _cli_exit("location requires both lat and lon")
-        try:
-            lat = float(_loc["lat"])
-        except (ValueError, TypeError):
-            _cli_exit(f"location.lat must be a number, got: {_loc['lat']!r}")
-        try:
-            lon = float(_loc["lon"])
-        except (ValueError, TypeError):
-            _cli_exit(f"location.lon must be a number, got: {_loc['lon']!r}")
-        alt = 0
-        if "alt" in _loc:
-            try:
-                alt = int(_loc["alt"])
-            except (ValueError, TypeError):
-                _cli_exit(f"location.alt must be an integer, got: {_loc['alt']!r}")
-            _cli_print(f"Fixing altitude at {alt} meters")
-        _cli_print(f"Fixing latitude at {lat} degrees")
-        _cli_print(f"Fixing longitude at {lon} degrees")
-        _cli_print("Setting device position")
-        target_node.setFixedPosition(lat, lon, alt)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "canned_messages" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        _cli_print(
-            f"Setting canned message messages to {configuration['canned_messages']}",
-        )
-        target_node.set_canned_message(configuration["canned_messages"])
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "ringtone" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        _cli_print(f"Setting ringtone to {configuration['ringtone']}")
-        target_node.set_ringtone(configuration["ringtone"])
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    channel_url_key = "channel_url" if "channel_url" in configuration else "channelUrl"
-    if channel_url_key in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        seturl_executed = _apply_configure_channel_url(
-            target_node,
-            configuration[channel_url_key],
-            config_key=channel_url_key,
-        )
-        phase1_may_reconnect = seturl_executed
-
-    if phase1_started:
-        _cli_print("Phase 1 complete.")
-
-    settings_transaction_started = False
-    has_valid_config_section = bool(
-        validated_config_sections or validated_module_config_sections
-    )
-    if seturl_executed and has_valid_config_section:
-        if _is_local_destination(interface, args.dest):
-            if not _post_seturl_stability_check(
-                interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
-            ):
-                _cli_exit(
-                    "ERROR: channel_url applied, but transport did not stabilize "
-                    "for additional configuration writes; aborting before Phase 2."
-                )
-        else:
-            _cli_exit(
-                "ERROR: Combining channel_url with additional configuration "
-                "writes is not supported for remote nodes. Apply channel_url "
-                "and configuration in separate operations."
-            )
-    if has_valid_config_section:
-        _cli_print(
-            "Phase 2: Applying configuration transaction (may trigger device reboot)..."
-        )
-        target_node.beginSettingsTransaction()
-        settings_transaction_started = True
-
-    remaining_config_writes = len(validated_config_sections) + len(
-        validated_module_config_sections
-    )
-
-    if validated_config_sections:
-        localConfig = target_node.localConfig
-        for section, section_values in validated_config_sections.items():
-            failed_config_fields: list[str] = []
-            applied = traverseConfig(
-                section,
-                section_values,
-                localConfig,
-                failed_fields=failed_config_fields,
-            )
-            if failed_config_fields:
-                logger.warning(
-                    "Skipped %d unknown field(s) in config section %s: %s",
-                    len(failed_config_fields),
-                    section,
-                    ", ".join(repr(f) for f in failed_config_fields),
-                )
-            if not applied:
-                _cli_exit(
-                    f"Failed to apply config section {section!r} due to structural errors."
-                )
-            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
-            remaining_config_writes -= 1
-            _pace_configure_write(remaining_config_writes)
-
-    if validated_module_config_sections:
-        moduleConfig = target_node.moduleConfig
-        for section, section_values in validated_module_config_sections.items():
-            failed_module_fields: list[str] = []
-            applied = traverseConfig(
-                section,
-                section_values,
-                moduleConfig,
-                failed_fields=failed_module_fields,
-            )
-            if failed_module_fields:
-                logger.warning(
-                    "Skipped %d unknown field(s) in module_config section %s: %s",
-                    len(failed_module_fields),
-                    section,
-                    ", ".join(repr(f) for f in failed_module_fields),
-                )
-            if not applied:
-                _cli_exit(
-                    f"Failed to apply module_config section {section!r} due to structural errors."
-                )
-            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
-            remaining_config_writes -= 1
-            _pace_configure_write(remaining_config_writes)
-
-    if settings_transaction_started:
-        target_node.commitSettingsTransaction()
-        time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
-        _cli_print(
-            "Configuration transaction committed. Device may reboot to apply changes."
-        )
-
-    if settings_transaction_started:
-        _verify_channel_url = configuration.get("channel_url") or configuration.get(
-            "channelUrl"
-        )
-        _verify_config_fields = validated_config_sections or None
-        _verify_module_config_fields = validated_module_config_sections or None
-        if _is_local_destination(interface, args.dest):
-            _reconnect_result = _post_configure_reconnect_and_verify(
-                interface,
-                timeout=CONFIG_RECONNECT_WAIT_SECONDS,
-                node_dest=args.dest,
-                verify_channel_url=_verify_channel_url,
-                verify_config_fields=_verify_config_fields,
-                verify_module_config_fields=_verify_module_config_fields,
-            )
-            if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
-                _cli_print(
-                    "Phase 3: Device reconnected and config reloaded. All settings verified."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
-                _cli_print(
-                    "Phase 3: Device reconnected and config reloaded. "
-                    "Could not fully verify applied settings."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED:
-                _cli_print(
-                    "Phase 3: Device reconnected but config reload failed. "
-                    "Settings may still be applying."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED:
-                _cli_print(
-                    "Phase 3: Device did not reconnect within timeout. "
-                    "Configuration may still be applying."
-                )
-        else:
-            _cli_print(
-                "Phase 3: Reboot/reconnect verification skipped for remote target. "
-                "Local transport state does not confirm remote node reload status."
-            )
-    else:
-        if phase1_may_reconnect:
-            _cli_print(
-                "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
-            )
-        else:
-            _cli_print("Configuration applied (no reboot expected).")
-
-    return settings_transaction_started, (
-        seturl_executed and _is_local_destination(interface, args.dest)
+    """Compatibility wrapper for configure-file transaction execution."""
+    return cli_configure_actions._handle_configure_command(
+        _configure_hooks(), interface, args, getNode_kwargs
     )
 
 
@@ -2483,39 +1815,16 @@ def onConnected(interface: MeshInterface) -> None:
                         time.sleep(GPIO_WATCH_INTERVAL_SECONDS)
 
         # handle settings
-        if args.set:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            _handle_set_command(interface, args, getNode_kwargs)
-
-        if args.configure:
-            outcome.close_now = True
-            outcome.wait_for_ack_nak = True
-            _settings_transaction_started, _phase1_channel_url_applied = (
-                _handle_configure_command(interface, args, getNode_kwargs)
-            )
-            if _settings_transaction_started or _phase1_channel_url_applied:
-                outcome.wait_for_ack_nak = False
-                outcome.skip_ack_wait = True
-
-        if args.export_config:
-            if args.dest != BROADCAST_ADDR:
-                print("Exporting configuration of remote nodes is not supported.")
-                return
-
-            outcome.close_now = True
-            config_txt = exportConfig(interface)
-
-            if args.export_config == "-":
-                # Output to stdout (preserves legacy use of `> file.yaml`)
-                print(config_txt)
-            else:
-                try:
-                    with open(args.export_config, "w", encoding="utf-8") as f:
-                        f.write(config_txt)
-                    _cli_print(f"Exported configuration to {args.export_config}")
-                except Exception as e:
-                    _cli_exit(f"ERROR: Failed to write config file: {e}")
+        configure_action_hooks = cli_configure_actions.ConfigureActionHooks(
+            handle_set_command=_handle_set_command,
+            handle_configure_command=_handle_configure_command,
+            export_config=exportConfig,
+            cli_exit=_cli_exit,
+            cli_print=_cli_print,
+        )
+        cli_configure_actions.handle_configure_actions(context, configure_action_hooks)
+        if outcome.stop_processing:
+            return
 
         if args.ch_set_url:
             outcome.close_now = True
