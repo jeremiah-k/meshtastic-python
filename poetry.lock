@@ -60,15 +60,15 @@ files = [
 
 [[package]]
 name = "argcomplete"
-version = "3.7.0"
+version = "3.7.1"
 description = "Bash tab completion for argparse"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "extra == \"cli\""
 files = [
-    {file = "argcomplete-3.7.0-py3-none-any.whl", hash = "sha256:d8f0f22d2a8a7caa383be1e22b6caf1ecaf0ebd10d8f83cc125e36540c95830c"},
-    {file = "argcomplete-3.7.0.tar.gz", hash = "sha256:afde224f753f874807b1dc1414e883ab8fe0cda9c04807b6047dcb8e1ac23913"},
+    {file = "argcomplete-3.7.1-py3-none-any.whl", hash = "sha256:0bed095030f295599b1018a622a53ea22f4f253e134b87be396b51e59ee00954"},
+    {file = "argcomplete-3.7.1.tar.gz", hash = "sha256:6926a3a70ae70dce1f3dfb5cf1fc984278cd163e78ec18ad2ed7fa4fabd8f281"},
 ]
 
 [package.extras]
