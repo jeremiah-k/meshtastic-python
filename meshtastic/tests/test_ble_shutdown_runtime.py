@@ -296,6 +296,42 @@ class TestBoundedThreadTOCTOU:
         previous.join.assert_not_called()
 
 
+class TestShutdownStateProbeLocking:
+    """Test shutdown state-manager probes respect the shared lock boundary."""
+
+    def test_current_state_probe_runs_outside_session_lock(self) -> None:
+        """Shutdown must not call state-manager current-state hooks under session lock."""
+        from meshtastic.interfaces.ble.session_state import BLESessionState
+        from meshtastic.interfaces.ble.state import ConnectionState
+
+        lock = _TrackingRLock()
+        session = BLESessionState(lock=lock)
+        iface = MagicMock()
+        iface._management_lock = threading.RLock()
+        iface._management_inflight = 0
+        probe_lock_states: list[bool] = []
+
+        def _current_state() -> ConnectionState:
+            probe_lock_states.append(lock.held)
+            return ConnectionState.DISCONNECTED
+
+        coordinator = BLEShutdownLifecycleCoordinator(
+            iface, session_state=session  # type: ignore[arg-type]
+        )
+
+        result = coordinator._await_management_shutdown(  # noqa: SLF001
+            management_shutdown_wait_timeout=0.1,
+            management_wait_poll_seconds=0.01,
+            current_state_getter=_current_state,
+            is_closing_getter=lambda: False,
+            transition_to_state=lambda _state: True,
+            reset_to_disconnected=lambda: True,
+        )
+
+        assert result is False
+        assert probe_lock_states == [False]
+
+
 class TestReceiveThreadSessionLocking:
     """Test shutdown receive-thread state capture synchronization."""
 
@@ -308,10 +344,12 @@ class TestReceiveThreadSessionLocking:
                 self._receive_thread: object | None = None
                 self.receive_start_pending = False
                 self.receive_start_pending_since = None
+                self.receive_thread_reads = 0
 
             @property
             def receive_thread(self) -> object | None:
                 assert self.lock.held is True
+                self.receive_thread_reads += 1
                 return self._receive_thread
 
             @receive_thread.setter
@@ -328,6 +366,8 @@ class TestReceiveThreadSessionLocking:
             wake_waiting_threads=lambda *_events: None,
             join_thread=lambda *_args, **_kwargs: None,
         )
+
+        assert session.receive_thread_reads == 1
 
     def test_receive_thread_liveness_probes_run_outside_session_lock(self) -> None:
         """Thread-like liveness callbacks must not execute under shared state lock."""

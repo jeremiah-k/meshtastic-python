@@ -209,8 +209,8 @@ class BLEReceiveRecoveryController:
             return False
         return result if isinstance(result, bool) else False
 
-    def _is_connection_closing_locked(self) -> bool:
-        """Return whether connection-closing probes indicate closing while lock is held."""
+    def _probe_connection_closing_compat(self) -> bool:
+        """Return best-effort compatibility closing state without holding session lock."""
         iface = self._iface
         state_manager = _get_declared_member(iface, "_state_manager")
         state_is_closing: bool | None = None
@@ -239,8 +239,11 @@ class BLEReceiveRecoveryController:
             if state_is_closing is None:
                 legacy_is_closing = _get_declared_member(state_manager, "_is_closing")
                 state_is_closing = self._normalize_bool_probe(legacy_is_closing)
+        return bool(state_is_closing)
 
-        return bool(state_is_closing or self._session.closed)
+    def _is_connection_closing_locked(self, *, compatibility_is_closing: bool) -> bool:
+        """Combine a compatibility snapshot with session-owned closing state."""
+        return bool(compatibility_is_closing or self._session.closed)
 
     def _is_connection_closing(self) -> bool:
         """Return whether receive-loop behavior should treat the interface as closing."""
@@ -267,8 +270,11 @@ class BLEReceiveRecoveryController:
                         "Probe is_connection_closing_fn returned non-bool result",
                         exc_info=False,
                     )
+        compatibility_is_closing = self._probe_connection_closing_compat()
         with self._session.lock:
-            return self._is_connection_closing_locked()
+            return self._is_connection_closing_locked(
+                compatibility_is_closing=compatibility_is_closing
+            )
 
     @staticmethod
     def _coordinator_wait_for_event(
@@ -669,30 +675,33 @@ class BLEReceiveRecoveryController:
     def _snapshot_client_state(self) -> tuple[BLEClient | None, bool, bool, bool]:
         """Snapshot client and gating flags needed by the read loop."""
         iface = self._iface
+        state_manager = _get_declared_member(iface, "_state_manager")
+        is_connecting = False
+        for member_name, candidate in _iter_declared_members(
+            state_manager, "is_connecting", "_is_connecting"
+        ):
+            if callable(candidate):
+                try:
+                    connecting_result = candidate()
+                except Exception:  # noqa: BLE001 - snapshot probe stays best effort
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "Error probing state manager %s()",
+                        member_name,
+                    )
+                    continue
+            else:
+                connecting_result = candidate
+            if isinstance(connecting_result, bool):
+                is_connecting = connecting_result
+                break
+        compatibility_is_closing = self._probe_connection_closing_compat()
         with self._session.lock:
             client = iface.client
-            state_manager = _get_declared_member(iface, "_state_manager")
-            is_connecting = False
-            for member_name, candidate in _iter_declared_members(
-                state_manager, "is_connecting", "_is_connecting"
-            ):
-                if callable(candidate):
-                    try:
-                        connecting_result = candidate()
-                    except Exception:  # noqa: BLE001 - snapshot probe stays best effort
-                        _log_ble_failure(
-                            _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
-                            "Error probing state manager %s()",
-                            member_name,
-                        )
-                        continue
-                else:
-                    connecting_result = candidate
-                if isinstance(connecting_result, bool):
-                    is_connecting = connecting_result
-                    break
             publish_pending = self._session.client_publish_pending
-            is_closing = self._is_connection_closing_locked()
+            is_closing = self._is_connection_closing_locked(
+                compatibility_is_closing=compatibility_is_closing
+            )
         return client, is_connecting, publish_pending, is_closing
 
     def _process_client_state(

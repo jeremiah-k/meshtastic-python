@@ -259,12 +259,16 @@ class BLEShutdownLifecycleCoordinator:
                     logger.debug(
                         "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                     )
-                current_state = get_current_state()
                 disconnect_alias_key = self._session.connection_alias_key
-                should_transition_to_disconnecting = current_state not in (
-                    ConnectionState.DISCONNECTED,
-                    ConnectionState.DISCONNECTING,
-                )
+            # State-manager compatibility access may dispatch through a
+            # collaborator hook. Preserve the management-before-state lock
+            # ordering, but never execute that hook while the session lock is
+            # held.
+            current_state = get_current_state()
+            should_transition_to_disconnecting = current_state not in (
+                ConnectionState.DISCONNECTED,
+                ConnectionState.DISCONNECTING,
+            )
             if should_transition_to_disconnecting and not do_transition_to(
                 ConnectionState.DISCONNECTING
             ):

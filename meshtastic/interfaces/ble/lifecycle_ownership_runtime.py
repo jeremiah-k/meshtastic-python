@@ -320,7 +320,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
     def _apply_owned_client_invalidation(
         self,
         *,
-        get_is_closing: Callable[[], bool],
+        compatibility_is_closing: bool,
         restored_address: str | None,
         restore_last_connection_request: str | None,
     ) -> tuple[bool, bool, bool]:
@@ -339,7 +339,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         iface = self._iface
         replacement_pending = bool(self._session.client_replacement_pending)
         already_notified = bool(self._session.disconnect_notified)
-        is_closing = get_is_closing() or self._session.closed
+        is_closing = compatibility_is_closing or self._session.closed
         iface.client = None
         self._session.client_publish_pending = False
         self._session.client_replacement_pending = False
@@ -356,7 +356,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
     def _apply_publish_pending_invalidation(
         self,
         *,
-        get_is_closing: Callable[[], bool],
+        compatibility_is_closing: bool,
         restored_address: str | None,
         restore_last_connection_request: str | None,
     ) -> tuple[bool, bool, bool]:
@@ -376,7 +376,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         should_publish_disconnect = replacement_pending and not already_notified
         if should_publish_disconnect:
             self._session.disconnect_notified = True
-        is_closing = get_is_closing() or self._session.closed
+        is_closing = compatibility_is_closing or self._session.closed
         if not is_closing:
             iface.address = restored_address
             iface._last_connection_request = restore_last_connection_request
@@ -488,6 +488,14 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         is_closing = False
         disconnect_session_epoch = 0
         with self._session.lock:
+            session_already_closed = self._session.closed
+        # Compatibility probes can execute caller-owned code. Run the probe
+        # outside the shared session lock, and avoid it entirely after the
+        # terminal closed flag is already authoritative.
+        compatibility_is_closing = (
+            True if session_already_closed else get_is_closing()
+        )
+        with self._session.lock:
             disconnect_session_epoch = self._session.connection_session_epoch
             inflight_client = self._session.connected_publish_inflight_client
             if iface.client is client:
@@ -498,7 +506,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     should_publish_disconnect,
                     is_closing,
                 ) = self._apply_owned_client_invalidation(
-                    get_is_closing=get_is_closing,
+                    compatibility_is_closing=compatibility_is_closing,
                     restored_address=restored_address,
                     restore_last_connection_request=restore_last_connection_request,
                 )
@@ -513,7 +521,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     should_publish_disconnect,
                     is_closing,
                 ) = self._apply_publish_pending_invalidation(
-                    get_is_closing=get_is_closing,
+                    compatibility_is_closing=compatibility_is_closing,
                     restored_address=restored_address,
                     restore_last_connection_request=restore_last_connection_request,
                 )

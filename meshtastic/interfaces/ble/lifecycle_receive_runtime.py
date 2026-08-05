@@ -19,6 +19,24 @@ RECEIVE_START_PENDING_TIMEOUT_SECONDS = 1.0
 RECEIVE_START_SNAPSHOT_MAX_ATTEMPTS = 16
 
 
+def _thread_display_name(thread: object) -> str:
+    """Return a defensive display name for a thread-like collaborator.
+
+    Attribute access and ``repr`` may execute collaborator-owned code, so this
+    helper is called only outside the shared session lock.
+    """
+    try:
+        raw_name = getattr(thread, "name")
+    except Exception:  # noqa: BLE001 - diagnostics must never disrupt lifecycle
+        raw_name = None
+    if isinstance(raw_name, str) and raw_name:
+        return raw_name
+    try:
+        return repr(thread)
+    except Exception:  # noqa: BLE001 - diagnostics must remain best effort
+        return f"<{type(thread).__name__}>"
+
+
 class BLEReceiveLifecycleCoordinator:
     """Own receive-loop intent and receive-thread lifecycle behavior.
 
@@ -254,8 +272,10 @@ class BLEReceiveLifecycleCoordinator:
             existing_is_alive = False
             existing_is_current = False
             start_failure_confirmed = False
+            existing_display_name = "<no receive thread>"
             if existing is not None:
                 existing_ident, existing_is_alive = _thread_start_probe(existing)
+                existing_display_name = _thread_display_name(existing)
                 existing_is_current = existing is threading.current_thread() or (
                     isinstance(existing_ident, int)
                     and existing_ident == threading.get_ident()
@@ -335,14 +355,14 @@ class BLEReceiveLifecycleCoordinator:
                         logger.debug(
                             "Skipping receive thread start (%s): %s is already running.",
                             name,
-                            existing.name,
+                            existing_display_name,
                         )
                         return None, None
                     if existing_start_pending:
                         if existing_ident is not None or start_failure_confirmed:
                             logger.debug(
                                 "Replacing stale pending receive-thread start reference for %s: worker is no longer alive.",
-                                getattr(existing, "name", repr(existing)),
+                                existing_display_name,
                             )
                             self._session.receive_thread = None
                             existing = None
@@ -360,12 +380,12 @@ class BLEReceiveLifecycleCoordinator:
                                 logger.debug(
                                     "Skipping receive thread start (%s): %s start still pending.",
                                     name,
-                                    existing.name,
+                                    existing_display_name,
                                 )
                                 return None, None
                             logger.debug(
                                 "Receive thread start pending timed out for %s after %.3fs; replacing stale pending reference.",
-                                existing.name,
+                                existing_display_name,
                                 pending_age,
                             )
                             self._session.receive_start_pending = False
@@ -374,7 +394,7 @@ class BLEReceiveLifecycleCoordinator:
                         if existing_ident is not None:
                             logger.debug(
                                 "Replacing dead receive thread reference for %s before restart.",
-                                getattr(existing, "name", repr(existing)),
+                                existing_display_name,
                             )
                             self._session.receive_thread = None
                             existing = None
@@ -389,7 +409,7 @@ class BLEReceiveLifecycleCoordinator:
                             logger.debug(
                                 "Skipping receive thread start (%s): %s liveness probe inconclusive.",
                                 name,
-                                existing.name,
+                                existing_display_name,
                             )
                         else:
                             self._session.receive_start_pending = False

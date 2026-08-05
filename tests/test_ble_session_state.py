@@ -434,23 +434,29 @@ def test_receive_controller_invalid_lifecycle_results_fall_back_to_session() -> 
     assert controller._is_connection_closing() is True  # noqa: SLF001
 
 
-def test_transient_retry_does_not_resurrect_concurrent_counter_reset(
+@pytest.mark.parametrize(
+    "first_decision",
+    [True, False],
+    ids=["stale-retry", "stale-terminal"],
+)
+def test_transient_retry_revalidates_concurrent_counter_reset(
     monkeypatch: pytest.MonkeyPatch,
+    first_decision: bool,
 ) -> None:
-    """Retry bookkeeping must advance from the current counter after policy work."""
+    """Concurrent retry resets must invalidate either stale policy decision."""
     import meshtastic.interfaces.ble.receive_service as receive_service_module
     from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 
     state_manager = BLEStateManager()
     state = BLESessionState(lock=state_manager.lock, read_retry_count=3)
-    delay_attempts: list[int] = []
-
     policy_attempts: list[int] = []
+    delay_attempts: list[int] = []
 
     def _should_retry(_policy: object, attempt: int) -> bool:
         policy_attempts.append(attempt)
         if attempt == 3:
             state._reset_read_retry_count()
+            return first_decision
         return True
 
     iface = SimpleNamespace(
@@ -470,45 +476,6 @@ def test_transient_retry_does_not_resurrect_concurrent_counter_reset(
     assert policy_attempts == [3, 0]
     assert state.read_retry_count == 1
     assert delay_attempts == [0]
-
-
-def test_transient_retry_revalidates_stale_terminal_policy_decision(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A concurrent retry reset must invalidate a stale terminal decision."""
-    import meshtastic.interfaces.ble.receive_service as receive_service_module
-    from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
-
-    state_manager = BLEStateManager()
-    state = BLESessionState(lock=state_manager.lock, read_retry_count=3)
-    policy_attempts: list[int] = []
-    delay_attempts: list[int] = []
-
-    def _should_retry(_policy: object, attempt: int) -> bool:
-        policy_attempts.append(attempt)
-        if attempt == 3:
-            state._reset_read_retry_count()
-            return False
-        return True
-
-    iface = SimpleNamespace(
-        _transient_read_policy=object(),
-        _retry_policy_should_retry=_should_retry,
-        _retry_policy_get_delay=lambda _policy, attempt: delay_attempts.append(attempt)
-        or 0.0,
-        BLEError=RuntimeError,
-    )
-    controller = BLEReceiveRecoveryController(
-        iface, session_state=state  # type: ignore[arg-type]
-    )
-    monkeypatch.setattr(receive_service_module, "_sleep", lambda _delay: None)
-
-    controller.handle_transient_read_error(BleakError("transient"))
-
-    assert policy_attempts == [3, 0]
-    assert state.read_retry_count == 1
-    assert delay_attempts == [0]
-
 
 def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock() -> None:
     """Deferred restart scheduling must not begin while the session lock is held."""
@@ -589,6 +556,51 @@ def test_receive_lifecycle_thread_probes_run_outside_session_lock() -> None:
     assert created is staged
     assert recovery_attempts is None
     assert probe_lock_states == [False, False]
+
+
+def test_receive_lifecycle_thread_diagnostics_run_outside_session_lock() -> None:
+    """Thread-like name and repr access must not execute while state is locked."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
+    )
+
+    lock = _TrackingRLock()
+    state = BLESessionState(lock=lock)
+    diagnostic_lock_states: list[tuple[str, bool]] = []
+
+    class _NamelessThread:
+        ident = 42
+
+        def is_alive(self) -> bool:
+            return True
+
+        def __getattribute__(self, name: str) -> object:
+            if name == "name":
+                diagnostic_lock_states.append(("name", lock.held))
+                raise AttributeError(name)
+            return object.__getattribute__(self, name)
+
+        def __repr__(self) -> str:
+            diagnostic_lock_states.append(("repr", lock.held))
+            return "<NamelessReceive>"
+
+    existing = _NamelessThread()
+    state.receive_thread = existing  # type: ignore[assignment]
+    coordinator = BLEReceiveLifecycleCoordinator(  # type: ignore[arg-type]
+        SimpleNamespace(_receive_from_radio_impl=lambda: None),
+        session_state=state,
+    )
+
+    result = coordinator._check_receive_start_conditions(  # noqa: SLF001
+        name="Receive",
+        reset_recovery=False,
+        create_runtime_thread=lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("live existing thread must prevent replacement")
+        ),
+    )
+
+    assert result == (None, None)
+    assert diagnostic_lock_states == [("name", False), ("repr", False)]
 
 
 def test_receive_recovery_reset_probes_thread_outside_session_lock() -> None:
@@ -813,6 +825,78 @@ def test_shutdown_closing_probe_runs_outside_session_lock() -> None:
 
     assert coordinator.is_connection_closing() is False
     assert probe_lock_states == [False]
+
+
+def test_ownership_invalidation_closing_probe_runs_outside_session_lock() -> None:
+    """Invalidation compatibility probes must not execute under session state lock."""
+    from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
+        BLEConnectionOwnershipLifecycleCoordinator,
+    )
+
+    lock = _TrackingRLock()
+    client = object()
+    state = BLESessionState(
+        lock=lock,
+        client_publish_pending=True,
+        connected_publish_inflight_client=client,  # type: ignore[arg-type]
+    )
+    iface = SimpleNamespace(
+        client=None,
+        address="legacy-address",
+        _last_connection_request="legacy-request",
+    )
+    coordinator = BLEConnectionOwnershipLifecycleCoordinator(
+        iface, session_state=state  # type: ignore[arg-type]
+    )
+    probe_lock_states: list[bool] = []
+
+    def _is_closing() -> bool:
+        probe_lock_states.append(lock.held)
+        return False
+
+    coordinator._discard_invalidated_connected_client(  # noqa: SLF001
+        client,  # type: ignore[arg-type]
+        restore_address="AA:BB:CC:DD:EE:FF",
+        restore_last_connection_request="restored",
+        is_closing_getter=_is_closing,
+        reset_to_disconnected=lambda: True,
+        current_state_getter=lambda: ConnectionState.DISCONNECTED,
+        transition_to_disconnected=lambda: True,
+        safe_cleanup=lambda _cleanup, _name: None,
+    )
+
+    assert probe_lock_states == [False]
+
+
+def test_receive_snapshot_compatibility_probes_run_outside_session_lock() -> None:
+    """Receive snapshot compatibility callbacks must run before session locking."""
+    from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+
+    lock = _TrackingRLock()
+    state = BLESessionState(lock=lock)
+    probe_lock_states: list[tuple[str, bool]] = []
+
+    def _is_connecting() -> bool:
+        probe_lock_states.append(("connecting", lock.held))
+        return True
+
+    def _is_closing() -> bool:
+        probe_lock_states.append(("closing", lock.held))
+        return False
+
+    iface = SimpleNamespace(
+        client=None,
+        _state_manager=SimpleNamespace(
+            is_connecting=_is_connecting,
+            is_closing=_is_closing,
+        ),
+    )
+    controller = BLEReceiveRecoveryController(
+        iface, session_state=state  # type: ignore[arg-type]
+    )
+
+    assert controller._snapshot_client_state() == (None, True, False, False)  # noqa: SLF001
+    assert probe_lock_states == [("connecting", False), ("closing", False)]
 
 
 def test_disconnect_planning_runs_address_helpers_outside_session_lock() -> None:
