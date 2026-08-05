@@ -309,11 +309,15 @@ def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock()
     class _TrackingLock:
         def __init__(self) -> None:
             self._lock = threading.RLock()
-            self.held = False
+            self._depth = 0
+
+        @property
+        def held(self) -> bool:
+            return self._depth > 0
 
         def __enter__(self) -> "_TrackingLock":
             self._lock.acquire()
-            self.held = True
+            self._depth += 1
             return self
 
         def __exit__(
@@ -322,7 +326,7 @@ def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock()
             _exc_value: BaseException | None,
             _traceback: TracebackType | None,
         ) -> None:
-            self.held = False
+            self._depth -= 1
             self._lock.release()
 
     lock = _TrackingLock()
