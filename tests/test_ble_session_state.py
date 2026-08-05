@@ -307,23 +307,54 @@ def test_partial_interface_resolves_mixin_session_owner_directly() -> None:
     assert state.lock is iface._state_lock
 
 
-def test_mixin_promotion_preserves_cached_adapter_lock() -> None:
-    """Fallback adapter promotion must retain one shared, replaceable state lock."""
+def test_mixin_promotion_preserves_legacy_values_and_state_manager_lock() -> None:
+    """Adapter promotion must preserve legacy values and canonical lock ownership."""
     iface = BLEInterface.__new__(BLEInterface)
+    state_manager = BLEStateManager()
+    iface.__dict__["_state_manager"] = state_manager
+    iface.__dict__["_closed"] = True
+    iface.__dict__["_connection_session_epoch"] = 17
+    iface.__dict__["_want_receive"] = False
+    iface.__dict__["_last_disconnect_source"] = "legacy-callback"
     adapter = _LegacyBLESessionStateAdapter(iface)
     iface.__dict__["_session_state"] = adapter
 
     state = iface._get_session_state()
 
     assert isinstance(state, BLESessionState)
-    assert state.lock is adapter.lock
-    assert iface._state_lock is adapter.lock
+    assert state.lock is state_manager.lock
+    assert iface._state_lock is state_manager.lock
+    assert state.closed is True
+    assert state.connection_session_epoch == 17
+    assert state.want_receive is False
+    assert state.last_disconnect_source == "legacy-callback"
+    assert "_closed" not in iface.__dict__
+    assert "_connection_session_epoch" not in iface.__dict__
+    assert "_want_receive" not in iface.__dict__
+    assert "_last_disconnect_source" not in iface.__dict__
 
     replacement_lock = threading.RLock()
     iface._state_lock = replacement_lock
 
     assert state.lock is replacement_lock
     assert adapter.lock is replacement_lock
+
+
+def test_mixin_promotion_preserves_raw_legacy_lock_without_state_manager() -> None:
+    """A pre-migration raw state lock must survive adapter promotion."""
+    iface = BLEInterface.__new__(BLEInterface)
+    legacy_lock = threading.RLock()
+    iface.__dict__["_state_lock"] = legacy_lock
+    iface.__dict__["_closed"] = True
+    adapter = _LegacyBLESessionStateAdapter(iface)
+    iface.__dict__["_session_state"] = adapter
+
+    state = iface._get_session_state()
+
+    assert state.lock is legacy_lock
+    assert state.closed is True
+    assert "_state_lock" not in iface.__dict__
+    assert "_closed" not in iface.__dict__
 
 
 def test_uncacheable_legacy_collaborator_requires_explicit_session() -> None:

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from meshtastic._core_constants import LAST_DISCONNECT_SOURCE_TYPE_ERROR
 from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
     _get_declared_lock,
     _get_declared_member,
 )
@@ -105,13 +106,40 @@ class _BLESessionStateCompatMixin:
             Canonical session owner installed for this interface.
         """
         instance_dict = self.__dict__
-        with state.lock:
+        state_manager_lock = _get_declared_lock(
+            instance_dict.get("_state_manager"), "lock"
+        )
+        raw_legacy_lock = instance_dict.get("_state_lock")
+        raw_legacy_lock_type = type(raw_legacy_lock)
+        raw_legacy_lock_is_valid = raw_legacy_lock is not None and (
+            _get_declared_callable(raw_legacy_lock_type, "__enter__") is not None
+            and _get_declared_callable(raw_legacy_lock_type, "__exit__") is not None
+        )
+        promotion_lock = state_manager_lock
+        if promotion_lock is None and raw_legacy_lock_is_valid:
+            promotion_lock = cast(_LockPort, raw_legacy_lock)
+        if promotion_lock is None:
+            promotion_lock = state._fallback_lock
+        with promotion_lock:
             current = instance_dict.get("_session_state")
             if isinstance(current, BLESessionState):
                 return current
             if current is state:
-                promoted = BLESessionState(lock=state.lock)
+                promoted = BLESessionState(lock=promotion_lock)
+                for field_name, legacy_name in state._FIELD_MAP.items():
+                    if field_name == "lock":
+                        continue
+                    setattr(
+                        promoted,
+                        field_name,
+                        instance_dict.get(
+                            legacy_name,
+                            state._FIELD_DEFAULTS[field_name],
+                        ),
+                    )
                 instance_dict["_session_state"] = promoted
+                for legacy_name in state._FIELD_MAP.values():
+                    instance_dict.pop(legacy_name, None)
                 return promoted
         return self._get_session_state()
 
