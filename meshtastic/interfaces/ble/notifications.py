@@ -893,12 +893,28 @@ class BLENotificationDispatcher:
             cache_attr="_safe_from_num_handler",
             factory=lambda: _safe_from_num_handler,
         )
-        if FROMNUM_UUID in self._started_notify_characteristics:
-            current_ingress_handler = self._notification_manager._get_callback(
-                FROMNUM_UUID
-            )
-            if current_ingress_handler is not ingress_handler:
+
+        def _track_fromnum_handler() -> bool:
+            try:
+                current_ingress_handler = self._notification_manager._get_callback(
+                    FROMNUM_UUID
+                )
+                if current_ingress_handler is ingress_handler:
+                    return True
                 self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
+            except Exception as err:  # noqa: BLE001 - local/backend state must converge
+                logger.warning(
+                    "Unable to track FROMNUM notification callback for %s: %s; rolling back backend notifications and falling back to polling reads.",
+                    FROMNUM_UUID,
+                    err,
+                )
+                _rollback_registration_state(stop_client=client)
+                return False
+            return True
+
+        if FROMNUM_UUID in self._started_notify_characteristics:
+            if not _track_fromnum_handler():
+                return
             if not _registration_still_current():
                 _rollback_registration_state(stop_client=client)
                 return
@@ -958,11 +974,8 @@ class BLENotificationDispatcher:
                 # can then unwind through the single centralized rollback path exactly
                 # once per started characteristic.
                 self._started_notify_characteristics.add(FROMNUM_UUID)
-                current_ingress_handler = self._notification_manager._get_callback(
-                    FROMNUM_UUID
-                )
-                if current_ingress_handler is not ingress_handler:
-                    self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
+                if not _track_fromnum_handler():
+                    return
                 if not _registration_still_current():
                     _rollback_registration_state(stop_client=client)
                     return

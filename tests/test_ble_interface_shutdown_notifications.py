@@ -1445,3 +1445,41 @@ def test_reconnect_worker_respects_retry_limits(
     assert sleep_calls == [0.25]
     assert iface._reconnect_policy.reset_called is True
     assert iface._reconnect_scheduler.cleared is True
+
+
+@pytest.mark.parametrize("failure_hook", ["get_callback", "subscribe"])
+def test_register_notifications_rolls_back_backend_if_local_tracking_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_hook: str,
+) -> None:
+    """A local FROMNUM tracking failure must unwind the active backend notify."""
+    client = _FromNumRegistrationClient()
+    iface = _build_interface(monkeypatch, client)
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        if failure_hook == "get_callback":
+            monkeypatch.setattr(
+                iface._notification_manager,
+                "_get_callback",
+                lambda _uuid: (_ for _ in ()).throw(
+                    RuntimeError("local callback lookup failed")
+                ),
+            )
+        else:
+            monkeypatch.setattr(
+                iface._notification_manager,
+                "_subscribe",
+                lambda _uuid, _callback: (_ for _ in ()).throw(
+                    RuntimeError("local subscription tracking failed")
+                ),
+            )
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is False
+        assert not iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        iface.close()

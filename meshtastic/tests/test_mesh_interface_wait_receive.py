@@ -1946,6 +1946,7 @@ def test_queue_wait_abort_reason_reports_failure_and_closing() -> None:
         assert iface._queue_wait_abort_reason() == "interface is closing"
 
 
+@pytest.mark.unit
 def test_disconnect_source_property_rejects_non_string_values() -> None:
     """Disconnect diagnostics should reject values the getter would discard."""
     iface = MeshInterface.__new__(MeshInterface)
