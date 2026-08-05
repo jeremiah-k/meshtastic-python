@@ -1,5 +1,6 @@
 """Management command helpers for BLE interface orchestration."""
 
+import inspect
 import math
 import numbers
 import re
@@ -11,6 +12,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+)
 from meshtastic.interfaces.ble.connection import ConnectionOrchestrator
 from meshtastic.interfaces.ble.constants import (
     ERROR_CONNECTION_SUPPRESSED,
@@ -273,8 +278,8 @@ class BLEManagementCommandHandler:
         if method_name in active_dispatches:
             return fallback(*args, **kwargs)
 
-        override = getattr(self._iface, method_name, None)
-        if callable(override):
+        override = _get_declared_callable(self._iface, method_name)
+        if override is not None:
 
             def _invoke_override() -> T:
                 active_dispatches.add(method_name)
@@ -283,14 +288,16 @@ class BLEManagementCommandHandler:
                 finally:
                     active_dispatches.discard(method_name)
 
-            instance_dict = getattr(self._iface, "__dict__", {})
+            instance_dict = _get_declared_member(self._iface, "__dict__", {})
             if isinstance(instance_dict, dict) and method_name in instance_dict:
                 return _invoke_override()
             try:
                 from meshtastic.interfaces.ble.interface import BLEInterface
 
-                base_method = getattr(BLEInterface, method_name, None)
-                class_method = getattr(type(self._iface), method_name, None)
+                base_method = inspect.getattr_static(BLEInterface, method_name, None)
+                class_method = inspect.getattr_static(
+                    type(self._iface), method_name, None
+                )
                 if class_method is not None and class_method is not base_method:
                     return _invoke_override()
             except Exception:  # noqa: BLE001 - lookup fallback

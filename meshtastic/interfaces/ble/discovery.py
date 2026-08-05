@@ -14,7 +14,6 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.compat_adapter import (
-    _get_declared_callable,
     _get_declared_member,
     _resolve_declared_callable,
 )
@@ -100,11 +99,7 @@ def _is_discovery_client_like(client: object) -> bool:
         ``True`` when the client exposes a callable supported discovery method
         otherwise ``False``.
     """
-    discover = _get_declared_callable(client, "discover")
-    if callable(discover):
-        return True
-    underscore_discover = _get_declared_callable(client, "_discover")
-    return callable(underscore_discover)
+    return _resolve_declared_callable(client, "discover", "_discover") is not None
 
 
 def _looks_like_ble_address(identifier: str) -> bool:

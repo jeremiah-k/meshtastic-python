@@ -711,7 +711,6 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
         iface.close()
 
 
-
 class _FromNumRegistrationClient(DummyClient):
     """Notification-capable client for connection-finalization ownership tests."""
 
@@ -798,6 +797,11 @@ def test_register_notifications_serializes_overlapping_calls(
     start_count_lock = threading.Lock()
     start_count = 0
     failures: list[BaseException] = []
+    registration_entries = 0
+    registration_entry_lock = threading.Lock()
+    second_worker_entered = threading.Event()
+    dispatcher = iface._get_notification_dispatcher()
+    original_register_notifications = dispatcher.register_notifications
     original_start_notify = client.start_notify
 
     def _blocking_start_notify(*args: object, **kwargs: object) -> None:
@@ -816,6 +820,16 @@ def test_register_notifications_serializes_overlapping_calls(
 
     client.start_notify = _blocking_start_notify  # type: ignore[method-assign]
 
+    def _observed_register_notifications(*args: object, **kwargs: object) -> None:
+        nonlocal registration_entries
+        with registration_entry_lock:
+            registration_entries += 1
+            if registration_entries == 2:
+                second_worker_entered.set()
+        original_register_notifications(*args, **kwargs)  # type: ignore[arg-type]
+
+    dispatcher.register_notifications = _observed_register_notifications  # type: ignore[method-assign]
+
     def _register() -> None:
         try:
             start_barrier.wait(timeout=2.0)
@@ -829,6 +843,7 @@ def test_register_notifications_serializes_overlapping_calls(
             worker.start()
         start_barrier.wait(timeout=2.0)
         assert first_backend_started.wait(timeout=2.0)
+        assert second_worker_entered.wait(timeout=2.0)
         assert not second_backend_started.wait(timeout=0.1)
         release_first_backend.set()
         for worker in workers:

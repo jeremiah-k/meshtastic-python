@@ -45,6 +45,11 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 
+SHUTDOWN_ALREADY_CLOSED_MSG = (
+    "BLEInterface.close called on already closed interface; ignoring"
+)
+
+
 class BLEShutdownLifecycleCoordinator:
     """Own interface shutdown orchestration and terminal cleanup behavior.
 
@@ -243,9 +248,7 @@ class BLEShutdownLifecycleCoordinator:
         management_wait_started = time.monotonic()
         with self._session.lock:
             if self._session.closed:
-                logger.debug(
-                    "BLEInterface.close called on already closed interface; ignoring"
-                )
+                logger.debug(SHUTDOWN_ALREADY_CLOSED_MSG)
                 return None
         # Compatibility/state-manager probes may execute collaborator code. They
         # do not participate in the atomic closed-state claim below, so evaluate
@@ -255,9 +258,7 @@ class BLEShutdownLifecycleCoordinator:
         with iface._management_lock:
             with self._session.lock:
                 if self._session.closed:
-                    logger.debug(
-                        "BLEInterface.close called on already closed interface; ignoring"
-                    )
+                    logger.debug(SHUTDOWN_ALREADY_CLOSED_MSG)
                     return None
                 self._session.closed = True
                 if was_closing:

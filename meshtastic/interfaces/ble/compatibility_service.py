@@ -9,6 +9,10 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_member,
 )
 from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleStateAccess
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
 from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
     MAX_DRAIN_ITERATIONS,
@@ -527,13 +531,20 @@ class BLECompatibilityEventService:
                 )
 
         def _is_iface_closing() -> bool:
-            closed = _get_declared_member(iface, "_closed", False)
-            if closed is True:
-                return True
-            state_manager = _get_declared_member(iface, "_state_manager")
-            if state_manager is None:
+            try:
+                closed = _get_declared_member(iface, "_closed", False)
+                if closed is True:
+                    return True
+                state_manager = _get_declared_member(iface, "_state_manager")
+                if state_manager is None:
+                    return False
+                return _LifecycleStateAccess(state_manager).is_closing()
+            except Exception:  # noqa: BLE001 - status publication is best effort
+                _log_ble_failure(
+                    _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                    "Error probing interface closing state during status publication",
+                )
                 return False
-            return _LifecycleStateAccess(state_manager).is_closing()
 
         def _publish_status_async(reason: str) -> bool:
             if _is_iface_closing():

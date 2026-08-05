@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import logging
 from queue import Empty, Full
 from threading import Event, RLock
 from types import SimpleNamespace
@@ -451,6 +452,58 @@ def test_status_publish_ignores_synthesized_closing_probe(
     )
 
     assert sent == [("meshtastic.connection.status", iface, True)]
+def test_status_publish_closing_probe_failure_is_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Closing-state probe failures must not escape best-effort publication."""
+    import meshtastic.mesh_interface as mesh_iface_module
+    from meshtastic.interfaces.ble import (
+        compatibility_service as compatibility_service_mod,
+    )
+
+    sent: list[tuple[str, object, bool]] = []
+
+    class _RaisingStateManager:
+        @property
+        def is_closing(self) -> bool:
+            raise RuntimeError("closing probe failed")
+
+    class _ImmediateThread:
+        def __init__(self, *, target: Any, **_kwargs: object) -> None:
+            self._target = target
+
+        def start(self) -> None:
+            self._target()
+
+    iface = SimpleNamespace(_closed=False, _state_manager=_RaisingStateManager())
+    monkeypatch.setattr(
+        mesh_iface_module,
+        "pub",
+        SimpleNamespace(
+            sendMessage=lambda topic, *, interface, connected: sent.append(
+                (topic, interface, connected)
+            )
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        compatibility_service_mod, "Thread", _ImmediateThread, raising=True
+    )
+    caplog.set_level(logging.DEBUG, logger="meshtastic.ble")
+
+    BLECompatibilityEventService.publish_connection_status(
+        iface,  # type: ignore[arg-type]
+        connected=True,
+        publishing_thread=None,
+    )
+
+    assert sent == [("meshtastic.connection.status", iface, True)]
+    assert any(
+        getattr(record, "ble_failure_disposition", None) == "compatibility_fallback"
+        and "Error probing interface closing state" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_legacy_status_publish_ignores_synthesized_thread_provider(
@@ -617,7 +670,9 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
             use_existing_client_without_resolved_address=True,
             expected_implicit_binding="AA:BB:CC:DD:EE:FF",
         )
-        fresh_iface._get_management_client_if_available_locked = lambda _address: DummyClient()
+        fresh_iface._get_management_client_if_available_locked = lambda _address: (
+            DummyClient()
+        )
         fresh_iface._resolve_target_address_for_management = lambda _address: None
         fresh_iface._validate_management_preconditions = lambda: None
         fresh_iface._get_current_implicit_management_binding_locked = (
@@ -688,8 +743,38 @@ def test_management_handler_call_iface_override_respects_instance_and_subclass_o
         )
         assert fallback_calls == ["fallback"]
 
-        iface._resolve_target_address_for_management = (
-            lambda address: f"override:{address}"
+        class _SynthesizingInterface:
+            def __init__(self) -> None:
+                self.synthesized_override_calls = 0
+
+            def __getattr__(self, name: str) -> object:
+                if name == "_resolve_target_address_for_management":
+
+                    def _synthesized(address: str | None) -> str:
+                        self.synthesized_override_calls += 1
+                        return f"synthesized:{address}"
+
+                    return _synthesized
+                raise AttributeError(name)
+
+        synthesizing_iface = _SynthesizingInterface()
+        synthesizing_handler = BLEManagementCommandHandler(
+            synthesizing_iface,  # type: ignore[arg-type]
+            ble_client_factory=DummyClient,
+            connected_elsewhere=lambda *_args, **_kwargs: False,
+        )
+        assert (
+            synthesizing_handler._call_iface_override(
+                "_resolve_target_address_for_management",
+                _fallback,
+                "dynamic-node",
+            )
+            == "fallback:dynamic-node"
+        )
+        assert synthesizing_iface.synthesized_override_calls == 0
+
+        iface._resolve_target_address_for_management = lambda address: (
+            f"override:{address}"
         )
         assert (
             handler._call_iface_override(
@@ -699,7 +784,7 @@ def test_management_handler_call_iface_override_respects_instance_and_subclass_o
             )
             == "override:mesh-node"
         )
-        assert fallback_calls == ["fallback"]
+        assert fallback_calls == ["fallback", "fallback"]
 
         class _OverrideInterface(type(iface)):
             def _resolve_target_address_for_management(
@@ -721,7 +806,7 @@ def test_management_handler_call_iface_override_respects_instance_and_subclass_o
             )
             == "subclass:mesh-node"
         )
-        assert fallback_calls == ["fallback"]
+        assert fallback_calls == ["fallback", "fallback"]
     finally:
         iface.close()
 
@@ -834,7 +919,9 @@ def test_resolve_management_target_existing_client_explicit_address_paths(
         refreshed_client.bleak_client = SimpleNamespace(address=None)
         resolved_addresses.clear()
 
-        iface._get_management_client_if_available_locked = lambda _address: refreshed_client
+        iface._get_management_client_if_available_locked = lambda _address: (
+            refreshed_client
+        )
         iface._extract_client_address = lambda _client: None
 
         target, active_client = BLEManagementCommandsService._resolve_management_target(
