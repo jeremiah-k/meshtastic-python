@@ -1,14 +1,14 @@
 """Internal leaf constants shared by Meshtastic runtime components.
 
 This module intentionally contains no imports from other ``meshtastic`` modules.
-Public compatibility is provided by re-exports from :mod:`meshtastic`.
+Names listed in ``__all__`` are re-exported from :mod:`meshtastic`;
+other constants in this leaf module remain internal implementation details.
 """
 
 __all__ = (
     "BROADCAST_ADDR",
     "BROADCAST_NUM",
     "DECODE_ERROR_KEY",
-    "LAST_DISCONNECT_SOURCE_TYPE_ERROR",
     "LOCAL_ADDR",
     "NODELESS_WANT_CONFIG_ID",
     "OUR_APP_VERSION",

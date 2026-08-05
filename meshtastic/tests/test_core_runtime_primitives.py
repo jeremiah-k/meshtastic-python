@@ -67,6 +67,12 @@ def test_public_core_constants_are_leaf_module_identities() -> None:
         assert getattr(meshtastic, name) is getattr(_core_constants, name), name
 
 
+def test_internal_core_validation_messages_are_not_public_exports() -> None:
+    """Internal validation literals must not accidentally expand package-root API."""
+    assert "LAST_DISCONNECT_SOURCE_TYPE_ERROR" not in _core_constants.__all__
+    assert not hasattr(meshtastic, "LAST_DISCONNECT_SOURCE_TYPE_ERROR")
+
+
 def test_public_response_types_are_leaf_module_identities() -> None:
     """Historical response types should retain identity through the package facade."""
     for name in _response_types.__all__:
