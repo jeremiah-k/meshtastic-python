@@ -305,7 +305,7 @@ class TestBLEManagementCommandsServiceOperations:
         iface._validate_management_preconditions = MagicMock()
         mock_client = MagicMock(spec=BLEClient)
         expected_result = (mock_client, None)
-        iface._get_management_client_for_target = configured_mock(
+        iface._get_management_client_for_target_locked = configured_mock(
             return_value=mock_client
         )
 

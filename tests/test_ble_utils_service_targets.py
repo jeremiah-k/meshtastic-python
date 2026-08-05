@@ -597,7 +597,7 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
     try:
         iface._finish_management_operation = MagicMock()
         iface._validate_management_preconditions = MagicMock(return_value=None)
-        iface._get_management_client_if_available = MagicMock(
+        iface._get_management_client_if_available_locked = MagicMock(
             side_effect=RuntimeError("target resolution failure")
         )
 
@@ -617,7 +617,7 @@ def test_management_helpers_cover_factory_and_target_edge_paths(
             use_existing_client_without_resolved_address=True,
             expected_implicit_binding="AA:BB:CC:DD:EE:FF",
         )
-        fresh_iface._get_management_client_if_available = lambda _address: DummyClient()
+        fresh_iface._get_management_client_if_available_locked = lambda _address: DummyClient()
         fresh_iface._resolve_target_address_for_management = lambda _address: None
         fresh_iface._validate_management_preconditions = lambda: None
         fresh_iface._get_current_implicit_management_binding_locked = (
@@ -811,7 +811,7 @@ def test_resolve_management_target_existing_client_explicit_address_paths(
             expected_implicit_binding=None,
         )
         iface._validate_management_preconditions = lambda: None
-        iface._get_management_client_if_available = lambda _address: None
+        iface._get_management_client_if_available_locked = lambda _address: None
         resolved_addresses: list[str | None] = []
 
         def _resolve_target_address(address: str | None) -> str:
@@ -834,7 +834,7 @@ def test_resolve_management_target_existing_client_explicit_address_paths(
         refreshed_client.bleak_client = SimpleNamespace(address=None)
         resolved_addresses.clear()
 
-        iface._get_management_client_if_available = lambda _address: refreshed_client
+        iface._get_management_client_if_available_locked = lambda _address: refreshed_client
         iface._extract_client_address = lambda _client: None
 
         target, active_client = BLEManagementCommandsService._resolve_management_target(

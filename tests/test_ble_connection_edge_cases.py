@@ -28,7 +28,10 @@ from meshtastic.interfaces.ble.constants import (
     DIRECT_CONNECT_TIMEOUT_SECONDS,
     BLEConfig,
 )
-from meshtastic.interfaces.ble.reconnection import ReconnectWorker
+from meshtastic.interfaces.ble.reconnection import (
+    ReconnectPolicyMissingMethodError,
+    ReconnectWorker,
+)
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 
@@ -547,8 +550,8 @@ def test_client_manager_connect_client_refreshes_services_on_non_callable_probe(
 
 
 @pytest.mark.unit
-def test_reconnect_worker_call_policy_resolves_snake_to_legacy_camelcase() -> None:
-    """_call_policy should resolve snake_case requests to legacy camelCase methods."""
+def test_reconnect_worker_call_policy_rejects_legacy_camelcase() -> None:
+    """ReconnectPolicy orchestration must not preserve legacy camelCase aliases."""
 
     class LegacyCamelPolicy:
         """Policy stub exposing only legacy camelCase methods."""
@@ -564,8 +567,10 @@ def test_reconnect_worker_call_policy_resolves_snake_to_legacy_camelcase() -> No
     policy = LegacyCamelPolicy()
     worker = ReconnectWorker(MagicMock(), policy)  # type: ignore[arg-type]
 
-    assert worker._call_policy("next_attempt") == (0.25, False)
-    assert worker._call_policy("get_attempt_count") == 7
+    with pytest.raises(ReconnectPolicyMissingMethodError, match="next_attempt"):
+        worker._call_policy("next_attempt")
+    with pytest.raises(ReconnectPolicyMissingMethodError, match="get_attempt_count"):
+        worker._call_policy("get_attempt_count")
 
 
 @pytest.mark.unit
@@ -1859,11 +1864,11 @@ def test_reconnect_worker_returns_when_should_abort_is_true() -> None:
 
     class _Policy:
         @staticmethod
-        def _reset() -> None:
+        def reset() -> None:
             pass
 
         @staticmethod
-        def _get_attempt_count() -> int:
+        def get_attempt_count() -> int:
             return 0
 
     interface = MagicMock()
@@ -1884,11 +1889,11 @@ def test_reconnect_worker_returns_when_attempt_count_is_none() -> None:
 
     class _Policy:
         @staticmethod
-        def _reset() -> None:
+        def reset() -> None:
             pass
 
         @staticmethod
-        def _get_attempt_count() -> None:
+        def get_attempt_count() -> None:
             return None
 
     interface = MagicMock()
@@ -1911,11 +1916,11 @@ def test_reconnect_worker_logs_and_returns_when_attempt_count_is_non_int(
 
     class _Policy:
         @staticmethod
-        def _reset() -> None:
+        def reset() -> None:
             pass
 
         @staticmethod
-        def _get_attempt_count() -> float:
+        def get_attempt_count() -> float:
             return 1.5
 
     interface = MagicMock()
@@ -1938,11 +1943,11 @@ def test_reconnect_worker_returns_when_interface_already_connected() -> None:
 
     class _Policy:
         @staticmethod
-        def _reset() -> None:
+        def reset() -> None:
             pass
 
         @staticmethod
-        def _get_attempt_count() -> int:
+        def get_attempt_count() -> int:
             return 0
 
     interface = MagicMock()

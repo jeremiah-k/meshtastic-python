@@ -1060,57 +1060,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             target_address
         )
 
-    def _dispatch_management_lookup_by_lock(
-        self,
-        *,
-        unlocked: Callable[[], T],
-        locked: Callable[[], T],
-        operation_name: str,
-    ) -> T:
-        """Dispatch a management lookup for the current state-lock context.
-
-        Parameters
-        ----------
-        unlocked : Callable[[], T]
-            Lookup to invoke when the state lock is not owned by this thread.
-        locked : Callable[[], T]
-            Lock-aware lookup to invoke when ownership is confirmed.
-        operation_name : str
-            Diagnostic name used when the best-effort ownership probe fails.
-
-        Returns
-        -------
-        T
-            Result from the selected lookup.
-        """
-        state_lock = _get_declared_lock(self, "_state_lock")
-        lock_is_owned = (
-            _get_declared_callable(state_lock, "_is_owned")
-            if state_lock is not None
-            else None
-        )
-        if lock_is_owned is not None:
-            try:
-                if lock_is_owned() is True:
-                    return locked()
-            except Exception:  # noqa: BLE001 - lock probe remains best effort
-                logger.debug(
-                    "Failed to probe _state_lock ownership before %s",
-                    operation_name,
-                    exc_info=True,
-                )
-        return unlocked()
-
     def _get_management_client_if_available(
         self, address: str | None
     ) -> BLEClient | None:
         """Return available management client via management collaborator."""
         handler = self._get_management_command_handler()
-        return self._dispatch_management_lookup_by_lock(
-            unlocked=lambda: handler.get_management_client_if_available(address),
-            locked=lambda: handler.get_management_client_if_available_locked(address),
-            operation_name="management lookup",
-        )
+        return handler.get_management_client_if_available(address)
 
     def _get_management_client_if_available_locked(
         self, address: str | None
@@ -1127,15 +1082,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> BLEClient | None:
         """Return reusable target-matching management client via collaborator."""
         handler = self._get_management_command_handler()
-        return self._dispatch_management_lookup_by_lock(
-            unlocked=lambda: handler.get_management_client_for_target(
-                target_address,
-                prefer_current_client=prefer_current_client,
-            ),
-            locked=lambda: handler.get_management_client_for_target_locked(
-                target_address, prefer_current_client=prefer_current_client
-            ),
-            operation_name="target lookup",
+        return handler.get_management_client_for_target(
+            target_address,
+            prefer_current_client=prefer_current_client,
         )
 
     def _get_management_client_for_target_locked(

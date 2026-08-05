@@ -804,7 +804,7 @@ def test_execute_management_command_falls_back_when_existing_client_disappears(
 
     monkeypatch.setattr(
         iface,
-        "_get_management_client_if_available",
+        "_get_management_client_if_available_locked",
         _get_management_client,
     )
     monkeypatch.setattr(
@@ -825,7 +825,7 @@ def test_execute_management_command_requires_resolved_target_address(
     """Management command path should fail when no target address can be resolved."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     monkeypatch.setattr(
-        iface, "_get_management_client_if_available", lambda _address: None
+        iface, "_get_management_client_if_available_locked", lambda _address: None
     )
     monkeypatch.setattr(
         iface, "_resolve_target_address_for_management", lambda _address: None

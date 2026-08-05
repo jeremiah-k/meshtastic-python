@@ -501,7 +501,7 @@ class BLEManagementCommandHandler:
                 self.begin_management_operation_locked()
                 operation_started = True
                 existing_client = self._call_iface_override(
-                    "_get_management_client_if_available",
+                    "_get_management_client_if_available_locked",
                     self.get_management_client_if_available_locked,
                     address,
                 )
@@ -540,7 +540,7 @@ class BLEManagementCommandHandler:
             with iface._connect_lock, iface._management_lock, iface._state_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
-                    "_get_management_client_if_available",
+                    "_get_management_client_if_available_locked",
                     self.get_management_client_if_available_locked,
                     address,
                 )
@@ -563,7 +563,7 @@ class BLEManagementCommandHandler:
             with iface._connect_lock, iface._management_lock, iface._state_lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
-                    "_get_management_client_if_available",
+                    "_get_management_client_if_available_locked",
                     self.get_management_client_if_available_locked,
                     address,
                 )
@@ -659,7 +659,7 @@ class BLEManagementCommandHandler:
                     expected_binding=expected_implicit_binding,
                 )
             client_to_use = self._call_iface_override(
-                "_get_management_client_for_target",
+                "_get_management_client_for_target_locked",
                 self.get_management_client_for_target_locked,
                 target_address,
                 prefer_current_client=address is None,

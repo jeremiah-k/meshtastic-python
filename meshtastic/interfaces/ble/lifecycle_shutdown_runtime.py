@@ -9,7 +9,10 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+)
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
@@ -112,13 +115,15 @@ class BLEShutdownLifecycleCoordinator:
             Cleanup is best effort and intentionally suppresses hook failures.
         """
         iface = self._iface
-        cleanup_hook = _get_declared_callable(iface.thread_coordinator, "cleanup")
+        coordinator = _get_declared_member(iface, "thread_coordinator")
+        if coordinator is None:
+            logger.debug("Thread coordinator is unavailable; skipping cleanup")
+            return
+        cleanup_hook = _get_declared_callable(coordinator, "cleanup")
         if cleanup_hook is not None:
             hook_name = "cleanup"
         else:
-            legacy_cleanup = _get_declared_callable(
-                iface.thread_coordinator, "_cleanup"
-            )
+            legacy_cleanup = _get_declared_callable(coordinator, "_cleanup")
             if legacy_cleanup is not None:
                 cleanup_hook = legacy_cleanup
                 hook_name = "_cleanup"

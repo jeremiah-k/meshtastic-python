@@ -32,22 +32,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("meshtastic.ble")
 
 
-def _camel_to_snake(name: str) -> str:
-    """Convert a lower/upper camelCase identifier to snake_case."""
-    chars: list[str] = []
-    for idx, char in enumerate(name):
-        if char.isupper() and idx > 0:
-            chars.append("_")
-        chars.append(char.lower())
-    return "".join(chars)
-
-
-def _snake_to_camel(name: str) -> str:
-    """Convert snake_case identifier to lower camelCase."""
-    head, *tail = name.split("_")
-    return head + "".join(piece.capitalize() for piece in tail)
-
-
 class ReconnectPolicyMissingMethodError(AttributeError):
     """Raised when a required reconnect-policy method is missing."""
 
@@ -309,12 +293,12 @@ class ReconnectWorker:
         self.reconnect_policy = reconnect_policy
 
     def _call_policy(self, method_name: str, *args: Any) -> Any:
-        """Call a policy method with compatibility fallbacks for legacy naming styles.
+        """Call one canonical reconnect-policy method.
 
         Parameters
         ----------
         method_name : str
-            Name of the public method to call on the policy.
+            Name of the canonical internal method to call on the policy.
         *args
             Arguments to pass to the policy method.
 
@@ -323,20 +307,8 @@ class ReconnectWorker:
         Any
             The return value from the policy method.
         """
-        candidate_names: list[str] = [method_name]
-        snake_name = _camel_to_snake(method_name)
-        if snake_name != method_name:
-            candidate_names.append(snake_name)
-        camel_name = _snake_to_camel(snake_name)
-        if camel_name not in candidate_names:
-            candidate_names.append(camel_name)
-
-        compatibility_names = [
-            *candidate_names,
-            *(f"_{candidate_name}" for candidate_name in candidate_names),
-        ]
         candidate_method = _resolve_declared_callable(
-            self.reconnect_policy, *compatibility_names
+            self.reconnect_policy, method_name
         )
         if candidate_method is not None:
             return candidate_method(*args)

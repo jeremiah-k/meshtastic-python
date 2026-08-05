@@ -26,8 +26,6 @@ from meshtastic.interfaces.ble.reconnection import (
     ReconnectScheduler,
     ReconnectWorker,
     ThreadCoordinatorMissingMethodError,
-    _camel_to_snake,
-    _snake_to_camel,
 )
 from meshtastic.interfaces.ble.state import BLEStateManager
 
@@ -38,52 +36,6 @@ def clear_gating_registry() -> Generator[None, None, None]:
     _clear_all_registries()
     yield
     _clear_all_registries()
-
-
-class TestNamingHelpers:
-    """Tests for camelCase/snake_case conversion helpers."""
-
-    @pytest.mark.unit
-    def test_camel_to_snake_basic(self) -> None:
-        """Basic camelCase to snake_case conversion."""
-        assert _camel_to_snake("camelCase") == "camel_case"
-        assert _camel_to_snake("getAttemptCount") == "get_attempt_count"
-        assert _camel_to_snake("nextAttempt") == "next_attempt"
-
-    @pytest.mark.unit
-    def test_camel_to_snake_upper_camel(self) -> None:
-        """UpperCamelCase conversion."""
-        assert _camel_to_snake("UpperCamel") == "upper_camel"
-        assert _camel_to_snake("ReconnectPolicy") == "reconnect_policy"
-
-    @pytest.mark.unit
-    def test_camel_to_snake_single_word(self) -> None:
-        """Single word stays unchanged."""
-        assert _camel_to_snake("word") == "word"
-        assert _camel_to_snake("Word") == "word"
-
-    @pytest.mark.unit
-    def test_camel_to_snake_consecutive_upper(self) -> None:
-        """Consecutive uppercase letters."""
-        assert _camel_to_snake("XMLHttpRequest") == "x_m_l_http_request"
-        assert _camel_to_snake("IOError") == "i_o_error"
-
-    @pytest.mark.unit
-    def test_snake_to_camel_basic(self) -> None:
-        """Basic snake_case to camelCase conversion."""
-        assert _snake_to_camel("snake_case") == "snakeCase"
-        assert _snake_to_camel("get_attempt_count") == "getAttemptCount"
-        assert _snake_to_camel("next_attempt") == "nextAttempt"
-
-    @pytest.mark.unit
-    def test_snake_to_camel_single_word(self) -> None:
-        """Single word stays unchanged."""
-        assert _snake_to_camel("word") == "word"
-
-    @pytest.mark.unit
-    def test_snake_to_camel_multiple_words(self) -> None:
-        """Multiple word conversion."""
-        assert _snake_to_camel("a_b_c_d") == "aBCD"
 
 
 class TestReconnectPolicyMissingMethodError:
@@ -414,49 +366,47 @@ class TestReconnectSchedulerClearReference:
 
 
 class TestReconnectWorkerCallPolicy:
-    """Tests for policy method calling with naming compatibility."""
+    """Tests for canonical reconnect-policy method dispatch."""
 
     @pytest.mark.unit
-    def test_call_policy_camel_case(self) -> None:  # type: ignore[arg-type]
-        """Policy method called via camelCase name."""
-        policy = MagicMock()
-        policy.next_attempt = MagicMock(return_value=(1.0, True))
+    def test_call_policy_uses_declared_canonical_method(self) -> None:
+        """Policy dispatch should invoke the declared canonical snake_case method."""
+        next_attempt = MagicMock(return_value=(1.0, True))
+        policy = SimpleNamespace(next_attempt=next_attempt)
         worker = ReconnectWorker(
             interface=SimpleNamespace(),  # type: ignore[arg-type]
-            reconnect_policy=policy,
+            reconnect_policy=policy,  # type: ignore[arg-type]
         )
         result = worker._call_policy("next_attempt")
         assert result == (1.0, True)
-        policy.next_attempt.assert_called_once()
+        next_attempt.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_call_policy_snake_case_fallback(self) -> None:
-        """Policy method called via snake_case fallback."""
-        policy = MagicMock()  # type: ignore[arg-type]
-        policy.next_attempt = None
-        policy.nextAttempt = None
-        policy.next_attempt = MagicMock(return_value=(1.0, True))
+    @pytest.mark.parametrize("legacy_name", ["nextAttempt", "_next_attempt"])
+    def test_call_policy_rejects_noncanonical_aliases(self, legacy_name: str) -> None:
+        """Internal reconnect policy dispatch must not preserve naming aliases."""
+        policy = SimpleNamespace(**{legacy_name: lambda: (1.0, True)})
         worker = ReconnectWorker(
             interface=SimpleNamespace(),  # type: ignore[arg-type]
-            reconnect_policy=policy,
+            reconnect_policy=policy,  # type: ignore[arg-type]
         )
-        result = worker._call_policy("next_attempt")
-        assert result == (1.0, True)
+        with pytest.raises(ReconnectPolicyMissingMethodError, match="next_attempt"):
+            worker._call_policy("next_attempt")
 
     @pytest.mark.unit
     def test_call_policy_ignores_synthesized_public_member(self) -> None:
-        """Policy lookup should use a declared legacy hook over dynamic synthesis."""
+        """Policy lookup should reject dynamically synthesized canonical members."""
 
         class _Policy:
             def __init__(self) -> None:
-                self.legacy_calls = 0
-
-            def _next_attempt(self) -> tuple[float, bool]:
-                self.legacy_calls += 1
-                return (2.0, True)
+                self.synthesized_calls = 0
 
             def __getattr__(self, _name: str) -> object:
-                return lambda *_args: (99.0, False)
+                def _synthesized(*_args: object) -> tuple[float, bool]:
+                    self.synthesized_calls += 1
+                    return (99.0, False)
+
+                return _synthesized
 
         policy = _Policy()
         worker = ReconnectWorker(
@@ -464,8 +414,9 @@ class TestReconnectWorkerCallPolicy:
             reconnect_policy=policy,  # type: ignore[arg-type]
         )
 
-        assert worker._call_policy("next_attempt") == (2.0, True)
-        assert policy.legacy_calls == 1
+        with pytest.raises(ReconnectPolicyMissingMethodError, match="next_attempt"):
+            worker._call_policy("next_attempt")
+        assert policy.synthesized_calls == 0
 
     @pytest.mark.unit  # type: ignore[arg-type]
     def test_call_policy_missing_raises(self) -> None:
@@ -477,19 +428,6 @@ class TestReconnectWorkerCallPolicy:
         )
         with pytest.raises(ReconnectPolicyMissingMethodError):
             worker._call_policy("nonexistent_method")
-
-    @pytest.mark.unit
-    def test_call_policy_underscore_fallback(self) -> None:  # type: ignore[arg-type]
-        """Policy method called via underscore-prefixed fallback."""
-        policy = SimpleNamespace()
-        policy._next_attempt = MagicMock(return_value=(1.0, True))
-        worker = ReconnectWorker(
-            interface=SimpleNamespace(),  # type: ignore[arg-type]
-            reconnect_policy=policy,  # type: ignore[arg-type]
-        )
-        result = worker._call_policy("next_attempt")
-        assert result == (1.0, True)
-
 
 class TestReconnectWorkerShouldAbortReconnect:
     """Tests for abort reconnect decision logic."""

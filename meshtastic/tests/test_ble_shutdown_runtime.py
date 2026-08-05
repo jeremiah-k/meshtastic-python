@@ -7,6 +7,7 @@ and shutdown client teardown paths.
 from __future__ import annotations
 
 import threading
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -188,7 +189,7 @@ class TestBoundedThreadTOCTOU:
         def slow_cleanup() -> None:
             blocker.wait()
 
-        iface.thread_coordinator.cleanup = slow_cleanup
+        iface.thread_coordinator = SimpleNamespace(cleanup=slow_cleanup)
 
         coordinator = BLEShutdownLifecycleCoordinator(iface)
         started_threads: list[threading.Thread] = []
@@ -211,6 +212,12 @@ class TestBoundedThreadTOCTOU:
         assert started_count == 1
         blocker.set()
 
+    def test_cleanup_missing_thread_coordinator_is_best_effort(self) -> None:
+        """Missing optional coordinator state must not escape shutdown cleanup."""
+        coordinator = BLEShutdownLifecycleCoordinator(SimpleNamespace())  # type: ignore[arg-type]
+
+        coordinator._cleanup_thread_coordinator()
+
     def test_start_failure_clears_stored_ref(self):
         """If thread.start() fails, the stored ref must be cleared under lock."""
         iface = MagicMock()
@@ -221,7 +228,7 @@ class TestBoundedThreadTOCTOU:
         def real_cleanup() -> None:
             pass
 
-        iface.thread_coordinator.cleanup = real_cleanup
+        iface.thread_coordinator = SimpleNamespace(cleanup=real_cleanup)
 
         coordinator = BLEShutdownLifecycleCoordinator(iface)
 
@@ -245,7 +252,7 @@ class TestBoundedThreadTOCTOU:
         def real_cleanup() -> None:
             pass
 
-        iface.thread_coordinator.cleanup = real_cleanup
+        iface.thread_coordinator = SimpleNamespace(cleanup=real_cleanup)
 
         coordinator = BLEShutdownLifecycleCoordinator(iface)
 

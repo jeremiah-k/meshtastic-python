@@ -130,9 +130,13 @@ def test_lazy_session_state_creation_converges_across_racing_callers(
         _racing_get_declared_lock,
     )
     states: list[BLESessionState] = []
+    failures: list[BaseException] = []
 
     def _resolve_state() -> None:
-        states.append(iface._get_session_state())  # noqa: SLF001
+        try:
+            states.append(iface._get_session_state())  # noqa: SLF001
+        except BaseException as exc:  # noqa: BLE001 - surfaced below
+            failures.append(exc)
 
     workers = [threading.Thread(target=_resolve_state) for _ in range(2)]
     for worker in workers:
@@ -141,6 +145,7 @@ def test_lazy_session_state_creation_converges_across_racing_callers(
         worker.join(timeout=2.0)
 
     assert all(not worker.is_alive() for worker in workers)
+    assert not failures, failures
     assert len(states) == 2
     assert states[0] is states[1]
     assert iface.__dict__["_session_state"] is states[0]
@@ -167,9 +172,13 @@ def test_legacy_session_state_resolution_is_atomic(
         _RacingAdapter,
     )
     states: list[object] = []
+    failures: list[BaseException] = []
 
     def _resolve_state() -> None:
-        states.append(session_state_module._session_state_for(iface))
+        try:
+            states.append(session_state_module._session_state_for(iface))
+        except BaseException as exc:  # noqa: BLE001 - surfaced below
+            failures.append(exc)
 
     workers = [threading.Thread(target=_resolve_state) for _ in range(2)]
     for worker in workers:
@@ -178,6 +187,7 @@ def test_legacy_session_state_resolution_is_atomic(
         worker.join(timeout=2.0)
 
     assert all(not worker.is_alive() for worker in workers)
+    assert not failures, failures
     assert len(states) == 2
     assert states[0] is states[1]
     assert iface.__dict__["_session_state"] is states[0]
