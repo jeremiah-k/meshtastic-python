@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,6 +16,8 @@ from meshtastic.interfaces.ble.failure_policy import (
 from meshtastic.interfaces.ble.lifecycle_ownership_runtime import (
     BLEConnectionOwnershipLifecycleCoordinator,
 )
+from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
+from meshtastic.interfaces.ble.session_state import BLESessionState
 
 pytestmark = pytest.mark.unit
 
@@ -70,6 +74,40 @@ def test_ownership_probe_failure_logs_compatibility_fallback(
         record
         for record in caplog.records
         if record.getMessage() == "Error probing ownership member current_probe()"
+    )
+    assert record.ble_failure_disposition == "compatibility_fallback"  # type: ignore[attr-defined]
+    assert record.exc_info is not None
+
+
+def test_receive_closing_probe_failure_logs_compatibility_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed current closing probe should log before the legacy fallback."""
+
+    class _StateManager:
+        def __init__(self) -> None:
+            self.lock = threading.RLock()
+            self._is_closing = False
+
+        def is_closing(self) -> bool:
+            raise RuntimeError("closing probe failed")
+
+    state_manager = _StateManager()
+    session = BLESessionState(lock=state_manager.lock)
+    iface = SimpleNamespace(_state_manager=state_manager)
+    controller = BLEReceiveRecoveryController(
+        iface,  # type: ignore[arg-type]
+        session_state=session,
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        with session.lock:
+            assert controller._is_connection_closing_locked() is False  # noqa: SLF001
+
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "State manager is_closing() probe failed"
     )
     assert record.ble_failure_disposition == "compatibility_fallback"  # type: ignore[attr-defined]
     assert record.exc_info is not None

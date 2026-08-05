@@ -228,6 +228,10 @@ class BLEReceiveRecoveryController:
                 except (
                     Exception
                 ):  # noqa: BLE001 - closing probe must remain best effort
+                    _log_ble_failure(
+                        _BLEFailureDisposition.COMPATIBILITY_FALLBACK,
+                        "State manager is_closing() probe failed",
+                    )
                     state_is_closing = None
             elif isinstance(raw_is_closing, bool):
                 state_is_closing = raw_is_closing
