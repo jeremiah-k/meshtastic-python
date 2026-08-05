@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -30,12 +31,15 @@ class ActionOutcome:
         shared final ACK/NAK wait must be skipped.
     stop_processing : bool
         Whether action dispatch should return immediately after the current group.
+    cleanup_callbacks : list[Callable[[], None]]
+        Resource cleanup callbacks to run after connected actions complete.
     """
 
     close_now: bool = False
     wait_for_ack_nak: bool = True
     skip_ack_wait: bool = False
     stop_processing: bool = False
+    cleanup_callbacks: list[Callable[[], None]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

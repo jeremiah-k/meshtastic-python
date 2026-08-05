@@ -28,6 +28,7 @@ import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.channel_contact_actions as cli_channel_contact_actions
 import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
+import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.runtime as cli_runtime
 from meshtastic.cli.context import ActionOutcome, CliContext
 import meshtastic.ota
@@ -1703,125 +1704,24 @@ def onConnected(interface: MeshInterface) -> None:
             modem_preset_shorthands=_MODEM_PRESET_SHORTHANDS,
             qr_create=pyqrcode.create if pyqrcode is not None else None,
         )
+        service_hooks = cli_messaging_service_actions.MessagingServiceHooks(
+            cli_exit=_cli_exit,
+            cli_print=_cli_print,
+            get_channel_index=lambda: mt_config.channel_index,
+            check_channel=checkChannel,
+            remote_hardware_client=remote_hardware.RemoteHardwareClient,
+            get_pref=getPref,
+            validate_cli_show_fields=_validate_cli_show_fields,
+            newer_version=meshtastic.util.check_if_newer_version,
+            install_upgrade_hint=INSTALL_UPGRADE_HINT,
+            powermon_available=lambda: have_powermon,
+            powermon_error=lambda: powermon_exception,
+            log_set_factory=LogSet,
+            power_stress_factory=PowerStress,
+            get_meter=lambda: meter,
+        )
         cli_channel_contact_actions.handle_contact_import(context)
-
-        if args.sendtext:
-            outcome.close_now = True
-            channelIndex = mt_config.channel_index or 0
-            if checkChannel(interface, channelIndex):
-                _cli_print(
-                    f"Sending text message {args.sendtext} to {args.dest} on channelIndex:{channelIndex}"
-                    f" {'using PRIVATE_APP port' if args.private else ''}"
-                )
-                interface.sendText(
-                    args.sendtext,
-                    args.dest,
-                    wantAck=True,
-                    channelIndex=channelIndex,
-                    onResponse=interface.getNode(
-                        args.dest, False, **getNode_kwargs
-                    ).onAckNak,
-                    portNum=(
-                        portnums_pb2.PortNum.PRIVATE_APP
-                        if args.private
-                        else portnums_pb2.PortNum.TEXT_MESSAGE_APP
-                    ),
-                )
-            else:
-                _cli_exit(
-                    f"Warning: {channelIndex} is not a valid channel. Channel must not be DISABLED."
-                )
-
-        if args.traceroute:
-            loraConfig = interface.localNode.localConfig.lora
-            hopLimit = loraConfig.hop_limit
-            dest = str(args.traceroute)
-            channelIndex = mt_config.channel_index or 0
-            if checkChannel(interface, channelIndex):
-                _cli_print(
-                    f"Sending traceroute request to {dest} on channelIndex:{channelIndex} (this could take a while)"
-                )
-                interface.sendTraceRoute(dest, hopLimit, channelIndex=channelIndex)
-
-        if args.request_telemetry:
-            if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
-            else:
-                channelIndex = mt_config.channel_index or 0
-                if checkChannel(interface, channelIndex):
-                    telemMap = {
-                        "device": "device_metrics",
-                        "environment": "environment_metrics",
-                        "air_quality": "air_quality_metrics",
-                        "airquality": "air_quality_metrics",
-                        "power": "power_metrics",
-                        "localstats": "local_stats",
-                        "local_stats": "local_stats",
-                    }
-                    telemType = telemMap.get(args.request_telemetry, "device_metrics")
-                    _cli_print(
-                        f"Sending {telemType} telemetry request to {args.dest} on channelIndex:{channelIndex} (this could take a while)"
-                    )
-                    interface.sendTelemetry(
-                        destinationId=args.dest,
-                        wantResponse=True,
-                        channelIndex=channelIndex,
-                        telemetryType=telemType,
-                    )
-
-        if args.request_position:
-            if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
-            else:
-                channelIndex = mt_config.channel_index or 0
-                if checkChannel(interface, channelIndex):
-                    _cli_print(
-                        f"Sending position request to {args.dest} on channelIndex:{channelIndex} (this could take a while)"
-                    )
-                    interface.sendPosition(
-                        destinationId=args.dest,
-                        wantResponse=True,
-                        channelIndex=channelIndex,
-                    )
-
-        if args.gpio_wrb or args.gpio_rd or args.gpio_watch:
-            if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
-            else:
-                rhc = remote_hardware.RemoteHardwareClient(interface)
-
-                if args.gpio_wrb:
-                    bitmask = 0
-                    bitval = 0
-                    for wrpair in args.gpio_wrb or []:
-                        bitmask |= 1 << int(wrpair[0])
-                        bitval |= int(wrpair[1]) << int(wrpair[0])
-                    _cli_print(
-                        f"Writing GPIO mask 0x{bitmask:x} with value 0x{bitval:x} to {args.dest}"
-                    )
-                    rhc.writeGPIOs(args.dest, bitmask, bitval)
-                    outcome.close_now = True
-
-                if args.gpio_rd:
-                    bitmask = int(args.gpio_rd, 16)
-                    _cli_print(f"Reading GPIO mask 0x{bitmask:x} from {args.dest}")
-                    interface.mask = bitmask
-                    rhc.readGPIOs(args.dest, bitmask, None)
-                    # wait up to X seconds for a response
-                    for _ in range(GPIO_READ_MAX_POLLS):
-                        time.sleep(GPIO_READ_POLL_INTERVAL_SECONDS)
-                        if interface.gotResponse:
-                            break
-                    logger.debug("end of gpio_rd")
-
-                if args.gpio_watch:
-                    bitmask = int(args.gpio_watch, 16)
-                    _cli_print(
-                        f"Watching GPIO mask 0x{bitmask:x} from {args.dest}. Press ctrl-c to exit"
-                    )
-                    while True:
-                        rhc.watchGPIOs(args.dest, bitmask)
-                        time.sleep(GPIO_WATCH_INTERVAL_SECONDS)
+        cli_messaging_service_actions.handle_messaging_actions(context, service_hooks)
 
         # handle settings
         configure_action_hooks = cli_configure_actions.ConfigureActionHooks(
@@ -1839,19 +1739,7 @@ def onConnected(interface: MeshInterface) -> None:
             context, channel_contact_hooks
         )
 
-        if args.get_canned_message:
-            outcome.close_now = True
-            print("")
-            messages = interface.getNode(
-                args.dest, **getNode_kwargs
-            ).get_canned_message()
-            print(f"canned_plugin_message:{messages}")
-
-        if args.get_ringtone:
-            outcome.close_now = True
-            print("")
-            ringtone = interface.getNode(args.dest, **getNode_kwargs).get_ringtone()
-            print(f"ringtone:{ringtone}")
+        cli_messaging_service_actions.handle_content_reads(context)
 
         cli_channel_contact_actions.handle_region_preset_display(
             context, channel_contact_hooks
@@ -1859,104 +1747,19 @@ def onConnected(interface: MeshInterface) -> None:
 
         cli_device_actions.handle_lockdown_action(context, device_hooks)
 
-        if args.info:
-            print("")
-            # If we aren't trying to talk to our local node, don't show it
-            if args.dest == BROADCAST_ADDR:
-                interface.showInfo()
-                print("")
-                interface.getNode(args.dest, **getNode_kwargs).showInfo()
-                outcome.close_now = True
-                print("")
-                pypi_version = meshtastic.util.check_if_newer_version()
-                if pypi_version:
-                    print(
-                        f"*** A newer version v{pypi_version} is available!"
-                        f' Consider running "{INSTALL_UPGRADE_HINT}" ***\n'
-                    )
-            else:
-                print("Showing info of remote node is not supported.")
-                print(
-                    "Use the '--get' command for a specific configuration (e.g. 'lora') instead."
-                )
-
-        if args.get:
-            outcome.close_now = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            found = False
-            for pref in args.get:
-                found = getPref(node, pref[0])
-
-            if found:
-                _cli_print("Completed getting preferences")
-
-        if args.nodes:
-            outcome.close_now = True
-            if args.dest != BROADCAST_ADDR:
-                print("Showing node list of a remote node is not supported.")
-                return
-            if args.show_fields:
-                _validate_cli_show_fields(interface, args.show_fields)
-            interface.showNodes(True, args.show_fields)
-
-        if args.show_fields and not args.nodes:
-            print("--show-fields can only be used with --nodes")
+        cli_messaging_service_actions.handle_information_actions(
+            context, service_hooks
+        )
+        if outcome.stop_processing:
             return
 
         cli_channel_contact_actions.handle_channel_contact_display(
             context, channel_contact_hooks
         )
 
-        log_set: Any = None
-        # we need to keep a reference to the logset so it doesn't get GCed early
-
-        if args.slog or args.power_stress:
-            if have_powermon:
-                global meter  # pylint: disable=global-variable-not-assigned
-                if args.slog:
-                    if LogSet is None:
-                        _cli_exit(
-                            "LogSet is required for --slog but not available. "
-                            "The powermon module loaded incompletely."
-                        )
-                    log_set = LogSet(
-                        interface, args.slog if args.slog != "default" else None, meter
-                    )
-
-                if args.power_stress:
-                    if PowerStress is None:
-                        _cli_exit(
-                            "PowerStress is required for --power-stress but not available. "
-                            "The powermon module loaded incompletely."
-                        )
-                    stress = PowerStress(interface)
-                    stress.run()
-                    outcome.close_now = True  # exit immediately after stress test
-            else:
-                _cli_exit(
-                    "The powermon module could not be loaded. "
-                    "You may need to run `poetry install --with powermon`. "
-                    f"Import Error was: {powermon_exception}"
-                )
-
-        if args.listen:
-            outcome.close_now = False
-
-        have_tunnel = platform.system() == "Linux"
-        if have_tunnel and args.tunnel:
-            if args.dest != BROADCAST_ADDR:
-                _cli_exit("A tunnel can only be created using the local node.", 1)
-            # Even if others said we could close, stay open if the user asked for a tunnel
-            outcome.close_now = False
-            if interface.noProto:
-                logger.warning("Not starting Tunnel - disabled by noProto")
-            else:
-                from . import tunnel  # pylint: disable=C0415
-
-                if args.tunnel_net:
-                    tunnel.Tunnel(interface, subnet=args.tunnel_net)
-                else:
-                    tunnel.Tunnel(interface)
+        cli_messaging_service_actions.handle_long_running_services(
+            context, service_hooks
+        )
 
         if not outcome.skip_ack_wait and (
             args.ack or (args.dest != BROADCAST_ADDR and outcome.wait_for_ack_nak)
@@ -1979,9 +1782,9 @@ def onConnected(interface: MeshInterface) -> None:
             except Exception:
                 logger.debug("Error during interface close", exc_info=True)
 
-        # Close any structured logs after we've done all of our API operations
-        if log_set:
-            log_set.close()
+        # Release resources retained by connected long-running actions.
+        for cleanup in reversed(outcome.cleanup_callbacks):
+            cleanup()
 
     except Exception as ex:
         logger.exception("Unhandled exception in onConnected: %s", ex)
