@@ -372,7 +372,8 @@ class BLEShutdownLifecycleCoordinator:
                 _BLEFailureDisposition.BEST_EFFORT,
                 "Error waking BLE receive-thread waiters during close",
             )
-        receive_thread = self._session.receive_thread
+        with self._session.lock:
+            receive_thread = self._session.receive_thread
         if receive_thread is None:
             return
         thread_ident, thread_is_alive = _thread_start_probe(receive_thread)

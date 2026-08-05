@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
 
-from meshtastic.interfaces.ble.compat_adapter import _resolve_declared_callable
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_member,
+    _resolve_declared_callable,
+)
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
@@ -85,8 +88,9 @@ class BLEDisconnectLifecycleCoordinator:
                 )
                 return
             iface._shutdown_event.clear()
+        reconnect_scheduler = _get_declared_member(iface, "_reconnect_scheduler")
         schedule_reconnect = _resolve_declared_callable(
-            iface._reconnect_scheduler, "schedule_reconnect", "_schedule_reconnect"
+            reconnect_scheduler, "schedule_reconnect", "_schedule_reconnect"
         )
         if schedule_reconnect is None:
             raise AttributeError(RECONNECT_SCHEDULER_MISSING_MSG)

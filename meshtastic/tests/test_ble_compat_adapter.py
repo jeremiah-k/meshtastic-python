@@ -128,3 +128,20 @@ def test_declared_lock_accepts_real_context_manager_and_rejects_dynamic_only() -
             return _DynamicProxy()
 
     assert _get_declared_lock(_DynamicLockOwner(), "lock") is None
+
+
+def test_declared_lock_rejects_instance_only_context_methods() -> None:
+    """Lock validation should match Python's type-level special-method lookup."""
+
+    class _InstanceOnlyContextManager:
+        def __init__(self) -> None:
+            self.__enter__ = lambda: self
+            self.__exit__ = lambda *_args: None
+
+    candidate = _InstanceOnlyContextManager()
+    owner = SimpleNamespace(lock=candidate)
+
+    assert _get_declared_lock(owner, "lock") is None
+    with pytest.raises(TypeError):
+        with candidate:  # type: ignore[attr-defined]
+            pass

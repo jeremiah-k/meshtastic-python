@@ -3,16 +3,21 @@
 import threading
 from types import SimpleNamespace, TracebackType
 
+import pytest
+
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.interfaces.ble.lifecycle_controller_runtime import (
     BLELifecycleController,
 )
 from meshtastic.interfaces.ble.session_state import (
     BLESessionState,
+    LEGACY_SESSION_STATE_CACHE_ERROR,
     _LegacyBLESessionStateAdapter,
     _session_state_for,
 )
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+
+pytestmark = pytest.mark.unit
 
 
 def _bare_interface() -> BLEInterface:
@@ -175,6 +180,49 @@ def test_mixin_promotion_preserves_cached_adapter_lock() -> None:
 
     assert state.lock is replacement_lock
     assert adapter.lock is replacement_lock
+
+
+def test_uncacheable_legacy_collaborator_requires_explicit_session() -> None:
+    """Slot-only legacy collaborators must not create competing implicit owners."""
+
+    class _SlotLegacy:
+        __slots__ = ("_closed", "_receiveThread")
+
+        def __init__(self) -> None:
+            self._closed = False
+            self._receiveThread = None
+
+    legacy = _SlotLegacy()
+    explicit = BLESessionState(lock=threading.RLock())
+
+    with pytest.raises(TypeError) as exc_info:
+        _session_state_for(legacy)
+
+    assert str(exc_info.value) == LEGACY_SESSION_STATE_CACHE_ERROR
+    assert _session_state_for(legacy, explicit) is explicit
+
+
+def test_disconnect_reconnect_scheduler_missing_on_partial_interface() -> None:
+    """Partial interfaces should fail with the stable missing-scheduler contract."""
+    from threading import Event, RLock
+
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+    from meshtastic.interfaces.ble.lifecycle_primitives import (
+        RECONNECT_SCHEDULER_MISSING_MSG,
+    )
+
+    state = BLESessionState(lock=RLock())
+    iface = SimpleNamespace(auto_reconnect=True, _shutdown_event=Event())
+    coordinator = BLEDisconnectLifecycleCoordinator(  # type: ignore[arg-type]
+        iface, session_state=state
+    )
+
+    with pytest.raises(AttributeError) as exc_info:
+        coordinator.schedule_auto_reconnect(is_closing_getter=lambda: False)
+
+    assert str(exc_info.value) == RECONNECT_SCHEDULER_MISSING_MSG
 
 
 def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:

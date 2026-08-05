@@ -272,3 +272,51 @@ class TestBoundedThreadTOCTOU:
         coordinator._close_mesh_interface(timeout=1.0)
 
         previous.join.assert_not_called()
+
+
+class TestReceiveThreadSessionLocking:
+    """Test shutdown receive-thread state capture synchronization."""
+
+    def test_receive_thread_reference_is_read_under_session_lock(self) -> None:
+        """Shutdown should snapshot the current receive thread while holding its owner lock."""
+
+        class _TrackingLock:
+            def __init__(self) -> None:
+                self._lock = threading.RLock()
+                self.held = False
+
+            def __enter__(self) -> "_TrackingLock":
+                self._lock.acquire()
+                self.held = True
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                self.held = False
+                self._lock.release()
+
+        class _ObservedSession:
+            def __init__(self) -> None:
+                self.lock = _TrackingLock()
+                self._receive_thread: object | None = None
+                self.receive_start_pending = False
+                self.receive_start_pending_since = None
+
+            @property
+            def receive_thread(self) -> object | None:
+                assert self.lock.held is True
+                return self._receive_thread
+
+            @receive_thread.setter
+            def receive_thread(self, value: object | None) -> None:
+                assert self.lock.held is True
+                self._receive_thread = value
+
+        session = _ObservedSession()
+        coordinator = BLEShutdownLifecycleCoordinator(
+            MagicMock(), session_state=session  # type: ignore[arg-type]
+        )
+
+        coordinator._shutdown_receive_thread(
+            wake_waiting_threads=lambda *_events: None,
+            join_thread=lambda *_args, **_kwargs: None,
+        )

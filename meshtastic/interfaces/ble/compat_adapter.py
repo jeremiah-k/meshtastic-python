@@ -135,9 +135,10 @@ def _get_declared_lock(
     candidate = _get_declared_member(target, name)
     if candidate is None:
         return None
+    candidate_type = type(candidate)
     if (
-        _get_declared_callable(candidate, "__enter__") is None
-        or _get_declared_callable(candidate, "__exit__") is None
+        _get_declared_callable(candidate_type, "__enter__") is None
+        or _get_declared_callable(candidate_type, "__exit__") is None
     ):
         return None
     return cast(_LockPort, candidate)

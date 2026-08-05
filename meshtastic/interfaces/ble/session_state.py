@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 
 
 _MISSING_SESSION_FIELD = object()
+LEGACY_SESSION_STATE_CACHE_ERROR = (
+    "Legacy BLE lifecycle collaborators without an instance __dict__ must pass "
+    "session_state explicitly."
+)
 
 
 @dataclass(slots=True)
@@ -423,9 +427,10 @@ def _session_state_for(
 ) -> _BLESessionStatePort:
     """Return explicit/owned session state or a cached legacy interface adapter.
 
-    Caches the legacy adapter only on collaborators that expose a real
-    instance ``__dict__``. Slot-based or partial test doubles get a fresh
-    adapter per call rather than silently writing into a throwaway fallback.
+    Caches the legacy adapter on collaborators that expose a real instance
+    ``__dict__``. A legacy collaborator without cacheable instance storage must
+    provide ``explicit`` session state; otherwise separate coordinators could
+    silently create competing owners for the same lifecycle fields.
     """
     if explicit is not None:
         return explicit
@@ -439,7 +444,9 @@ def _session_state_for(
     if isinstance(iface, _BLESessionStateCompatMixin):
         return iface._get_session_state()
 
+    if not isinstance(instance_dict, dict):
+        raise TypeError(LEGACY_SESSION_STATE_CACHE_ERROR)
+
     legacy_state = _LegacyBLESessionStateAdapter(iface)
-    if isinstance(instance_dict, dict):
-        instance_dict["_session_state"] = legacy_state
+    instance_dict["_session_state"] = legacy_state
     return cast(_BLESessionStatePort, legacy_state)
