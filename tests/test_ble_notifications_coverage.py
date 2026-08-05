@@ -40,6 +40,7 @@ def notification_dispatcher() -> BLENotificationDispatcher:
         notification_manager=manager,
         error_handler_provider=lambda: Mock(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
 
@@ -561,6 +562,7 @@ def test_resolve_error_handler_provider_failure() -> None:
         notification_manager=NotificationManager(),
         error_handler_provider=failing_provider,
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
     with patch("meshtastic.interfaces.ble.notifications.logger") as mock_logger:
@@ -932,6 +934,7 @@ def test_dispatcher_resolves_error_handler_from_provider() -> None:
         notification_manager=NotificationManager(),
         error_handler_provider=lambda: error_handler,
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
     result = dispatcher._resolve_error_handler()

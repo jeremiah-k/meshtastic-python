@@ -568,6 +568,7 @@ def test_register_notifications_ignores_synthesized_public_error_reporter() -> N
         notification_manager=NotificationManager(),
         error_handler_provider=lambda: None,
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
     dispatcher.register_notifications(
         iface,  # type: ignore[arg-type]
@@ -709,6 +710,160 @@ def test_register_notifications_reuses_cached_wrapper_with_latest_handlers(
     finally:
         iface.close()
 
+
+
+class _FromNumRegistrationClient(DummyClient):
+    """Notification-capable client for connection-finalization ownership tests."""
+
+    def __init__(
+        self,
+        address: str = "dummy",
+        *,
+        on_fromnum_start: Callable[["_FromNumRegistrationClient"], None] | None = None,
+    ) -> None:
+        super().__init__()
+        self.address = address
+        assert self.bleak_client is not None
+        self.bleak_client.address = address
+        self.on_fromnum_start = on_fromnum_start
+        self.start_notify_calls: list[str] = []
+
+    def has_characteristic(self, uuid: str) -> bool:
+        """Expose only the critical FROMNUM notification characteristic."""
+        return uuid == FROMNUM_UUID
+
+    def start_notify(self, *args: object, **_kwargs: object) -> None:
+        """Record FROMNUM subscription and optionally mutate lifecycle state."""
+        if not args:
+            return
+        characteristic = cast(str, args[0])
+        self.start_notify_calls.append(characteristic)
+        if characteristic == FROMNUM_UUID and self.on_fromnum_start is not None:
+            self.on_fromnum_start(self)
+
+
+def _prepare_provisional_notification_registration(
+    iface: ble_mod.BLEInterface,
+    *,
+    published_client: DummyClient | None,
+    replacement_pending: bool = False,
+) -> int:
+    """Place an interface in the pre-publication CONNECTING phase."""
+    with iface._state_lock:
+        iface.client = published_client
+        iface._disconnect_notified = False
+        iface._client_publish_pending = True
+        iface._client_replacement_pending = replacement_pending
+        iface._connection_session_epoch += 1
+        iface._state_manager._reset_to_disconnected()
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+        return iface._connection_session_epoch
+
+
+def test_register_notifications_keeps_fromnum_during_provisional_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FROMNUM registration must survive normal pre-publication finalization."""
+    client = _FromNumRegistrationClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == []
+        assert iface._fromnum_notify_enabled is True
+        assert iface._receive_recovery_controller._should_poll_without_notify() is False
+        assert FROMNUM_UUID in iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        with iface._state_lock:
+            iface.client = client
+            iface._client_publish_pending = False
+        iface.close()
+
+
+def test_register_notifications_keeps_fromnum_during_client_replacement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A replacement client may register before replacing the published client."""
+    old_client = _FromNumRegistrationClient("old")
+    new_client = _FromNumRegistrationClient("new")
+    iface = _build_interface(monkeypatch, old_client, start_receive_thread=False)
+    try:
+        _prepare_provisional_notification_registration(
+            iface,
+            published_client=old_client,
+            replacement_pending=True,
+        )
+
+        iface._register_notifications(cast(BLEClient, new_client))
+
+        assert new_client.start_notify_calls == [FROMNUM_UUID]
+        assert new_client.stop_notify_calls == []
+        assert iface._fromnum_notify_enabled is True
+    finally:
+        with iface._state_lock:
+            iface.client = new_client
+            iface._client_publish_pending = False
+            iface._client_replacement_pending = False
+        iface.close()
+
+
+def test_register_notifications_rolls_back_if_session_changes_during_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Session rollover during notification I/O must invalidate registration."""
+    iface_holder: dict[str, ble_mod.BLEInterface] = {}
+
+    def _roll_session(_client: _FromNumRegistrationClient) -> None:
+        iface = iface_holder["iface"]
+        with iface._state_lock:
+            iface._client_publish_pending = False
+            iface._connection_session_epoch += 1
+
+    client = _FromNumRegistrationClient(on_fromnum_start=_roll_session)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    iface_holder["iface"] = iface
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is False
+        assert not iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        with iface._state_lock:
+            iface.client = client
+        iface.close()
+
+
+def test_register_notifications_rolls_back_if_client_disconnects_during_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disconnected provisional client must not retain its subscription."""
+
+    def _disconnect_candidate(candidate: _FromNumRegistrationClient) -> None:
+        candidate._initialized = False
+        candidate.bleak_client = None
+
+    client = _FromNumRegistrationClient(on_fromnum_start=_disconnect_candidate)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+
+        iface._register_notifications(cast(BLEClient, client))
+
+        assert client.start_notify_calls == [FROMNUM_UUID]
+        assert client.stop_notify_calls == [FROMNUM_UUID]
+        assert iface._fromnum_notify_enabled is False
+        assert not iface._notification_dispatcher._started_notify_characteristics
+    finally:
+        with iface._state_lock:
+            iface.client = client
+        iface.close()
 
 def test_register_notifications_retries_fromnum_notify_acquired_once(
     monkeypatch: pytest.MonkeyPatch,

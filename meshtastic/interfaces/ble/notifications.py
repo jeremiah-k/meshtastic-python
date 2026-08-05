@@ -278,6 +278,7 @@ class BLENotificationDispatcher:
         notification_manager: NotificationManager,
         error_handler_provider: Callable[[], object],
         trigger_read_event: Callable[[], None],
+        registration_current_provider: Callable[[BLEClient, int], bool],
     ) -> None:
         """Create a notification-dispatch collaborator.
 
@@ -289,10 +290,14 @@ class BLENotificationDispatcher:
             Function returning the current interface error-handler object.
         trigger_read_event : Callable[[], None]
             Callback that wakes the receive loop after FROMNUM handling.
+        registration_current_provider : Callable[[BLEClient, int], bool]
+            Interface-owned lifecycle predicate that validates whether notification
+            registration still belongs to the current connection attempt.
         """
         self._notification_manager = notification_manager
         self._error_handler_provider = error_handler_provider
         self._trigger_read_event = trigger_read_event
+        self._registration_current_provider = registration_current_provider
         self._fromnum_notify_enabled = False
         self._malformed_notification_count = 0
         self._malformed_notification_lock = RLock()
@@ -651,11 +656,17 @@ class BLENotificationDispatcher:
             self.malformed_notification_count = 0
 
         def _registration_still_current() -> bool:
-            return (
-                int(getattr(iface, "_connection_session_epoch", 0))
-                == current_session_epoch
-                and getattr(iface, "client", None) is client
-            )
+            try:
+                return (
+                    self._registration_current_provider(client, current_session_epoch)
+                    is True
+                )
+            except Exception:  # noqa: BLE001 - stale registration must fail closed
+                logger.debug(
+                    "Error validating BLE notification registration ownership.",
+                    exc_info=True,
+                )
+                return False
 
         def _rollback_stale_registration(*characteristics: str) -> None:
             for characteristic in characteristics:
@@ -968,6 +979,10 @@ class BLENotificationDispatcher:
                 self._started_notify_characteristics.add(FROMNUM_UUID)
                 self.fromnum_notify_enabled = True
                 self._registered_notification_session_epoch = current_session_epoch
+                logger.debug(
+                    "FROMNUM notifications active for BLE session %d; receive loop using notification-driven reads.",
+                    current_session_epoch,
+                )
                 return
 
     def log_radio_handler(self, _: Any, b: bytes | bytearray) -> str | None:

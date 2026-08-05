@@ -1221,6 +1221,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
             notification_manager=notification_manager,
             error_handler_provider=self._get_or_create_error_handler,
             trigger_read_event=lambda: self._set_thread_event(READ_TRIGGER_EVENT),
+            registration_current_provider=self._is_notification_registration_current,
         )
 
     @staticmethod
@@ -1235,6 +1236,42 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         return self._get_or_create_collaborator(
             "_notification_dispatcher", self._create_notification_dispatcher
         )
+
+    def _is_notification_registration_current(
+        self,
+        client: BLEClient,
+        expected_session_epoch: int,
+    ) -> bool:
+        """Return whether notification setup still belongs to the active BLE session.
+
+        Notification registration occurs during connection finalization before the
+        newly connected client is published through ``self.client``. Treat that
+        provisional CONNECTING phase as current when the session epoch still
+        matches and publication is pending. Once the client is published, identity
+        with ``self.client`` becomes the ownership check.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client whose notification subscriptions are being registered.
+        expected_session_epoch : int
+            Connection-attempt epoch captured before notification I/O begins.
+
+        Returns
+        -------
+        bool
+            ``True`` only while the registration belongs to the same live session.
+        """
+        with self._state_lock:
+            if self._closed or self._connection_session_epoch != expected_session_epoch:
+                return False
+            lifecycle_owner_is_current = self.client is client or (
+                self._client_publish_pending
+                and self._state_manager_current_state() == ConnectionState.CONNECTING
+            )
+        if not lifecycle_owner_is_current:
+            return False
+        return ConnectionValidator._client_is_connected(client)
 
     # COMPAT_STABLE_SHIM: internal bridge for historical FROMNUM notify state probes.
     @property

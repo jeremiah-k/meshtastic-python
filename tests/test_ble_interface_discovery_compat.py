@@ -233,6 +233,7 @@ def test_invoke_safe_execute_compat_reports_handler_failure_after_execution() ->
         notification_manager=NotificationManager(),
         error_handler_provider=lambda: SimpleNamespace(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
     reported_errors: list[BaseException] = []
     fallback_runs: list[str] = []

@@ -178,6 +178,7 @@ def _build_minimal_interface() -> BLEInterface:
         notification_manager=iface._notification_manager,
         error_handler_provider=lambda: MagicMock(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
     # Set up required attributes for lifecycle controllers
     iface._lifecycle_controller = MagicMock()
@@ -941,6 +942,7 @@ def test_notification_dispatcher_handles_handler_error(
         notification_manager=NotificationManager(),
         error_handler_provider=lambda: MagicMock(),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
     dispatcher.handle_malformed_fromnum("Test reason", exc_info=False)
@@ -963,6 +965,7 @@ def test_notification_dispatcher_reports_handler_error(
             handle_unhandled_exception=_report_exception
         ),
         trigger_read_event=lambda: None,
+        registration_current_provider=lambda _client, _epoch: True,
     )
 
     dispatcher.report_notification_handler_error("Test handler error")
