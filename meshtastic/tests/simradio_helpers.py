@@ -226,7 +226,7 @@ def _classify_cli_operation(arguments: Sequence[str]) -> str:
             if field in _DESTRUCTIVE_SET_VALUES:
                 return "non_idempotent"
 
-    # Phase 3: explicit read-only flags
+    # Explicit read-only flags
     for argument in arguments:
         if argument in _READ_ONLY_ARGUMENTS:
             return "read_only"

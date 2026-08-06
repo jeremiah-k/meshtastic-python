@@ -34,7 +34,6 @@ from ..node import Node
 from ..protobuf import config_pb2, localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
-
 from ._main_legacy_support import (
     _build_configure_interface,
     _build_export_interface,
@@ -1970,7 +1969,7 @@ def test_configure_reconnect_verifies_normalized_channel_url(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Phase-3 verification should compare the same stripped URL written in Phase 1."""
+    """Post-reconnect verification should compare the stripped URL that was written."""
     channel_url = "https://meshtastic.org/e/#normalized"
     config_path = tmp_path / "normalized-url.yaml"
     config_path.write_text(

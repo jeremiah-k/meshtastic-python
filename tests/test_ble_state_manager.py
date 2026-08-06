@@ -421,8 +421,8 @@ class TestBLEInterfaceStateIntegration:
         )  # Cannot "begin disconnecting" from already-disconnected state
 
 
-class TestPhase3LockConsolidation:
-    """Test Phase 3 lock consolidation and concurrent scenarios."""
+class TestStateLockConsolidation:
+    """Test consolidated state locking and concurrent scenarios."""
 
     def test_unified_lock_thread_safety(self) -> None:
         """Test that unified state lock provides thread safety for concurrent operations."""

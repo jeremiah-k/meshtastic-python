@@ -536,7 +536,7 @@ def _refresh_no_disconnect_verify_state(
     verify_config_fields: dict[str, dict[str, Any]] | None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None,
 ) -> None:
-    """Invalidate touched cached state and request fresh values for Phase 3 verification."""
+    """Invalidate touched cached state before post-reconnect verification."""
     request_config = getattr(target_node, "requestConfig", None)
 
     for section_name in verify_config_fields or {}:
@@ -1348,26 +1348,27 @@ def _report_configure_result(
             )
             messages = {
                 ConfigureReconnectResult.VERIFIED: (
-                    "Phase 3: Device reconnected and config reloaded. All settings verified."
+                    "Post-reconnect verification: device reconnected, configuration "
+                    "reloaded, and all requested settings were verified."
                 ),
                 ConfigureReconnectResult.VERIFICATION_INCOMPLETE: (
-                    "Phase 3: Device reconnected and config reloaded. Could not fully "
-                    "verify applied settings."
+                    "Post-reconnect verification: device reconnected and configuration "
+                    "reloaded, but not all requested settings could be verified."
                 ),
                 ConfigureReconnectResult.CONFIG_RELOAD_FAILED: (
-                    "Phase 3: Device reconnected but config reload failed. Settings may "
-                    "still be applying."
+                    "Post-reconnect verification: device reconnected, but configuration "
+                    "reload failed. Settings may still be applying."
                 ),
                 ConfigureReconnectResult.RECONNECT_FAILED: (
-                    "Phase 3: Device did not reconnect within timeout. Configuration may "
-                    "still be applying."
+                    "Post-reconnect verification: device did not reconnect within the "
+                    "timeout. Configuration may still be applying."
                 ),
             }
             hooks.cli_print(messages[reconnect_result])
         else:
             hooks.cli_print(
-                "Phase 3: Reboot/reconnect verification skipped for remote target. "
-                "Local transport state does not confirm remote node reload status."
+                "Post-reconnect verification skipped for remote target. Local transport "
+                "state does not confirm remote node reload status."
             )
         return
 

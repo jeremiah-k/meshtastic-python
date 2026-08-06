@@ -30,9 +30,6 @@ from ..protobuf import config_pb2, localonly_pb2
 # from ..config_pb2 import Config
 
 
-
-
-
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent external network calls during unit tests in this module.
@@ -47,12 +44,12 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_phase3_verified_with_matching_config_values(
+def test_main_configure_post_reconnect_verifies_matching_config_values(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    config_path = tmp_path / "phase3_verified.yaml"
+    config_path = tmp_path / "post_reconnect_verified.yaml"
     config_path.write_text(
         yaml.safe_dump({"config": {"power": {"ls_secs": 222}}}),
         encoding="utf-8",
@@ -74,7 +71,7 @@ def test_main_configure_phase3_verified_with_matching_config_values(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "All settings verified" in out
+    assert "all requested settings were verified" in out
 
 
 @pytest.mark.unit
@@ -229,12 +226,12 @@ def test_main_configure_seturl_stable_proceeds_to_phase2(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_phase3_no_reconnect_needed(
+def test_main_configure_without_transaction_needs_no_reconnect(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    config_path = tmp_path / "phase3_no_reboot.yaml"
+    config_path = tmp_path / "no_reconnect_needed.yaml"
     config_path.write_text(
         yaml.safe_dump({"owner": "TestUser"}),
         encoding="utf-8",
@@ -295,14 +292,14 @@ def test_main_configure_channel_url_skip_when_already_matching(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_phase3_channel_url_verified(
+def test_main_configure_post_reconnect_verifies_channel_url(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from ..protobuf import apponly_pb2, channel_pb2
 
-    config_path = tmp_path / "phase3_channel_url.yaml"
+    config_path = tmp_path / "post_reconnect_channel_url.yaml"
     channel_settings = channel_pb2.ChannelSettings()
     channel_settings.psk = b"\x01"
     channel_settings.name = "test"
@@ -358,7 +355,7 @@ def test_main_configure_phase3_channel_url_verified(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "Could not fully verify" in out
+    assert "not all requested settings could be verified" in out
 
 
 @pytest.mark.unit
