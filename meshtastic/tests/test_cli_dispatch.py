@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 
 from meshtastic.cli import dispatch
 from meshtastic.cli.context import ActionOutcome, CliContext
+from meshtastic.mesh_interface import MeshInterface
 
 
 def _context() -> CliContext:
@@ -23,7 +25,7 @@ def _context() -> CliContext:
     )
     interface = SimpleNamespace()
     return CliContext(
-        interface=interface,  # type: ignore[arg-type]
+        interface=cast(MeshInterface, interface),
         args=args,
         get_node_kwargs={},
         outcome=ActionOutcome(),
@@ -118,7 +120,8 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
 ) -> None:
     """Early action termination should skip later actions but still finalize/close."""
     context = _context()
-    context.interface = MagicMock()  # type: ignore[assignment]
+    interface = MagicMock()
+    context.interface = cast(MeshInterface, interface)
     context.args.wait_to_disconnect = 2
     context.outcome.close_now = True
 
@@ -140,31 +143,54 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
 
     later_action.assert_not_called()
     sleep.assert_called_once_with(2)
-    context.interface.close.assert_called_once_with()
+    interface.close.assert_called_once_with()
 
 
 @pytest.mark.unit
 def test_finalize_waits_for_ack_when_requested() -> None:
     """An explicit --ack request must trigger the shared final ACK/NAK wait."""
     context = _context()
-    context.interface = MagicMock()  # type: ignore[assignment]
+    interface = MagicMock()
+    node = interface.getNode.return_value
+    context.interface = cast(MeshInterface, interface)
     context.args.ack = True
     hooks = MagicMock()
 
     dispatch._finalize_connected_actions(context, hooks)  # noqa: SLF001
 
-    context.interface.getNode.assert_called_once_with("^all", False)
-    context.interface.getNode.return_value.iface.waitForAckNak.assert_called_once_with()
+    interface.getNode.assert_called_once_with("^all", False)
+    node.iface.waitForAckNak.assert_called_once_with()
 
 
 @pytest.mark.unit
 def test_finalize_skip_ack_wait_takes_precedence() -> None:
     """Actions that own completion must suppress the shared ACK/NAK wait."""
     context = _context()
-    context.interface = MagicMock()  # type: ignore[assignment]
+    interface = MagicMock()
+    context.interface = cast(MeshInterface, interface)
     context.args.ack = True
     context.outcome.skip_ack_wait = True
 
     dispatch._finalize_connected_actions(context, MagicMock())  # noqa: SLF001
 
-    context.interface.getNode.assert_not_called()
+    interface.getNode.assert_not_called()
+
+
+@pytest.mark.unit
+def test_finalize_swallows_interface_close_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Transport-close failures during finalization should remain diagnostic-only."""
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger=dispatch.__name__)
+    context = _context()
+    interface = MagicMock()
+    interface.close.side_effect = RuntimeError("close failed")
+    context.interface = cast(MeshInterface, interface)
+    context.outcome.close_now = True
+
+    dispatch._finalize_connected_actions(context, MagicMock())  # noqa: SLF001
+
+    interface.close.assert_called_once_with()
+    assert "Error during interface close" in caplog.text

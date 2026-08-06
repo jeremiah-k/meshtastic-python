@@ -8,13 +8,13 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from meshtastic._core_constants import BROADCAST_ADDR
 from meshtastic.cli import (
     channel_contact_actions,
     configure_actions,
     device_actions,
     messaging_service_actions,
 )
-from meshtastic._core_constants import BROADCAST_ADDR
 from meshtastic.cli.context import CliContext
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,8 @@ def dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
     try:
         _print_connection(context, hooks)
 
+        # Action modules are internal implementation packages; these intentionally
+        # private entrypoints avoid expanding the backwards-compatible public API.
         device_actions._handle_device_actions(context, hooks.device)
 
         if not outcome.stop_processing:

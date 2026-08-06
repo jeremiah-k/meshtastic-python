@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from meshtastic.cli.context import ActionOutcome, CliContext, _terminate_cli
+from meshtastic.cli.context import ActionOutcome, CliContext, CliExit, _terminate_cli
 from meshtastic.mesh_interface import MeshInterface
 
 
@@ -61,6 +61,4 @@ def test_terminate_cli_fails_closed_for_returning_compatibility_seam() -> None:
         return None
 
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
-        _terminate_cli(  # type: ignore[arg-type]
-            _returning_exit, "fatal"
-        )
+        _terminate_cli(cast(CliExit, _returning_exit), "fatal")
