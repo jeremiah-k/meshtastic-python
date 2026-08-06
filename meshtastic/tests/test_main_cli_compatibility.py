@@ -14,16 +14,16 @@ from meshtastic.protobuf import localonly_pb2
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    ("wrapper_name", "runtime_name", "kwargs"),
+    ("wrapper_name", "forwards_hooks", "kwargs"),
     [
         (
             "_preflight_configure_sections",
-            "_preflight_configure_sections",
+            True,
             {"config_sections": {"power": {}}, "module_config_sections": {}},
         ),
         (
             "_refresh_no_disconnect_verify_state",
-            "_refresh_no_disconnect_verify_state",
+            False,
             {
                 "verify_channel_url": "url",
                 "verify_config_fields": {"power": {}},
@@ -35,19 +35,19 @@ from meshtastic.protobuf import localonly_pb2
 def test_void_configure_compat_wrappers_delegate(
     monkeypatch: pytest.MonkeyPatch,
     wrapper_name: str,
-    runtime_name: str,
+    forwards_hooks: bool,
     kwargs: dict[str, Any],
 ) -> None:
     """Retained ``__main__`` seams must delegate to the internal runtime."""
     delegate = MagicMock()
     hooks = object()
-    monkeypatch.setattr(main_module.cli_configure_actions, runtime_name, delegate)
+    monkeypatch.setattr(main_module.cli_configure_actions, wrapper_name, delegate)
     monkeypatch.setattr(main_module, "_configure_hooks", MagicMock(return_value=hooks))
     target = object()
 
     getattr(main_module, wrapper_name)(target, **kwargs)
 
-    if wrapper_name == "_preflight_configure_sections":
+    if forwards_hooks:
         delegate.assert_called_once_with(hooks, target, **kwargs)
     else:
         delegate.assert_called_once_with(target, **kwargs)

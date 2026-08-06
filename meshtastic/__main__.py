@@ -1602,7 +1602,7 @@ def _apply_configure_channel_url(
 
 def _handle_configure_command(
     interface: MeshInterface, args: Any, getNode_kwargs: dict[str, Any]
-) -> tuple[bool, bool]:
+) -> cli_configure_actions._ConfigureCommandResult:
     """Compatibility wrapper for configure-file transaction execution."""
     return cli_configure_actions._handle_configure_command(
         _configure_hooks(), interface, args, getNode_kwargs

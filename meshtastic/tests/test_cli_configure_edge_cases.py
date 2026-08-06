@@ -97,6 +97,10 @@ def test_reconnect_verify_reports_refresh_failure(
     """No-disconnect refresh failures should become a config-reload result."""
     iface = _interface()
     iface.getNode.return_value = MagicMock()
+    ticks = iter(float(value) for value in range(20))
+    monkeypatch.setattr(
+        configure_actions.time, "monotonic", lambda: next(ticks, 20.0)
+    )
     monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         configure_actions,
@@ -121,6 +125,10 @@ def test_reconnect_verify_reports_unexpected_verifier_failure(
     """Unexpected verifier exceptions should remain an incomplete verification."""
     iface = _interface()
     iface.getNode.return_value = MagicMock()
+    ticks = iter(float(value) for value in range(20))
+    monkeypatch.setattr(
+        configure_actions.time, "monotonic", lambda: next(ticks, 20.0)
+    )
     monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         configure_actions, "_refresh_no_disconnect_verify_state", MagicMock()
@@ -856,6 +864,41 @@ def test_configure_noop_does_not_arm_shared_ack_wait() -> None:
 
     assert context.outcome.close_now is True
     assert context.outcome.wait_for_ack_nak is False
+    assert context.outcome.skip_ack_wait is False
+
+
+@pytest.mark.unit
+def test_set_ack_wait_survives_later_configure_noop() -> None:
+    """A configure no-op must not disarm an ACK wait requested by ``--set``."""
+    interface = _interface()
+    result = configure_actions._ConfigureCommandResult(
+        False, False, request_sent=False
+    )
+    set_command = MagicMock()
+    hooks = ConfigureActionHooks(
+        handle_set_command=set_command,
+        handle_configure_command=MagicMock(return_value=result),
+        export_config=MagicMock(),
+        cli_exit=_cli_exit,
+        cli_print=MagicMock(),
+        is_local_destination=MagicMock(return_value=True),
+    )
+    context = CliContext(
+        interface=interface,
+        args=argparse.Namespace(
+            set=[["lora.hop_limit", "3"]],
+            configure=["config.yaml"],
+            export_config=None,
+            dest="^local",
+        ),
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+
+    configure_actions._handle_configure_actions(context, hooks)
+
+    set_command.assert_called_once_with(interface, context.args, {})
+    assert context.outcome.wait_for_ack_nak is True
     assert context.outcome.skip_ack_wait is False
 
 

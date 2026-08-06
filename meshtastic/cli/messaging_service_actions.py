@@ -404,6 +404,7 @@ def _handle_long_running_services(
     args = context.args
     interface = context.interface
 
+    log_set_close: Callable[[], None] | None = None
     if args.slog or args.power_stress:
         if not hooks.powermon_available():
             _terminate_cli(
@@ -426,7 +427,8 @@ def _handle_long_running_services(
                 args.slog if args.slog != "default" else None,
                 hooks.get_meter(),
             )
-            context.outcome.failure_cleanup_callbacks.append(log_set.close)
+            log_set_close = log_set.close
+            context.outcome.failure_cleanup_callbacks.append(log_set_close)
             context.outcome.close_now = False
 
         if args.power_stress:
@@ -438,6 +440,9 @@ def _handle_long_running_services(
                     "The powermon module loaded incompletely.",
                 )
             power_stress_factory(interface).run()
+            if log_set_close is not None:
+                log_set_close()
+                context.outcome.failure_cleanup_callbacks.remove(log_set_close)
             context.outcome.close_now = True
 
     if args.listen:

@@ -555,6 +555,8 @@ def test_factory_reset_probe_logs_close_failures(
     """Serial readiness probing should tolerate both initial and final close failures."""
 
     class SerialDouble:
+        """Serial-interface double whose close calls fail on both attempts."""
+
         def __init__(self) -> None:
             self.close = MagicMock(
                 side_effect=[RuntimeError("initial"), RuntimeError("final")]

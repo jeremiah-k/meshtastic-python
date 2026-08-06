@@ -12,6 +12,9 @@ from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.protobuf import channel_pb2, config_pb2
 
 
+MAX_CHANNEL_NAME_LENGTH = 10
+
+
 @dataclass(frozen=True, slots=True)
 class ChannelContactHooks:
     """Compatibility and process-state seams used by channel/contact actions."""
@@ -130,7 +133,7 @@ def _handle_channel_add(context: CliContext, hooks: ChannelContactHooks) -> None
             "or --ch-disable when targeting a specific index.",
         )
     context.outcome.close_now = True
-    if len(args.ch_add) > 10:
+    if len(args.ch_add) > MAX_CHANNEL_NAME_LENGTH:
         _terminate_cli(
             hooks.cli_exit, "Warning: Channel name must be shorter. Channel not added."
         )

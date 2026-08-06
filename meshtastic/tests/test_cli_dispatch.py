@@ -23,6 +23,7 @@ def _context() -> CliContext:
         wait_to_disconnect=None,
     )
     interface = MagicMock(autospec=MeshInterface)
+    interface.devPath = ""
     return CliContext(
         interface=cast(MeshInterface, interface),
         args=args,
@@ -208,6 +209,7 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
     """Early action termination should skip later actions but still finalize/close."""
     context = _context()
     interface = MagicMock(autospec=MeshInterface)
+    interface.devPath = ""
     context.interface = cast(MeshInterface, interface)
     context.args.wait_to_disconnect = 2
     context.outcome.close_now = True
@@ -318,6 +320,7 @@ def test_ack_wait_failure_still_closes_one_shot_interface() -> None:
     """A failed final ACK wait must not bypass a requested interface close."""
     context = _context()
     interface = MagicMock(autospec=MeshInterface)
+    interface.devPath = ""
     interface.getNode.return_value.iface.waitForAckNak.side_effect = RuntimeError(
         "ack failed"
     )
@@ -337,6 +340,7 @@ def test_action_failure_after_close_request_still_closes_interface(
     """An action failure after requesting closure must still close the interface."""
     context = _context()
     interface = MagicMock(autospec=MeshInterface)
+    interface.devPath = ""
     context.interface = cast(MeshInterface, interface)
 
     def _fail(action_context: CliContext, _hooks: object) -> None:

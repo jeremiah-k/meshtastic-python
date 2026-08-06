@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
+from meshtastic.cli import messaging_service_actions as actions
 from meshtastic.cli.context import ActionOutcome, CliContext
 from meshtastic.cli.messaging_service_actions import (
     MessagingServiceHooks,
@@ -247,7 +248,28 @@ def test_long_running_services_registers_log_cleanup_and_runs_stress() -> None:
     _handle_long_running_services(context, hooks)
 
     stress.run.assert_called_once_with()
+    log_set.close.assert_called_once_with()
     assert context.outcome.close_now is True
+    assert context.outcome.failure_cleanup_callbacks == []
+
+
+@pytest.mark.unit
+def test_power_stress_failure_retains_slog_failure_cleanup() -> None:
+    """A failed stress run must leave the log rollback armed for dispatch cleanup."""
+    interface = _interface_double()
+    log_set = MagicMock()
+    stress = MagicMock()
+    stress.run.side_effect = RuntimeError("stress failed")
+    context = _context(interface, slog="default", power_stress=True)
+    hooks = _hooks(
+        log_set_factory=MagicMock(return_value=log_set),
+        power_stress_factory=MagicMock(return_value=stress),
+    )
+
+    with pytest.raises(RuntimeError, match="stress failed"):
+        _handle_long_running_services(context, hooks)
+
+    log_set.close.assert_not_called()
     assert context.outcome.failure_cleanup_callbacks == [log_set.close]
 
 
@@ -296,14 +318,16 @@ def test_gpio_read_rejects_invalid_hex_mask() -> None:
     """Malformed GPIO masks should exit cleanly rather than raising ValueError."""
     interface = _interface_double()
     context = _context(interface, gpio_rd="zz")
-    client_factory = MagicMock()
+    client = MagicMock()
+    client_factory = MagicMock(return_value=client)
     hooks = _hooks(remote_hardware_client=client_factory)
 
     with pytest.raises(SystemExit) as exc_info:
         _handle_messaging_actions(context, hooks)
 
     assert exc_info.value.code == 1
-    client_factory.return_value.readGPIOs.assert_not_called()
+    client_factory.assert_called_once_with(interface)
+    client.readGPIOs.assert_not_called()
 
 
 @pytest.mark.unit
@@ -440,8 +464,6 @@ def test_gpio_validation_fails_closed_with_returning_exit(
 @pytest.mark.unit
 def test_gpio_mask_accepts_full_uint64_range() -> None:
     """The largest valid uint64 GPIO mask should parse without truncation."""
-    from meshtastic.cli import messaging_service_actions as actions
-
     assert actions._parse_gpio_mask("ffffffffffffffff", _hooks()) == (1 << 64) - 1
 
 
@@ -463,8 +485,6 @@ def test_gpio_read_resets_state_and_stops_on_own_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each GPIO read must reset stale response state and stop on its own callback."""
-    from meshtastic.cli import messaging_service_actions as actions
-
     interface = _interface_double()
     interface.gotResponse = True
     client = MagicMock()
@@ -492,8 +512,6 @@ def test_gpio_read_timeout_is_diagnostic_not_attribute_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An unanswered GPIO read should exhaust its poll budget and warn cleanly."""
-    from meshtastic.cli import messaging_service_actions as actions
-
     interface = _interface_double()
     client = MagicMock()
     cli_print = MagicMock()
@@ -519,8 +537,6 @@ def test_gpio_watch_sends_watch_before_propagating_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Watch mode should issue the remote watch request before its long-running sleep."""
-    from meshtastic.cli import messaging_service_actions as actions
-
     interface = _interface_double()
     client = MagicMock()
     client.watchGPIOs.side_effect = [None, KeyboardInterrupt()]
@@ -587,8 +603,6 @@ def test_show_fields_without_nodes_stops_processing() -> None:
 @pytest.mark.unit
 def test_tunnel_rejects_remote_destination() -> None:
     """Tunnel mode must fail closed for any non-local destination."""
-    from meshtastic.cli import messaging_service_actions as actions
-
     interface = _interface_double()
     context = _context(interface, tunnel=True, dest="!remote")
 
@@ -599,8 +613,6 @@ def test_tunnel_rejects_remote_destination() -> None:
 @pytest.mark.unit
 def test_tunnel_is_skipped_on_non_linux_platforms() -> None:
     """Unsupported platforms must not start a tunnel or alter lifecycle state."""
-    from meshtastic.cli import messaging_service_actions as actions
-
     interface = _interface_double()
     context = _context(interface, tunnel=True, dest="^all")
     context.outcome.close_now = True
@@ -621,8 +633,6 @@ def test_tunnel_starts_with_optional_subnet(
 ) -> None:
     """Eligible tunnel requests should keep the connection open and forward subnet."""
     from meshtastic import tunnel
-    from meshtastic.cli import messaging_service_actions as actions
-
     interface = _interface_double()
     interface.noProto = False
     context = _context(interface, tunnel=True, dest="^all", tunnel_net=subnet)

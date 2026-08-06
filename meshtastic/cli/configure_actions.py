@@ -1563,6 +1563,7 @@ def _handle_configure_actions(
         hooks.handle_set_command(context.interface, args, context.get_node_kwargs)
 
     if args.configure:
+        prior_wait_for_ack_nak = outcome.wait_for_ack_nak
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
         configure_result = hooks.handle_configure_command(
@@ -1575,7 +1576,9 @@ def _handle_configure_actions(
             outcome.wait_for_ack_nak = False
             outcome.skip_ack_wait = True
         elif isinstance(configure_result, _ConfigureCommandResult):
-            outcome.wait_for_ack_nak = configure_result.request_sent
+            outcome.wait_for_ack_nak = (
+                prior_wait_for_ack_nak or configure_result.request_sent
+            )
 
     if not args.export_config:
         return

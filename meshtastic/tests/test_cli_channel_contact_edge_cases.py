@@ -103,6 +103,21 @@ def test_invalid_numeric_modem_preset_is_rejected() -> None:
 
 
 @pytest.mark.unit
+def test_channel_add_rejects_name_over_protocol_limit() -> None:
+    """Channel names longer than the firmware field limit must fail before lookup."""
+    interface = _interface_double()
+    hooks = _hooks(get_channel_index=MagicMock(return_value=None))
+    context = _context(
+        interface, ch_add="x" * (actions.MAX_CHANNEL_NAME_LENGTH + 1)
+    )
+
+    with pytest.raises(SystemExit):
+        actions._handle_channel_add(context, hooks)
+
+    interface.getNode.assert_not_called()
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("case", ["missing", "negative", "out_of_range"])
 def test_channel_update_rejects_unavailable_or_invalid_channel(case: str) -> None:
     """Channel mutation must fail before dereferencing unavailable channel state."""
