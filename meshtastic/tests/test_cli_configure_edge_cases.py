@@ -62,6 +62,7 @@ def test_reconnect_verify_reports_refresh_failure(
     """No-disconnect refresh failures should become a config-reload result."""
     iface = _interface()
     iface.getNode.return_value = MagicMock()
+    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         configure_actions,
         "_refresh_no_disconnect_verify_state",
@@ -85,6 +86,7 @@ def test_reconnect_verify_reports_unexpected_verifier_failure(
     """Unexpected verifier exceptions should remain an incomplete verification."""
     iface = _interface()
     iface.getNode.return_value = MagicMock()
+    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         configure_actions, "_refresh_no_disconnect_verify_state", MagicMock()
     )
@@ -373,18 +375,18 @@ def test_close_failed_settings_transaction_reports_close_failure() -> None:
         {"channel_url": "   "},
     ],
 )
-def test_phase1_validation_rejects_all_invalid_direct_write_shapes(
+def test_direct_write_validation_rejects_all_invalid_direct_write_shapes(
     configuration: dict[str, Any],
 ) -> None:
-    """Every deterministic Phase-1 validation failure must occur before mutation."""
+    """Ensure deterministic direct-write validation fails before device mutation."""
     with pytest.raises(SystemExit):
-        configure_actions._validate_phase1_configuration(_hooks(), configuration)
+        configure_actions._validate_direct_configuration(_hooks(), configuration)
 
 
 @pytest.mark.unit
-def test_phase1_validation_preserves_alias_and_altitude_metadata() -> None:
-    """Normalized Phase-1 values should carry all apply-time shape decisions."""
-    values = configure_actions._validate_phase1_configuration(
+def test_direct_write_validation_preserves_alias_and_altitude_metadata() -> None:
+    """Normalized direct-write values should carry all apply-time shape decisions."""
+    values = configure_actions._validate_direct_configuration(
         _hooks(),
         {
             "owner": " Owner ",
@@ -442,7 +444,7 @@ def test_configure_document_reports_read_and_parse_failures(tmp_path: Path) -> N
 
 
 @pytest.mark.unit
-def test_apply_phase1_prints_explicit_altitude_and_applies_all_values(
+def test_apply_direct_configuration_prints_explicit_altitude_and_applies_all_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Prepared direct writes should apply without rereading raw YAML shape."""
@@ -450,7 +452,7 @@ def test_apply_phase1_prints_explicit_altitude_and_applies_all_values(
     cli_print = MagicMock()
     hooks = _hooks(cli_print=cli_print)
     prepared = configure_actions._PreparedConfigureDocument(
-        phase1=configure_actions._Phase1ConfigureValues(
+        direct_values=configure_actions._DirectConfigureValues(
             owner="Owner",
             owner_short="OS",
             location=(1.0, 2.0, 3),
@@ -465,7 +467,7 @@ def test_apply_phase1_prints_explicit_altitude_and_applies_all_values(
     )
     monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
 
-    result = configure_actions._apply_phase1_configuration(hooks, node, prepared)
+    result = configure_actions._apply_direct_configuration(hooks, node, prepared)
 
     assert result is True
     node.setFixedPosition.assert_called_once_with(1.0, 2.0, 3)
@@ -597,23 +599,26 @@ def test_post_reconnect_local_config_mismatch_is_incomplete(
 
 
 @pytest.mark.unit
-def test_apply_phase1_rejects_internally_inconsistent_normalized_url() -> None:
+def test_apply_direct_configuration_rejects_inconsistent_normalized_url() -> None:
     """Prepared configure values must never carry a URL without its source alias."""
     prepared = configure_actions._PreparedConfigureDocument(
-        phase1=configure_actions._Phase1ConfigureValues(
+        direct_values=configure_actions._DirectConfigureValues(
             channel_url="https://example.invalid/#abc", channel_url_key=None
         ),
         config_sections={},
         module_config_sections={},
     )
     with pytest.raises(AssertionError, match="source key"):
-        configure_actions._apply_phase1_configuration(_hooks(), MagicMock(), prepared)
+        configure_actions._apply_direct_configuration(_hooks(), MagicMock(), prepared)
 
 
 @pytest.mark.unit
-def test_settings_transaction_logs_unknown_fields_without_rejecting_section() -> None:
+def test_settings_transaction_logs_unknown_fields_without_rejecting_section(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Unknown nested fields may be skipped while known fields still persist."""
     node = MagicMock()
+    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
 
     def _traverse(
         _section: str, _values: dict[str, Any], _root: Any, *, failed_fields: list[str]
@@ -706,3 +711,22 @@ def test_channel_url_match_delegates_with_normalized_loaded_state() -> None:
         device_lora_config=lora,
         emit_warnings=False,
     )
+
+
+@pytest.mark.unit
+def test_channel_refresh_tolerates_legacy_node_without_cache_invalidator() -> None:
+    """Channel verification refresh should support node doubles and older node seams."""
+    node = SimpleNamespace(
+        requestChannels=MagicMock(),
+        localConfig=MagicMock(),
+        moduleConfig=MagicMock(),
+    )
+
+    configure_actions._refresh_no_disconnect_verify_state(
+        node,
+        verify_channel_url="https://example.invalid/#abc",
+        verify_config_fields=None,
+        verify_module_config_fields=None,
+    )
+
+    node.requestChannels.assert_called_once_with(0)

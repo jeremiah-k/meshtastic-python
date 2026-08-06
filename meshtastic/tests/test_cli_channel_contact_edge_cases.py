@@ -53,7 +53,9 @@ def _args(**overrides: Any) -> argparse.Namespace:
         "show_region_presets": False,
         "qr": False,
         "qr_all": False,
-        "qr_contact": None,
+        "contact_qr": None,
+        "contact_ignore": False,
+        "contact_verified": False,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -185,3 +187,45 @@ def test_invalid_named_modem_preset_is_rejected() -> None:
         actions._resolve_requested_modem_preset(
             _context(MagicMock(), ch_preset="NOT_A_PRESET"), _hooks()
         )
+
+
+@pytest.mark.unit
+def test_modem_preset_only_action_requests_interface_close() -> None:
+    """A preset-only write is a one-shot mutation and must close after persistence."""
+    from meshtastic.protobuf import config_pb2
+
+    interface = MagicMock()
+    node = interface.getNode.return_value
+    node.localConfig.ListFields.return_value = [object()]
+    context = _context(interface, ch_preset="LONG_FAST")
+    hooks = _hooks(get_channel_index=MagicMock(return_value=0))
+
+    actions._handle_channel_mutations(context, hooks)
+
+    assert context.outcome.close_now is True
+    assert (
+        node.localConfig.lora.modem_preset
+        == config_pb2.Config.LoRaConfig.ModemPreset.Value("LONG_FAST")
+    )
+    node.writeConfig.assert_called_once_with("lora")
+
+
+@pytest.mark.unit
+def test_contact_qr_uses_parser_argument_name() -> None:
+    """Contact QR display must consume argparse's contact_qr destination."""
+    interface = MagicMock()
+    interface.localNode.getContactURL.return_value = "https://example.invalid/contact"
+    context = _context(
+        interface,
+        contact_qr="!12345678",
+        contact_ignore=True,
+        contact_verified=True,
+    )
+    cli_print = MagicMock()
+
+    actions._handle_channel_contact_display(context, _hooks(cli_print=cli_print))
+
+    interface.localNode.getContactURL.assert_called_once_with(
+        "!12345678", should_ignore=True, manually_verified=True
+    )
+    assert context.outcome.close_now is True

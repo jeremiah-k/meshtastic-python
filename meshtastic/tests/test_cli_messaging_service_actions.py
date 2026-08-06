@@ -195,7 +195,7 @@ def test_information_actions_validates_selected_node_fields() -> None:
 
 @pytest.mark.unit
 def test_long_running_services_registers_log_cleanup_and_runs_stress() -> None:
-    """Slog lifetime should be retained explicitly while power stress still closes."""
+    """Register slog failure rollback while power stress still requests closure."""
     interface = _interface_double()
     log_set = MagicMock()
     stress = MagicMock()
@@ -209,7 +209,7 @@ def test_long_running_services_registers_log_cleanup_and_runs_stress() -> None:
 
     stress.run.assert_called_once_with()
     assert context.outcome.close_now is True
-    assert context.outcome.cleanup_callbacks == [log_set.close]
+    assert context.outcome.failure_cleanup_callbacks == [log_set.close]
 
 
 @pytest.mark.unit
@@ -336,7 +336,7 @@ def test_gpio_write_rejects_bit_index_outside_uint64() -> None:
 
 @pytest.mark.unit
 def test_slog_overrides_prior_one_shot_close_request() -> None:
-    """Starting structured logging must keep the connection alive until cleanup."""
+    """Keep the connection alive after structured logging starts successfully."""
     interface = _interface_double()
     log_set = MagicMock()
     context = _context(interface, slog="default")
@@ -346,7 +346,7 @@ def test_slog_overrides_prior_one_shot_close_request() -> None:
     _handle_long_running_services(context, hooks)
 
     assert context.outcome.close_now is False
-    assert context.outcome.cleanup_callbacks == [log_set.close]
+    assert context.outcome.failure_cleanup_callbacks == [log_set.close]
 
 
 @pytest.mark.unit
@@ -570,12 +570,14 @@ def test_tunnel_starts_with_optional_subnet(
     interface.noProto = False
     context = _context(interface, tunnel=True, dest="^all", tunnel_net=subnet)
     context.outcome.close_now = True
-    tunnel_factory = MagicMock()
+    tunnel_instance = MagicMock()
+    tunnel_factory = MagicMock(return_value=tunnel_instance)
     monkeypatch.setattr(tunnel, "Tunnel", tunnel_factory)
 
     actions._start_tunnel(context, _hooks())
 
     assert context.outcome.close_now is False
+    assert context.outcome.failure_cleanup_callbacks == [tunnel_instance.close]
     if subnet is None:
         tunnel_factory.assert_called_once_with(interface)
     else:
@@ -600,3 +602,31 @@ def test_powermon_unavailable_reports_import_error() -> None:
         )
 
     assert "missing meter" in str(cli_exit.call_args)
+
+
+@pytest.mark.unit
+def test_invalid_channel_rejects_traceroute_without_sending() -> None:
+    """Invalid selected channels must fail visibly before traceroute transmission."""
+    interface = _interface_double()
+    interface.localNode = MagicMock()
+    context = _context(interface, traceroute="!00000003")
+    hooks = _hooks(check_channel=MagicMock(return_value=False))
+
+    with pytest.raises(SystemExit):
+        _handle_messaging_actions(context, hooks)
+
+    interface.sendTraceRoute.assert_not_called()
+
+
+@pytest.mark.unit
+def test_missing_channel_selection_defaults_to_primary_channel() -> None:
+    """An omitted channel index must send requests on the primary channel."""
+    interface = _interface_double()
+    interface.localNode = MagicMock()
+    interface.localNode.localConfig.lora.hop_limit = 5
+    context = _context(interface, traceroute="!00000003")
+    hooks = _hooks(get_channel_index=lambda: None)
+
+    _handle_messaging_actions(context, hooks)
+
+    interface.sendTraceRoute.assert_called_once_with("!00000003", 5, channelIndex=0)

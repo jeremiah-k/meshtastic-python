@@ -42,8 +42,8 @@ SETURL_RECONNECT_WAIT_SECONDS = 10.0
 SETURL_STABILITY_POLL_SECONDS = 0.1
 POSITION_ALTITUDE_MIN = -(1 << 31)
 POSITION_ALTITUDE_MAX = (1 << 31) - 1
-CONFIGURE_PHASE1_HEADER = (
-    "Phase 1: Applying direct configuration "
+CONFIGURE_DIRECT_SETTINGS_HEADER = (
+    "Applying direct configuration values "
     "(channel URL updates may trigger reconnect/reboot)..."
 )
 ALLOWED_CONFIGURE_KEYS = frozenset(
@@ -75,12 +75,12 @@ class _ConfigureCommandResult(NamedTuple):
     """Outcome flags returned by one ``--configure`` execution."""
 
     settings_transaction_started: bool
-    phase1_channel_url_applied: bool
+    local_channel_url_applied: bool
 
 
 @dataclass(frozen=True, slots=True)
-class _Phase1ConfigureValues:
-    """Validated direct-write values that are safe to apply in Phase 1.
+class _DirectConfigureValues:
+    """Validated non-transactional configuration values ready for device writes.
 
     Attributes
     ----------
@@ -117,7 +117,7 @@ class _PreparedConfigureDocument(NamedTuple):
 
     Attributes
     ----------
-    phase1 : _Phase1ConfigureValues
+    direct_values : _DirectConfigureValues
         Normalized direct-write values.
     config_sections : dict[str, dict[str, Any]]
         Validated LocalConfig section mappings.
@@ -125,7 +125,7 @@ class _PreparedConfigureDocument(NamedTuple):
         Validated LocalModuleConfig section mappings.
     """
 
-    phase1: _Phase1ConfigureValues
+    direct_values: _DirectConfigureValues
     config_sections: dict[str, dict[str, Any]]
     module_config_sections: dict[str, dict[str, Any]]
 
@@ -570,7 +570,11 @@ def _refresh_no_disconnect_verify_state(
             request_config(field_desc)
 
     if verify_channel_url:
-        target_node._invalidate_channel_cache()  # noqa: SLF001 - Node cache owner API
+        invalidate_channel_cache = getattr(
+            target_node, "_invalidate_channel_cache", None
+        )
+        if callable(invalidate_channel_cache):
+            invalidate_channel_cache()  # noqa: SLF001 - Node cache owner API
         request_channels = getattr(target_node, "requestChannels", None)
         if callable(request_channels):
             request_channels(0)
@@ -805,7 +809,7 @@ def _close_failed_settings_transaction(
     *,
     commit_attempted: bool,
 ) -> None:
-    """Best-effort close an open settings transaction after Phase 2 failure.
+    """Best-effort close an open settings transaction after a configuration failure.
 
     Parameters
     ----------
@@ -818,9 +822,10 @@ def _close_failed_settings_transaction(
 
     Notes
     -----
-    Firmware exposes begin/commit but no rollback/cancel operation. When Phase 2
-    fails before commit is attempted, committing is the only available way to
-    close the transaction; writes already accepted may therefore be applied. If
+    Firmware exposes begin/commit but no rollback/cancel operation. When a
+    configuration transaction fails before commit is attempted, committing is the
+    only available way to close the transaction; writes already accepted may therefore
+    be applied. If
     the normal commit itself failed, final device-side state is unknown and a
     second commit is intentionally not sent.
     """
@@ -834,8 +839,8 @@ def _close_failed_settings_transaction(
         return
 
     message = (
-        "Configuration failed during Phase 2; attempting to close the settings "
-        "transaction. Any writes already accepted may be committed."
+        "Configuration failed before the settings transaction completed; attempting "
+        "to close it. Any writes already accepted may be committed."
     )
     logger.warning(message)
     hooks.cli_print(f"WARNING: {message}")
@@ -853,11 +858,11 @@ def _close_failed_settings_transaction(
         )
 
 
-def _validate_phase1_configuration(
+def _validate_direct_configuration(
     hooks: ConfigureHooks,
     configuration: dict[str, Any],
-) -> _Phase1ConfigureValues:
-    """Validate and normalize every deterministic Phase-1 input before writes.
+) -> _DirectConfigureValues:
+    """Validate and normalize non-transactional configuration before device mutation.
 
     Parameters
     ----------
@@ -868,15 +873,15 @@ def _validate_phase1_configuration(
 
     Returns
     -------
-    _Phase1ConfigureValues
+    _DirectConfigureValues
         Normalized values for all present direct-write actions. Missing actions
         remain ``None``.
 
     Notes
     -----
     Validation is intentionally completed before any device mutation. This
-    prevents a later malformed direct-write value from leaving an avoidable
-    partially applied Phase-1 configuration.
+    prevents a later malformed value from leaving an avoidable partially applied
+    configuration.
     """
     owner: str | None = None
     if "owner" in configuration:
@@ -1011,7 +1016,7 @@ def _validate_phase1_configuration(
                 hooks.cli_exit, f"ERROR: {channel_url_key} must not be blank."
             )
 
-    return _Phase1ConfigureValues(
+    return _DirectConfigureValues(
         owner=owner,
         owner_short=owner_short,
         location=location_values,
@@ -1087,7 +1092,7 @@ def _load_and_validate_configure_document(
             "configuration file; use one.",
         )
 
-    phase1_values = _validate_phase1_configuration(hooks, configuration)
+    direct_values = _validate_direct_configuration(hooks, configuration)
 
     config_sections: dict[str, dict[str, Any]] = {}
     if "config" in configuration:
@@ -1120,18 +1125,18 @@ def _load_and_validate_configure_document(
         )
 
     return _PreparedConfigureDocument(
-        phase1=phase1_values,
+        direct_values=direct_values,
         config_sections=config_sections,
         module_config_sections=module_config_sections,
     )
 
 
-def _apply_phase1_configuration(
+def _apply_direct_configuration(
     hooks: ConfigureHooks,
     target_node: Any,
     prepared: _PreparedConfigureDocument,
 ) -> bool:
-    """Apply validated direct-write values in historical Phase-1 order.
+    """Apply validated non-transactional values in compatibility-preserving order.
 
     Parameters
     ----------
@@ -1147,30 +1152,30 @@ def _apply_phase1_configuration(
     bool
         ``True`` only when a channel URL write was actually sent.
     """
-    values = prepared.phase1
-    phase1_started = False
+    values = prepared.direct_values
+    direct_writes_started = False
 
-    def _begin_phase1() -> None:
-        """Print the direct-write phase header exactly once."""
-        nonlocal phase1_started
-        if not phase1_started:
-            hooks.cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
+    def _begin_direct_writes() -> None:
+        """Print the direct-configuration header exactly once."""
+        nonlocal direct_writes_started
+        if not direct_writes_started:
+            hooks.cli_print(CONFIGURE_DIRECT_SETTINGS_HEADER)
+            direct_writes_started = True
 
     if values.owner is not None:
-        _begin_phase1()
+        _begin_direct_writes()
         hooks.cli_print(f"Setting device owner to {values.owner}")
         target_node.setOwner(long_name=values.owner)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if values.owner_short is not None:
-        _begin_phase1()
+        _begin_direct_writes()
         hooks.cli_print(f"Setting device owner short to {values.owner_short}")
         target_node.setOwner(long_name=None, short_name=values.owner_short)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if values.location is not None:
-        _begin_phase1()
+        _begin_direct_writes()
         lat, lon, alt = values.location
         if values.altitude_specified:
             hooks.cli_print(f"Fixing altitude at {alt} meters")
@@ -1181,20 +1186,20 @@ def _apply_phase1_configuration(
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if values.canned_messages is not None:
-        _begin_phase1()
+        _begin_direct_writes()
         hooks.cli_print(f"Setting canned message messages to {values.canned_messages}")
         target_node.set_canned_message(values.canned_messages)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if values.ringtone is not None:
-        _begin_phase1()
+        _begin_direct_writes()
         hooks.cli_print(f"Setting ringtone to {values.ringtone}")
         target_node.set_ringtone(values.ringtone)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     seturl_executed = False
     if values.channel_url is not None:
-        _begin_phase1()
+        _begin_direct_writes()
         if values.channel_url_key is None:
             raise AssertionError("normalized channel URL is missing its source key")
         seturl_executed = _apply_configure_channel_url(
@@ -1204,8 +1209,8 @@ def _apply_phase1_configuration(
             config_key=values.channel_url_key,
         )
 
-    if phase1_started:
-        hooks.cli_print("Phase 1 complete.")
+    if direct_writes_started:
+        hooks.cli_print("Direct configuration values applied.")
     return seturl_executed
 
 
@@ -1230,7 +1235,7 @@ def _apply_settings_transaction(
         Validated LocalModuleConfig sections.
     """
     hooks.cli_print(
-        "Phase 2: Applying configuration transaction (may trigger device reboot)..."
+        "Applying configuration transaction (may trigger device reboot)..."
     )
     target_node.beginSettingsTransaction()
     remaining_writes = len(config_sections) + len(module_config_sections)
@@ -1326,9 +1331,9 @@ def _report_configure_result(
     is_local_target : bool
         Whether *destination* resolves to the directly connected node.
     settings_transaction_started : bool
-        Whether Phase 2 ran and therefore may have triggered a reboot.
+        Whether the settings transaction ran and therefore may have triggered a reboot.
     seturl_executed : bool
-        Whether Phase 1 actually wrote a channel URL.
+        Whether direct writes actually wrote a channel URL.
     channel_url : str | None
         Normalized requested channel URL for verification.
     config_sections : dict[str, dict[str, Any]]
@@ -1402,8 +1407,8 @@ def _handle_configure_command(
     Returns
     -------
     _ConfigureCommandResult
-        Named lifecycle flags describing whether Phase 2 opened a transaction
-        and whether a local Phase-1 channel URL write was actually performed.
+        Named lifecycle flags describing whether a settings transaction ran and whether
+        a local channel URL write was actually performed.
     """
     prepared = _load_and_validate_configure_document(hooks, args.configure[0])
     target_node = interface.getNode(args.dest, False, **get_node_kwargs)
@@ -1419,7 +1424,7 @@ def _handle_configure_command(
             config_sections=prepared.config_sections,
             module_config_sections=prepared.module_config_sections,
         )
-        if prepared.phase1.channel_url is not None and not is_local_target:
+        if prepared.direct_values.channel_url is not None and not is_local_target:
             _terminate_cli(
                 hooks.cli_exit,
                 "ERROR: Combining channel_url with additional configuration writes "
@@ -1427,7 +1432,7 @@ def _handle_configure_command(
                 "configuration in separate operations.",
             )
 
-    seturl_executed = _apply_phase1_configuration(hooks, target_node, prepared)
+    seturl_executed = _apply_direct_configuration(hooks, target_node, prepared)
     if seturl_executed and has_config_writes and is_local_target:
         if not hooks.post_seturl_stability_check(
             interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
@@ -1435,7 +1440,8 @@ def _handle_configure_command(
             _terminate_cli(
                 hooks.cli_exit,
                 "ERROR: channel_url applied, but transport did not stabilize for "
-                "additional configuration writes; aborting before Phase 2.",
+                "additional configuration writes; aborting before the configuration "
+                "transaction.",
             )
 
     settings_transaction_started = has_config_writes
@@ -1454,13 +1460,13 @@ def _handle_configure_command(
         is_local_target=is_local_target,
         settings_transaction_started=settings_transaction_started,
         seturl_executed=seturl_executed,
-        channel_url=prepared.phase1.channel_url,
+        channel_url=prepared.direct_values.channel_url,
         config_sections=prepared.config_sections,
         module_config_sections=prepared.module_config_sections,
     )
     return _ConfigureCommandResult(
         settings_transaction_started=settings_transaction_started,
-        phase1_channel_url_applied=seturl_executed and is_local_target,
+        local_channel_url_applied=seturl_executed and is_local_target,
     )
 
 
@@ -1488,14 +1494,14 @@ def _handle_configure_actions(
     if args.configure:
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
-        settings_transaction_started, phase1_channel_url_applied = (
+        settings_transaction_started, local_channel_url_applied = (
             hooks.handle_configure_command(
                 context.interface,
                 args,
                 context.get_node_kwargs,
             )
         )
-        if settings_transaction_started or phase1_channel_url_applied:
+        if settings_transaction_started or local_channel_url_applied:
             outcome.wait_for_ack_nak = False
             outcome.skip_ack_wait = True
 

@@ -680,7 +680,14 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
             )
         else:
             hooks.cli_print(f"Setting position fields to {all_fields}")
-            hooks.set_pref(position_config, "position_flags", f"{all_fields:d}")
+            if not hooks.set_pref(
+                position_config, "position_flags", f"{all_fields:d}"
+            ):
+                _terminate_cli(
+                    hooks.cli_exit,
+                    "ERROR: Failed to set position_flags preference.",
+                    1,
+                )
             hooks.cli_print("Writing modified preferences to device")
             interface.getNode(args.dest, **kwargs).writeConfig("position")
     elif args.pos_fields is not None:

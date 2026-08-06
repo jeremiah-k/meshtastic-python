@@ -1,8 +1,8 @@
 """Tests for the internal connected CLI execution context."""
 
 from argparse import Namespace
-from types import SimpleNamespace
 from typing import cast
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,14 +19,18 @@ def test_action_outcome_defaults_are_explicit() -> None:
     assert outcome.wait_for_ack_nak is False
     assert outcome.skip_ack_wait is False
     assert outcome.stop_processing is False
-    assert outcome.cleanup_callbacks == []
-    assert ActionOutcome().cleanup_callbacks is not outcome.cleanup_callbacks
+    assert outcome.failure_cleanup_callbacks == []
+    assert (
+        ActionOutcome().failure_cleanup_callbacks
+        is not outcome.failure_cleanup_callbacks
+    )
+    assert outcome.interface_close_attempted is False
 
 
 @pytest.mark.unit
 def test_cli_context_exposes_destination_and_shared_outcome() -> None:
     """Handlers should share one explicit lifecycle outcome through the context."""
-    interface = cast(MeshInterface, SimpleNamespace())
+    interface = cast(MeshInterface, MagicMock(autospec=MeshInterface))
     args = Namespace(dest="!12345678")
     outcome = ActionOutcome(close_now=True, wait_for_ack_nak=False)
     context = CliContext(
@@ -45,7 +49,7 @@ def test_cli_context_exposes_destination_and_shared_outcome() -> None:
 def test_cli_context_destination_normalizes_compatibility_doubles() -> None:
     """Destination access should tolerate non-string compatibility test doubles."""
     context = CliContext(
-        interface=cast(MeshInterface, SimpleNamespace()),
+        interface=cast(MeshInterface, MagicMock(autospec=MeshInterface)),
         args=Namespace(dest=1234),
         get_node_kwargs={},
     )

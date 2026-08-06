@@ -239,7 +239,7 @@ CONFIG_RECONNECT_WAIT_SECONDS = cli_configure_actions.CONFIG_RECONNECT_WAIT_SECO
 SETURL_STABILITY_TIMEOUT_SECONDS = (
     cli_configure_actions.SETURL_STABILITY_TIMEOUT_SECONDS
 )
-"""Timeout for post-setURL transport stability before opening Phase 2 writes."""
+"""Timeout for post-setURL transport stability before transactional writes."""
 
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = (
     cli_device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
@@ -256,8 +256,10 @@ FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = (
 )
 """Polling interval while waiting for local reset command acceptance."""
 
-CONFIGURE_PHASE1_HEADER = cli_configure_actions.CONFIGURE_PHASE1_HEADER
-"""Printed once when --configure starts applying Phase 1 settings."""
+CONFIGURE_DIRECT_SETTINGS_HEADER = (
+    cli_configure_actions.CONFIGURE_DIRECT_SETTINGS_HEADER
+)
+"""Printed once when --configure starts applying non-transactional values."""
 
 _ALLOWED_CONFIGURE_KEYS = cli_configure_actions.ALLOWED_CONFIGURE_KEYS
 

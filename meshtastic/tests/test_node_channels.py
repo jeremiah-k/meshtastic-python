@@ -1121,7 +1121,7 @@ def test_invalidate_channel_cache_clears_state_under_owner_lock() -> None:
     class LockProbe:
         """Record the lock lifetime around cache mutations."""
 
-        active = False
+        active: bool = False
 
         def __enter__(self) -> None:
             self.active = True

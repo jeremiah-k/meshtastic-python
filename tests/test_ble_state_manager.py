@@ -312,7 +312,7 @@ class TestBLEStateManager:
 
 
 class TestBLEInterfaceStateIntegration:
-    """Test integration between BLEStateManager and BLEInterface (Phase 2)."""
+    """Test integration between BLEStateManager and BLEInterface."""
 
     def test_state_manager_standalone_initialization(self):
         """Verify BLEStateManager can be instantiated standalone and exhibits expected initial properties and basic transition behavior.
@@ -336,7 +336,7 @@ class TestBLEInterfaceStateIntegration:
         assert not manager._can_connect
 
     def test_state_based_property_usage(self):
-        """Test that state-based properties work as expected for Phase 2 migration."""
+        """Test that state-based properties work as expected."""
 
         manager = BLEStateManager()
 

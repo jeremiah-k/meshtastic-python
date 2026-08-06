@@ -20,6 +20,9 @@ GPIO_READ_POLL_INTERVAL_SECONDS = 1.0
 GPIO_READ_MAX_POLLS = 10
 GPIO_MASK_BITS = 64
 GPIO_MASK_MAX = (1 << GPIO_MASK_BITS) - 1
+INVALID_CHANNEL_MESSAGE = (
+    "Warning: {index} is not a valid channel. Channel must not be DISABLED."
+)
 TELEMETRY_TYPE_ALIASES = {
     "device": "device_metrics",
     "environment": "environment_metrics",
@@ -66,6 +69,29 @@ def _selected_channel(hooks: MessagingServiceHooks) -> int:
         Selected channel index, or ``0`` when no explicit channel is selected.
     """
     return hooks.get_channel_index() or 0
+
+
+def _require_channel(interface: Any, hooks: MessagingServiceHooks) -> int:
+    """Return the selected channel index after validating that it is enabled.
+
+    Parameters
+    ----------
+    interface : Any
+        Connected interface used for channel validation.
+    hooks : MessagingServiceHooks
+        Channel-selection, validation, and CLI-exit seams.
+
+    Returns
+    -------
+    int
+        Validated channel index.
+    """
+    channel_index = _selected_channel(hooks)
+    if not hooks.check_channel(interface, channel_index):
+        _terminate_cli(
+            hooks.cli_exit, INVALID_CHANNEL_MESSAGE.format(index=channel_index)
+        )
+    return channel_index
 
 
 def _escape_terminal_controls(value: Any) -> str:
@@ -135,13 +161,7 @@ def _handle_messaging_actions(
 
     if args.sendtext:
         context.outcome.close_now = True
-        channel_index = _selected_channel(hooks)
-        if not hooks.check_channel(interface, channel_index):
-            _terminate_cli(
-                hooks.cli_exit,
-                f"Warning: {channel_index} is not a valid channel. "
-                "Channel must not be DISABLED.",
-            )
+        channel_index = _require_channel(interface, hooks)
         hooks.cli_print(
             f"Sending text message {args.sendtext} to {args.dest} "
             f"on channelIndex:{channel_index}"
@@ -161,49 +181,46 @@ def _handle_messaging_actions(
         )
 
     if args.traceroute:
-        channel_index = _selected_channel(hooks)
-        if hooks.check_channel(interface, channel_index):
-            hop_limit = interface.localNode.localConfig.lora.hop_limit
-            destination = str(args.traceroute)
-            hooks.cli_print(
-                f"Sending traceroute request to {destination} on "
-                f"channelIndex:{channel_index} (this could take a while)"
-            )
-            interface.sendTraceRoute(destination, hop_limit, channelIndex=channel_index)
+        channel_index = _require_channel(interface, hooks)
+        hop_limit = interface.localNode.localConfig.lora.hop_limit
+        destination = str(args.traceroute)
+        hooks.cli_print(
+            f"Sending traceroute request to {destination} on "
+            f"channelIndex:{channel_index} (this could take a while)"
+        )
+        interface.sendTraceRoute(destination, hop_limit, channelIndex=channel_index)
 
     if args.request_telemetry:
         if args.dest == BROADCAST_ADDR:
             _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
-        channel_index = _selected_channel(hooks)
-        if hooks.check_channel(interface, channel_index):
-            telemetry_type = TELEMETRY_TYPE_ALIASES.get(
-                args.request_telemetry, "device_metrics"
-            )
-            hooks.cli_print(
-                f"Sending {telemetry_type} telemetry request to {args.dest} on "
-                f"channelIndex:{channel_index} (this could take a while)"
-            )
-            interface.sendTelemetry(
-                destinationId=args.dest,
-                wantResponse=True,
-                channelIndex=channel_index,
-                telemetryType=telemetry_type,
-            )
+        channel_index = _require_channel(interface, hooks)
+        telemetry_type = TELEMETRY_TYPE_ALIASES.get(
+            args.request_telemetry, "device_metrics"
+        )
+        hooks.cli_print(
+            f"Sending {telemetry_type} telemetry request to {args.dest} on "
+            f"channelIndex:{channel_index} (this could take a while)"
+        )
+        interface.sendTelemetry(
+            destinationId=args.dest,
+            wantResponse=True,
+            channelIndex=channel_index,
+            telemetryType=telemetry_type,
+        )
 
     if args.request_position:
         if args.dest == BROADCAST_ADDR:
             _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
-        channel_index = _selected_channel(hooks)
-        if hooks.check_channel(interface, channel_index):
-            hooks.cli_print(
-                f"Sending position request to {args.dest} on "
-                f"channelIndex:{channel_index} (this could take a while)"
-            )
-            interface.sendPosition(
-                destinationId=args.dest,
-                wantResponse=True,
-                channelIndex=channel_index,
-            )
+        channel_index = _require_channel(interface, hooks)
+        hooks.cli_print(
+            f"Sending position request to {args.dest} on "
+            f"channelIndex:{channel_index} (this could take a while)"
+        )
+        interface.sendPosition(
+            destinationId=args.dest,
+            wantResponse=True,
+            channelIndex=channel_index,
+        )
 
     if args.gpio_wrb or args.gpio_rd or args.gpio_watch:
         if args.dest == BROADCAST_ADDR:
@@ -368,9 +385,10 @@ def _start_tunnel(context: CliContext, hooks: MessagingServiceHooks) -> None:
     from meshtastic import tunnel  # pylint: disable=import-outside-toplevel
 
     if args.tunnel_net:
-        tunnel.Tunnel(context.interface, subnet=args.tunnel_net)
+        tunnel_instance = tunnel.Tunnel(context.interface, subnet=args.tunnel_net)
     else:
-        tunnel.Tunnel(context.interface)
+        tunnel_instance = tunnel.Tunnel(context.interface)
+    context.outcome.failure_cleanup_callbacks.append(tunnel_instance.close)
 
 
 def _handle_long_running_services(
@@ -402,7 +420,7 @@ def _handle_long_running_services(
                 args.slog if args.slog != "default" else None,
                 hooks.get_meter(),
             )
-            context.outcome.cleanup_callbacks.append(log_set.close)
+            context.outcome.failure_cleanup_callbacks.append(log_set.close)
             context.outcome.close_now = False
 
         if args.power_stress:

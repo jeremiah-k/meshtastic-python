@@ -51,7 +51,7 @@ def _print_connection(context: CliContext, hooks: DispatchHooks) -> None:
 
 
 def _finalize_connected_actions(context: CliContext, hooks: DispatchHooks) -> None:
-    """Perform final ACK wait, delayed disconnect, and interface-close decisions."""
+    """Perform final ACK handling and any requested disconnect delay."""
     args = context.args
     outcome = context.outcome
     interface = context.interface
@@ -72,17 +72,25 @@ def _finalize_connected_actions(context: CliContext, hooks: DispatchHooks) -> No
         )
         hooks.sleep(int(args.wait_to_disconnect))
 
-    if not args.seriallog and outcome.close_now:
-        try:
-            interface.close()
-        except Exception:
-            logger.debug("Error during interface close", exc_info=True)
+
+def _close_interface_if_requested(context: CliContext) -> None:
+    """Close a one-shot interface at most once despite earlier lifecycle failures."""
+    args = context.args
+    outcome = context.outcome
+    if args.seriallog or not outcome.close_now or outcome.interface_close_attempted:
+        return
+
+    outcome.interface_close_attempted = True
+    try:
+        context.interface.close()
+    except Exception:
+        logger.debug("Error during interface close", exc_info=True)
 
 
-def _cleanup_connected_resources(context: CliContext) -> BaseException | None:
-    """Release retained action resources and return the first cleanup failure."""
+def _cleanup_failed_resources(context: CliContext) -> BaseException | None:
+    """Roll back retained service resources and return the first cleanup failure."""
     first_error: BaseException | None = None
-    for cleanup in reversed(context.outcome.cleanup_callbacks):
+    for cleanup in reversed(context.outcome.failure_cleanup_callbacks):
         try:
             cleanup()
         except BaseException as exc:  # noqa: BLE001 - preserve primary action failure
@@ -92,8 +100,13 @@ def _cleanup_connected_resources(context: CliContext) -> BaseException | None:
                 logger.warning(
                     "Additional connected-action cleanup failed", exc_info=True
                 )
-    context.outcome.cleanup_callbacks.clear()
+    context.outcome.failure_cleanup_callbacks.clear()
     return first_error
+
+
+def _disarm_failure_cleanups(context: CliContext) -> None:
+    """Discard rollback callbacks without stopping successfully started services."""
+    context.outcome.failure_cleanup_callbacks.clear()
 
 
 def dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
@@ -138,12 +151,19 @@ def dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
         action_error = exc
         raise
     finally:
-        cleanup_error = _cleanup_connected_resources(context)
+        cleanup_error: BaseException | None = None
+        if action_error is None:
+            _disarm_failure_cleanups(context)
+        else:
+            cleanup_error = _cleanup_failed_resources(context)
+
+        _close_interface_if_requested(context)
+
         if cleanup_error is not None:
             # Control-flow BaseExceptions (for example KeyboardInterrupt/SystemExit)
             # raised by cleanup must remain observable, even while another error is
             # unwinding. The original action failure remains on ``__context__``.
-            if action_error is None or not isinstance(cleanup_error, Exception):
+            if not isinstance(cleanup_error, Exception):
                 raise cleanup_error
             logger.warning(
                 "Connected-action cleanup failed while unwinding another error",

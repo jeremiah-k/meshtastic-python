@@ -60,6 +60,18 @@ def _context(interface: object, **args: object) -> CliContext:
     )
 
 
+@pytest.fixture
+def isolated_device_handlers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub nested device handlers so focused tests isolate top-level behavior."""
+    for name in (
+        "_handle_content_updates",
+        "_handle_position_fields",
+        "_handle_reboot_and_reset_actions",
+        "_handle_node_database_actions",
+    ):
+        monkeypatch.setattr(device_actions, name, lambda *_args: None)
+
+
 def _lockdown_context() -> CliContext:
     """Build a local unlock request that avoids interactive confirmation."""
     return _context(
@@ -261,6 +273,7 @@ def test_ota_preconditions_reject_returning_cli_exit(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("isolated_device_handlers")
 @pytest.mark.parametrize(
     ("args", "expected_fragment"),
     [
@@ -272,7 +285,6 @@ def test_ota_preconditions_reject_returning_cli_exit(
     ],
 )
 def test_device_validation_guards_reject_returning_cli_exit(
-    monkeypatch: pytest.MonkeyPatch,
     args: dict[str, object],
     expected_fragment: str,
 ) -> None:
@@ -294,14 +306,6 @@ def test_device_validation_guards_reject_returning_cli_exit(
     context = _context(interface, **defaults)
     exit_mock = MagicMock()
     hooks = _hooks(cli_exit=exit_mock)
-    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
-    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
-    monkeypatch.setattr(
-        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
-    )
-    monkeypatch.setattr(
-        device_actions, "_handle_node_database_actions", lambda *_a: None
-    )
 
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
         device_actions._handle_device_actions(context, hooks)
@@ -342,9 +346,8 @@ def test_lockdown_preconditions_reject_returning_cli_exit(
 
 
 @pytest.mark.unit
-def test_numeric_zero_fixed_position_is_not_treated_as_omitted(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.usefixtures("isolated_device_handlers")
+def test_numeric_zero_fixed_position_is_not_treated_as_omitted() -> None:
     """Programmatic zero coordinates must still enter the fixed-position action."""
     interface = MagicMock()
     context = _context(
@@ -360,14 +363,6 @@ def test_numeric_zero_fixed_position_is_not_treated_as_omitted(
         set_ham=None,
         dest="^local",
     )
-    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
-    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
-    monkeypatch.setattr(
-        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
-    )
-    monkeypatch.setattr(
-        device_actions, "_handle_node_database_actions", lambda *_a: None
-    )
 
     device_actions._handle_device_actions(context, _hooks())
 
@@ -375,9 +370,8 @@ def test_numeric_zero_fixed_position_is_not_treated_as_omitted(
 
 
 @pytest.mark.unit
-def test_false_unmessageable_value_is_applied(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.usefixtures("isolated_device_handlers")
+def test_false_unmessageable_value_is_applied() -> None:
     """A programmatic False unmessageable value must not be dropped by truthiness."""
     interface = MagicMock()
     context = _context(
@@ -393,14 +387,6 @@ def test_false_unmessageable_value_is_applied(
         set_ham=None,
         dest="^local",
     )
-    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
-    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
-    monkeypatch.setattr(
-        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
-    )
-    monkeypatch.setattr(
-        device_actions, "_handle_node_database_actions", lambda *_a: None
-    )
 
     device_actions._handle_device_actions(context, _hooks())
 
@@ -410,9 +396,8 @@ def test_false_unmessageable_value_is_applied(
 
 
 @pytest.mark.unit
-def test_owner_long_and_short_names_share_one_write(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.usefixtures("isolated_device_handlers")
+def test_owner_long_and_short_names_share_one_write() -> None:
     """Combined owner names should be logged and written together exactly once."""
     interface = MagicMock()
     cli_print = MagicMock()
@@ -428,14 +413,6 @@ def test_owner_long_and_short_names_share_one_write(
         set_is_unmessageable=None,
         set_ham=None,
         dest="^local",
-    )
-    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
-    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
-    monkeypatch.setattr(
-        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
-    )
-    monkeypatch.setattr(
-        device_actions, "_handle_node_database_actions", lambda *_a: None
     )
 
     device_actions._handle_device_actions(context, _hooks(cli_print=cli_print))
@@ -627,3 +604,21 @@ def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_fai
         )
 
     raise_wait_error.assert_called_with("receivedNak", request_id=None)
+
+
+@pytest.mark.unit
+def test_position_fields_does_not_write_when_preference_assignment_fails() -> None:
+    """Failed position preference assignment must stop before writeConfig."""
+    interface = MagicMock()
+    node = interface.getNode.return_value
+    position = node.localConfig.position
+    position.PositionFlags.Value.return_value = 1
+    context = _context(interface, pos_fields=["ALTITUDE"], dest="^local")
+    set_pref = MagicMock(return_value=False)
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions._handle_position_fields(
+            context, _hooks(set_pref=set_pref, cli_print=MagicMock())
+        )
+
+    node.writeConfig.assert_not_called()

@@ -1872,7 +1872,7 @@ def test_configure_rejects_out_of_range_location_before_mutation(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_remote_channel_url_plus_config_rejected_before_phase1_write(
+def test_remote_channel_url_with_config_rejected_before_direct_write(
     tmp_path: Path,
 ) -> None:
     """Remote mixed setURL/config operations must fail before changing the channel URL."""
@@ -1902,7 +1902,7 @@ def test_remote_channel_url_plus_config_rejected_before_phase1_write(
 def test_configure_write_failure_best_effort_closes_settings_transaction(
     tmp_path: Path,
 ) -> None:
-    """A Phase-2 write failure should not silently leave the edit transaction open."""
+    """Ensure write failure does not silently leave the edit transaction open."""
     config_path = tmp_path / "write-failure.yaml"
     config_path.write_text(
         yaml.safe_dump({"config": {"bluetooth": {"enabled": True}}}),
@@ -1998,11 +1998,11 @@ def test_configure_reconnect_verifies_normalized_channel_url(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_configure_prevalidates_all_phase1_values_before_any_mutation(
+def test_configure_prevalidates_all_direct_values_before_any_mutation(
     tmp_path: Path,
 ) -> None:
-    """A later malformed Phase-1 value must not leave earlier direct writes applied."""
-    config_file = tmp_path / "phase1-invalid-location.yaml"
+    """Reject malformed direct values before applying any direct writes."""
+    config_file = tmp_path / "invalid-direct-location.yaml"
     config_file.write_text(
         "owner: valid-owner\nlocation:\n  lat: 91\n  lon: 1\n",
         encoding="utf-8",

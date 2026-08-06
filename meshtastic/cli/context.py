@@ -8,8 +8,8 @@ handlers do not need to reach back into ``meshtastic.__main__`` globals.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 if TYPE_CHECKING:
@@ -65,15 +65,19 @@ class ActionOutcome:
         shared final ACK/NAK wait must be skipped.
     stop_processing : bool
         Whether action dispatch should return immediately after the current group.
-    cleanup_callbacks : list[Callable[[], None]]
-        Resource cleanup callbacks to run after connected actions complete.
+    failure_cleanup_callbacks : list[Callable[[], None]]
+        Rollback callbacks for resources that must survive successful dispatch but
+        be released if connected action processing fails.
+    interface_close_attempted : bool
+        Whether dispatch has already consumed the one-shot interface-close request.
     """
 
     close_now: bool = False
     wait_for_ack_nak: bool = False
     skip_ack_wait: bool = False
     stop_processing: bool = False
-    cleanup_callbacks: list[Callable[[], None]] = field(default_factory=list)
+    failure_cleanup_callbacks: list[Callable[[], None]] = field(default_factory=list)
+    interface_close_attempted: bool = False
 
 
 @dataclass(slots=True)

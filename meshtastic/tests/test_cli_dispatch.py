@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
 
@@ -23,7 +22,7 @@ def _context() -> CliContext:
         seriallog=False,
         wait_to_disconnect=None,
     )
-    interface = SimpleNamespace()
+    interface = MagicMock(autospec=MeshInterface)
     return CliContext(
         interface=cast(MeshInterface, interface),
         args=args,
@@ -32,27 +31,47 @@ def _context() -> CliContext:
     )
 
 
+@pytest.fixture
+def isolated_dispatch_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub connected action entrypoints so lifecycle tests isolate dispatch itself."""
+    targets = (
+        (dispatch.device_actions, "_handle_device_actions"),
+        (dispatch.channel_contact_actions, "_handle_contact_import"),
+        (dispatch.messaging_service_actions, "_handle_messaging_actions"),
+        (dispatch.configure_actions, "_handle_configure_actions"),
+        (dispatch.channel_contact_actions, "_handle_channel_mutations"),
+        (dispatch.messaging_service_actions, "_handle_content_reads"),
+        (dispatch.channel_contact_actions, "_handle_region_preset_display"),
+        (dispatch.device_actions, "_handle_lockdown_action"),
+        (dispatch.messaging_service_actions, "_handle_information_actions"),
+        (dispatch.channel_contact_actions, "_handle_channel_contact_display"),
+        (dispatch.messaging_service_actions, "_handle_long_running_services"),
+    )
+    for module, name in targets:
+        monkeypatch.setattr(module, name, lambda *_args: None)
+
+
 @pytest.mark.unit
-def test_cleanup_connected_resources_runs_in_reverse_order() -> None:
-    """Retained resources should unwind in reverse registration order exactly once."""
+def test_failure_cleanup_runs_in_reverse_order() -> None:
+    """Unwind failure rollback resources once in reverse registration order."""
     context = _context()
     calls: list[str] = []
-    context.outcome.cleanup_callbacks.extend(
+    context.outcome.failure_cleanup_callbacks.extend(
         [lambda: calls.append("first"), lambda: calls.append("second")]
     )
 
-    error = dispatch._cleanup_connected_resources(context)  # noqa: SLF001
+    error = dispatch._cleanup_failed_resources(context)  # noqa: SLF001
 
     assert error is None
     assert calls == ["second", "first"]
-    assert context.outcome.cleanup_callbacks == []
+    assert context.outcome.failure_cleanup_callbacks == []
 
 
 @pytest.mark.unit
-def test_cleanup_connected_resources_returns_first_failure(
+def test_failure_cleanup_returns_first_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Cleanup should continue after failures while retaining the first exception."""
+    """Continue failure rollback while retaining the first exception."""
     context = _context()
     first = RuntimeError("first")
     second = ValueError("second")
@@ -60,15 +79,15 @@ def test_cleanup_connected_resources_returns_first_failure(
     def _raise(exc: BaseException) -> None:
         raise exc
 
-    context.outcome.cleanup_callbacks.extend(
+    context.outcome.failure_cleanup_callbacks.extend(
         [lambda: _raise(second), lambda: _raise(first)]
     )
 
-    error = dispatch._cleanup_connected_resources(context)  # noqa: SLF001
+    error = dispatch._cleanup_failed_resources(context)  # noqa: SLF001
 
     assert error is first
     assert "Additional connected-action cleanup failed" in caplog.text
-    assert context.outcome.cleanup_callbacks == []
+    assert context.outcome.failure_cleanup_callbacks == []
 
 
 @pytest.mark.unit
@@ -77,7 +96,9 @@ def test_dispatch_does_not_suppress_cleanup_base_exception(
 ) -> None:
     """A control-flow BaseException raised during cleanup must remain observable."""
     context = _context()
-    context.outcome.cleanup_callbacks.append(MagicMock(side_effect=KeyboardInterrupt))
+    context.outcome.failure_cleanup_callbacks.append(
+        MagicMock(side_effect=KeyboardInterrupt)
+    )
     monkeypatch.setattr(
         dispatch,
         "_print_connection",
@@ -89,7 +110,7 @@ def test_dispatch_does_not_suppress_cleanup_base_exception(
 
     assert isinstance(exc_info.value.__context__, ValueError)
     assert str(exc_info.value.__context__) == "primary"
-    assert context.outcome.cleanup_callbacks == []
+    assert context.outcome.failure_cleanup_callbacks == []
 
 
 @pytest.mark.unit
@@ -98,7 +119,7 @@ def test_dispatch_preserves_primary_failure_when_cleanup_also_fails(
 ) -> None:
     """A cleanup failure must not replace the action failure being unwound."""
     context = _context()
-    context.outcome.cleanup_callbacks.append(
+    context.outcome.failure_cleanup_callbacks.append(
         MagicMock(side_effect=RuntimeError("cleanup"))
     )
     monkeypatch.setattr(
@@ -111,7 +132,7 @@ def test_dispatch_preserves_primary_failure_when_cleanup_also_fails(
     with pytest.raises(ValueError, match="primary"):
         dispatch.dispatch_connected(context, hooks)
 
-    assert context.outcome.cleanup_callbacks == []
+    assert context.outcome.failure_cleanup_callbacks == []
 
 
 @pytest.mark.unit
@@ -120,7 +141,7 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
 ) -> None:
     """Early action termination should skip later actions but still finalize/close."""
     context = _context()
-    interface = MagicMock()
+    interface = MagicMock(autospec=MeshInterface)
     context.interface = cast(MeshInterface, interface)
     context.args.wait_to_disconnect = 2
     context.outcome.close_now = True
@@ -150,7 +171,7 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
 def test_finalize_waits_for_ack_when_requested() -> None:
     """An explicit --ack request must trigger the shared final ACK/NAK wait."""
     context = _context()
-    interface = MagicMock()
+    interface = MagicMock(autospec=MeshInterface)
     node = interface.getNode.return_value
     context.interface = cast(MeshInterface, interface)
     context.args.ack = True
@@ -166,7 +187,7 @@ def test_finalize_waits_for_ack_when_requested() -> None:
 def test_finalize_skip_ack_wait_takes_precedence() -> None:
     """Actions that own completion must suppress the shared ACK/NAK wait."""
     context = _context()
-    interface = MagicMock()
+    interface = MagicMock(autospec=MeshInterface)
     context.interface = cast(MeshInterface, interface)
     context.args.ack = True
     context.outcome.skip_ack_wait = True
@@ -177,20 +198,108 @@ def test_finalize_skip_ack_wait_takes_precedence() -> None:
 
 
 @pytest.mark.unit
-def test_finalize_swallows_interface_close_failure(
+def test_interface_close_failure_is_diagnostic_and_not_retried(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Transport-close failures during finalization should remain diagnostic-only."""
+    """Keep transport-close failures diagnostic-only and consume the close request."""
     import logging
 
     caplog.set_level(logging.DEBUG, logger=dispatch.__name__)
     context = _context()
-    interface = MagicMock()
+    interface = MagicMock(autospec=MeshInterface)
     interface.close.side_effect = RuntimeError("close failed")
     context.interface = cast(MeshInterface, interface)
     context.outcome.close_now = True
 
-    dispatch._finalize_connected_actions(context, MagicMock())  # noqa: SLF001
+    dispatch._close_interface_if_requested(context)  # noqa: SLF001
+    dispatch._close_interface_if_requested(context)  # noqa: SLF001
 
     interface.close.assert_called_once_with()
     assert "Error during interface close" in caplog.text
+
+
+@pytest.mark.unit
+def test_finalize_waits_for_requested_unicast_ack() -> None:
+    """A unicast operation that delegates completion must wait for ACK/NAK."""
+    context = _context()
+    interface = MagicMock(autospec=MeshInterface)
+    node = interface.getNode.return_value
+    context.interface = cast(MeshInterface, interface)
+    context.args.dest = "!12345678"
+    context.outcome.wait_for_ack_nak = True
+
+    dispatch._finalize_connected_actions(context, MagicMock())  # noqa: SLF001
+
+    node.iface.waitForAckNak.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_finalize_skips_delegated_ack_wait_for_broadcast() -> None:
+    """Broadcast operations must not enter the shared ACK/NAK wait."""
+    context = _context()
+    interface = MagicMock(autospec=MeshInterface)
+    context.interface = cast(MeshInterface, interface)
+    context.outcome.wait_for_ack_nak = True
+
+    dispatch._finalize_connected_actions(context, MagicMock())  # noqa: SLF001
+
+    interface.getNode.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("isolated_dispatch_actions")
+def test_ack_wait_failure_still_closes_one_shot_interface() -> None:
+    """A failed final ACK wait must not bypass a requested interface close."""
+    context = _context()
+    interface = MagicMock(autospec=MeshInterface)
+    interface.getNode.return_value.iface.waitForAckNak.side_effect = RuntimeError(
+        "ack failed"
+    )
+    context.interface = cast(MeshInterface, interface)
+    context.args.ack = True
+    context.outcome.close_now = True
+    with pytest.raises(RuntimeError, match="ack failed"):
+        dispatch.dispatch_connected(context, MagicMock())
+
+    interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_action_failure_after_close_request_still_closes_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An action failure after requesting closure must still close the interface."""
+    context = _context()
+    interface = MagicMock(autospec=MeshInterface)
+    context.interface = cast(MeshInterface, interface)
+
+    def _fail(action_context: CliContext, _hooks: object) -> None:
+        action_context.outcome.close_now = True
+        raise RuntimeError("action failed")
+
+    monkeypatch.setattr(dispatch.device_actions, "_handle_device_actions", _fail)
+
+    with pytest.raises(RuntimeError, match="action failed"):
+        dispatch.dispatch_connected(context, MagicMock())
+
+    interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_successful_dispatch_retains_started_service_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failure rollback callbacks must not stop services after successful dispatch."""
+    context = _context()
+    rollback = MagicMock()
+
+    def _register(action_context: CliContext, _hooks: object) -> None:
+        action_context.outcome.failure_cleanup_callbacks.append(rollback)
+        action_context.outcome.stop_processing = True
+
+    monkeypatch.setattr(dispatch.device_actions, "_handle_device_actions", _register)
+
+    dispatch.dispatch_connected(context, MagicMock())
+
+    rollback.assert_not_called()
+    assert context.outcome.failure_cleanup_callbacks == []

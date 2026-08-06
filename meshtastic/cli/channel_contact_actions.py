@@ -71,6 +71,7 @@ def _set_simple_config(
             )
         node.requestConfig(lora_descriptor)
     node.localConfig.lora.modem_preset = modem_preset
+    context.outcome.close_now = True
     node.writeConfig("lora")
 
 

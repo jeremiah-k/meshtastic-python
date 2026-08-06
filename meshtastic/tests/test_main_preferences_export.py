@@ -415,7 +415,7 @@ def test_apply_configure_channel_url_redacts_and_applies(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_preflights_before_phase1_mutations(
+def test_main_configure_preflights_before_direct_mutations(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

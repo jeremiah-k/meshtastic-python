@@ -76,11 +76,11 @@ def test_main_configure_post_reconnect_verifies_matching_config_values(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_phase1_direct_write_order(
+def test_main_configure_preserves_direct_write_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_path = tmp_path / "phase1_order.yaml"
+    config_path = tmp_path / "direct-write-order.yaml"
     config_path.write_text(
         yaml.safe_dump(
             {
@@ -98,7 +98,7 @@ def test_main_configure_phase1_direct_write_order(
     _patch_fast_monotonic(monkeypatch)
     _run_main_configure_file(config_path, iface, monkeypatch)
 
-    phase1_methods = (
+    direct_write_methods = (
         "setOwner",
         "setFixedPosition",
         "set_canned_message",
@@ -106,7 +106,7 @@ def test_main_configure_phase1_direct_write_order(
         "setURL",
     )
     method_names = [c[0] for c in target_node.method_calls]
-    relevant = [m for m in method_names if m in phase1_methods]
+    relevant = [m for m in method_names if m in direct_write_methods]
     expected = [
         "setOwner",
         "setOwner",
@@ -120,7 +120,7 @@ def test_main_configure_phase1_direct_write_order(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_channel_url_is_terminal_phase1_write(
+def test_main_configure_channel_url_is_last_direct_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -155,7 +155,7 @@ def test_main_configure_channel_url_is_terminal_phase1_write(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_seturl_unstable_aborts_before_phase2(
+def test_main_configure_seturl_unstable_aborts_before_transaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -192,7 +192,7 @@ def test_main_configure_seturl_unstable_aborts_before_phase2(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_configure_seturl_stable_proceeds_to_phase2(
+def test_main_configure_seturl_stable_proceeds_to_transaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -249,7 +249,7 @@ def test_main_configure_channel_url_only_reports_possible_reconnect(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    config_path = tmp_path / "phase1_channel_url_only.yaml"
+    config_path = tmp_path / "channel-url-only.yaml"
     config_path.write_text(
         yaml.safe_dump({"channel_url": "https://meshtastic.org/e/#CgcSAQE6AggN"}),
         encoding="utf-8",
@@ -257,7 +257,7 @@ def test_main_configure_channel_url_only_reports_possible_reconnect(
     iface, target_node = _build_configure_interface()
     _run_main_configure_file(config_path, iface, monkeypatch)
     out, _ = capsys.readouterr()
-    assert "Phase 1: Applying direct configuration" in out
+    assert "Applying direct configuration values" in out
     assert (
         "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
         in out
@@ -273,7 +273,7 @@ def test_main_configure_channel_url_skip_when_already_matching(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    config_path = tmp_path / "phase1_channel_url_skip.yaml"
+    config_path = tmp_path / "matching-channel-url.yaml"
     config_path.write_text(
         yaml.safe_dump({"channel_url": "https://meshtastic.org/e/#CgcSAQE6AggN"}),
         encoding="utf-8",
