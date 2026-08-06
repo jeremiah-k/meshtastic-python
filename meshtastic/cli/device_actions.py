@@ -244,7 +244,7 @@ def send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-st
 
 
 @contextlib.contextmanager
-def temporary_instance_attributes(
+def _temporary_instance_attributes(
     instance: Any, overrides: dict[str, Any]
 ) -> Iterator[None]:
     """Temporarily override instance attributes and restore exact prior state.
@@ -309,7 +309,7 @@ def post_factory_reset_ready_probe(interface: MeshInterface) -> None:
         "_suppress_connect_failure_logging": True,
     }
     probe_start = time.monotonic()
-    with temporary_instance_attributes(serial_interface, probe_overrides):
+    with _temporary_instance_attributes(serial_interface, probe_overrides):
         try:
             serial_interface.connect()
             logger.debug(
@@ -838,13 +838,7 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
         lockdown_action in {"provision", "lock-now", "disable"}
         and not args.lockdown_yes
     ):
-        confirmation = (
-            input(f"Type 'yes' to confirm lockdown {lockdown_action}: ")
-            .strip()
-            .casefold()
-        )
-        if confirmation != "yes":
-            _terminate_cli(hooks.cli_exit, "Aborted.", 1)
+        _confirm_lockdown_action(lockdown_action, hooks)
 
     try:
         passphrase = _read_lockdown_passphrase(args, lockdown_action, hooks)
@@ -883,6 +877,59 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
         _terminate_cli(hooks.cli_exit, "Lockdown authentication failed.", 1)
 
 
+def _confirm_lockdown_action(lockdown_action: str, hooks: DeviceActionHooks) -> None:
+    """Require explicit interactive confirmation for a destructive lockdown action.
+
+    Parameters
+    ----------
+    lockdown_action : str
+        Destructive lockdown action being confirmed.
+    hooks : DeviceActionHooks
+        CLI-exit seam used to report aborted or non-interactive confirmation.
+    """
+    try:
+        confirmation = (
+            input(f"Type 'yes' to confirm lockdown {lockdown_action}: ")
+            .strip()
+            .casefold()
+        )
+    except EOFError:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Lockdown confirmation requires an interactive terminal; "
+            "pass --lockdown-yes for non-interactive use.",
+            1,
+        )
+    if confirmation != "yes":
+        _terminate_cli(hooks.cli_exit, "Aborted.", 1)
+
+
+def _prompt_lockdown_passphrase(prompt: str, hooks: DeviceActionHooks) -> str:
+    """Read a lockdown passphrase without exposing a traceback on closed stdin.
+
+    Parameters
+    ----------
+    prompt : str
+        Prompt shown by :func:`getpass.getpass`.
+    hooks : DeviceActionHooks
+        CLI-exit seam used to report non-interactive input.
+
+    Returns
+    -------
+    str
+        Passphrase supplied by the operator.
+    """
+    try:
+        return getpass.getpass(prompt)
+    except EOFError:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Lockdown passphrase input requires an interactive terminal; "
+            "use --lockdown-passphrase-file for non-interactive use.",
+            1,
+        )
+
+
 def _read_lockdown_passphrase(
     args: Any, lockdown_action: str, hooks: DeviceActionHooks
 ) -> bytes:
@@ -919,9 +966,11 @@ def _read_lockdown_passphrase(
             args.lockdown_passphrase.encode("utf-8")
         )
 
-    entered = getpass.getpass("Lockdown passphrase: ")
+    entered = _prompt_lockdown_passphrase("Lockdown passphrase: ", hooks)
     if lockdown_action == "provision":
-        confirmed = getpass.getpass("Lockdown passphrase (confirm): ")
+        confirmed = _prompt_lockdown_passphrase(
+            "Lockdown passphrase (confirm): ", hooks
+        )
         if entered != confirmed:
             _terminate_cli(hooks.cli_exit, "Lockdown passphrases do not match.", 1)
     return hooks.validate_lockdown_passphrase(entered.encode("utf-8"))

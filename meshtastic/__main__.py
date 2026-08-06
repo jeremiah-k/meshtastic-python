@@ -459,7 +459,7 @@ def _temporary_instance_attributes(
     instance: Any, overrides: dict[str, Any]
 ) -> Iterator[None]:
     """Compatibility wrapper for temporary instance attribute overrides."""
-    with cli_device_actions.temporary_instance_attributes(instance, overrides):
+    with cli_device_actions._temporary_instance_attributes(instance, overrides):
         yield
 
 

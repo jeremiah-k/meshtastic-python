@@ -21,6 +21,10 @@ from meshtastic.cli.configure_actions import (
 from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
 
+_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "configure_edge_preflight", default=False
+)
+
 
 def _cli_exit(_message: str, return_value: int = 1) -> None:
     raise SystemExit(return_value)
@@ -31,9 +35,7 @@ def _hooks(**overrides: Any) -> ConfigureHooks:
         "cli_exit": cast(CliExit, _cli_exit),
         "cli_print": MagicMock(),
         "traverse_config": MagicMock(return_value=True),
-        "preflight_mode": contextvars.ContextVar(
-            "configure_edge_preflight", default=False
-        ),
+        "preflight_mode": _PREFLIGHT_MODE,
         "is_local_destination": MagicMock(return_value=True),
         "post_seturl_stability_check": MagicMock(return_value=True),
         "post_configure_reconnect_and_verify": MagicMock(

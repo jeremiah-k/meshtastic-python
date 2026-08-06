@@ -91,6 +91,72 @@ def test_failure_cleanup_returns_first_failure(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("control_flow_error", [KeyboardInterrupt(), SystemExit(2)])
+def test_failure_cleanup_prioritizes_control_flow_errors(
+    control_flow_error: BaseException,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Operator control-flow exceptions must outrank earlier rollback failures."""
+    context = _context()
+    ordinary_error = RuntimeError("ordinary cleanup failure")
+
+    def _raise(exc: BaseException) -> None:
+        raise exc
+
+    # Rollback order is reversed, so the ordinary exception is observed first.
+    context.outcome.failure_cleanup_callbacks.extend(
+        [lambda: _raise(control_flow_error), lambda: _raise(ordinary_error)]
+    )
+
+    error = dispatch._cleanup_failed_resources(context)  # noqa: SLF001
+
+    assert error is control_flow_error
+    assert "Additional connected-action cleanup failed" in caplog.text
+    assert context.outcome.failure_cleanup_callbacks == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("dev_path", "stable_path", "expected"),
+    [
+        ("", None, "Connected to radio"),
+        ("/dev/ttyUSB0", None, "Connected to radio on ttyUSB0"),
+        (
+            "/dev/ttyUSB0",
+            "/dev/serial/by-id/mesh-radio",
+            "Connected to radio on ttyUSB0 (stable: /dev/serial/by-id/mesh-radio)",
+        ),
+    ],
+)
+def test_print_connection_banner_variants(
+    dev_path: str, stable_path: str | None, expected: str
+) -> None:
+    """Connection banners should describe generic, device, and stable paths."""
+    context = _context()
+    interface = MagicMock(autospec=MeshInterface)
+    interface.devPath = dev_path
+    interface._stable_path = stable_path
+    context.interface = cast(MeshInterface, interface)
+    hooks = MagicMock()
+
+    dispatch._print_connection(context, hooks)  # noqa: SLF001
+
+    hooks.cli_print.assert_called_once_with(expected)
+
+
+@pytest.mark.unit
+def test_print_connection_suppresses_banner_during_export() -> None:
+    """Configuration export must keep stdout free of the connection banner."""
+    context = _context()
+    context.args.export_config = True
+    hooks = MagicMock()
+
+    dispatch._print_connection(context, hooks)  # noqa: SLF001
+
+    hooks.cli_print.assert_not_called()
+
+
+@pytest.mark.unit
 def test_dispatch_does_not_suppress_cleanup_base_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

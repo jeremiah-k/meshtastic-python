@@ -17,6 +17,7 @@ from meshtastic.cli.messaging_service_actions import (
     _handle_messaging_actions,
 )
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.protobuf import portnums_pb2
 
 
 def _args(**overrides: Any) -> argparse.Namespace:
@@ -104,8 +105,12 @@ def test_messaging_actions_send_traceroute_with_selected_channel() -> None:
 @pytest.mark.parametrize(
     ("requested", "expected"),
     [
+        ("device_metrics", "device_metrics"),
         ("environment", "environment_metrics"),
+        ("environment_metrics", "environment_metrics"),
         ("air_quality", "air_quality_metrics"),
+        ("air_quality_metrics", "air_quality_metrics"),
+        ("power_metrics", "power_metrics"),
         ("local_stats", "local_stats"),
         ("unknown", "device_metrics"),
     ],
@@ -124,6 +129,26 @@ def test_messaging_actions_maps_telemetry_types(requested: str, expected: str) -
         channelIndex=2,
         telemetryType=expected,
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("private", "expected_port"),
+    [
+        (False, portnums_pb2.PortNum.TEXT_MESSAGE_APP),
+        (True, portnums_pb2.PortNum.PRIVATE_APP),
+    ],
+)
+def test_sendtext_selects_port_for_private_flag(
+    private: bool, expected_port: int
+) -> None:
+    """Private text sends must use the private application port."""
+    interface = _interface_double()
+    context = _context(interface, sendtext="hello", private=private)
+
+    _handle_messaging_actions(context, _hooks())
+
+    assert interface.sendText.call_args.kwargs["portNum"] == expected_port
 
 
 @pytest.mark.unit
@@ -555,6 +580,24 @@ def test_tunnel_rejects_remote_destination() -> None:
 
     with pytest.raises(SystemExit):
         actions._start_tunnel(context, _hooks())
+
+
+@pytest.mark.unit
+def test_tunnel_is_skipped_on_non_linux_platforms() -> None:
+    """Unsupported platforms must not start a tunnel or alter lifecycle state."""
+    from meshtastic.cli import messaging_service_actions as actions
+
+    interface = _interface_double()
+    context = _context(interface, tunnel=True, dest="^all")
+    context.outcome.close_now = True
+
+    actions._start_tunnel(
+        context,
+        _hooks(platform_system=MagicMock(return_value="Windows")),
+    )
+
+    assert context.outcome.close_now is True
+    assert context.outcome.failure_cleanup_callbacks == []
 
 
 @pytest.mark.unit

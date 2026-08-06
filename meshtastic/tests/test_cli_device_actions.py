@@ -239,6 +239,60 @@ def test_lockdown_confirmation_mismatch_guard_rejects_returning_cli_exit(
 
 
 @pytest.mark.unit
+def test_lockdown_confirmation_reports_closed_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Destructive lockdown confirmation should explain non-interactive usage."""
+    context = _lockdown_context()
+    context.args.lockdown_unlock = False
+    context.args.lockdown_provision = True
+    context.args.lockdown_passphrase_file = "secret.txt"
+    exit_mock = MagicMock()
+    send_lockdown_auth = MagicMock(return_value=None)
+    monkeypatch.setattr(
+        "builtins.input", MagicMock(side_effect=EOFError("closed stdin"))
+    )
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions._handle_lockdown_action(
+            context,
+            _hooks(cli_exit=exit_mock, send_lockdown_auth=send_lockdown_auth),
+        )
+
+    assert "--lockdown-yes" in str(exit_mock.call_args)
+    send_lockdown_auth.assert_not_called()
+
+
+@pytest.mark.unit
+def test_lockdown_passphrase_reports_closed_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Interactive passphrase EOF should recommend the file-based input path."""
+    args = SimpleNamespace(
+        lockdown_passphrase_file=None,
+        lockdown_passphrase=None,
+        insecure_lockdown_passphrase_on_command_line=False,
+    )
+    exit_mock = MagicMock()
+    validate = MagicMock(return_value=b"secret")
+    monkeypatch.setattr(
+        device_actions.getpass,
+        "getpass",
+        MagicMock(side_effect=EOFError("closed stdin")),
+    )
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions._read_lockdown_passphrase(
+            args,
+            "unlock",
+            _hooks(cli_exit=exit_mock, validate_lockdown_passphrase=validate),
+        )
+
+    assert "--lockdown-passphrase-file" in str(exit_mock.call_args)
+    validate.assert_not_called()
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("failure_kind", "expected_fragment"),
     [
@@ -563,6 +617,7 @@ def test_factory_reset_transport_change_checks_scoped_error(
     node.factoryReset.return_value = SimpleNamespace(id=0)
     monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
     monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
+    monkeypatch.setattr(device_actions.time, "sleep", lambda _seconds: None)
 
     result = device_actions.send_local_factory_reset_and_wait(
         node, full=False, cli_print=MagicMock(), timeout=1.0

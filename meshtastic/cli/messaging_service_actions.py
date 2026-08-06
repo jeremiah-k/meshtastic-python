@@ -25,10 +25,14 @@ INVALID_CHANNEL_MESSAGE = (
 )
 TELEMETRY_TYPE_ALIASES = {
     "device": "device_metrics",
+    "device_metrics": "device_metrics",
     "environment": "environment_metrics",
+    "environment_metrics": "environment_metrics",
     "air_quality": "air_quality_metrics",
     "airquality": "air_quality_metrics",
+    "air_quality_metrics": "air_quality_metrics",
     "power": "power_metrics",
+    "power_metrics": "power_metrics",
     "localstats": "local_stats",
     "local_stats": "local_stats",
 }

@@ -88,20 +88,34 @@ def _close_interface_if_requested(context: CliContext) -> None:
 
 
 def _cleanup_failed_resources(context: CliContext) -> BaseException | None:
-    """Roll back retained service resources and return the first cleanup failure."""
-    first_error: BaseException | None = None
+    """Roll back retained services and return the highest-priority failure.
+
+    Control-flow exceptions such as :class:`KeyboardInterrupt` and
+    :class:`SystemExit` take precedence over ordinary cleanup exceptions so a
+    later rollback callback cannot accidentally suppress an operator interrupt.
+    Within the same priority class, the first failure in rollback order wins.
+    """
+    errors: list[BaseException] = []
     for cleanup in reversed(context.outcome.failure_cleanup_callbacks):
         try:
             cleanup()
         except BaseException as exc:  # noqa: BLE001 - preserve primary action failure
-            if first_error is None:
-                first_error = exc
-            else:
-                logger.warning(
-                    "Additional connected-action cleanup failed", exc_info=True
-                )
+            errors.append(exc)
     context.outcome.failure_cleanup_callbacks.clear()
-    return first_error
+    if not errors:
+        return None
+
+    selected_error = next(
+        (error for error in errors if not isinstance(error, Exception)), errors[0]
+    )
+    for error in errors:
+        if error is selected_error:
+            continue
+        logger.warning(
+            "Additional connected-action cleanup failed",
+            exc_info=(type(error), error, error.__traceback__),
+        )
+    return selected_error
 
 
 def _disarm_failure_cleanups(context: CliContext) -> None:
