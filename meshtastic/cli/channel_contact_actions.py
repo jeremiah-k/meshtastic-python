@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Any, Callable, NoReturn, cast
+from typing import Any, cast
 
 import meshtastic.util
-from meshtastic.cli.context import CliContext
+from meshtastic.cli.context import CliContext, CliExit
 from meshtastic.protobuf import channel_pb2, config_pb2
 
 
@@ -15,7 +16,7 @@ from meshtastic.protobuf import channel_pb2, config_pb2
 class ChannelContactHooks:
     """Compatibility and process-state seams used by channel/contact actions."""
 
-    cli_exit: Callable[..., NoReturn]
+    cli_exit: CliExit
     cli_print: Callable[[str], None]
     get_channel_index: Callable[[], int | None]
     set_channel_index: Callable[[int], None]
@@ -25,11 +26,11 @@ class ChannelContactHooks:
     preference_value_error: type[Exception]
     print_channel_field_choices: Callable[[Any, str], None]
     is_local_destination: Callable[[Any, str], bool]
-    modem_preset_shorthands: tuple[tuple[str, str, str, str], ...]
+    modem_preset_shorthands: tuple[tuple[tuple[str, ...], str, str, str], ...]
     qr_create: Callable[[str], Any] | None = None
 
 
-def handle_contact_import(context: CliContext) -> None:
+def _handle_contact_import(context: CliContext) -> None:
     """Import a contact URL before other connected message actions."""
     args = context.args
     if not args.add_contact:
@@ -83,14 +84,22 @@ def _resolve_requested_modem_preset(
 
     if isinstance(generic_preset_name, int):
         # Round-trip the value through Name() so invalid integers fail clearly.
-        config_pb2.Config.LoRaConfig.ModemPreset.Name(
-            generic_preset_name  # type: ignore[arg-type]
-        )
+        try:
+            config_pb2.Config.LoRaConfig.ModemPreset.Name(
+                generic_preset_name  # type: ignore[arg-type]
+            )
+        except ValueError as exc:
+            hooks.cli_exit(f"Invalid modem preset: {exc}", 1)
+            raise AssertionError("cli_exit returned unexpectedly") from exc
         return cast(
             config_pb2.Config.LoRaConfig.ModemPreset.ValueType,
             generic_preset_name,
         )
-    return config_pb2.Config.LoRaConfig.ModemPreset.Value(generic_preset_name)
+    try:
+        return config_pb2.Config.LoRaConfig.ModemPreset.Value(generic_preset_name)
+    except ValueError as exc:
+        hooks.cli_exit(f"Invalid modem preset: {exc}", 1)
+        raise AssertionError("cli_exit returned unexpectedly") from exc
 
 
 def _handle_channel_add(context: CliContext, hooks: ChannelContactHooks) -> None:
@@ -226,7 +235,7 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
     node.writeChannel(channel_index)
 
 
-def handle_channel_mutations(
+def _handle_channel_mutations(
     context: CliContext, hooks: ChannelContactHooks
 ) -> None:
     """Apply channel URL, add/delete, preset, and setting mutations in CLI order."""
@@ -254,7 +263,7 @@ def handle_channel_mutations(
     _handle_channel_update(context, hooks)
 
 
-def handle_region_preset_display(
+def _handle_region_preset_display(
     context: CliContext, hooks: ChannelContactHooks
 ) -> None:
     """Print firmware-provided region/preset compatibility metadata."""
@@ -265,10 +274,10 @@ def handle_region_preset_display(
 
     context.outcome.close_now = True
     if not hooks.is_local_destination(interface, args.dest):
-        print("Region/preset capabilities are available only from the local node.")
+        hooks.cli_print("Region/preset capabilities are available only from the local node.")
         return
     if not interface.regionPresets:
-        print(
+        hooks.cli_print(
             "This firmware did not provide usable region/preset compatibility metadata; "
             "preset choices remain unconstrained."
         )
@@ -294,21 +303,28 @@ def handle_region_preset_display(
         except ValueError:
             default_name = f"PRESET_{info.default_preset}"
         license_note = " licensed-only" if info.licensed_only else ""
-        print(
+        hooks.cli_print(
             f"{region_name}: default={default_name}{license_note}; "
             f"presets={','.join(preset_names)}"
         )
 
 
-def _print_qr(url: str, *, description: str, qr_create: Callable[[str], Any] | None) -> None:
-    print(f"{description}: {url}")
+def _print_qr(
+    url: str,
+    *,
+    description: str,
+    qr_create: Callable[[str], Any] | None,
+    cli_print: Callable[[str], None],
+) -> None:
+    """Render a channel/contact URL and optional terminal QR through CLI reporting."""
+    cli_print(f"{description}: {url}")
     if qr_create is None:
-        print("Install pyqrcode to view a QR code printed to terminal.")
+        cli_print("Install pyqrcode to view a QR code printed to terminal.")
         return
-    print(qr_create(url).terminal())
+    cli_print(qr_create(url).terminal())
 
 
-def handle_channel_contact_display(
+def _handle_channel_contact_display(
     context: CliContext, hooks: ChannelContactHooks
 ) -> None:
     """Render channel and contact URLs/QR codes in their historical CLI position."""
@@ -325,7 +341,12 @@ def handle_channel_contact_display(
             if args.qr_all
             else "Primary channel URL"
         )
-        _print_qr(url, description=description, qr_create=hooks.qr_create)
+        _print_qr(
+            url,
+            description=description,
+            qr_create=hooks.qr_create,
+            cli_print=hooks.cli_print,
+        )
 
     if args.contact_qr:
         context.outcome.close_now = True
@@ -334,4 +355,9 @@ def handle_channel_contact_display(
             should_ignore=args.contact_ignore,
             manually_verified=args.contact_verified,
         )
-        _print_qr(url, description="Contact URL", qr_create=hooks.qr_create)
+        _print_qr(
+            url,
+            description="Contact URL",
+            qr_create=hooks.qr_create,
+            cli_print=hooks.cli_print,
+        )

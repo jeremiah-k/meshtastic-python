@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 import platform
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, NoReturn
+from typing import Any
 
 from meshtastic._core_constants import BROADCAST_ADDR
-from meshtastic.cli.context import CliContext
+from meshtastic.cli.context import CliContext, CliExit
 from meshtastic.protobuf import portnums_pb2
 
 logger = logging.getLogger(__name__)
@@ -17,13 +18,15 @@ logger = logging.getLogger(__name__)
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
 GPIO_READ_POLL_INTERVAL_SECONDS = 1.0
 GPIO_READ_MAX_POLLS = 10
+GPIO_MASK_BITS = 64
+GPIO_MASK_MAX = (1 << GPIO_MASK_BITS) - 1
 
 
 @dataclass(frozen=True, slots=True)
 class MessagingServiceHooks:
     """Compatibility and optional-subsystem seams for service actions."""
 
-    cli_exit: Callable[..., NoReturn]
+    cli_exit: CliExit
     cli_print: Callable[[str], None]
     get_channel_index: Callable[[], int | None]
     check_channel: Callable[[Any, int], bool]
@@ -44,7 +47,63 @@ def _selected_channel(hooks: MessagingServiceHooks) -> int:
     return hooks.get_channel_index() or 0
 
 
-def handle_messaging_actions(
+def _escape_terminal_controls(value: Any) -> str:
+    """Render terminal control characters as inert escape text.
+
+    Parameters
+    ----------
+    value : Any
+        Remote/user-provided value destined for terminal output.
+
+    Returns
+    -------
+    str
+        Printable text with C0/C1 controls escaped and visible Unicode retained.
+    """
+    text = str(value)
+    escaped: list[str] = []
+    for character in text:
+        codepoint = ord(character)
+        if codepoint < 0x20 or 0x7F <= codepoint <= 0x9F:
+            escapes = {
+                "\n": r"\n",
+                "\r": r"\r",
+                "\t": r"\t",
+            }
+            escaped.append(escapes.get(character, f"\\x{codepoint:02x}"))
+        else:
+            escaped.append(character)
+    return "".join(escaped)
+
+
+def _parse_gpio_mask(raw_value: Any, hooks: MessagingServiceHooks) -> int:
+    """Parse one hexadecimal GPIO mask or terminate with a CLI diagnostic.
+
+    Parameters
+    ----------
+    raw_value : Any
+        Raw mask value supplied by argparse.
+    hooks : MessagingServiceHooks
+        CLI exit hook used for invalid input.
+
+    Returns
+    -------
+    int
+        Parsed hexadecimal bit mask.
+    """
+    try:
+        mask = int(raw_value, 16)
+    except (TypeError, ValueError) as exc:
+        hooks.cli_exit(f"Warning: Invalid GPIO mask: {raw_value}", 1)
+        raise AssertionError("cli_exit returned unexpectedly") from exc
+    if not 0 <= mask <= GPIO_MASK_MAX:
+        hooks.cli_exit(
+            f"Warning: GPIO mask must fit in {GPIO_MASK_BITS} bits: {raw_value}", 1
+        )
+    return mask
+
+
+def _handle_messaging_actions(
     context: CliContext, hooks: MessagingServiceHooks
 ) -> None:
     """Send messages, requests, and remote-hardware operations in CLI order."""
@@ -143,8 +202,22 @@ def handle_messaging_actions(
             bitmask = 0
             bitval = 0
             for bit, value in args.gpio_wrb or []:
-                bitmask |= 1 << int(bit)
-                bitval |= int(value) << int(bit)
+                try:
+                    bit_index = int(bit)
+                    bit_value = int(value)
+                except (TypeError, ValueError):
+                    hooks.cli_exit(
+                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}", 1
+                    )
+                if (
+                    not 0 <= bit_index < GPIO_MASK_BITS
+                    or bit_value not in {0, 1}
+                ):
+                    hooks.cli_exit(
+                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}", 1
+                    )
+                bitmask |= 1 << bit_index
+                bitval |= bit_value << bit_index
             hooks.cli_print(
                 f"Writing GPIO mask 0x{bitmask:x} with value 0x{bitval:x} "
                 f"to {args.dest}"
@@ -153,7 +226,7 @@ def handle_messaging_actions(
             context.outcome.close_now = True
 
         if args.gpio_rd:
-            bitmask = int(args.gpio_rd, 16)
+            bitmask = _parse_gpio_mask(args.gpio_rd, hooks)
             hooks.cli_print(f"Reading GPIO mask 0x{bitmask:x} from {args.dest}")
             interface.mask = bitmask
             client.readGPIOs(args.dest, bitmask, None)
@@ -164,7 +237,7 @@ def handle_messaging_actions(
             logger.debug("end of gpio_rd")
 
         if args.gpio_watch:
-            bitmask = int(args.gpio_watch, 16)
+            bitmask = _parse_gpio_mask(args.gpio_watch, hooks)
             hooks.cli_print(
                 f"Watching GPIO mask 0x{bitmask:x} from {args.dest}. "
                 "Press ctrl-c to exit"
@@ -174,7 +247,7 @@ def handle_messaging_actions(
                 time.sleep(GPIO_WATCH_INTERVAL_SECONDS)
 
 
-def handle_content_reads(context: CliContext) -> None:
+def _handle_content_reads(context: CliContext) -> None:
     """Read canned-message and ringtone content in their historical position."""
     args = context.args
     interface = context.interface
@@ -185,7 +258,7 @@ def handle_content_reads(context: CliContext) -> None:
         messages = interface.getNode(
             args.dest, **context.get_node_kwargs
         ).get_canned_message()
-        print(f"canned_plugin_message:{messages}")
+        print(f"canned_plugin_message:{_escape_terminal_controls(messages)}")
 
     if args.get_ringtone:
         context.outcome.close_now = True
@@ -193,10 +266,10 @@ def handle_content_reads(context: CliContext) -> None:
         ringtone = interface.getNode(
             args.dest, **context.get_node_kwargs
         ).get_ringtone()
-        print(f"ringtone:{ringtone}")
+        print(f"ringtone:{_escape_terminal_controls(ringtone)}")
 
 
-def handle_information_actions(
+def _handle_information_actions(
     context: CliContext, hooks: MessagingServiceHooks
 ) -> None:
     """Handle info, preference reads, node listing, and show-field validation."""
@@ -229,14 +302,14 @@ def handle_information_actions(
         node = interface.getNode(args.dest, False, **context.get_node_kwargs)
         found = False
         for pref in args.get:
-            found = hooks.get_pref(node, pref[0])
+            found = hooks.get_pref(node, pref[0]) or found
         if found:
             hooks.cli_print("Completed getting preferences")
 
     if args.nodes:
         context.outcome.close_now = True
         if args.dest != BROADCAST_ADDR:
-            print("Showing node list of a remote node is not supported.")
+            hooks.cli_print("Showing node list of a remote node is not supported.")
             context.outcome.stop_processing = True
             return
         if args.show_fields:
@@ -244,7 +317,8 @@ def handle_information_actions(
         interface.showNodes(True, args.show_fields)
 
     if args.show_fields and not args.nodes:
-        print("--show-fields can only be used with --nodes")
+        context.outcome.close_now = True
+        hooks.cli_print("--show-fields can only be used with --nodes")
         context.outcome.stop_processing = True
 
 
@@ -268,7 +342,7 @@ def _start_tunnel(context: CliContext, hooks: MessagingServiceHooks) -> None:
         tunnel.Tunnel(context.interface)
 
 
-def handle_long_running_services(
+def _handle_long_running_services(
     context: CliContext, hooks: MessagingServiceHooks
 ) -> None:
     """Start structured logging, power stress, listening, and tunnel services."""

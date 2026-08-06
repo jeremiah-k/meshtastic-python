@@ -14,13 +14,12 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, NoReturn
+from typing import Any, NamedTuple
 
 import yaml
 
 import meshtastic.util
-from meshtastic._core_constants import BROADCAST_ADDR
-from meshtastic.cli.context import CliContext
+from meshtastic.cli.context import CliContext, CliExit
 from meshtastic.configure_verify import (
     _verify_channel_url_against_state,
     _verify_requested_fields,
@@ -34,7 +33,15 @@ CONFIG_WRITE_PACE_SECONDS = 0.1
 CONFIG_SETURL_DELAY_SECONDS = 2.0
 CONFIG_COMMIT_SETTLE_SECONDS = 1.0
 CONFIG_RECONNECT_WAIT_SECONDS = 15.0
+CONFIG_DISCONNECT_WINDOW_SECONDS = 2.0
+CONFIG_POLL_INTERVAL_SECONDS = 0.2
 SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
+SETURL_STABILITY_MAX_ATTEMPTS = 3
+SETURL_STABILITY_WINDOW_SECONDS = 1.5
+SETURL_RECONNECT_WAIT_SECONDS = 10.0
+SETURL_STABILITY_POLL_SECONDS = 0.1
+POSITION_ALTITUDE_MIN = -(1 << 31)
+POSITION_ALTITUDE_MAX = (1 << 31) - 1
 CONFIGURE_PHASE1_HEADER = (
     "Phase 1: Applying direct configuration "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -64,14 +71,70 @@ class ConfigureReconnectResult(enum.Enum):
     VERIFIED = "verified"
 
 
+class _ConfigureCommandResult(NamedTuple):
+    """Outcome flags returned by one ``--configure`` execution."""
+
+    settings_transaction_started: bool
+    phase1_channel_url_applied: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _Phase1ConfigureValues:
+    """Validated direct-write values that are safe to apply in Phase 1.
+
+    Attributes
+    ----------
+    owner : str | None
+        Normalized long owner name when requested.
+    owner_short : str | None
+        Normalized short owner name when requested.
+    location : tuple[float, float, int] | None
+        Validated latitude, longitude, and altitude when requested.
+    canned_messages : str | None
+        Canned-message payload when requested.
+    ringtone : str | None
+        Ringtone payload when requested.
+    channel_url : str | None
+        Stripped channel URL when requested.
+    """
+
+    owner: str | None = None
+    owner_short: str | None = None
+    location: tuple[float, float, int] | None = None
+    canned_messages: str | None = None
+    ringtone: str | None = None
+    channel_url: str | None = None
+
+
+class _PreparedConfigureDocument(NamedTuple):
+    """Validated YAML document and normalized values ready for device access.
+
+    Attributes
+    ----------
+    configuration : dict[str, Any]
+        Validated top-level YAML mapping.
+    phase1 : _Phase1ConfigureValues
+        Normalized direct-write values.
+    config_sections : dict[str, dict[str, Any]]
+        Validated LocalConfig section mappings.
+    module_config_sections : dict[str, dict[str, Any]]
+        Validated LocalModuleConfig section mappings.
+    """
+
+    configuration: dict[str, Any]
+    phase1: _Phase1ConfigureValues
+    config_sections: dict[str, dict[str, Any]]
+    module_config_sections: dict[str, dict[str, Any]]
+
+
 @dataclass(frozen=True, slots=True)
 class ConfigureHooks:
     """Entrypoint-owned dependencies used by configure execution.
 
     Parameters
     ----------
-    cli_exit : Callable[[str, int], NoReturn]
-        User-facing exit handler.
+    cli_exit : CliExit
+        User-facing exit handler with an optional status code.
     cli_print : Callable[[str], None]
         Quiet-aware reporter.
     traverse_config : Callable[..., bool]
@@ -80,9 +143,17 @@ class ConfigureHooks:
         Context flag shared with preference assignment output suppression.
     is_local_destination : Callable[[Any, str], bool]
         Destination classifier.
+    post_seturl_stability_check : Callable[..., bool]
+        Transport-stability verifier used after a local channel URL write.
+    post_configure_reconnect_and_verify : Callable[..., ConfigureReconnectResult]
+        Reconnect and value-verification helper used after transaction commit.
+    channel_url_matches_current_device_state : Callable[[Any, str], bool]
+        Comparator used to skip redundant channel URL writes.
+    pace_configure_write : Callable[..., None]
+        Inter-write pacing hook used while applying a transaction.
     """
 
-    cli_exit: Callable[[str, int], NoReturn]
+    cli_exit: CliExit
     cli_print: Callable[[str], None]
     traverse_config: Callable[..., bool]
     preflight_mode: contextvars.ContextVar[bool]
@@ -102,8 +173,9 @@ class ConfigureActionHooks:
         [MeshInterface, Any, dict[str, Any]], tuple[bool, bool]
     ]
     export_config: Callable[[MeshInterface], str]
-    cli_exit: Callable[[str, int], NoReturn]
+    cli_exit: CliExit
     cli_print: Callable[[str], None]
+    is_local_destination: Callable[[Any, str], bool]
 
 
 def _post_configure_reconnect_and_verify(
@@ -133,7 +205,7 @@ def _post_configure_reconnect_and_verify(
     """
     deadline = time.monotonic() + timeout
 
-    disconnect_window = 2.0
+    disconnect_window = CONFIG_DISCONNECT_WINDOW_SECONDS
     logger.debug(
         "Waiting up to %.1fs for device disconnect (reboot indication)...",
         disconnect_window,
@@ -145,7 +217,7 @@ def _post_configure_reconnect_and_verify(
             disconnected = True
             logger.info("Device disconnected (reboot indication received).")
             break
-        time.sleep(0.2)
+        time.sleep(CONFIG_POLL_INTERVAL_SECONDS)
 
     if not disconnected:
         logger.debug(
@@ -163,7 +235,7 @@ def _post_configure_reconnect_and_verify(
         if interface.isConnected.is_set():
             logger.info("Device reconnected.")
             break
-        time.sleep(0.2)
+        time.sleep(CONFIG_POLL_INTERVAL_SECONDS)
 
     if not interface.isConnected.is_set():
         logger.warning(
@@ -231,12 +303,23 @@ def _post_configure_reconnect_and_verify(
 def _post_seturl_stability_check(
     interface: MeshInterface,
     *,
-    timeout: float = 15.0,
+    timeout: float = SETURL_STABILITY_TIMEOUT_SECONDS,
 ) -> bool:
-    _MAX_STABILITY_ATTEMPTS = 3
-    _STABILITY_WINDOW_SECONDS = 1.5
-    _RECONNECT_WAIT_SECONDS = 10.0
+    """Confirm that the transport stabilizes after a local ``setURL`` write.
 
+    Parameters
+    ----------
+    interface : MeshInterface
+        Connected interface whose transport and config reload are observed.
+    timeout : float
+        Total reconnect/stability budget in seconds.
+
+    Returns
+    -------
+    bool
+        ``True`` when the transport remains connected through a stability window
+        and ``waitForConfig()`` succeeds; otherwise ``False``.
+    """
     deadline = time.monotonic() + timeout
 
     is_connected_event = getattr(interface, "isConnected", None)
@@ -277,7 +360,7 @@ def _post_seturl_stability_check(
                 )
         return _event_is_set()
 
-    for _attempt in range(_MAX_STABILITY_ATTEMPTS):
+    for _attempt in range(SETURL_STABILITY_MAX_ATTEMPTS):
         if time.monotonic() >= deadline:
             return False
 
@@ -285,29 +368,29 @@ def _post_seturl_stability_check(
             _trigger_reconnect()
             remaining = deadline - time.monotonic()
             if remaining > 0:
-                _event_wait(min(_RECONNECT_WAIT_SECONDS, remaining))
+                _event_wait(min(SETURL_RECONNECT_WAIT_SECONDS, remaining))
 
         if not _event_is_set():
             logger.warning(
                 "Transport not connected after setURL (attempt %d/%d)",
                 _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
+                SETURL_STABILITY_MAX_ATTEMPTS,
             )
             continue
 
-        stability_end = time.monotonic() + _STABILITY_WINDOW_SECONDS
+        stability_end = time.monotonic() + SETURL_STABILITY_WINDOW_SECONDS
         stable = True
         while time.monotonic() < stability_end:
             if not _event_is_set():
                 stable = False
                 break
-            time.sleep(0.1)
+            time.sleep(SETURL_STABILITY_POLL_SECONDS)
 
         if not stable:
             logger.warning(
                 "Transport dropped during stability window (attempt %d/%d)",
                 _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
+                SETURL_STABILITY_MAX_ATTEMPTS,
             )
             continue
 
@@ -318,7 +401,7 @@ def _post_seturl_stability_check(
             logger.warning(
                 "Config reload failed after setURL (attempt %d/%d)",
                 _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
+                SETURL_STABILITY_MAX_ATTEMPTS,
                 exc_info=True,
             )
             continue
@@ -326,7 +409,7 @@ def _post_seturl_stability_check(
     return False
 
 
-def _validate_non_empty_mapping_sections(
+def _validate_mapping_sections(
     hooks: ConfigureHooks,
     *,
     top_level_key: str,
@@ -334,14 +417,27 @@ def _validate_non_empty_mapping_sections(
 ) -> dict[str, dict[str, Any]]:
     """Validate that each section payload is a mapping.
 
-    Empty mappings (e.g., ``audio: {}``) are allowed — they represent
-    protobuf default values and are emitted by ``--export-config``.
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI exit/reporting hooks used for validation failures.
+    top_level_key : str
+        Parent YAML key used to build diagnostics.
+    section_mapping : dict[str, Any]
+        Section names and their raw YAML payloads.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        The same section mapping narrowed to mapping-valued payloads. Empty
+        mappings (for example ``audio: {}``) are valid because exports use them
+        to represent protobuf default values.
     """
     validated_sections: dict[str, dict[str, Any]] = {}
     for section_name, section_value in section_mapping.items():
         if not isinstance(section_value, dict):
             hooks.cli_exit(
-                f"ERROR: '{top_level_key}.{section_name}' must be a non-empty mapping, got "
+                f"ERROR: '{top_level_key}.{section_name}' must be a mapping, got "
                 f"{type(section_value).__name__}"
             )
         validated_sections[section_name] = section_value
@@ -429,8 +525,7 @@ def _refresh_no_disconnect_verify_state(
             request_config(field_desc)
 
     if verify_channel_url:
-        target_node.channels = None
-        target_node.partialChannels = []
+        target_node._invalidate_channel_cache()  # noqa: SLF001 - Node cache owner API
         request_channels = getattr(target_node, "requestChannels", None)
         if callable(request_channels):
             request_channels(0)
@@ -475,6 +570,24 @@ def _verify_config_sections(
     label: str,
     verified_fields: list[str] | None = None,
 ) -> bool:
+    """Verify requested configuration sections against a reloaded protobuf.
+
+    Parameters
+    ----------
+    config_fields : dict[str, dict[str, Any]]
+        Requested section/value mappings from the configure document.
+    proto_config : Any
+        Reloaded protobuf configuration root.
+    label : str
+        Human-readable label used in diagnostics.
+    verified_fields : list[str] | None
+        Optional list mutated in place with verified dotted leaf paths.
+
+    Returns
+    -------
+    bool
+        ``True`` only when every requested section and field matches.
+    """
     for section_name, yaml_values in config_fields.items():
         section_snake = meshtastic.util.camel_to_snake(section_name)
         if not proto_config.HasField(section_snake):
@@ -515,6 +628,28 @@ def _verify_post_reconnect_config(
         _verify_channel_url_against_state
     ),
 ) -> ConfigureReconnectResult:
+    """Verify requested values after reconnect/config reload.
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        Reconnected interface containing refreshed device state.
+    node_dest : str
+        Destination whose configuration is verified.
+    verify_channel_url : str | None
+        Normalized channel URL expected after reload.
+    verify_config_fields : dict[str, dict[str, Any]] | None
+        Requested local-config sections/fields to compare.
+    verify_module_config_fields : dict[str, dict[str, Any]] | None
+        Requested module-config sections/fields to compare.
+    verify_channel_url_against_state : Callable[..., bool]
+        Channel-state comparison seam.
+
+    Returns
+    -------
+    ConfigureReconnectResult
+        ``VERIFIED`` on a complete match, otherwise ``VERIFICATION_INCOMPLETE``.
+    """
     if not interface.isConnected.is_set():
         logger.warning("Post-reconnect verification skipped: transport disconnected.")
         return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
@@ -606,16 +741,221 @@ def _apply_configure_channel_url(
     return True
 
 
-def _handle_configure_command(
+def _close_failed_settings_transaction(
     hooks: ConfigureHooks,
-    interface: MeshInterface,
-    args: Any,
-    getNode_kwargs: dict[str, Any],
-) -> tuple[bool, bool]:
+    target_node: Any,
+    *,
+    commit_attempted: bool,
+) -> None:
+    """Best-effort close an open settings transaction after Phase 2 failure.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting hooks used to surface partial-application risk.
+    target_node : Any
+        Node whose settings transaction was opened.
+    commit_attempted : bool
+        Whether the normal commit call was already attempted.
+
+    Notes
+    -----
+    Firmware exposes begin/commit but no rollback/cancel operation. When Phase 2
+    fails before commit is attempted, committing is the only available way to
+    close the transaction; writes already accepted may therefore be applied. If
+    the normal commit itself failed, final device-side state is unknown and a
+    second commit is intentionally not sent.
+    """
+    if commit_attempted:
+        message = (
+            "Settings transaction commit failed; device transaction state is unknown "
+            "and configuration may be partially applied."
+        )
+        logger.warning(message)
+        hooks.cli_print(f"WARNING: {message}")
+        return
+
+    message = (
+        "Configuration failed during Phase 2; attempting to close the settings "
+        "transaction. Any writes already accepted may be committed."
+    )
+    logger.warning(message)
+    hooks.cli_print(f"WARNING: {message}")
     try:
-        with open(args.configure[0], encoding="utf8") as file:
+        target_node.commitSettingsTransaction()
+    except Exception:
+        logger.warning(
+            "Failed to close settings transaction after configure failure; "
+            "device transaction may remain open.",
+            exc_info=True,
+        )
+        hooks.cli_print(
+            "WARNING: Could not close the failed settings transaction; the device "
+            "may still have an open transaction."
+        )
+
+
+def _validate_phase1_configuration(
+    hooks: ConfigureHooks,
+    configuration: dict[str, Any],
+) -> _Phase1ConfigureValues:
+    """Validate and normalize every deterministic Phase-1 input before writes.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and exit hooks.
+    configuration : dict[str, Any]
+        Parsed top-level YAML mapping.
+
+    Returns
+    -------
+    _Phase1ConfigureValues
+        Normalized values for all present direct-write actions. Missing actions
+        remain ``None``.
+
+    Notes
+    -----
+    Validation is intentionally completed before any device mutation. This
+    prevents a later malformed direct-write value from leaving an avoidable
+    partially applied Phase-1 configuration.
+    """
+    owner: str | None = None
+    if "owner" in configuration:
+        raw_owner = configuration["owner"]
+        owner = "" if raw_owner is None else str(raw_owner).strip()
+        if not owner:
+            hooks.cli_exit(
+                "ERROR: Long Name cannot be empty or contain only whitespace characters"
+            )
+
+    owner_short: str | None = None
+    owner_short_key = (
+        "owner_short" if "owner_short" in configuration else "ownerShort"
+    )
+    if owner_short_key in configuration:
+        raw_owner_short = configuration[owner_short_key]
+        owner_short = (
+            "" if raw_owner_short is None else str(raw_owner_short).strip()
+        )
+        if not owner_short:
+            hooks.cli_exit(
+                "ERROR: Short Name cannot be empty or contain only whitespace characters"
+            )
+
+    location_values: tuple[float, float, int] | None = None
+    if "location" in configuration:
+        location = configuration["location"]
+        if not isinstance(location, dict) or not location:
+            hooks.cli_exit(
+                "location must be a non-empty mapping with lat, lon, and optional alt"
+            )
+        unknown_location_keys = set(location) - {"lat", "lon", "alt"}
+        if unknown_location_keys:
+            hooks.cli_exit(
+                "location contains unknown keys: "
+                f"{', '.join(sorted(unknown_location_keys))}. Allowed: lat, lon, alt"
+            )
+        if "lat" not in location or "lon" not in location:
+            hooks.cli_exit("location requires both lat and lon")
+        if isinstance(location["lat"], bool):
+            hooks.cli_exit(
+                f"location.lat must be a number, got: {location['lat']!r}"
+            )
+        try:
+            lat = float(location["lat"])
+        except (ValueError, TypeError):
+            hooks.cli_exit(
+                f"location.lat must be a number, got: {location['lat']!r}"
+            )
+        if isinstance(location["lon"], bool):
+            hooks.cli_exit(
+                f"location.lon must be a number, got: {location['lon']!r}"
+            )
+        try:
+            lon = float(location["lon"])
+        except (ValueError, TypeError):
+            hooks.cli_exit(
+                f"location.lon must be a number, got: {location['lon']!r}"
+            )
+        if not -90.0 <= lat <= 90.0:
+            hooks.cli_exit(f"location.lat must be between -90 and 90, got: {lat}")
+        if not -180.0 <= lon <= 180.0:
+            hooks.cli_exit(f"location.lon must be between -180 and 180, got: {lon}")
+        alt = 0
+        if "alt" in location:
+            if isinstance(location["alt"], bool):
+                hooks.cli_exit(
+                    f"location.alt must be an integer, got: {location['alt']!r}"
+                )
+            try:
+                alt = int(location["alt"])
+            except (ValueError, TypeError):
+                hooks.cli_exit(
+                    f"location.alt must be an integer, got: {location['alt']!r}"
+                )
+            if not POSITION_ALTITUDE_MIN <= alt <= POSITION_ALTITUDE_MAX:
+                hooks.cli_exit(
+                    "location.alt must fit the signed 32-bit position field, "
+                    f"got: {alt}"
+                )
+        location_values = (lat, lon, alt)
+
+    def _optional_string(key: str) -> str | None:
+        if key not in configuration:
+            return None
+        value = configuration[key]
+        if not isinstance(value, str):
+            hooks.cli_exit(f"ERROR: {key} must be a string.")
+        return value
+
+    channel_url_key = (
+        "channel_url" if "channel_url" in configuration else "channelUrl"
+    )
+    channel_url: str | None = None
+    if channel_url_key in configuration:
+        raw_channel_url = configuration[channel_url_key]
+        if not isinstance(raw_channel_url, str):
+            hooks.cli_exit(f"ERROR: {channel_url_key} must be a string.")
+        channel_url = raw_channel_url.strip()
+        if not channel_url:
+            hooks.cli_exit(f"ERROR: {channel_url_key} must not be blank.")
+
+    return _Phase1ConfigureValues(
+        owner=owner,
+        owner_short=owner_short,
+        location=location_values,
+        canned_messages=_optional_string("canned_messages"),
+        ringtone=_optional_string("ringtone"),
+        channel_url=channel_url,
+    )
+
+
+def _load_and_validate_configure_document(
+    hooks: ConfigureHooks,
+    path: str,
+) -> _PreparedConfigureDocument:
+    """Load, structurally validate, and normalize one configure YAML document.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and validation hooks.
+    path : str
+        YAML document path.
+
+    Returns
+    -------
+    _PreparedConfigureDocument
+        Validated top-level mapping, normalized direct-write values, and narrowed
+        config/module-config section mappings.
+    """
+    try:
+        with open(path, encoding="utf8") as file:
             raw_text = file.read()
         configuration = yaml.safe_load(raw_text)
+    except OSError as exc:
+        hooks.cli_exit(f"ERROR: Failed to read configuration file: {exc}")
     except (yaml.YAMLError, UnicodeDecodeError) as exc:
         hooks.cli_exit(f"ERROR: Failed to parse YAML configuration: {exc}")
 
@@ -623,137 +963,113 @@ def _handle_configure_command(
         hooks.cli_exit("ERROR: YAML configuration file is empty")
     if not isinstance(configuration, dict):
         hooks.cli_exit(
-            f"ERROR: YAML configuration must be a mapping/dictionary, got {type(configuration).__name__}"
+            "ERROR: YAML configuration must be a mapping/dictionary, got "
+            f"{type(configuration).__name__}"
         )
     if not configuration:
         hooks.cli_exit("ERROR: Configuration file is empty; nothing to configure.")
-    _unknown_keys = set(configuration.keys()) - ALLOWED_CONFIGURE_KEYS
-    if _unknown_keys:
-        hooks.cli_exit(
-            f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(_unknown_keys))}"
-        )
 
+    unknown_keys = set(configuration) - ALLOWED_CONFIGURE_KEYS
+    if unknown_keys:
+        hooks.cli_exit(
+            f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(unknown_keys))}"
+        )
     if "channel_url" in configuration and "channelUrl" in configuration:
         hooks.cli_exit(
-            "ERROR: Cannot specify both 'channel_url' and 'channelUrl' in the same configuration file; use one."
+            "ERROR: Cannot specify both 'channel_url' and 'channelUrl' in the same "
+            "configuration file; use one."
         )
     if "owner_short" in configuration and "ownerShort" in configuration:
         hooks.cli_exit(
-            "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same configuration file; use one."
+            "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same "
+            "configuration file; use one."
         )
 
-    # Pre-validate config/module_config shapes before any Phase-1 mutations.
-    validated_config_sections: dict[str, dict[str, Any]] = {}
-    validated_module_config_sections: dict[str, dict[str, Any]] = {}
+    phase1_values = _validate_phase1_configuration(hooks, configuration)
+
+    config_sections: dict[str, dict[str, Any]] = {}
     if "config" in configuration:
-        _cfg_val = configuration["config"]
-        if not isinstance(_cfg_val, dict) or not _cfg_val:
+        config_value = configuration["config"]
+        if not isinstance(config_value, dict) or not config_value:
             hooks.cli_exit(
-                f"ERROR: 'config' must be a non-empty mapping, got "
-                f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
+                "ERROR: 'config' must be a non-empty mapping, got "
+                f"{type(config_value).__name__}"
+                f"{' (empty)' if isinstance(config_value, dict) else ''}"
             )
-        validated_config_sections = _validate_non_empty_mapping_sections(
-            hooks,
-            top_level_key="config",
-            section_mapping=_cfg_val,
+        config_sections = _validate_mapping_sections(
+            hooks, top_level_key="config", section_mapping=config_value
         )
+
+    module_config_sections: dict[str, dict[str, Any]] = {}
     if "module_config" in configuration:
-        _mcfg_val = configuration["module_config"]
-        if not isinstance(_mcfg_val, dict) or not _mcfg_val:
+        module_config_value = configuration["module_config"]
+        if not isinstance(module_config_value, dict) or not module_config_value:
             hooks.cli_exit(
-                f"ERROR: 'module_config' must be a non-empty mapping, got "
-                f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
+                "ERROR: 'module_config' must be a non-empty mapping, got "
+                f"{type(module_config_value).__name__}"
+                f"{' (empty)' if isinstance(module_config_value, dict) else ''}"
             )
-        validated_module_config_sections = _validate_non_empty_mapping_sections(
+        module_config_sections = _validate_mapping_sections(
             hooks,
             top_level_key="module_config",
-            section_mapping=_mcfg_val,
+            section_mapping=module_config_value,
         )
 
-    target_node = interface.getNode(args.dest, False, **getNode_kwargs)
-    if validated_config_sections or validated_module_config_sections:
-        _preflight_configure_sections(
-            hooks,
-            target_node,
-            config_sections=validated_config_sections,
-            module_config_sections=validated_module_config_sections,
-        )
+    return _PreparedConfigureDocument(
+        configuration=configuration,
+        phase1=phase1_values,
+        config_sections=config_sections,
+        module_config_sections=module_config_sections,
+    )
 
+
+def _apply_phase1_configuration(
+    hooks: ConfigureHooks,
+    target_node: Any,
+    prepared: _PreparedConfigureDocument,
+) -> bool:
+    """Apply validated direct-write values in historical Phase-1 order.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and channel-URL hooks.
+    target_node : Any
+        Node receiving the direct writes.
+    prepared : _PreparedConfigureDocument
+        Fully validated configure document.
+
+    Returns
+    -------
+    bool
+        ``True`` only when a channel URL write was actually sent.
+    """
+    configuration = prepared.configuration
+    values = prepared.phase1
     phase1_started = False
-    phase1_may_reconnect = False
-    seturl_executed = False
 
-    if "owner" in configuration:
+    def _begin_phase1() -> None:
+        nonlocal phase1_started
         if not phase1_started:
             hooks.cli_print(CONFIGURE_PHASE1_HEADER)
             phase1_started = True
-        owner_name = str(configuration["owner"]).strip()
-        if not owner_name:
-            hooks.cli_exit(
-                "ERROR: Long Name cannot be empty or contain only whitespace characters"
-            )
-        hooks.cli_print(f"Setting device owner to {owner_name}")
-        target_node.setOwner(long_name=owner_name)
+
+    if values.owner is not None:
+        _begin_phase1()
+        hooks.cli_print(f"Setting device owner to {values.owner}")
+        target_node.setOwner(long_name=values.owner)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "owner_short" in configuration:
-        if not phase1_started:
-            hooks.cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_short_name = str(configuration["owner_short"]).strip()
-        if not owner_short_name:
-            hooks.cli_exit(
-                "ERROR: Short Name cannot be empty or contain only whitespace characters"
-            )
-        hooks.cli_print(f"Setting device owner short to {owner_short_name}")
-        target_node.setOwner(long_name=None, short_name=owner_short_name)
+    if values.owner_short is not None:
+        _begin_phase1()
+        hooks.cli_print(f"Setting device owner short to {values.owner_short}")
+        target_node.setOwner(long_name=None, short_name=values.owner_short)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "ownerShort" in configuration:
-        if not phase1_started:
-            hooks.cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_short_name = str(configuration["ownerShort"]).strip()
-        if not owner_short_name:
-            hooks.cli_exit(
-                "ERROR: Short Name cannot be empty or contain only whitespace characters"
-            )
-        hooks.cli_print(f"Setting device owner short to {owner_short_name}")
-        target_node.setOwner(long_name=None, short_name=owner_short_name)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "location" in configuration:
-        if not phase1_started:
-            hooks.cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        _loc = configuration["location"]
-        if not isinstance(_loc, dict) or not _loc:
-            hooks.cli_exit(
-                "location must be a non-empty mapping with lat, lon, and optional alt"
-            )
-        _allowed_loc_keys = {"lat", "lon", "alt"}
-        _unknown_loc_keys = set(_loc.keys()) - _allowed_loc_keys
-        if _unknown_loc_keys:
-            hooks.cli_exit(
-                f"location contains unknown keys: {', '.join(sorted(_unknown_loc_keys))}. "
-                f"Allowed: lat, lon, alt"
-            )
-        if "lat" not in _loc or "lon" not in _loc:
-            hooks.cli_exit("location requires both lat and lon")
-        try:
-            lat = float(_loc["lat"])
-        except (ValueError, TypeError):
-            hooks.cli_exit(f"location.lat must be a number, got: {_loc['lat']!r}")
-        try:
-            lon = float(_loc["lon"])
-        except (ValueError, TypeError):
-            hooks.cli_exit(f"location.lon must be a number, got: {_loc['lon']!r}")
-        alt = 0
-        if "alt" in _loc:
-            try:
-                alt = int(_loc["alt"])
-            except (ValueError, TypeError):
-                hooks.cli_exit(f"location.alt must be an integer, got: {_loc['alt']!r}")
+    if values.location is not None:
+        _begin_phase1()
+        lat, lon, alt = values.location
+        if "alt" in configuration["location"]:
             hooks.cli_print(f"Fixing altitude at {alt} meters")
         hooks.cli_print(f"Fixing latitude at {lat} degrees")
         hooks.cli_print(f"Fixing longitude at {lon} degrees")
@@ -761,180 +1077,273 @@ def _handle_configure_command(
         target_node.setFixedPosition(lat, lon, alt)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "canned_messages" in configuration:
-        if not phase1_started:
-            hooks.cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        hooks.cli_print(
-            f"Setting canned message messages to {configuration['canned_messages']}",
-        )
-        target_node.set_canned_message(configuration["canned_messages"])
+    if values.canned_messages is not None:
+        _begin_phase1()
+        hooks.cli_print(f"Setting canned message messages to {values.canned_messages}")
+        target_node.set_canned_message(values.canned_messages)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    if "ringtone" in configuration:
-        if not phase1_started:
-            hooks.cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        hooks.cli_print(f"Setting ringtone to {configuration['ringtone']}")
-        target_node.set_ringtone(configuration["ringtone"])
+    if values.ringtone is not None:
+        _begin_phase1()
+        hooks.cli_print(f"Setting ringtone to {values.ringtone}")
+        target_node.set_ringtone(values.ringtone)
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-    channel_url_key = "channel_url" if "channel_url" in configuration else "channelUrl"
-    if channel_url_key in configuration:
-        if not phase1_started:
-            hooks.cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
+    seturl_executed = False
+    if values.channel_url is not None:
+        _begin_phase1()
         seturl_executed = _apply_configure_channel_url(
             hooks,
             target_node,
-            configuration[channel_url_key],
-            config_key=channel_url_key,
+            values.channel_url,
+            config_key=(
+                "channel_url" if "channel_url" in configuration else "channelUrl"
+            ),
         )
-        phase1_may_reconnect = seturl_executed
 
     if phase1_started:
         hooks.cli_print("Phase 1 complete.")
+    return seturl_executed
 
-    settings_transaction_started = False
-    has_valid_config_section = bool(
-        validated_config_sections or validated_module_config_sections
+
+def _apply_settings_transaction(
+    hooks: ConfigureHooks,
+    target_node: Any,
+    *,
+    config_sections: dict[str, dict[str, Any]],
+    module_config_sections: dict[str, dict[str, Any]],
+) -> None:
+    """Apply validated config sections inside one firmware settings transaction.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        Traversal, pacing, and reporting hooks.
+    target_node : Any
+        Node receiving the configuration writes.
+    config_sections : dict[str, dict[str, Any]]
+        Validated LocalConfig sections.
+    module_config_sections : dict[str, dict[str, Any]]
+        Validated LocalModuleConfig sections.
+    """
+    hooks.cli_print(
+        "Phase 2: Applying configuration transaction (may trigger device reboot)..."
     )
-    if seturl_executed and has_valid_config_section:
-        if hooks.is_local_destination(interface, args.dest):
-            if not hooks.post_seturl_stability_check(
-                interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
-            ):
-                hooks.cli_exit(
-                    "ERROR: channel_url applied, but transport did not stabilize "
-                    "for additional configuration writes; aborting before Phase 2."
-                )
-        else:
-            hooks.cli_exit(
-                "ERROR: Combining channel_url with additional configuration "
-                "writes is not supported for remote nodes. Apply channel_url "
-                "and configuration in separate operations."
+    target_node.beginSettingsTransaction()
+    remaining_writes = len(config_sections) + len(module_config_sections)
+    commit_attempted = False
+
+    def _apply_sections(
+        sections: dict[str, dict[str, Any]],
+        protobuf_root: Any,
+        label: str,
+    ) -> None:
+        nonlocal remaining_writes
+        for section, section_values in sections.items():
+            failed_fields: list[str] = []
+            applied = hooks.traverse_config(
+                section,
+                section_values,
+                protobuf_root,
+                failed_fields=failed_fields,
             )
-    if has_valid_config_section:
-        hooks.cli_print(
-            "Phase 2: Applying configuration transaction (may trigger device reboot)..."
+            if failed_fields:
+                logger.warning(
+                    "Skipped %d unknown field(s) in %s section %s: %s",
+                    len(failed_fields),
+                    label,
+                    section,
+                    ", ".join(repr(field) for field in failed_fields),
+                )
+            if not applied:
+                hooks.cli_exit(
+                    f"Failed to apply {label} section {section!r} due to structural errors."
+                )
+            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
+            remaining_writes -= 1
+            hooks.pace_configure_write(remaining_writes)
+
+    try:
+        _apply_sections(config_sections, target_node.localConfig, "config")
+        _apply_sections(
+            module_config_sections,
+            target_node.moduleConfig,
+            "module_config",
         )
-        target_node.beginSettingsTransaction()
-        settings_transaction_started = True
-
-    remaining_config_writes = len(validated_config_sections) + len(
-        validated_module_config_sections
-    )
-
-    if validated_config_sections:
-        localConfig = target_node.localConfig
-        for section, section_values in validated_config_sections.items():
-            failed_config_fields: list[str] = []
-            applied = hooks.traverse_config(
-                section,
-                section_values,
-                localConfig,
-                failed_fields=failed_config_fields,
-            )
-            if failed_config_fields:
-                logger.warning(
-                    "Skipped %d unknown field(s) in config section %s: %s",
-                    len(failed_config_fields),
-                    section,
-                    ", ".join(repr(f) for f in failed_config_fields),
-                )
-            if not applied:
-                hooks.cli_exit(
-                    f"Failed to apply config section {section!r} due to structural errors."
-                )
-            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
-            remaining_config_writes -= 1
-            hooks.pace_configure_write(remaining_config_writes)
-
-    if validated_module_config_sections:
-        moduleConfig = target_node.moduleConfig
-        for section, section_values in validated_module_config_sections.items():
-            failed_module_fields: list[str] = []
-            applied = hooks.traverse_config(
-                section,
-                section_values,
-                moduleConfig,
-                failed_fields=failed_module_fields,
-            )
-            if failed_module_fields:
-                logger.warning(
-                    "Skipped %d unknown field(s) in module_config section %s: %s",
-                    len(failed_module_fields),
-                    section,
-                    ", ".join(repr(f) for f in failed_module_fields),
-                )
-            if not applied:
-                hooks.cli_exit(
-                    f"Failed to apply module_config section {section!r} due to structural errors."
-                )
-            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
-            remaining_config_writes -= 1
-            hooks.pace_configure_write(remaining_config_writes)
-
-    if settings_transaction_started:
+        commit_attempted = True
         target_node.commitSettingsTransaction()
-        time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
-        hooks.cli_print(
-            "Configuration transaction committed. Device may reboot to apply changes."
+    except BaseException:
+        _close_failed_settings_transaction(
+            hooks,
+            target_node,
+            commit_attempted=commit_attempted,
         )
+        raise
 
+    time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
+    hooks.cli_print(
+        "Configuration transaction committed. Device may reboot to apply changes."
+    )
+
+
+def _report_configure_result(
+    hooks: ConfigureHooks,
+    interface: MeshInterface,
+    *,
+    destination: str,
+    is_local_target: bool,
+    settings_transaction_started: bool,
+    seturl_executed: bool,
+    channel_url: str | None,
+    config_sections: dict[str, dict[str, Any]],
+    module_config_sections: dict[str, dict[str, Any]],
+) -> None:
+    """Report post-apply reconnect/verification status for one configure run.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        Reconnect-verification and output hooks.
+    interface : MeshInterface
+        Connected interface whose post-apply state is observed.
+    destination : str
+        Configured node destination.
+    is_local_target : bool
+        Whether *destination* resolves to the directly connected node.
+    settings_transaction_started : bool
+        Whether Phase 2 ran and therefore may have triggered a reboot.
+    seturl_executed : bool
+        Whether Phase 1 actually wrote a channel URL.
+    channel_url : str | None
+        Normalized requested channel URL for verification.
+    config_sections : dict[str, dict[str, Any]]
+        LocalConfig fields requested by the document.
+    module_config_sections : dict[str, dict[str, Any]]
+        LocalModuleConfig fields requested by the document.
+    """
     if settings_transaction_started:
-        _verify_channel_url = configuration.get("channel_url") or configuration.get(
-            "channelUrl"
-        )
-        _verify_config_fields = validated_config_sections or None
-        _verify_module_config_fields = validated_module_config_sections or None
-        if hooks.is_local_destination(interface, args.dest):
-            _reconnect_result = hooks.post_configure_reconnect_and_verify(
+        if is_local_target:
+            reconnect_result = hooks.post_configure_reconnect_and_verify(
                 interface,
                 timeout=CONFIG_RECONNECT_WAIT_SECONDS,
-                node_dest=args.dest,
-                verify_channel_url=_verify_channel_url,
-                verify_config_fields=_verify_config_fields,
-                verify_module_config_fields=_verify_module_config_fields,
+                node_dest=destination,
+                verify_channel_url=channel_url,
+                verify_config_fields=config_sections or None,
+                verify_module_config_fields=module_config_sections or None,
             )
-            if _reconnect_result == ConfigureReconnectResult.VERIFIED:
-                hooks.cli_print(
+            messages = {
+                ConfigureReconnectResult.VERIFIED: (
                     "Phase 3: Device reconnected and config reloaded. All settings verified."
-                )
-            elif _reconnect_result == ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
-                hooks.cli_print(
-                    "Phase 3: Device reconnected and config reloaded. "
-                    "Could not fully verify applied settings."
-                )
-            elif _reconnect_result == ConfigureReconnectResult.CONFIG_RELOAD_FAILED:
-                hooks.cli_print(
-                    "Phase 3: Device reconnected but config reload failed. "
-                    "Settings may still be applying."
-                )
-            elif _reconnect_result == ConfigureReconnectResult.RECONNECT_FAILED:
-                hooks.cli_print(
-                    "Phase 3: Device did not reconnect within timeout. "
-                    "Configuration may still be applying."
-                )
+                ),
+                ConfigureReconnectResult.VERIFICATION_INCOMPLETE: (
+                    "Phase 3: Device reconnected and config reloaded. Could not fully "
+                    "verify applied settings."
+                ),
+                ConfigureReconnectResult.CONFIG_RELOAD_FAILED: (
+                    "Phase 3: Device reconnected but config reload failed. Settings may "
+                    "still be applying."
+                ),
+                ConfigureReconnectResult.RECONNECT_FAILED: (
+                    "Phase 3: Device did not reconnect within timeout. Configuration may "
+                    "still be applying."
+                ),
+            }
+            hooks.cli_print(messages[reconnect_result])
         else:
             hooks.cli_print(
                 "Phase 3: Reboot/reconnect verification skipped for remote target. "
                 "Local transport state does not confirm remote node reload status."
             )
-    else:
-        if phase1_may_reconnect:
-            hooks.cli_print(
-                "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
-            )
-        else:
-            hooks.cli_print("Configuration applied (no reboot expected).")
+        return
 
-    return settings_transaction_started, (
-        seturl_executed and hooks.is_local_destination(interface, args.dest)
+    if seturl_executed:
+        hooks.cli_print(
+            "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
+        )
+    else:
+        hooks.cli_print("Configuration applied (no reboot expected).")
+
+
+def _handle_configure_command(
+    hooks: ConfigureHooks,
+    interface: MeshInterface,
+    args: Any,
+    get_node_kwargs: dict[str, Any],
+) -> _ConfigureCommandResult:
+    """Load and apply one YAML configuration document.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        Entrypoint-owned compatibility and reporting seams.
+    interface : MeshInterface
+        Connected interface used to resolve the target node.
+    args : Any
+        Parsed CLI arguments containing ``configure`` and destination values.
+    get_node_kwargs : dict[str, Any]
+        Historical keyword arguments forwarded to ``MeshInterface.getNode``.
+
+    Returns
+    -------
+    _ConfigureCommandResult
+        Named lifecycle flags describing whether Phase 2 opened a transaction
+        and whether a local Phase-1 channel URL write was actually performed.
+    """
+    prepared = _load_and_validate_configure_document(hooks, args.configure[0])
+    target_node = interface.getNode(args.dest, False, **get_node_kwargs)
+    has_config_writes = bool(prepared.config_sections or prepared.module_config_sections)
+    is_local_target = hooks.is_local_destination(interface, args.dest)
+
+    if has_config_writes:
+        _preflight_configure_sections(
+            hooks,
+            target_node,
+            config_sections=prepared.config_sections,
+            module_config_sections=prepared.module_config_sections,
+        )
+        if prepared.phase1.channel_url is not None and not is_local_target:
+            hooks.cli_exit(
+                "ERROR: Combining channel_url with additional configuration writes "
+                "is not supported for remote nodes. Apply channel_url and "
+                "configuration in separate operations."
+            )
+
+    seturl_executed = _apply_phase1_configuration(hooks, target_node, prepared)
+    if seturl_executed and has_config_writes and is_local_target:
+        if not hooks.post_seturl_stability_check(
+            interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
+        ):
+            hooks.cli_exit(
+                "ERROR: channel_url applied, but transport did not stabilize for "
+                "additional configuration writes; aborting before Phase 2."
+            )
+
+    settings_transaction_started = has_config_writes
+    if has_config_writes:
+        _apply_settings_transaction(
+            hooks,
+            target_node,
+            config_sections=prepared.config_sections,
+            module_config_sections=prepared.module_config_sections,
+        )
+
+    _report_configure_result(
+        hooks,
+        interface,
+        destination=args.dest,
+        is_local_target=is_local_target,
+        settings_transaction_started=settings_transaction_started,
+        seturl_executed=seturl_executed,
+        channel_url=prepared.phase1.channel_url,
+        config_sections=prepared.config_sections,
+        module_config_sections=prepared.module_config_sections,
+    )
+    return _ConfigureCommandResult(
+        settings_transaction_started=settings_transaction_started,
+        phase1_channel_url_applied=seturl_executed and is_local_target,
     )
 
-
-def handle_configure_actions(
+def _handle_configure_actions(
     context: CliContext,
     hooks: ConfigureActionHooks,
 ) -> None:
@@ -972,12 +1381,12 @@ def handle_configure_actions(
     if not args.export_config:
         return
 
-    if args.dest != BROADCAST_ADDR:
-        print("Exporting configuration of remote nodes is not supported.")
+    outcome.close_now = True
+    if not hooks.is_local_destination(context.interface, args.dest):
+        hooks.cli_print("Exporting configuration of remote nodes is not supported.")
         outcome.stop_processing = True
         return
 
-    outcome.close_now = True
     config_text = hooks.export_config(context.interface)
     if args.export_config == "-":
         print(config_text)

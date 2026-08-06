@@ -10,10 +10,17 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
+
+
+class CliExit(Protocol):
+    """Callable contract for terminating CLI execution with an optional status."""
+
+    def __call__(self, message: str, return_value: int = 1) -> NoReturn:
+        """Report *message* and terminate with *return_value*."""
 
 
 @dataclass(slots=True)
@@ -36,7 +43,7 @@ class ActionOutcome:
     """
 
     close_now: bool = False
-    wait_for_ack_nak: bool = True
+    wait_for_ack_nak: bool = False
     skip_ack_wait: bool = False
     stop_processing: bool = False
     cleanup_callbacks: list[Callable[[], None]] = field(default_factory=list)

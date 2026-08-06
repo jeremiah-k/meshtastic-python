@@ -15,7 +15,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Any, NoReturn
+from typing import Any
 
 from pubsub import pub
 
@@ -24,7 +24,7 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic._core_constants import LOCAL_ADDR
-from meshtastic.cli.context import CliContext
+from meshtastic.cli.context import CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import admin_pb2, mesh_pb2
 
@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
 FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
 FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = 0.05
+POSITION_ALTITUDE_MIN = -(1 << 31)
+POSITION_ALTITUDE_MAX = (1 << 31) - 1
 OTA_REBOOT_WAIT_SECONDS: float = 5.0
 OTA_RETRY_DELAY_SECONDS: float = 2.0
 OTA_MAX_RETRIES: int = 5
@@ -44,7 +46,7 @@ class DeviceActionHooks:
 
     Parameters
     ----------
-    cli_exit : Callable[[str, int], NoReturn]
+    cli_exit : CliExit
         User-facing CLI exit function.
     cli_print : Callable[[str], None]
         Quiet-aware CLI reporter.
@@ -63,7 +65,7 @@ class DeviceActionHooks:
         Lockdown compatibility seams retained by the entrypoint.
     """
 
-    cli_exit: Callable[[str, int], NoReturn]
+    cli_exit: CliExit
     cli_print: Callable[[str], None]
     set_pref: Callable[[Any, str, Any], bool]
     is_local_destination: Callable[[Any, str], bool]
@@ -76,7 +78,7 @@ class DeviceActionHooks:
     validate_lockdown_passphrase: Callable[[bytes], bytes]
 
 
-def send_local_factory_reset_and_wait(
+def send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-statements
     reset_node: Any,
     *,
     full: bool,
@@ -109,6 +111,12 @@ def send_local_factory_reset_and_wait(
         If the request is rejected or no acceptance/reboot signal arrives.
     """
     reset_interface = reset_node.iface
+    acceptance_timeout = (
+        FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS if timeout is None else float(timeout)
+    )
+    if acceptance_timeout <= 0:
+        raise ValueError("factory reset acceptance timeout must be positive")
+
     disconnect_observed = threading.Event()
     request_queued = threading.Event()
 
@@ -137,14 +145,6 @@ def send_local_factory_reset_and_wait(
         missing_transport = object()
         socket_after_send = getattr(reset_interface, "socket", missing_transport)
         stream_after_send = getattr(reset_interface, "stream", missing_transport)
-        acceptance_timeout = (
-            FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
-            if timeout is None
-            else float(timeout)
-        )
-        if acceptance_timeout <= 0:
-            raise ValueError("factory reset acceptance timeout must be positive")
-
         wait_for_request_ack = getattr(reset_interface, "_wait_for_request_ack", None)
         raise_wait_error = getattr(reset_interface, "_raise_wait_error_if_present", None)
         scoped_wait_available = (
@@ -237,8 +237,6 @@ def send_local_factory_reset_and_wait(
                 exc_info=True,
             )
 
-    return None
-
 
 @contextlib.contextmanager
 def temporary_instance_attributes(
@@ -326,7 +324,7 @@ def handle_ota_update(
     args: Any,
     get_node_kwargs: dict[str, Any],
     *,
-    cli_exit: Callable[[str, int], NoReturn],
+    cli_exit: CliExit,
     cli_print: Callable[[str], None],
     is_local_destination: Callable[[Any, str], bool],
 ) -> None:
@@ -340,7 +338,7 @@ def handle_ota_update(
         CLI arguments containing the OTA update path and destination.
     get_node_kwargs : dict[str, Any]
         Additional arguments for retrieving the local node.
-    cli_exit : Callable[[str, int], NoReturn]
+    cli_exit : CliExit
         User-facing exit handler.
     cli_print : Callable[[str], None]
         Quiet-aware reporter.
@@ -387,7 +385,7 @@ def handle_ota_update(
     cli_print("\nOTA update completed successfully!")
 
 
-def handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> None:
+def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> None:
     """Execute device- and node-administration actions in historical CLI order.
 
     Parameters
@@ -413,11 +411,34 @@ def handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> None
     elif args.setlat or args.setlon or args.setalt:
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
-        alt = int(args.setalt) if args.setalt else 0
-        lat = _parse_coordinate(args.setlat, "latitude", hooks.cli_print)
-        lon = _parse_coordinate(args.setlon, "longitude", hooks.cli_print)
         if args.setalt:
+            try:
+                alt = int(args.setalt)
+            except (TypeError, ValueError):
+                hooks.cli_exit(f"ERROR: Invalid altitude value: {args.setalt}", 1)
+            if not POSITION_ALTITUDE_MIN <= alt <= POSITION_ALTITUDE_MAX:
+                hooks.cli_exit(
+                    "ERROR: altitude must fit the signed 32-bit position field, "
+                    f"got: {alt}",
+                    1,
+                )
             hooks.cli_print(f"Fixing altitude at {alt} meters")
+        else:
+            alt = 0
+        lat = _parse_coordinate(args.setlat, "latitude", hooks)
+        lon = _parse_coordinate(args.setlon, "longitude", hooks)
+        if not -90.0 <= lat <= 90.0:
+            hooks.cli_exit(
+                f"ERROR: latitude must be between -90 and 90, got: {lat}", 1
+            )
+        if not -180.0 <= lon <= 180.0:
+            hooks.cli_exit(
+                f"ERROR: longitude must be between -180 and 180, got: {lon}", 1
+            )
+        if args.setlat is not None:
+            hooks.cli_print(f"Fixing latitude at {lat} degrees")
+        if args.setlon is not None:
+            hooks.cli_print(f"Fixing longitude at {lon} degrees")
         hooks.cli_print("Setting device position and enabling fixed position setting")
         interface.getNode(args.dest, False, **get_node_kwargs).setFixedPosition(
             lat, lon, alt
@@ -487,16 +508,31 @@ def handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> None
 def _parse_coordinate(
     raw_value: Any,
     coordinate_name: str,
-    cli_print: Callable[[str], None],
+    hooks: DeviceActionHooks,
 ) -> float:
+    """Parse one CLI coordinate as degrees for the fixed-position command.
+
+    Parameters
+    ----------
+    raw_value : Any
+        Raw argparse value, or ``None`` when the coordinate was omitted.
+    coordinate_name : str
+        Human-readable coordinate name for diagnostics.
+    hooks : DeviceActionHooks
+        CLI reporting/exit hooks.
+
+    Returns
+    -------
+    float
+        Parsed coordinate, or ``0.0`` for an omitted value.
+    """
     if raw_value is None:
         return 0.0
     try:
-        value: float = int(raw_value)
-    except ValueError:
-        value = float(raw_value)
-    cli_print(f"Fixing {coordinate_name} at {value} degrees")
-    return value
+        return float(raw_value)
+    except (TypeError, ValueError):
+        hooks.cli_exit(f"ERROR: Invalid {coordinate_name} value: {raw_value}", 1)
+        raise AssertionError("cli_exit returned unexpectedly") from None
 
 
 def _handle_content_updates(context: CliContext, hooks: DeviceActionHooks) -> None:
@@ -543,9 +579,12 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
             for field in args.pos_fields:
                 all_fields |= position_config.PositionFlags.Value(field)
         except ValueError:
-            print("ERROR: supported position fields are:")
-            print(position_config.PositionFlags.keys())
-            print("If no fields are specified, will read and display current value.")
+            supported = ", ".join(position_config.PositionFlags.keys())
+            hooks.cli_exit(
+                "ERROR: Unsupported position field. Supported position fields are: "
+                f"{supported}. If no fields are specified, the current value is displayed.",
+                1,
+            )
         else:
             hooks.cli_print(f"Setting position fields to {all_fields}")
             hooks.set_pref(position_config, "position_flags", f"{all_fields:d}")
@@ -559,7 +598,7 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
             for bit in position_config.PositionFlags.values()
             if position_config.position_flags & bit
         ]
-        print(" ".join(field_names))
+        hooks.cli_print(" ".join(field_names))
 
 
 def _handle_reboot_and_reset_actions(
@@ -650,7 +689,7 @@ def _handle_node_database_actions(context: CliContext) -> None:
         interface.getNode(args.dest, False, **kwargs).resetNodeDb()
 
 
-def handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> None:
+def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> None:
     """Execute the mutually exclusive firmware-lockdown action, if requested.
 
     Parameters
@@ -715,15 +754,15 @@ def handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> Non
         hooks.cli_exit(f"Lockdown command failed: {exc}", 1)
 
     if status is None:
-        print("Lockdown command accepted; device may already be rebooting.")
+        hooks.cli_print("Lockdown command accepted; device may already be rebooting.")
         return
     try:
         state_name = mesh_pb2.LockdownStatus.State.Name(status.state)
     except ValueError:
         state_name = f"STATE_{status.state}"
-    print(f"Lockdown status: {state_name}")
+    hooks.cli_print(f"Lockdown status: {state_name}")
     if status.backoff_seconds:
-        print(f"Retry backoff: {status.backoff_seconds}s")
+        hooks.cli_print(f"Retry backoff: {status.backoff_seconds}s")
     if status.state == mesh_pb2.LockdownStatus.UNLOCK_FAILED:
         hooks.cli_exit("Lockdown authentication failed.", 1)
 

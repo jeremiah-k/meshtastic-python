@@ -37,7 +37,13 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import mt_config, remote_hardware
-from meshtastic._core_constants import BROADCAST_ADDR, LOCAL_ADDR  # noqa: F401
+# COMPAT_STABLE_SHIM: LOCAL_ADDR remains importable from meshtastic.__main__.
+# pylint: disable=unused-import
+from meshtastic._core_constants import (
+    BROADCAST_ADDR,
+    LOCAL_ADDR,  # noqa: F401
+)
+# pylint: enable=unused-import
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
@@ -424,7 +430,9 @@ def _post_configure_reconnect_and_verify(
 
 
 def _post_seturl_stability_check(
-    interface: MeshInterface, *, timeout: float = 15.0
+    interface: MeshInterface,
+    *,
+    timeout: float = cli_configure_actions.SETURL_STABILITY_TIMEOUT_SECONDS,
 ) -> bool:
     """Compatibility wrapper for post-SetURL transport stabilization."""
     return cli_configure_actions._post_seturl_stability_check(
@@ -1655,6 +1663,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
         export_config=exportConfig,
         cli_exit=_cli_exit,
         cli_print=_cli_print,
+        is_local_destination=_is_local_destination,
     )
     service_hooks = cli_messaging_service_actions.MessagingServiceHooks(
         cli_exit=_cli_exit,
@@ -1678,6 +1687,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
         channel_contact=channel_contact_hooks,
         configure=configure_hooks,
         services=service_hooks,
+        sleep=time.sleep,
     )
 
 
@@ -1694,7 +1704,7 @@ def onConnected(interface: MeshInterface) -> None:
                 "requestChannelAttempts": args.channel_fetch_attempts,
                 "timeout": args.timeout,
             },
-            outcome=ActionOutcome(wait_for_ack_nak=False),
+            outcome=ActionOutcome(),
         )
         cli_dispatch.dispatch_connected(context, _build_connected_dispatch_hooks())
     except Exception as ex:

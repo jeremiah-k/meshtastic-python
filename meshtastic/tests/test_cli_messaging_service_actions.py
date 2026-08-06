@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import argparse
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
 from meshtastic.cli.context import ActionOutcome, CliContext
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.cli.messaging_service_actions import (
     MessagingServiceHooks,
-    handle_information_actions,
-    handle_long_running_services,
-    handle_messaging_actions,
+    _handle_content_reads,
+    _handle_information_actions,
+    _handle_long_running_services,
+    _handle_messaging_actions,
 )
 
 
@@ -42,13 +44,17 @@ def _args(**overrides: Any) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
+def _interface_double() -> MagicMock:
+    """Return an interface double constrained to the MeshInterface method surface."""
+    return create_autospec(MeshInterface, instance=True)
+
+
 def _context(interface: Any, **arg_overrides: Any) -> CliContext:
     return CliContext(
         interface=interface,
         args=_args(**arg_overrides),
         get_node_kwargs={"timeout": 5.0},
-        outcome=ActionOutcome(wait_for_ack_nak=False),
-        channel_index=2,
+        outcome=ActionOutcome(),
     )
 
 
@@ -81,12 +87,13 @@ def _hooks(**overrides: Any) -> MessagingServiceHooks:
 @pytest.mark.unit
 def test_messaging_actions_send_traceroute_with_selected_channel() -> None:
     """Traceroute should use the selected channel and local hop limit."""
-    interface = MagicMock()
+    interface = _interface_double()
+    interface.localNode = MagicMock()
     interface.localNode.localConfig.lora.hop_limit = 5
     context = _context(interface, traceroute="!00000003")
     hooks = _hooks()
 
-    handle_messaging_actions(context, hooks)
+    _handle_messaging_actions(context, hooks)
 
     interface.sendTraceRoute.assert_called_once_with(
         "!00000003", 5, channelIndex=2
@@ -107,11 +114,11 @@ def test_messaging_actions_maps_telemetry_types(
     requested: str, expected: str
 ) -> None:
     """Telemetry request aliases should map to the historical metric names."""
-    interface = MagicMock()
+    interface = _interface_double()
     context = _context(interface, request_telemetry=requested)
     hooks = _hooks()
 
-    handle_messaging_actions(context, hooks)
+    _handle_messaging_actions(context, hooks)
 
     interface.sendTelemetry.assert_called_once_with(
         destinationId="!00000002",
@@ -124,12 +131,12 @@ def test_messaging_actions_maps_telemetry_types(
 @pytest.mark.unit
 def test_messaging_actions_reject_broadcast_response_requests() -> None:
     """Telemetry and position response requests require a concrete destination."""
-    interface = MagicMock()
+    interface = _interface_double()
     context = _context(interface, dest="^all", request_telemetry="device")
     hooks = _hooks()
 
     with pytest.raises(SystemExit):
-        handle_messaging_actions(context, hooks)
+        _handle_messaging_actions(context, hooks)
 
     interface.sendTelemetry.assert_not_called()
 
@@ -137,12 +144,12 @@ def test_messaging_actions_reject_broadcast_response_requests() -> None:
 @pytest.mark.unit
 def test_messaging_actions_writes_gpio_bitmask() -> None:
     """GPIO writes should combine bit/value pairs before sending one request."""
-    interface = MagicMock()
+    interface = _interface_double()
     client = MagicMock()
     context = _context(interface, gpio_wrb=[("4", "1"), ("7", "1")])
     hooks = _hooks(remote_hardware_client=MagicMock(return_value=client))
 
-    handle_messaging_actions(context, hooks)
+    _handle_messaging_actions(context, hooks)
 
     client.writeGPIOs.assert_called_once_with("!00000002", 0x90, 0x90)
     assert context.outcome.close_now is True
@@ -151,26 +158,29 @@ def test_messaging_actions_writes_gpio_bitmask() -> None:
 @pytest.mark.unit
 def test_information_actions_remote_nodes_stops_dispatch(capsys: pytest.CaptureFixture[str]) -> None:
     """Remote node-list requests should retain the historical early-return behavior."""
-    interface = MagicMock()
+    interface = _interface_double()
     context = _context(interface, nodes=True)
-    hooks = _hooks()
+    cli_print = MagicMock()
+    hooks = _hooks(cli_print=cli_print)
 
-    handle_information_actions(context, hooks)
+    _handle_information_actions(context, hooks)
 
     assert context.outcome.stop_processing is True
     interface.showNodes.assert_not_called()
-    assert "remote node is not supported" in capsys.readouterr().out
+    cli_print.assert_called_once_with(
+        "Showing node list of a remote node is not supported."
+    )
 
 
 @pytest.mark.unit
 def test_information_actions_validates_selected_node_fields() -> None:
     """Local node listing should validate requested fields before rendering."""
-    interface = MagicMock()
+    interface = _interface_double()
     context = _context(interface, dest="^all", nodes=True, show_fields=["user.id"])
     validate = MagicMock()
     hooks = _hooks(validate_cli_show_fields=validate)
 
-    handle_information_actions(context, hooks)
+    _handle_information_actions(context, hooks)
 
     validate.assert_called_once_with(interface, ["user.id"])
     interface.showNodes.assert_called_once_with(True, ["user.id"])
@@ -179,7 +189,7 @@ def test_information_actions_validates_selected_node_fields() -> None:
 @pytest.mark.unit
 def test_long_running_services_registers_log_cleanup_and_runs_stress() -> None:
     """Slog lifetime should be retained explicitly while power stress still closes."""
-    interface = MagicMock()
+    interface = _interface_double()
     log_set = MagicMock()
     stress = MagicMock()
     context = _context(interface, slog="default", power_stress=True)
@@ -188,7 +198,7 @@ def test_long_running_services_registers_log_cleanup_and_runs_stress() -> None:
         power_stress_factory=MagicMock(return_value=stress),
     )
 
-    handle_long_running_services(context, hooks)
+    _handle_long_running_services(context, hooks)
 
     stress.run.assert_called_once_with()
     assert context.outcome.close_now is True
@@ -198,10 +208,107 @@ def test_long_running_services_registers_log_cleanup_and_runs_stress() -> None:
 @pytest.mark.unit
 def test_long_running_services_listen_overrides_close_request() -> None:
     """Listen mode should keep the interface open after earlier close requests."""
-    interface = MagicMock()
+    interface = _interface_double()
     context = _context(interface, listen=True)
     context.outcome.close_now = True
 
-    handle_long_running_services(context, _hooks())
+    _handle_long_running_services(context, _hooks())
 
     assert context.outcome.close_now is False
+
+
+@pytest.mark.unit
+def test_sendtext_does_not_force_ack_wait_without_ack_flag() -> None:
+    """Text sends should leave ACK waiting under the explicit ``--ack`` option."""
+    interface = _interface_double()
+    node = MagicMock()
+    interface.getNode.return_value = node
+    context = _context(interface, sendtext="hello")
+
+    _handle_messaging_actions(context, _hooks())
+
+    assert context.outcome.close_now is True
+    assert context.outcome.wait_for_ack_nak is False
+    interface.sendText.assert_called_once()
+
+
+@pytest.mark.unit
+def test_gpio_read_rejects_invalid_hex_mask() -> None:
+    """Malformed GPIO masks should exit cleanly rather than raising ValueError."""
+    interface = _interface_double()
+    context = _context(interface, gpio_rd="zz")
+    client_factory = MagicMock()
+    hooks = _hooks(remote_hardware_client=client_factory)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _handle_messaging_actions(context, hooks)
+
+    assert exc_info.value.code == 1
+    client_factory.return_value.readGPIOs.assert_not_called()
+
+
+@pytest.mark.unit
+def test_information_get_accumulates_success_across_preferences() -> None:
+    """Any successful preference lookup should retain the completion message."""
+    interface = _interface_double()
+    context = _context(interface, get=[["lora"], ["missing"]])
+    get_pref = MagicMock(side_effect=[True, False])
+    cli_print = MagicMock()
+
+    _handle_information_actions(
+        context,
+        _hooks(get_pref=get_pref, cli_print=cli_print),
+    )
+
+    cli_print.assert_any_call("Completed getting preferences")
+
+
+@pytest.mark.unit
+def test_content_reads_escape_terminal_control_sequences(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Remote text content must not inject terminal control sequences."""
+    interface = _interface_double()
+    node = MagicMock()
+    node.get_canned_message.return_value = "hello\x1b[31mred\x07"
+    node.get_ringtone.return_value = "tone\nnext"
+    interface.getNode.return_value = node
+    context = _context(interface, get_canned_message=True, get_ringtone=True)
+
+    _handle_content_reads(context)
+
+    output = capsys.readouterr().out
+    assert "\x1b" not in output
+    assert "\x07" not in output
+    assert r"\x1b[31m" in output
+    assert r"\x07" in output
+    assert r"tone\nnext" in output
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("raw_mask", ["-1", "10000000000000000"])
+def test_gpio_read_rejects_masks_outside_uint64(raw_mask: str) -> None:
+    """GPIO read masks must fit the uint64 protobuf field before transmission."""
+    interface = _interface_double()
+    client = MagicMock()
+    context = _context(interface, gpio_rd=raw_mask)
+    hooks = _hooks(remote_hardware_client=MagicMock(return_value=client))
+
+    with pytest.raises(SystemExit):
+        _handle_messaging_actions(context, hooks)
+
+    client.readGPIOs.assert_not_called()
+
+
+@pytest.mark.unit
+def test_gpio_write_rejects_bit_index_outside_uint64() -> None:
+    """GPIO write bit indices must not exceed the uint64 hardware mask."""
+    interface = _interface_double()
+    client = MagicMock()
+    context = _context(interface, gpio_wrb=[("64", "1")])
+    hooks = _hooks(remote_hardware_client=MagicMock(return_value=client))
+
+    with pytest.raises(SystemExit):
+        _handle_messaging_actions(context, hooks)
+
+    client.writeGPIOs.assert_not_called()

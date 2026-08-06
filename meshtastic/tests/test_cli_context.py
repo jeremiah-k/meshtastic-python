@@ -16,8 +16,11 @@ def test_action_outcome_defaults_are_explicit() -> None:
     outcome = ActionOutcome()
 
     assert outcome.close_now is False
-    assert outcome.wait_for_ack_nak is True
+    assert outcome.wait_for_ack_nak is False
     assert outcome.skip_ack_wait is False
+    assert outcome.stop_processing is False
+    assert outcome.cleanup_callbacks == []
+    assert ActionOutcome().cleanup_callbacks is not outcome.cleanup_callbacks
 
 
 @pytest.mark.unit

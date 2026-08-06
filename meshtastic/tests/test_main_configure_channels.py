@@ -434,7 +434,7 @@ def test_main_configure_rejects_invalid_subsection_payloads(
 
     _, err = capsys.readouterr()
     assert f"{top_key}.{section_name}" in err
-    assert "non-empty mapping" in err
+    assert "must be a mapping" in err
     assert excinfo.value.code == 1
     target_node.beginSettingsTransaction.assert_not_called()
 
@@ -1809,3 +1809,226 @@ def test_main_gpio_rd_no_gpio_channel(capsys: pytest.CaptureFixture[str]) -> Non
         # Error messages go to stderr, stdout contains "Connected to radio"
         assert re.search(r"No channel named 'gpio'", err)
         assert "Connected to radio" in out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_missing_file_exits_cleanly(tmp_path: Path) -> None:
+    """Unreadable configure paths should use the CLI error path without traceback."""
+    iface, _target_node = _build_configure_interface()
+    args = SimpleNamespace(
+        configure=[str(tmp_path / "missing.yaml")],
+        dest=MAIN_LOCAL_ADDR,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module._handle_configure_command(iface, args, {})
+
+    assert exc_info.value.code == 1
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize("owner_key", ["owner", "owner_short", "ownerShort"])
+def test_configure_rejects_null_owner_values_before_mutation(
+    owner_key: str,
+    tmp_path: Path,
+) -> None:
+    """YAML null owner values must never be written as the literal string 'None'."""
+    config_path = tmp_path / f"null-{owner_key}.yaml"
+    config_path.write_text(yaml.safe_dump({owner_key: None}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+    args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
+
+    with pytest.raises(SystemExit):
+        main_module._handle_configure_command(iface, args, {})
+
+    target_node.setOwner.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("location", "expected_fragment"),
+    [
+        ({"lat": 91, "lon": 0}, "location.lat"),
+        ({"lat": 0, "lon": -181}, "location.lon"),
+    ],
+)
+def test_configure_rejects_out_of_range_location_before_mutation(
+    location: dict[str, int],
+    expected_fragment: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Configure location must enforce geographic latitude/longitude bounds."""
+    config_path = tmp_path / "location.yaml"
+    config_path.write_text(yaml.safe_dump({"location": location}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+    args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
+
+    with pytest.raises(SystemExit):
+        main_module._handle_configure_command(iface, args, {})
+
+    _out, err = capsys.readouterr()
+    assert expected_fragment in err
+    target_node.setFixedPosition.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_remote_channel_url_plus_config_rejected_before_phase1_write(
+    tmp_path: Path,
+) -> None:
+    """Remote mixed setURL/config operations must fail before changing the channel URL."""
+    config_path = tmp_path / "remote-mixed.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": "https://meshtastic.org/e/#remote-key",
+                "config": {"bluetooth": {"enabled": True}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    args = SimpleNamespace(configure=[str(config_path)], dest="!87654321")
+
+    with pytest.raises(SystemExit):
+        main_module._handle_configure_command(iface, args, {})
+
+    target_node.setURL.assert_not_called()
+    target_node.setOwner.assert_not_called()
+    target_node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_write_failure_best_effort_closes_settings_transaction(
+    tmp_path: Path,
+) -> None:
+    """A Phase-2 write failure should not silently leave the edit transaction open."""
+    config_path = tmp_path / "write-failure.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"bluetooth": {"enabled": True}}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    target_node.writeConfig.side_effect = RuntimeError("write failed")
+    args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        main_module._handle_configure_command(iface, args, {})
+
+    target_node.beginSettingsTransaction.assert_called_once_with()
+    target_node.commitSettingsTransaction.assert_called_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_commit_failure_is_not_retried(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An uncertain commit failure must propagate without sending a second commit."""
+    config_path = tmp_path / "commit-failure.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"bluetooth": {"enabled": True}}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    target_node.commitSettingsTransaction.side_effect = RuntimeError("commit failed")
+    args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        main_module._handle_configure_command(iface, args, {})
+
+    target_node.commitSettingsTransaction.assert_called_once_with()
+    assert "transaction state is unknown" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_reconnect_verifies_normalized_channel_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase-3 verification should compare the same stripped URL written in Phase 1."""
+    channel_url = "https://meshtastic.org/e/#normalized"
+    config_path = tmp_path / "normalized-url.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "channel_url": f"  {channel_url}  ",
+                "config": {"bluetooth": {"enabled": True}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+    args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
+    reconnect = MagicMock(return_value=main_module._ConfigureReconnectResult.VERIFIED)
+    monkeypatch.setattr(main_module, "_post_seturl_stability_check", lambda *_a, **_k: True)
+    monkeypatch.setattr(main_module, "_post_configure_reconnect_and_verify", reconnect)
+
+    main_module._handle_configure_command(iface, args, {})
+
+    target_node.setURL.assert_called_once_with(channel_url)
+    assert reconnect.call_args.kwargs["verify_channel_url"] == channel_url
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_configure_prevalidates_all_phase1_values_before_any_mutation(
+    tmp_path: Path,
+) -> None:
+    """A later malformed Phase-1 value must not leave earlier direct writes applied."""
+    config_file = tmp_path / "phase1-invalid-location.yaml"
+    config_file.write_text(
+        "owner: valid-owner\nlocation:\n  lat: 91\n  lon: 1\n",
+        encoding="utf-8",
+    )
+    iface, node = _build_configure_interface()
+    args = SimpleNamespace(configure=[str(config_file)], dest=MAIN_LOCAL_ADDR)
+
+    with pytest.raises(SystemExit):
+        main_module._handle_configure_command(iface, args, {})
+
+    node.setOwner.assert_not_called()
+    node.setFixedPosition.assert_not_called()
+    node.setURL.assert_not_called()
+    node.beginSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("location", "expected_fragment"),
+    [
+        ({"lat": True, "lon": 0}, "location.lat must be a number"),
+        ({"lat": 0, "lon": False}, "location.lon must be a number"),
+        ({"lat": 0, "lon": 0, "alt": True}, "location.alt must be an integer"),
+        (
+            {"lat": 0, "lon": 0, "alt": 1 << 31},
+            "location.alt must fit the signed 32-bit position field",
+        ),
+    ],
+)
+def test_configure_rejects_invalid_location_wire_values_before_mutation(
+    location: dict[str, object],
+    expected_fragment: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Location values must fit their semantic and protobuf wire domains."""
+    config_path = tmp_path / "invalid-location-wire.yaml"
+    config_path.write_text(yaml.safe_dump({"location": location}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+    args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
+
+    with pytest.raises(SystemExit):
+        main_module._handle_configure_command(iface, args, {})
+
+    _out, err = capsys.readouterr()
+    assert expected_fragment in err
+    target_node.setFixedPosition.assert_not_called()

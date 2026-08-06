@@ -5,13 +5,15 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
-import meshtastic.cli.channel_contact_actions as channel_contact_actions
-import meshtastic.cli.configure_actions as configure_actions
-import meshtastic.cli.device_actions as device_actions
-import meshtastic.cli.messaging_service_actions as messaging_service_actions
+from meshtastic.cli import (
+    channel_contact_actions,
+    configure_actions,
+    device_actions,
+    messaging_service_actions,
+)
 from meshtastic._core_constants import BROADCAST_ADDR
 from meshtastic.cli.context import CliContext
 
@@ -99,31 +101,34 @@ def dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
     try:
         _print_connection(context, hooks)
 
-        device_actions.handle_device_actions(context, hooks.device)
-        if outcome.stop_processing:
-            return
+        device_actions._handle_device_actions(context, hooks.device)
 
-        channel_contact_actions.handle_contact_import(context)
-        messaging_service_actions.handle_messaging_actions(context, hooks.services)
+        if not outcome.stop_processing:
+            channel_contact_actions._handle_contact_import(context)
+            messaging_service_actions._handle_messaging_actions(context, hooks.services)
+            configure_actions._handle_configure_actions(context, hooks.configure)
 
-        configure_actions.handle_configure_actions(context, hooks.configure)
-        if outcome.stop_processing:
-            return
+        if not outcome.stop_processing:
+            channel_contact_actions._handle_channel_mutations(
+                context, hooks.channel_contact
+            )
+            messaging_service_actions._handle_content_reads(context)
+            channel_contact_actions._handle_region_preset_display(
+                context, hooks.channel_contact
+            )
+            device_actions._handle_lockdown_action(context, hooks.device)
+            messaging_service_actions._handle_information_actions(
+                context, hooks.services
+            )
 
-        channel_contact_actions.handle_channel_mutations(context, hooks.channel_contact)
-        messaging_service_actions.handle_content_reads(context)
-        channel_contact_actions.handle_region_preset_display(
-            context, hooks.channel_contact
-        )
-        device_actions.handle_lockdown_action(context, hooks.device)
-        messaging_service_actions.handle_information_actions(context, hooks.services)
-        if outcome.stop_processing:
-            return
+        if not outcome.stop_processing:
+            channel_contact_actions._handle_channel_contact_display(
+                context, hooks.channel_contact
+            )
+            messaging_service_actions._handle_long_running_services(
+                context, hooks.services
+            )
 
-        channel_contact_actions.handle_channel_contact_display(
-            context, hooks.channel_contact
-        )
-        messaging_service_actions.handle_long_running_services(context, hooks.services)
         _finalize_connected_actions(context, hooks)
     except BaseException as exc:
         action_error = exc

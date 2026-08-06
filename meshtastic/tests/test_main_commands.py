@@ -1191,3 +1191,80 @@ def test_main_configure_skips_unknown_config_field(
     assert "Skipping 1 unknown field(s) from bluetooth" in caplog.text
     target_node.writeConfig.assert_called_once_with("bluetooth")
     target_node.commitSettingsTransaction.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("flag", "value", "expected"),
+    [
+        ("--setlat", "91", "latitude must be between -90 and 90"),
+        ("--setlon", "181", "longitude must be between -180 and 180"),
+    ],
+)
+def test_main_rejects_out_of_range_fixed_coordinates(
+    flag: str,
+    value: str,
+    expected: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Direct fixed-position flags should reject impossible coordinates cleanly."""
+    sys.argv = ["", flag, value]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    mocked_node = create_autospec(Node, instance=True)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.__enter__.return_value = iface
+    iface.__exit__.return_value = None
+    iface.getNode.return_value = mocked_node
+
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        pytest.raises(SystemExit),
+    ):
+        main()
+
+    captured = capsys.readouterr()
+    assert expected in captured.err
+    mocked_node.setFixedPosition.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_integer_latitude_is_interpreted_as_degrees() -> None:
+    """An integer-looking CLI latitude must not become raw protobuf coordinate units."""
+    sys.argv = ["", "--setlat", "37"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    mocked_node = create_autospec(Node, instance=True)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.__enter__.return_value = iface
+    iface.__exit__.return_value = None
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+
+    mocked_node.setFixedPosition.assert_called_once_with(37.0, 0.0, 0)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_rejects_altitude_outside_position_int32(capsys: pytest.CaptureFixture[str]) -> None:
+    """CLI altitude should fail cleanly before overflowing the protobuf int32 field."""
+    sys.argv = ["", "--setalt", str(1 << 31)]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+    mocked_node = create_autospec(Node, instance=True)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.devPath = "/dev/mock"
+    iface.__enter__.return_value = iface
+    iface.__exit__.return_value = None
+    iface.getNode.return_value = mocked_node
+
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        pytest.raises(SystemExit),
+    ):
+        main()
+
+    assert "signed 32-bit position field" in capsys.readouterr().err
+    mocked_node.setFixedPosition.assert_not_called()
