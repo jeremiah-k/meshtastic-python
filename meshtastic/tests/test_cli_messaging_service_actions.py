@@ -30,6 +30,8 @@ def _args(**overrides: Any) -> argparse.Namespace:
         "gpio_wrb": None,
         "gpio_rd": None,
         "gpio_watch": None,
+        "get_canned_message": False,
+        "get_ringtone": False,
         "info": False,
         "get": None,
         "nodes": False,
@@ -215,6 +217,19 @@ def test_long_running_services_listen_overrides_close_request() -> None:
     _handle_long_running_services(context, _hooks())
 
     assert context.outcome.close_now is False
+
+
+@pytest.mark.unit
+def test_rejected_no_proto_tunnel_preserves_prior_close_request() -> None:
+    """A tunnel that cannot start must not undo an earlier one-shot close request."""
+    interface = _interface_double()
+    interface.noProto = True
+    context = _context(interface, tunnel=True, dest="^all")
+    context.outcome.close_now = True
+
+    _handle_long_running_services(context, _hooks())
+
+    assert context.outcome.close_now is True
 
 
 @pytest.mark.unit

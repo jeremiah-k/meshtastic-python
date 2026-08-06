@@ -469,8 +469,12 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
 def _validate_non_empty_mapping_sections(
     *, top_level_key: str, section_mapping: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
-    """Compatibility wrapper for configure section validation."""
-    return cli_configure_actions._validate_non_empty_mapping_sections(
+    """Compatibility wrapper for configure section mapping validation.
+
+    The legacy helper name is intentionally retained for external callers even
+    though empty mappings are valid protobuf-default section payloads.
+    """
+    return cli_configure_actions._validate_mapping_sections(
         _configure_hooks(),
         top_level_key=top_level_key,
         section_mapping=section_mapping,

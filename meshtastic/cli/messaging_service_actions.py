@@ -44,6 +44,18 @@ class MessagingServiceHooks:
 
 
 def _selected_channel(hooks: MessagingServiceHooks) -> int:
+    """Return the selected channel index, defaulting to the primary channel.
+
+    Parameters
+    ----------
+    hooks : MessagingServiceHooks
+        Entrypoint-owned channel-selection seam.
+
+    Returns
+    -------
+    int
+        Selected channel index, or ``0`` when no explicit channel is selected.
+    """
     return hooks.get_channel_index() or 0
 
 
@@ -323,16 +335,27 @@ def _handle_information_actions(
 
 
 def _start_tunnel(context: CliContext, hooks: MessagingServiceHooks) -> None:
+    """Start the local tunnel service when platform and CLI state permit it.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation and lifecycle state. ``close_now`` is cleared only
+        when a tunnel is actually eligible to start.
+    hooks : MessagingServiceHooks
+        Platform, reporting, and exit seams.
+    """
     args = context.args
     if hooks.platform_system() != "Linux" or not args.tunnel:
         return
     if args.dest != BROADCAST_ADDR:
         hooks.cli_exit("A tunnel can only be created using the local node.", 1)
 
-    context.outcome.close_now = False
     if context.interface.noProto:
         logger.warning("Not starting Tunnel - disabled by noProto")
         return
+
+    context.outcome.close_now = False
 
     from meshtastic import tunnel  # pylint: disable=import-outside-toplevel
 

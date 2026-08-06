@@ -121,6 +121,7 @@ def send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-st
     request_queued = threading.Event()
 
     def _on_connection_lost(interface: MeshInterface) -> None:
+        """Record transport loss only after the destructive request is queued."""
         if request_queued.is_set() and interface is reset_interface:
             disconnect_observed.set()
 
@@ -361,6 +362,7 @@ def handle_ota_update(
         ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
     except meshtastic.ota.OTAError as exc:
         cli_exit(f"OTA update failed: {exc}", 1)
+        raise AssertionError("cli_exit returned unexpectedly") from None
 
     cli_print(f"Triggering OTA update on {interface.hostname}...")
     interface.getNode(LOCAL_ADDR, requestChannels=False, **get_node_kwargs).startOTA(
@@ -378,9 +380,11 @@ def handle_ota_update(
             retries -= 1
             if retries == 0:
                 cli_exit(f"OTA update failed: {exc}", 1)
+                raise AssertionError("cli_exit returned unexpectedly") from None
             time.sleep(OTA_RETRY_DELAY_SECONDS)
         except meshtastic.ota.OTAError as exc:
             cli_exit(f"OTA update failed: {exc}", 1)
+            raise AssertionError("cli_exit returned unexpectedly") from None
 
     cli_print("\nOTA update completed successfully!")
 
@@ -416,12 +420,14 @@ def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> Non
                 alt = int(args.setalt)
             except (TypeError, ValueError):
                 hooks.cli_exit(f"ERROR: Invalid altitude value: {args.setalt}", 1)
+                raise AssertionError("cli_exit returned unexpectedly") from None
             if not POSITION_ALTITUDE_MIN <= alt <= POSITION_ALTITUDE_MAX:
                 hooks.cli_exit(
                     "ERROR: altitude must fit the signed 32-bit position field, "
                     f"got: {alt}",
                     1,
                 )
+                raise AssertionError("cli_exit returned unexpectedly") from None
             hooks.cli_print(f"Fixing altitude at {alt} meters")
         else:
             alt = 0
@@ -536,6 +542,16 @@ def _parse_coordinate(
 
 
 def _handle_content_updates(context: CliContext, hooks: DeviceActionHooks) -> None:
+    """Apply canned-message and ringtone updates in historical CLI order.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. ``close_now`` and ``wait_for_ack_nak`` are
+        enabled for requested one-shot content writes.
+    hooks : DeviceActionHooks
+        Reporting and compatibility seams used by the updates.
+    """
     interface, args, kwargs, outcome = (
         context.interface,
         context.args,
@@ -565,6 +581,16 @@ def _handle_content_updates(context: CliContext, hooks: DeviceActionHooks) -> No
 
 
 def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> None:
+    """Read or write the position-field bitmask requested by the CLI.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. ``close_now`` is enabled when position
+        fields are read or modified.
+    hooks : DeviceActionHooks
+        Preference assignment, reporting, and exit seams.
+    """
     interface, args, kwargs, outcome = (
         context.interface,
         context.args,
@@ -585,6 +611,7 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
                 f"{supported}. If no fields are specified, the current value is displayed.",
                 1,
             )
+            raise AssertionError("cli_exit returned unexpectedly") from None
         else:
             hooks.cli_print(f"Setting position fields to {all_fields}")
             hooks.set_pref(position_config, "position_flags", f"{all_fields:d}")
@@ -604,6 +631,17 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
 def _handle_reboot_and_reset_actions(
     context: CliContext, hooks: DeviceActionHooks
 ) -> None:
+    """Execute reboot, shutdown, transaction, metadata, and reset actions.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. The handler updates ``close_now``,
+        ``wait_for_ack_nak``, ``skip_ack_wait``, and ``stop_processing`` to
+        preserve each action's historical lifecycle behavior.
+    hooks : DeviceActionHooks
+        Reset, reporting, and destination-classification seams.
+    """
     interface, args, kwargs, outcome = (
         context.interface,
         context.args,
@@ -665,6 +703,14 @@ def _handle_reboot_and_reset_actions(
 
 
 def _handle_node_database_actions(context: CliContext) -> None:
+    """Apply node-database favorite, ignored, removal, and reset actions.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. Requested writes enable ``close_now`` and
+        ``wait_for_ack_nak`` for shared finalization.
+    """
     interface, args, kwargs, outcome = (
         context.interface,
         context.args,
@@ -742,6 +788,7 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
         )
     except (OSError, ValueError) as exc:
         hooks.cli_exit(f"Invalid lockdown options: {exc}", 1)
+        raise AssertionError("cli_exit returned unexpectedly") from None
 
     try:
         status = hooks.send_lockdown_auth(
@@ -752,6 +799,7 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
         )
     except (TimeoutError, ValueError, RuntimeError) as exc:
         hooks.cli_exit(f"Lockdown command failed: {exc}", 1)
+        raise AssertionError("cli_exit returned unexpectedly") from None
 
     if status is None:
         hooks.cli_print("Lockdown command accepted; device may already be rebooting.")
@@ -770,6 +818,22 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
 def _read_lockdown_passphrase(
     args: Any, lockdown_action: str, hooks: DeviceActionHooks
 ) -> bytes:
+    """Read and validate the passphrase required by one lockdown action.
+
+    Parameters
+    ----------
+    args : Any
+        Parsed lockdown CLI arguments.
+    lockdown_action : str
+        Selected action name (for example ``"provision"`` or ``"lock-now"``).
+    hooks : DeviceActionHooks
+        Passphrase file, validation, and exit seams.
+
+    Returns
+    -------
+    bytes
+        Validated passphrase bytes, or ``b""`` for ``lock-now``.
+    """
     if lockdown_action == "lock-now":
         return b""
     if args.lockdown_passphrase_file:
@@ -782,6 +846,7 @@ def _read_lockdown_passphrase(
                 "prefer an operator-only file or interactive entry.",
                 1,
             )
+            raise AssertionError("cli_exit returned unexpectedly") from None
         return hooks.validate_lockdown_passphrase(
             args.lockdown_passphrase.encode("utf-8")
         )
@@ -791,4 +856,5 @@ def _read_lockdown_passphrase(
         confirmed = getpass.getpass("Lockdown passphrase (confirm): ")
         if entered != confirmed:
             hooks.cli_exit("Lockdown passphrases do not match.", 1)
+            raise AssertionError("cli_exit returned unexpectedly") from None
     return hooks.validate_lockdown_passphrase(entered.encode("utf-8"))

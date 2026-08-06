@@ -201,7 +201,27 @@ def _post_configure_reconnect_and_verify(
        or module config fields), performs value-aware comparison of the
        explicitly requested settings against what the device reports.
 
-    Returns a ConfigureReconnectResult indicating the outcome.
+    Parameters
+    ----------
+    interface : MeshInterface
+        Connected interface observed for disconnect/reconnect.
+    timeout : float
+        Total reconnect budget in seconds.
+    node_dest : str
+        Destination whose configuration is reloaded and verified.
+    verify_channel_url : str | None
+        Normalized channel URL expected after reload.
+    verify_config_fields : dict[str, dict[str, Any]] | None
+        Requested local-config sections and fields to compare.
+    verify_module_config_fields : dict[str, dict[str, Any]] | None
+        Requested module-config sections and fields to compare.
+    verify_channel_url_against_state : Callable[..., bool]
+        Channel-state comparison seam.
+
+    Returns
+    -------
+    ConfigureReconnectResult
+        Reconnect, reload, and requested-value verification outcome.
     """
     deadline = time.monotonic() + timeout
 
@@ -325,6 +345,7 @@ def _post_seturl_stability_check(
     is_connected_event = getattr(interface, "isConnected", None)
 
     def _event_is_set() -> bool:
+        """Return whether the interface exposes a currently-set connection event."""
         return bool(
             is_connected_event is not None
             and hasattr(is_connected_event, "is_set")
@@ -332,6 +353,18 @@ def _post_seturl_stability_check(
         )
 
     def _event_wait(timeout_seconds: float) -> bool:
+        """Wait on the interface connection event when that seam is available.
+
+        Parameters
+        ----------
+        timeout_seconds : float
+            Maximum wait in seconds.
+
+        Returns
+        -------
+        bool
+            Event wait result, or ``False`` when no compatible event exists.
+        """
         return bool(
             is_connected_event is not None
             and hasattr(is_connected_event, "wait")
@@ -339,6 +372,13 @@ def _post_seturl_stability_check(
         )
 
     def _trigger_reconnect() -> bool:
+        """Best-effort trigger one reconnect attempt and report connected state.
+
+        Returns
+        -------
+        bool
+            ``True`` when the interface is connected after the reconnect trigger.
+        """
         reconnect = getattr(interface, "_attempt_reconnect", None)
         if callable(reconnect):
             try:
@@ -902,6 +942,18 @@ def _validate_phase1_configuration(
         location_values = (lat, lon, alt)
 
     def _optional_string(key: str) -> str | None:
+        """Return an optional top-level string value after type validation.
+
+        Parameters
+        ----------
+        key : str
+            Top-level configuration key to inspect.
+
+        Returns
+        -------
+        str | None
+            String value when present, otherwise ``None``.
+        """
         if key not in configuration:
             return None
         value = configuration[key]
@@ -1049,6 +1101,7 @@ def _apply_phase1_configuration(
     phase1_started = False
 
     def _begin_phase1() -> None:
+        """Print the direct-write phase header exactly once."""
         nonlocal phase1_started
         if not phase1_started:
             hooks.cli_print(CONFIGURE_PHASE1_HEADER)
@@ -1138,6 +1191,17 @@ def _apply_settings_transaction(
         protobuf_root: Any,
         label: str,
     ) -> None:
+        """Apply one validated section group and pace each device write.
+
+        Parameters
+        ----------
+        sections : dict[str, dict[str, Any]]
+            Validated configuration sections to traverse and write.
+        protobuf_root : Any
+            Protobuf configuration root mutated by ``traverse_config``.
+        label : str
+            Human-readable section group used in diagnostics.
+        """
         nonlocal remaining_writes
         for section, section_values in sections.items():
             failed_fields: list[str] = []

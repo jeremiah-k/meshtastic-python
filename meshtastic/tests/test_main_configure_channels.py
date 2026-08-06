@@ -1948,6 +1948,18 @@ def test_configure_commit_failure_is_not_retried(
 
 
 @pytest.mark.unit
+def test_legacy_mapping_validation_wrapper_delegates_to_renamed_helper() -> None:
+    """The retained __main__ compatibility seam must call the renamed validator."""
+    sections = {"audio": {}}
+
+    result = main_module._validate_non_empty_mapping_sections(
+        top_level_key="module_config", section_mapping=sections
+    )
+
+    assert result == sections
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_configure_reconnect_verifies_normalized_channel_url(
     tmp_path: Path,
@@ -1968,6 +1980,7 @@ def test_configure_reconnect_verifies_normalized_channel_url(
     iface, target_node = _build_configure_interface()
     args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
     reconnect = MagicMock(return_value=main_module._ConfigureReconnectResult.VERIFIED)
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
     monkeypatch.setattr(main_module, "_post_seturl_stability_check", lambda *_a, **_k: True)
     monkeypatch.setattr(main_module, "_post_configure_reconnect_and_verify", reconnect)
 

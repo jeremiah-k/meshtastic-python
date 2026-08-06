@@ -1194,6 +1194,7 @@ def test_main_configure_skips_unknown_config_field(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 @pytest.mark.parametrize(
     ("flag", "value", "expected"),
     [

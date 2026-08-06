@@ -103,6 +103,16 @@ def _resolve_requested_modem_preset(
 
 
 def _handle_channel_add(context: CliContext, hooks: ChannelContactHooks) -> None:
+    """Add one secondary channel using the next disabled channel slot.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. ``close_now`` is enabled when an add is
+        requested and the selected channel index is updated after success.
+    hooks : ChannelContactHooks
+        Channel-index, reporting, preference, and exit seams.
+    """
     args = context.args
     if not args.ch_add:
         return
@@ -143,6 +153,15 @@ def _handle_channel_add(context: CliContext, hooks: ChannelContactHooks) -> None
 
 
 def _handle_channel_delete(context: CliContext, hooks: ChannelContactHooks) -> None:
+    """Delete the explicitly selected non-primary channel.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. ``close_now`` is enabled for a delete.
+    hooks : ChannelContactHooks
+        Channel-index, reporting, and exit seams.
+    """
     args = context.args
     if not args.ch_del:
         return
@@ -161,6 +180,16 @@ def _handle_channel_delete(context: CliContext, hooks: ChannelContactHooks) -> N
 
 
 def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> None:
+    """Apply channel settings or role changes to the selected channel.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. ``close_now`` is enabled for channel
+        mutation requests.
+    hooks : ChannelContactHooks
+        Channel-index, preference, reporting, and exit seams.
+    """
     args = context.args
     if not (args.ch_set or args.ch_enable or args.ch_disable):
         return
