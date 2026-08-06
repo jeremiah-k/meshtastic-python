@@ -51,7 +51,7 @@ def _set_simple_config(
 ) -> None:
     """Set and persist the LoRa modem preset on the primary channel."""
     channel_index = hooks.get_channel_index()
-    if channel_index is not None and channel_index > 0:
+    if channel_index not in (None, 0):
         _terminate_cli(
             hooks.cli_exit,
             "Warning: Cannot set modem preset for non-primary channel",

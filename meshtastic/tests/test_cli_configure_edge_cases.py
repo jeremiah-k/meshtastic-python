@@ -7,8 +7,8 @@ import contextvars
 import threading
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
-from unittest.mock import MagicMock
+from typing import Any, NoReturn, cast
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
@@ -26,13 +26,34 @@ _PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
 )
 
 
-def _cli_exit(_message: str, return_value: int = 1) -> None:
+def _cli_exit(_message: str, return_value: int = 1) -> NoReturn:
+    """Raise ``SystemExit`` in place of the production CLI-exit hook.
+
+    Parameters
+    ----------
+    _message : str
+        Ignored user-facing message.
+    return_value : int
+        Exit status carried by the raised exception.
+    """
     raise SystemExit(return_value)
 
 
 def _hooks(**overrides: Any) -> ConfigureHooks:
+    """Build configure hooks with deterministic defaults.
+
+    Parameters
+    ----------
+    **overrides : Any
+        Hook values that should replace the focused-test defaults.
+
+    Returns
+    -------
+    ConfigureHooks
+        Fully populated configure-runtime dependency seams.
+    """
     values: dict[str, Any] = {
-        "cli_exit": cast(CliExit, _cli_exit),
+        "cli_exit": _cli_exit,
         "cli_print": MagicMock(),
         "traverse_config": MagicMock(return_value=True),
         "preflight_mode": _PREFLIGHT_MODE,
@@ -49,7 +70,19 @@ def _hooks(**overrides: Any) -> ConfigureHooks:
 
 
 def _interface(connected: bool = True) -> MagicMock:
-    iface = MagicMock(spec=MeshInterface)
+    """Build a specced interface with controllable connection state.
+
+    Parameters
+    ----------
+    connected : bool
+        Whether the returned interface starts in the connected state.
+
+    Returns
+    -------
+    MagicMock
+        Autospecced ``MeshInterface`` double with a real ``threading.Event``.
+    """
+    iface = create_autospec(MeshInterface, instance=True)
     iface.isConnected = threading.Event()
     if connected:
         iface.isConnected.set()
@@ -117,6 +150,13 @@ class _ConnectionEvent:
         self.wait_result = wait_result
 
     def is_set(self) -> bool:
+        """Return the next scripted connection state.
+
+        Returns
+        -------
+        bool
+            Next scripted state, or the final state after the script is exhausted.
+        """
         try:
             self._last = next(self._states)
         except StopIteration:
@@ -124,6 +164,18 @@ class _ConnectionEvent:
         return self._last
 
     def wait(self, _timeout: float) -> bool:
+        """Return the scripted wait result without blocking.
+
+        Parameters
+        ----------
+        _timeout : float
+            Ignored wait budget supplied by the runtime.
+
+        Returns
+        -------
+        bool
+            Configured event-wait result.
+        """
         return self.wait_result
 
 
@@ -534,7 +586,7 @@ def test_configure_actions_remote_export_and_write_failure(tmp_path: Path) -> No
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=(False, False)),
         export_config=export_config,
-        cli_exit=cast(CliExit, _cli_exit),
+        cli_exit=_cli_exit,
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=False),
     )
@@ -650,7 +702,7 @@ def test_configure_actions_no_export_and_stdout_export(
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=(False, False)),
         export_config=export_config,
-        cli_exit=cast(CliExit, _cli_exit),
+        cli_exit=_cli_exit,
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=True),
     )
@@ -732,3 +784,128 @@ def test_channel_refresh_tolerates_legacy_node_without_cache_invalidator() -> No
     )
 
     node.requestChannels.assert_called_once_with(0)
+
+
+@pytest.mark.unit
+def test_configure_result_reporting_handles_future_verification_result() -> None:
+    """Reporting must not fail after commit when a verification seam returns a new result."""
+    cli_print = MagicMock()
+    hooks = _hooks(
+        cli_print=cli_print,
+        post_configure_reconnect_and_verify=MagicMock(return_value="future-result"),
+    )
+
+    configure_actions._report_configure_result(
+        hooks,
+        _interface(),
+        destination="^local",
+        is_local_target=True,
+        settings_transaction_started=True,
+        seturl_executed=False,
+        channel_url=None,
+        config_sections={},
+        module_config_sections={},
+    )
+
+    cli_print.assert_called_once()
+    message = cli_print.call_args.args[0]
+    assert "unrecognized verification result" in message
+    assert "future-result" in message
+
+
+@pytest.mark.unit
+def test_configure_command_result_preserves_two_item_tuple_contract() -> None:
+    """Internal ACK metadata must not change the historical two-item result shape."""
+    result = configure_actions._ConfigureCommandResult(
+        False, False, request_sent=False
+    )
+
+    assert isinstance(result, tuple)
+    assert result == (False, False)
+    assert len(result) == 2
+    assert result.settings_transaction_started is False
+    assert result.local_channel_url_applied is False
+    assert result.request_sent is False
+
+
+@pytest.mark.unit
+def test_configure_noop_does_not_arm_shared_ack_wait() -> None:
+    """A confirmed configure no-op must not wait for an acknowledgment never sent."""
+    interface = _interface()
+    result = configure_actions._ConfigureCommandResult(
+        False, False, request_sent=False
+    )
+    hooks = ConfigureActionHooks(
+        handle_set_command=MagicMock(),
+        handle_configure_command=MagicMock(return_value=result),
+        export_config=MagicMock(),
+        cli_exit=_cli_exit,
+        cli_print=MagicMock(),
+        is_local_destination=MagicMock(return_value=True),
+    )
+    context = CliContext(
+        interface=interface,
+        args=argparse.Namespace(
+            set=None, configure=["config.yaml"], export_config=None, dest="^local"
+        ),
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+
+    configure_actions._handle_configure_actions(context, hooks)
+
+    assert context.outcome.close_now is True
+    assert context.outcome.wait_for_ack_nak is False
+    assert context.outcome.skip_ack_wait is False
+
+
+@pytest.mark.unit
+def test_configure_plain_tuple_hook_retains_legacy_ack_behavior() -> None:
+    """Downstream hook doubles returning plain tuples keep legacy ACK semantics."""
+    interface = _interface()
+    hooks = ConfigureActionHooks(
+        handle_set_command=MagicMock(),
+        handle_configure_command=MagicMock(return_value=(False, False)),
+        export_config=MagicMock(),
+        cli_exit=_cli_exit,
+        cli_print=MagicMock(),
+        is_local_destination=MagicMock(return_value=True),
+    )
+    context = CliContext(
+        interface=interface,
+        args=argparse.Namespace(
+            set=None, configure=["config.yaml"], export_config=None, dest="^local"
+        ),
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+
+    configure_actions._handle_configure_actions(context, hooks)
+
+    assert context.outcome.wait_for_ack_nak is True
+
+
+@pytest.mark.unit
+def test_matching_channel_url_reports_no_request_sent(
+    tmp_path: Path,
+) -> None:
+    """A redundant channel URL must preserve the two-item result without arming ACK."""
+    path = tmp_path / "matching-url.yaml"
+    path.write_text(
+        "channel_url: https://meshtastic.org/e/#matching\n", encoding="utf-8"
+    )
+    interface = _interface()
+    node = MagicMock()
+    interface.getNode.return_value = node
+    hooks = _hooks(
+        channel_url_matches_current_device_state=MagicMock(return_value=True)
+    )
+    args = argparse.Namespace(configure=[str(path)], dest="^local")
+
+    result = configure_actions._handle_configure_command(hooks, interface, args, {})
+
+    assert result == (False, False)
+    assert result.request_sent is False
+    assert result.settings_transaction_started is False
+    assert result.local_channel_url_applied is False
+    node.setURL.assert_not_called()

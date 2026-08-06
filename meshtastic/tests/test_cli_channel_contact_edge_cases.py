@@ -4,24 +4,27 @@ from __future__ import annotations
 
 import argparse
 from contextlib import nullcontext
-from typing import Any, cast
-from unittest.mock import MagicMock
+from typing import Any, NoReturn, cast
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
 from meshtastic.cli import channel_contact_actions as actions
 from meshtastic.cli.channel_contact_actions import ChannelContactHooks
-from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
+from meshtastic.cli.context import ActionOutcome, CliContext
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.node import Node
 
 
-def _cli_exit(_message: str, return_value: int = 1) -> None:
+def _cli_exit(_message: str, return_value: int = 1) -> NoReturn:
+    """Raise ``SystemExit`` with the status supplied by the action under test."""
     raise SystemExit(return_value)
 
 
 def _hooks(**overrides: Any) -> ChannelContactHooks:
+    """Build channel/contact hooks with deterministic defaults."""
     values: dict[str, Any] = {
-        "cli_exit": cast(CliExit, _cli_exit),
+        "cli_exit": _cli_exit,
         "cli_print": MagicMock(),
         "get_channel_index": MagicMock(return_value=1),
         "set_channel_index": MagicMock(),
@@ -39,6 +42,7 @@ def _hooks(**overrides: Any) -> ChannelContactHooks:
 
 
 def _args(**overrides: Any) -> argparse.Namespace:
+    """Build parser-faithful defaults for channel/contact action tests."""
     values: dict[str, Any] = {
         "dest": "^all",
         "add_contact": None,
@@ -62,6 +66,7 @@ def _args(**overrides: Any) -> argparse.Namespace:
 
 
 def _context(interface: Any, **overrides: Any) -> CliContext:
+    """Build a connected action context around a test interface double."""
     return CliContext(
         interface=cast(MeshInterface, interface),
         args=_args(**overrides),
@@ -70,12 +75,30 @@ def _context(interface: Any, **overrides: Any) -> CliContext:
     )
 
 
+def _interface_double() -> MagicMock:
+    """Return an autospecced connected-interface double."""
+    return create_autospec(MeshInterface, instance=True)
+
+
+def _node_double() -> MagicMock:
+    """Return an autospecced node double for configured node behavior."""
+    return create_autospec(Node, instance=True)
+
+
+def _interface_with_node() -> tuple[MagicMock, MagicMock]:
+    """Return a specced interface whose ``getNode`` returns a specced node."""
+    interface = _interface_double()
+    node = _node_double()
+    interface.getNode.return_value = node
+    return interface, node
+
+
 @pytest.mark.unit
 def test_invalid_numeric_modem_preset_is_rejected() -> None:
     """Unknown numeric presets should fail instead of leaking invalid protobuf values."""
     with pytest.raises(SystemExit):
         actions._resolve_requested_modem_preset(
-            _context(MagicMock(), ch_preset=999999), _hooks()
+            _context(_interface_double(), ch_preset=999999), _hooks()
         )
 
 
@@ -83,8 +106,7 @@ def test_invalid_numeric_modem_preset_is_rejected() -> None:
 @pytest.mark.parametrize("case", ["missing", "negative", "out_of_range"])
 def test_channel_update_rejects_unavailable_or_invalid_channel(case: str) -> None:
     """Channel mutation must fail before dereferencing unavailable channel state."""
-    interface = MagicMock()
-    node = interface.getNode.return_value
+    interface, node = _interface_with_node()
     hooks = _hooks()
     if case == "missing":
         node.channels = None
@@ -103,9 +125,9 @@ def test_channel_update_rejects_unavailable_or_invalid_channel(case: str) -> Non
 @pytest.mark.unit
 def test_channel_update_rejects_failed_preference_write() -> None:
     """A resolved setting whose value cannot be applied must not write the channel."""
-    interface = MagicMock()
+    interface, node = _interface_with_node()
     channel = MagicMock()
-    interface.getNode.return_value.channels = [MagicMock(), channel]
+    node.channels = [MagicMock(), channel]
     hooks = _hooks(set_pref=MagicMock(return_value=False))
 
     with pytest.raises(SystemExit):
@@ -118,7 +140,7 @@ def test_channel_update_rejects_failed_preference_write() -> None:
 @pytest.mark.unit
 def test_add_channel_url_uses_add_only_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """--ch-add-url should preserve existing channels by selecting addOnly mode."""
-    interface = MagicMock()
+    interface, node = _interface_with_node()
     context = _context(interface, ch_add_url="https://example.invalid/#abc")
     monkeypatch.setattr(actions, "_handle_channel_add", MagicMock())
     monkeypatch.setattr(actions, "_handle_channel_delete", MagicMock())
@@ -129,7 +151,7 @@ def test_add_channel_url_uses_add_only_mode(monkeypatch: pytest.MonkeyPatch) -> 
 
     actions._handle_channel_mutations(context, _hooks())
 
-    interface.getNode.return_value.setURL.assert_called_once_with(
+    node.setURL.assert_called_once_with(
         "https://example.invalid/#abc", addOnly=True
     )
     assert context.outcome.close_now is True
@@ -148,7 +170,7 @@ def test_enum_name_or_fallback_handles_known_and_unknown_values() -> None:
 @pytest.mark.unit
 def test_region_display_uses_numeric_fallbacks_for_future_firmware_values() -> None:
     """Unknown region and preset values should still produce readable metadata output."""
-    interface = MagicMock()
+    interface = _interface_double()
     interface.regionPresets = {
         999: argparse.Namespace(presets=[998], default_preset=997, licensed_only=True)
     }
@@ -185,7 +207,7 @@ def test_invalid_named_modem_preset_is_rejected() -> None:
     """Unknown preset names should fail through the same diagnostic path as bad integers."""
     with pytest.raises(SystemExit):
         actions._resolve_requested_modem_preset(
-            _context(MagicMock(), ch_preset="NOT_A_PRESET"), _hooks()
+            _context(_interface_double(), ch_preset="NOT_A_PRESET"), _hooks()
         )
 
 
@@ -194,8 +216,8 @@ def test_modem_preset_only_action_requests_interface_close() -> None:
     """A preset-only write is a one-shot mutation and must close after persistence."""
     from meshtastic.protobuf import config_pb2
 
-    interface = MagicMock()
-    node = interface.getNode.return_value
+    interface, node = _interface_with_node()
+    node.localConfig = MagicMock()
     node.localConfig.ListFields.return_value = [object()]
     context = _context(interface, ch_preset="LONG_FAST")
     hooks = _hooks(get_channel_index=MagicMock(return_value=0))
@@ -211,9 +233,25 @@ def test_modem_preset_only_action_requests_interface_close() -> None:
 
 
 @pytest.mark.unit
+def test_modem_preset_rejects_negative_channel_index() -> None:
+    """A negative channel index must not fall through to a primary preset write."""
+    interface, node = _interface_with_node()
+    context = _context(interface, ch_preset="LONG_FAST")
+    hooks = _hooks(get_channel_index=MagicMock(return_value=-1))
+
+    with pytest.raises(SystemExit):
+        actions._handle_channel_mutations(context, hooks)
+
+    interface.getNode.assert_not_called()
+    node.writeConfig.assert_not_called()
+    assert context.outcome.close_now is False
+
+
+@pytest.mark.unit
 def test_contact_qr_uses_parser_argument_name() -> None:
     """Contact QR display must consume argparse's contact_qr destination."""
-    interface = MagicMock()
+    interface = _interface_double()
+    interface.localNode = _node_double()
     interface.localNode.getContactURL.return_value = "https://example.invalid/contact"
     context = _context(
         interface,

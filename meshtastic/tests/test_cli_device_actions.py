@@ -106,7 +106,7 @@ def _prepare_ota(
 
 def _run_ota(interface: _DummyTCPInterface) -> None:
     """Invoke the OTA helper with the returning-exit test seam."""
-    device_actions.handle_ota_update(
+    device_actions._handle_ota_update(
         cast(MeshInterface, interface),
         SimpleNamespace(ota_update="firmware.bin", dest="^local"),
         {},
@@ -314,7 +314,7 @@ def test_ota_preconditions_reject_returning_cli_exit(
     exit_mock = MagicMock()
 
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
-        device_actions.handle_ota_update(
+        device_actions._handle_ota_update(
             cast(MeshInterface, interface),
             argparse.Namespace(ota_update="firmware.bin", dest="!remote"),
             {},
@@ -565,11 +565,12 @@ def test_factory_reset_probe_logs_close_failures(
     monkeypatch.setattr(
         device_actions.meshtastic.serial_interface, "SerialInterface", SerialDouble
     )
+    ticks = iter([0.0, 0.1])
     monkeypatch.setattr(
-        device_actions.time, "monotonic", MagicMock(side_effect=[0.0, 0.1])
+        device_actions.time, "monotonic", lambda: next(ticks, 0.1)
     )
 
-    device_actions.post_factory_reset_ready_probe(cast(MeshInterface, serial))
+    device_actions._post_factory_reset_ready_probe(cast(MeshInterface, serial))
 
     assert serial.close.call_count == 2
     serial.connect.assert_called_once_with()
@@ -595,7 +596,7 @@ def test_factory_reset_legacy_acknowledgment_rejects_nak(
     with pytest.raises(
         device_actions.MeshInterface.MeshInterfaceError, match="rejected"
     ):
-        device_actions.send_local_factory_reset_and_wait(
+        device_actions._send_local_factory_reset_and_wait(
             node, full=False, cli_print=MagicMock(), timeout=1.0
         )
 
@@ -619,12 +620,53 @@ def test_factory_reset_transport_change_checks_scoped_error(
     monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
     monkeypatch.setattr(device_actions.time, "sleep", lambda _seconds: None)
 
-    result = device_actions.send_local_factory_reset_and_wait(
+    result = device_actions._send_local_factory_reset_and_wait(
         node, full=False, cli_print=MagicMock(), timeout=1.0
     )
 
     assert result is node.factoryReset.return_value
     raise_wait_error.assert_called_with("receivedNak", request_id=None)
+
+
+@pytest.mark.unit
+def test_factory_reset_scoped_wait_checks_error_before_return_and_retires_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request-scoped ACK completion must surface NAK state before cleanup."""
+    events: list[str] = []
+    iface = MagicMock()
+    wait_for_request_ack = MagicMock(
+        side_effect=lambda *_args, **_kwargs: events.append("wait") or True
+    )
+    raise_wait_error = MagicMock(
+        side_effect=lambda *_args, **_kwargs: events.append("raise")
+    )
+    retire_wait = MagicMock(
+        side_effect=lambda *_args, **_kwargs: events.append("retire")
+    )
+    iface._wait_for_request_ack = wait_for_request_ack
+    iface._raise_wait_error_if_present = raise_wait_error
+    iface._retire_wait_request = retire_wait
+    node = MagicMock(iface=iface)
+    request = SimpleNamespace(id=73)
+    node.factoryReset.return_value = request
+    monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
+    monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
+
+    result = device_actions._send_local_factory_reset_and_wait(
+        node, full=False, cli_print=MagicMock(), timeout=1.0
+    )
+
+    assert result is request
+    assert events == ["wait", "raise", "retire"]
+    wait_for_request_ack.assert_called_once()
+    wait_args = wait_for_request_ack.call_args
+    assert wait_args.args[:2] == ("receivedNak", 73)
+    assert 0 < wait_args.kwargs["timeout_seconds"] <= (
+        device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
+    )
+    raise_wait_error.assert_called_once_with("receivedNak", request_id=73)
+    retire_wait.assert_called_once_with("receivedNak", request_id=73)
 
 
 @pytest.mark.unit
@@ -654,11 +696,63 @@ def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_fai
     with pytest.raises(
         device_actions.MeshInterface.MeshInterfaceError, match="Timed out"
     ):
-        device_actions.send_local_factory_reset_and_wait(
+        device_actions._send_local_factory_reset_and_wait(
             node, full=False, cli_print=MagicMock(), timeout=1.0
         )
 
     raise_wait_error.assert_called_with("receivedNak", request_id=None)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("argument_name", "value", "setter_name"),
+    [
+        ("set_canned_message", "hello", "set_canned_message"),
+        ("set_ringtone", "ring", "set_ringtone"),
+    ],
+)
+def test_content_update_waits_for_ack_only_when_write_is_sent(
+    argument_name: str, value: str, setter_name: str
+) -> None:
+    """Supported content updates should close after the shared ACK/NAK wait."""
+    interface = MagicMock()
+    node = interface.getNode.return_value
+    node.module_available.return_value = True
+    args = {"set_canned_message": None, "set_ringtone": None, "dest": "^local"}
+    args[argument_name] = value
+    context = _context(interface, **args)
+
+    device_actions._handle_content_updates(context, _hooks())
+
+    assert context.outcome.close_now is True
+    assert context.outcome.wait_for_ack_nak is True
+    getattr(node, setter_name).assert_called_once_with(value)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("argument_name", "value", "setter_name"),
+    [
+        ("set_canned_message", "hello", "set_canned_message"),
+        ("set_ringtone", "ring", "set_ringtone"),
+    ],
+)
+def test_content_update_skips_ack_wait_when_module_is_unavailable(
+    argument_name: str, value: str, setter_name: str
+) -> None:
+    """Excluded firmware modules must not arm an acknowledgment that cannot arrive."""
+    interface = MagicMock()
+    node = interface.getNode.return_value
+    node.module_available.return_value = False
+    args = {"set_canned_message": None, "set_ringtone": None, "dest": "^local"}
+    args[argument_name] = value
+    context = _context(interface, **args)
+
+    device_actions._handle_content_updates(context, _hooks())
+
+    assert context.outcome.close_now is True
+    assert context.outcome.wait_for_ack_nak is False
+    getattr(node, setter_name).assert_not_called()
 
 
 @pytest.mark.unit

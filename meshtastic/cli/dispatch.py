@@ -123,7 +123,7 @@ def _disarm_failure_cleanups(context: CliContext) -> None:
     context.outcome.failure_cleanup_callbacks.clear()
 
 
-def dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
+def _dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
     """Execute all connected CLI action groups in their historical order."""
     outcome = context.outcome
     action_error: BaseException | None = None

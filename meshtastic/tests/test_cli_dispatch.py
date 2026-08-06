@@ -172,7 +172,7 @@ def test_dispatch_does_not_suppress_cleanup_base_exception(
     )
 
     with pytest.raises(KeyboardInterrupt) as exc_info:
-        dispatch.dispatch_connected(context, MagicMock())
+        dispatch._dispatch_connected(context, MagicMock())
 
     assert isinstance(exc_info.value.__context__, ValueError)
     assert str(exc_info.value.__context__) == "primary"
@@ -196,7 +196,7 @@ def test_dispatch_preserves_primary_failure_when_cleanup_also_fails(
     hooks = MagicMock()
 
     with pytest.raises(ValueError, match="primary"):
-        dispatch.dispatch_connected(context, hooks)
+        dispatch._dispatch_connected(context, hooks)
 
     assert context.outcome.failure_cleanup_callbacks == []
 
@@ -226,7 +226,7 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
     hooks = MagicMock()
     hooks.sleep = sleep
 
-    dispatch.dispatch_connected(context, hooks)
+    dispatch._dispatch_connected(context, hooks)
 
     later_action.assert_not_called()
     sleep.assert_called_once_with(2)
@@ -325,7 +325,7 @@ def test_ack_wait_failure_still_closes_one_shot_interface() -> None:
     context.args.ack = True
     context.outcome.close_now = True
     with pytest.raises(RuntimeError, match="ack failed"):
-        dispatch.dispatch_connected(context, MagicMock())
+        dispatch._dispatch_connected(context, MagicMock())
 
     interface.close.assert_called_once_with()
 
@@ -346,7 +346,7 @@ def test_action_failure_after_close_request_still_closes_interface(
     monkeypatch.setattr(dispatch.device_actions, "_handle_device_actions", _fail)
 
     with pytest.raises(RuntimeError, match="action failed"):
-        dispatch.dispatch_connected(context, MagicMock())
+        dispatch._dispatch_connected(context, MagicMock())
 
     interface.close.assert_called_once_with()
 
@@ -365,7 +365,7 @@ def test_successful_dispatch_retains_started_service_resources(
 
     monkeypatch.setattr(dispatch.device_actions, "_handle_device_actions", _register)
 
-    dispatch.dispatch_connected(context, MagicMock())
+    dispatch._dispatch_connected(context, MagicMock())
 
     rollback.assert_not_called()
     assert context.outcome.failure_cleanup_callbacks == []

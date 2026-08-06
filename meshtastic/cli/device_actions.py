@@ -78,7 +78,7 @@ class DeviceActionHooks:
     validate_lockdown_passphrase: Callable[[bytes], bytes]
 
 
-def send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-statements
+def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-statements
     reset_node: Any,
     *,
     full: bool,
@@ -277,7 +277,7 @@ def _temporary_instance_attributes(
                 setattr(instance, name, previous)
 
 
-def post_factory_reset_ready_probe(interface: MeshInterface) -> None:
+def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
     """Close, briefly probe serial readiness, then release the serial port.
 
     Parameters
@@ -329,7 +329,7 @@ def post_factory_reset_ready_probe(interface: MeshInterface) -> None:
         logger.debug("Factory reset: final serial close failed.", exc_info=True)
 
 
-def handle_ota_update(
+def _handle_ota_update(
     interface: MeshInterface,
     args: Any,
     get_node_kwargs: dict[str, Any],
@@ -609,8 +609,9 @@ def _handle_content_updates(context: CliContext, hooks: DeviceActionHooks) -> No
     Parameters
     ----------
     context : CliContext
-        Connected invocation state. ``close_now`` and ``wait_for_ack_nak`` are
-        enabled for requested one-shot content writes.
+        Connected invocation state. ``close_now`` is enabled for every requested
+        one-shot update, while ``wait_for_ack_nak`` is enabled only when the
+        firmware exposes the target module and a write packet is actually sent.
     hooks : DeviceActionHooks
         Reporting and compatibility seams used by the updates.
     """
@@ -620,30 +621,38 @@ def _handle_content_updates(context: CliContext, hooks: DeviceActionHooks) -> No
         context.get_node_kwargs,
         context.outcome,
     )
-    if args.set_canned_message:
+    content_updates = (
+        (
+            args.set_canned_message,
+            mesh_pb2.CANNEDMSG_CONFIG,
+            "set_canned_message",
+            "Setting canned plugin message to {value}",
+            "Canned Message module is excluded by firmware; skipping set.",
+        ),
+        (
+            args.set_ringtone,
+            mesh_pb2.EXTNOTIF_CONFIG,
+            "set_ringtone",
+            "Setting ringtone to {value}",
+            "External Notification is excluded by firmware; skipping ringtone set.",
+        ),
+    )
+    for value, module_id, method_name, message, skip_warning in content_updates:
+        if not value:
+            continue
+
+        # A requested content update remains a completed one-shot CLI operation even
+        # when firmware excludes the corresponding module. Only arm the shared ACK
+        # wait after a packet is actually sent.
         outcome.close_now = True
-        outcome.wait_for_ack_nak = True
         node = interface.getNode(args.dest, False, **kwargs)
-        if node.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            hooks.cli_print(
-                f"Setting canned plugin message to {args.set_canned_message}"
-            )
-            node.set_canned_message(args.set_canned_message)
-        else:
-            logger.warning(
-                "Canned Message module is excluded by firmware; skipping set."
-            )
-    if args.set_ringtone:
-        outcome.close_now = True
+        if not node.module_available(module_id):
+            logger.warning(skip_warning)
+            continue
+
         outcome.wait_for_ack_nak = True
-        node = interface.getNode(args.dest, False, **kwargs)
-        if node.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            hooks.cli_print(f"Setting ringtone to {args.set_ringtone}")
-            node.set_ringtone(args.set_ringtone)
-        else:
-            logger.warning(
-                "External Notification is excluded by firmware; skipping ringtone set."
-            )
+        hooks.cli_print(message.format(value=value))
+        getattr(node, method_name)(value)
 
 
 def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> None:

@@ -174,6 +174,20 @@ def test_messaging_actions_reject_broadcast_response_requests(
 
 
 @pytest.mark.unit
+def test_gpio_actions_reject_broadcast_destination_before_client_creation() -> None:
+    """GPIO response operations require a concrete node before creating a client."""
+    interface = _interface_double()
+    context = _context(interface, dest="^all", gpio_rd="ff")
+    remote_hardware_client = MagicMock()
+    hooks = _hooks(remote_hardware_client=remote_hardware_client)
+
+    with pytest.raises(SystemExit):
+        _handle_messaging_actions(context, hooks)
+
+    remote_hardware_client.assert_not_called()
+
+
+@pytest.mark.unit
 def test_messaging_actions_writes_gpio_bitmask() -> None:
     """GPIO writes should combine bit/value pairs before sending one request."""
     interface = _interface_double()

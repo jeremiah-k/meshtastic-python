@@ -152,3 +152,26 @@ def test_set_apply_divergence_terminates_after_successful_preflight(
 
     assert "apply diverged" in str(cli_exit.call_args)
     node.writeConfig.assert_not_called()
+
+
+@pytest.mark.unit
+def test_ota_compat_wrapper_delegates_to_private_device_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retained ``__main__`` OTA seam must delegate with historical hooks."""
+    delegate = MagicMock()
+    monkeypatch.setattr(main_module.cli_device_actions, "_handle_ota_update", delegate)
+    interface = MagicMock()
+    args = SimpleNamespace(ota_update="firmware.bin", dest="^local")
+    get_node_kwargs = {"timeout": 10}
+
+    main_module._handle_ota_update(interface, args, get_node_kwargs)
+
+    delegate.assert_called_once_with(
+        interface,
+        args,
+        get_node_kwargs,
+        cli_exit=main_module._cli_exit,
+        cli_print=main_module._cli_print,
+        is_local_destination=main_module._is_local_destination,
+    )

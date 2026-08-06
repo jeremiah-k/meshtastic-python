@@ -71,11 +71,81 @@ class ConfigureReconnectResult(enum.Enum):
     VERIFIED = "verified"
 
 
-class _ConfigureCommandResult(NamedTuple):
-    """Outcome flags returned by one ``--configure`` execution."""
+CONFIGURE_RECONNECT_MESSAGES: dict[ConfigureReconnectResult, str] = {
+    ConfigureReconnectResult.VERIFIED: (
+        "Post-reconnect verification: device reconnected, configuration reloaded, "
+        "and all requested settings were verified."
+    ),
+    ConfigureReconnectResult.VERIFICATION_INCOMPLETE: (
+        "Post-reconnect verification: device reconnected and configuration reloaded, "
+        "but not all requested settings could be verified."
+    ),
+    ConfigureReconnectResult.CONFIG_RELOAD_FAILED: (
+        "Post-reconnect verification: device reconnected, but configuration reload "
+        "failed. Settings may still be applying."
+    ),
+    ConfigureReconnectResult.RECONNECT_FAILED: (
+        "Post-reconnect verification: device did not reconnect within the timeout. "
+        "Configuration may still be applying."
+    ),
+}
 
-    settings_transaction_started: bool
-    local_channel_url_applied: bool
+
+def _configure_reconnect_message(result: ConfigureReconnectResult) -> str:
+    """Return a fail-soft status message for reconnect verification.
+
+    Parameters
+    ----------
+    result : ConfigureReconnectResult
+        Verification result returned by the reconnect compatibility seam.
+
+    Returns
+    -------
+    str
+        Stable human-readable status, including a conservative fallback for an
+        unrecognized future result.
+    """
+    return CONFIGURE_RECONNECT_MESSAGES.get(
+        result,
+        "Post-reconnect verification: unrecognized verification result "
+        f"{result!r}. Configuration may still be applying.",
+    )
+
+
+class _ConfigureCommandResult(tuple[bool, bool]):
+    """Two-item compatibility result with internal request-sent metadata.
+
+    The tuple payload intentionally remains ``(settings_transaction_started,
+    local_channel_url_applied)`` so existing private compatibility callers can
+    continue unpacking or comparing the historical two-item result. Dispatch also
+    consumes ``request_sent`` to avoid waiting for an ACK after a true no-op.
+    """
+
+    request_sent: bool
+
+    def __new__(
+        cls,
+        settings_transaction_started: bool,
+        local_channel_url_applied: bool,
+        *,
+        request_sent: bool,
+    ) -> _ConfigureCommandResult:
+        """Create a compatibility tuple carrying internal lifecycle metadata."""
+        result = super().__new__(
+            cls, (settings_transaction_started, local_channel_url_applied)
+        )
+        result.request_sent = request_sent
+        return result
+
+    @property
+    def settings_transaction_started(self) -> bool:
+        """Return whether a firmware settings transaction was started."""
+        return self[0]
+
+    @property
+    def local_channel_url_applied(self) -> bool:
+        """Return whether a local channel URL write was actually sent."""
+        return self[1]
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +180,20 @@ class _DirectConfigureValues:
     ringtone: str | None = None
     channel_url: str | None = None
     channel_url_key: str | None = None
+
+    @property
+    def has_non_url_writes(self) -> bool:
+        """Return whether validated direct values require a non-URL device write."""
+        return any(
+            value is not None
+            for value in (
+                self.owner,
+                self.owner_short,
+                self.location,
+                self.canned_messages,
+                self.ringtone,
+            )
+        )
 
 
 class _PreparedConfigureDocument(NamedTuple):
@@ -1351,25 +1435,7 @@ def _report_configure_result(
                 verify_config_fields=config_sections or None,
                 verify_module_config_fields=module_config_sections or None,
             )
-            messages = {
-                ConfigureReconnectResult.VERIFIED: (
-                    "Post-reconnect verification: device reconnected, configuration "
-                    "reloaded, and all requested settings were verified."
-                ),
-                ConfigureReconnectResult.VERIFICATION_INCOMPLETE: (
-                    "Post-reconnect verification: device reconnected and configuration "
-                    "reloaded, but not all requested settings could be verified."
-                ),
-                ConfigureReconnectResult.CONFIG_RELOAD_FAILED: (
-                    "Post-reconnect verification: device reconnected, but configuration "
-                    "reload failed. Settings may still be applying."
-                ),
-                ConfigureReconnectResult.RECONNECT_FAILED: (
-                    "Post-reconnect verification: device did not reconnect within the "
-                    "timeout. Configuration may still be applying."
-                ),
-            }
-            hooks.cli_print(messages[reconnect_result])
+            hooks.cli_print(_configure_reconnect_message(reconnect_result))
         else:
             hooks.cli_print(
                 "Post-reconnect verification skipped for remote target. Local transport "
@@ -1467,6 +1533,11 @@ def _handle_configure_command(
     return _ConfigureCommandResult(
         settings_transaction_started=settings_transaction_started,
         local_channel_url_applied=seturl_executed and is_local_target,
+        request_sent=(
+            prepared.direct_values.has_non_url_writes
+            or seturl_executed
+            or settings_transaction_started
+        ),
     )
 
 
@@ -1494,16 +1565,17 @@ def _handle_configure_actions(
     if args.configure:
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
-        settings_transaction_started, local_channel_url_applied = (
-            hooks.handle_configure_command(
-                context.interface,
-                args,
-                context.get_node_kwargs,
-            )
+        configure_result = hooks.handle_configure_command(
+            context.interface,
+            args,
+            context.get_node_kwargs,
         )
+        settings_transaction_started, local_channel_url_applied = configure_result
         if settings_transaction_started or local_channel_url_applied:
             outcome.wait_for_ack_nak = False
             outcome.skip_ack_wait = True
+        elif isinstance(configure_result, _ConfigureCommandResult):
+            outcome.wait_for_ack_nak = configure_result.request_sent
 
     if not args.export_config:
         return

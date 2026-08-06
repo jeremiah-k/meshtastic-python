@@ -449,7 +449,7 @@ def _send_local_factory_reset_and_wait(
     timeout: float | None = None,
 ) -> mesh_pb2.MeshPacket | None:
     """Compatibility wrapper for the canonical device reset helper."""
-    return cli_device_actions.send_local_factory_reset_and_wait(
+    return cli_device_actions._send_local_factory_reset_and_wait(
         reset_node, full=full, timeout=timeout, cli_print=_cli_print
     )
 
@@ -465,7 +465,7 @@ def _temporary_instance_attributes(
 
 def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
     """Compatibility wrapper for the canonical factory-reset readiness probe."""
-    cli_device_actions.post_factory_reset_ready_probe(interface)
+    cli_device_actions._post_factory_reset_ready_probe(interface)
 
 
 def _validate_non_empty_mapping_sections(
@@ -1299,7 +1299,7 @@ def _handle_ota_update(
     getNode_kwargs: dict[str, Any],
 ) -> None:
     """Compatibility wrapper for the canonical Wi-Fi OTA action."""
-    cli_device_actions.handle_ota_update(
+    cli_device_actions._handle_ota_update(
         interface,
         args,
         getNode_kwargs,
@@ -1712,7 +1712,7 @@ def onConnected(interface: MeshInterface) -> None:
             },
             outcome=ActionOutcome(),
         )
-        cli_dispatch.dispatch_connected(context, _build_connected_dispatch_hooks())
+        cli_dispatch._dispatch_connected(context, _build_connected_dispatch_hooks())
     except Exception as ex:
         logger.exception("Unhandled exception in onConnected: %s", ex)
         _cli_exit(f"Aborting due to: {ex}", 1)

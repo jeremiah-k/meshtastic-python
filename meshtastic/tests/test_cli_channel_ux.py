@@ -2,7 +2,7 @@
 
 import argparse
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
@@ -12,6 +12,7 @@ from meshtastic.cli.channel_contact_actions import (
     _handle_channel_delete,
 )
 from meshtastic.cli.context import ActionOutcome, CliContext
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.tcp_interface import TCPInterface
 
 
@@ -187,9 +188,9 @@ def test_nodes_show_fields_accepts_schema_field_without_node_database(
 @pytest.mark.unit
 def test_channel_delete_fails_closed_if_exit_seam_returns() -> None:
     """A missing channel index must never fall through to deletion after exit."""
-    interface = MagicMock()
+    interface = create_autospec(MeshInterface, instance=True)
     context = CliContext(
-        interface=interface,  # type: ignore[arg-type]
+        interface=interface,
         args=argparse.Namespace(ch_del=True, dest="^local"),
         get_node_kwargs={},
         outcome=ActionOutcome(),

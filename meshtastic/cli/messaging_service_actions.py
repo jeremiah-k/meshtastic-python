@@ -23,6 +23,8 @@ GPIO_MASK_MAX = (1 << GPIO_MASK_BITS) - 1
 INVALID_CHANNEL_MESSAGE = (
     "Warning: {index} is not a valid channel. Channel must not be DISABLED."
 )
+REQUIRE_DESTINATION_MESSAGE = "Warning: Must use a destination node ID."
+INVALID_GPIO_PAIR_MESSAGE = "Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}"
 TELEMETRY_TYPE_ALIASES = {
     "device": "device_metrics",
     "device_metrics": "device_metrics",
@@ -196,7 +198,7 @@ def _handle_messaging_actions(
 
     if args.request_telemetry:
         if args.dest == BROADCAST_ADDR:
-            _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
+            _terminate_cli(hooks.cli_exit, REQUIRE_DESTINATION_MESSAGE)
         channel_index = _require_channel(interface, hooks)
         telemetry_type = TELEMETRY_TYPE_ALIASES.get(
             args.request_telemetry, "device_metrics"
@@ -214,7 +216,7 @@ def _handle_messaging_actions(
 
     if args.request_position:
         if args.dest == BROADCAST_ADDR:
-            _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
+            _terminate_cli(hooks.cli_exit, REQUIRE_DESTINATION_MESSAGE)
         channel_index = _require_channel(interface, hooks)
         hooks.cli_print(
             f"Sending position request to {args.dest} on "
@@ -228,7 +230,7 @@ def _handle_messaging_actions(
 
     if args.gpio_wrb or args.gpio_rd or args.gpio_watch:
         if args.dest == BROADCAST_ADDR:
-            _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
+            _terminate_cli(hooks.cli_exit, REQUIRE_DESTINATION_MESSAGE)
         client = hooks.remote_hardware_client(interface)
 
         if args.gpio_wrb:
@@ -241,13 +243,13 @@ def _handle_messaging_actions(
                 except (TypeError, ValueError):
                     _terminate_cli(
                         hooks.cli_exit,
-                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}",
+                        INVALID_GPIO_PAIR_MESSAGE.format(bit=bit, value=value),
                         1,
                     )
                 if not 0 <= bit_index < GPIO_MASK_BITS or bit_value not in {0, 1}:
                     _terminate_cli(
                         hooks.cli_exit,
-                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}",
+                        INVALID_GPIO_PAIR_MESSAGE.format(bit=bit, value=value),
                         1,
                     )
                 bitmask |= 1 << bit_index
