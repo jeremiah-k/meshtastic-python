@@ -23,6 +23,33 @@ class CliExit(Protocol):
         """Report *message* and terminate with *return_value*."""
 
 
+def _terminate_cli(cli_exit: CliExit, message: str, return_value: int = 1) -> NoReturn:
+    """Invoke a CLI exit seam and fail closed if an injected seam returns.
+
+    Parameters
+    ----------
+    cli_exit : CliExit
+        Exit callable supplied by the entrypoint or a test seam.
+    message : str
+        User-facing failure message.
+    return_value : int
+        Process exit status forwarded to ``cli_exit``.
+
+    Raises
+    ------
+    AssertionError
+        If a non-conforming injected ``cli_exit`` returns instead of terminating.
+
+    Notes
+    -----
+    Production ``cli_exit`` implementations are non-returning. Keeping this guard
+    in one place makes extracted action runtimes fail closed even when tests or
+    downstream compatibility seams inject a returning callable.
+    """
+    cli_exit(message, return_value)
+    raise AssertionError("cli_exit returned unexpectedly") from None
+
+
 @dataclass(slots=True)
 class ActionOutcome:
     """Track connection-lifecycle decisions made by connected CLI actions.

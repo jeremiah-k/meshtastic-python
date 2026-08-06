@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from meshtastic.cli.context import ActionOutcome, CliContext
+from meshtastic.cli.context import ActionOutcome, CliContext, _terminate_cli
 from meshtastic.mesh_interface import MeshInterface
 
 
@@ -51,3 +51,16 @@ def test_cli_context_destination_normalizes_compatibility_doubles() -> None:
     )
 
     assert context.destination == "1234"
+
+
+@pytest.mark.unit
+def test_terminate_cli_fails_closed_for_returning_compatibility_seam() -> None:
+    """A non-conforming injected exit callable must never allow fallthrough."""
+
+    def _returning_exit(_message: str, _return_value: int = 1) -> None:
+        return None
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        _terminate_cli(  # type: ignore[arg-type]
+            _returning_exit, "fatal"
+        )

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import meshtastic.util
-from meshtastic.cli.context import CliContext, CliExit
+from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.protobuf import channel_pb2, config_pb2
 
 
@@ -52,7 +52,11 @@ def _set_simple_config(
     """Set and persist the LoRa modem preset on the primary channel."""
     channel_index = hooks.get_channel_index()
     if channel_index is not None and channel_index > 0:
-        hooks.cli_exit("Warning: Cannot set modem preset for non-primary channel", 1)
+        _terminate_cli(
+            hooks.cli_exit,
+            "Warning: Cannot set modem preset for non-primary channel",
+            1,
+        )
 
     node = context.interface.getNode(
         context.args.dest, False, **context.get_node_kwargs
@@ -60,8 +64,10 @@ def _set_simple_config(
     if len(node.localConfig.ListFields()) == 0:
         lora_descriptor = node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
         if lora_descriptor is None:
-            hooks.cli_exit(
-                "The active protobuf schema does not provide LoRa configuration", 1
+            _terminate_cli(
+                hooks.cli_exit,
+                "The active protobuf schema does not provide LoRa configuration",
+                1,
             )
         node.requestConfig(lora_descriptor)
     node.localConfig.lora.modem_preset = modem_preset
@@ -89,8 +95,7 @@ def _resolve_requested_modem_preset(
                 generic_preset_name  # type: ignore[arg-type]
             )
         except ValueError as exc:
-            hooks.cli_exit(f"Invalid modem preset: {exc}", 1)
-            raise AssertionError("cli_exit returned unexpectedly") from exc
+            _terminate_cli(hooks.cli_exit, f"Invalid modem preset: {exc}", 1)
         return cast(
             config_pb2.Config.LoRaConfig.ModemPreset.ValueType,
             generic_preset_name,
@@ -98,8 +103,7 @@ def _resolve_requested_modem_preset(
     try:
         return config_pb2.Config.LoRaConfig.ModemPreset.Value(generic_preset_name)
     except ValueError as exc:
-        hooks.cli_exit(f"Invalid modem preset: {exc}", 1)
-        raise AssertionError("cli_exit returned unexpectedly") from exc
+        _terminate_cli(hooks.cli_exit, f"Invalid modem preset: {exc}", 1)
 
 
 def _handle_channel_add(context: CliContext, hooks: ChannelContactHooks) -> None:
@@ -118,26 +122,30 @@ def _handle_channel_add(context: CliContext, hooks: ChannelContactHooks) -> None
         return
 
     if hooks.get_channel_index() is not None:
-        hooks.cli_exit(
+        _terminate_cli(
+            hooks.cli_exit,
             "Warning: --ch-add chooses the next free channel index automatically; "
             "remove --ch-index and retry. Use --ch-set, --ch-del, --ch-enable, "
-            "or --ch-disable when targeting a specific index."
+            "or --ch-disable when targeting a specific index.",
         )
     context.outcome.close_now = True
     if len(args.ch_add) > 10:
-        hooks.cli_exit("Warning: Channel name must be shorter. Channel not added.")
+        _terminate_cli(
+            hooks.cli_exit, "Warning: Channel name must be shorter. Channel not added."
+        )
 
     node = context.interface.getNode(args.dest, **context.get_node_kwargs)
     channel = node.getChannelByName(args.ch_add)
     if channel:
-        hooks.cli_exit(
+        _terminate_cli(
+            hooks.cli_exit,
             f"Warning: This node already has a '{args.ch_add}' channel. "
-            "No changes were made."
+            "No changes were made.",
         )
 
     channel = node.getDisabledChannel()
     if not channel:
-        hooks.cli_exit("Warning: No free channels were found")
+        _terminate_cli(hooks.cli_exit, "Warning: No free channels were found")
     settings = channel_pb2.ChannelSettings()
     settings.psk = meshtastic.util.genPSK256()
     settings.name = args.ch_add
@@ -169,9 +177,11 @@ def _handle_channel_delete(context: CliContext, hooks: ChannelContactHooks) -> N
     context.outcome.close_now = True
     channel_index = hooks.get_channel_index()
     if channel_index is None:
-        hooks.cli_exit("Warning: Need to specify '--ch-index' for '--ch-del'.", 1)
+        _terminate_cli(
+            hooks.cli_exit, "Warning: Need to specify '--ch-index' for '--ch-del'.", 1
+        )
     if channel_index == 0:
-        hooks.cli_exit("Warning: Cannot delete primary channel.", 1)
+        _terminate_cli(hooks.cli_exit, "Warning: Cannot delete primary channel.", 1)
 
     hooks.cli_print(f"Deleting channel {channel_index}")
     context.interface.getNode(args.dest, **context.get_node_kwargs).deleteChannel(
@@ -197,18 +207,26 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
     context.outcome.close_now = True
     channel_index = hooks.get_channel_index()
     if channel_index is None:
-        hooks.cli_exit("Warning: Need to specify '--ch-index'.", 1)
+        _terminate_cli(hooks.cli_exit, "Warning: Need to specify '--ch-index'.", 1)
 
     node = context.interface.getNode(args.dest, **context.get_node_kwargs)
     channels = node.channels
     if channels is None:
-        hooks.cli_exit("Warning: Device channels are not available.", 1)
+        _terminate_cli(hooks.cli_exit, "Warning: Device channels are not available.", 1)
     if channel_index < 0:
-        hooks.cli_exit(f"Warning: Channel index {channel_index} is out of range.", 1)
+        _terminate_cli(
+            hooks.cli_exit,
+            f"Warning: Channel index {channel_index} is out of range.",
+            1,
+        )
     try:
         channel = channels[channel_index]
     except (IndexError, TypeError):
-        hooks.cli_exit(f"Warning: Channel index {channel_index} is out of range.", 1)
+        _terminate_cli(
+            hooks.cli_exit,
+            f"Warning: Channel index {channel_index} is out of range.",
+            1,
+        )
 
     enable = True
     if args.ch_enable or args.ch_disable:
@@ -218,7 +236,9 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
             "and --ch-del instead."
         )
         if channel_index == 0:
-            hooks.cli_exit("Warning: Cannot enable/disable PRIMARY channel.")
+            _terminate_cli(
+                hooks.cli_exit, "Warning: Cannot enable/disable PRIMARY channel."
+            )
         enable = not args.ch_disable
 
     pending_settings = type(channel.settings)()
@@ -229,7 +249,7 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
             try:
                 pending_settings.psk = meshtastic.util.fromPSK(pref[1])
             except ValueError as exc:
-                hooks.cli_exit(f"Invalid channel PSK: {exc}", 1)
+                _terminate_cli(hooks.cli_exit, f"Invalid channel PSK: {exc}", 1)
         else:
             if not hooks.resolve_pref(pending_settings, pref[0]):
                 hooks.print_channel_field_choices(pending_settings, pref[0])
@@ -239,14 +259,18 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
                 with hooks.fatal_preference_value_errors():
                     found = hooks.set_pref(pending_settings, pref[0], pref[1])
             except hooks.preference_value_error as exc:
-                hooks.cli_exit(str(exc), 1)
+                _terminate_cli(hooks.cli_exit, str(exc), 1)
             if not found:
-                hooks.cli_exit(f"Invalid value for channel setting {pref[0]}.", 1)
+                _terminate_cli(
+                    hooks.cli_exit, f"Invalid value for channel setting {pref[0]}.", 1
+                )
         enable = True
 
     if not channel_update_valid:
-        hooks.cli_exit(
-            "Warning: Unknown channel setting name. No changes were made.", 1
+        _terminate_cli(
+            hooks.cli_exit,
+            "Warning: Unknown channel setting name. No changes were made.",
+            1,
         )
 
     if args.ch_set:
@@ -264,9 +288,7 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
     node.writeChannel(channel_index)
 
 
-def _handle_channel_mutations(
-    context: CliContext, hooks: ChannelContactHooks
-) -> None:
+def _handle_channel_mutations(context: CliContext, hooks: ChannelContactHooks) -> None:
     """Apply channel URL, add/delete, preset, and setting mutations in CLI order."""
     args = context.args
     interface = context.interface
@@ -303,7 +325,9 @@ def _handle_region_preset_display(
 
     context.outcome.close_now = True
     if not hooks.is_local_destination(interface, args.dest):
-        hooks.cli_print("Region/preset capabilities are available only from the local node.")
+        hooks.cli_print(
+            "Region/preset capabilities are available only from the local node."
+        )
         return
     if not interface.regionPresets:
         hooks.cli_print(
@@ -314,7 +338,9 @@ def _handle_region_preset_display(
 
     for region, info in sorted(interface.regionPresets.items()):
         try:
-            region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(cast(Any, region))
+            region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(
+                cast(Any, region)
+            )
         except ValueError:
             region_name = f"REGION_{region}"
         preset_names: list[str] = []

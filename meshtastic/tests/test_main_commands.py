@@ -40,6 +40,7 @@ from ._main_legacy_support import (
 
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
+
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent external network calls during unit tests in this module.
@@ -50,6 +51,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
         Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -641,6 +643,13 @@ def test_main_removeposition(capsys: pytest.CaptureFixture[str]) -> None:
     [
         ("--setlat", "37.5", "Fixing latitude", (37.5, 0.0, 0)),
         ("--setlon", "-122.1", "Fixing longitude", (0.0, -122.1, 0)),
+        ("--setlat", "900000000", "Fixing latitude", (900000000, 0.0, 0)),
+        (
+            "--setlon",
+            "-1800000000",
+            "Fixing longitude",
+            (0.0, -1800000000, 0),
+        ),
         ("--setalt", "51", "Fixing altitude", (0.0, 0.0, 51)),
     ],
 )
@@ -1198,8 +1207,18 @@ def test_main_configure_skips_unknown_config_field(
 @pytest.mark.parametrize(
     ("flag", "value", "expected"),
     [
-        ("--setlat", "91", "latitude must be between -90 and 90"),
-        ("--setlon", "181", "longitude must be between -180 and 180"),
+        ("--setlat", "91.0", "latitude must be between -90 and 90"),
+        ("--setlon", "181.0", "longitude must be between -180 and 180"),
+        (
+            "--setlat",
+            "900000001",
+            "latitude premultiplied integer must be between",
+        ),
+        (
+            "--setlon",
+            "1800000001",
+            "longitude premultiplied integer must be between",
+        ),
     ],
 )
 def test_main_rejects_out_of_range_fixed_coordinates(
@@ -1231,9 +1250,9 @@ def test_main_rejects_out_of_range_fixed_coordinates(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_integer_latitude_is_interpreted_as_degrees() -> None:
-    """An integer-looking CLI latitude must not become raw protobuf coordinate units."""
-    sys.argv = ["", "--setlat", "37"]
+def test_main_integer_latitude_preserves_scaled_coordinate_compatibility() -> None:
+    """Integer CLI latitude values remain historical 1e7-scaled coordinates."""
+    sys.argv = ["", "--setlat", "375000000"]
     mt_config.args = sys.argv  # type: ignore[assignment]
     mocked_node = create_autospec(Node, instance=True)
     iface = create_autospec(SerialInterface, instance=True)
@@ -1245,14 +1264,17 @@ def test_main_integer_latitude_is_interpreted_as_degrees() -> None:
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
 
-    mocked_node.setFixedPosition.assert_called_once_with(37.0, 0.0, 0)
+    mocked_node.setFixedPosition.assert_called_once_with(375000000, 0.0, 0)
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_rejects_altitude_outside_position_int32(capsys: pytest.CaptureFixture[str]) -> None:
-    """CLI altitude should fail cleanly before overflowing the protobuf int32 field."""
-    sys.argv = ["", "--setalt", str(1 << 31)]
+@pytest.mark.parametrize("raw_altitude", [str(1 << 31), str(-(1 << 31) - 1)])
+def test_main_rejects_altitude_outside_position_int32(
+    raw_altitude: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI altitude should fail cleanly outside either protobuf int32 bound."""
+    sys.argv = ["", "--setalt", raw_altitude]
     mt_config.args = sys.argv  # type: ignore[assignment]
     mocked_node = create_autospec(Node, instance=True)
     iface = create_autospec(SerialInterface, instance=True)

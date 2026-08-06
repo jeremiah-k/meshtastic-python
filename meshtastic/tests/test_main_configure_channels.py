@@ -48,6 +48,7 @@ from ._main_legacy_support import (
 SDS_DISABLED_SENTINEL: int = 4_294_967_295
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
+
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent external network calls during unit tests in this module.
@@ -58,6 +59,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
         Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -1381,12 +1383,6 @@ def test_export_config_sets_missing_true_default_flags_false() -> None:
     assert module_config["mqtt"]["encryptionEnabled"] is False
 
 
-
-
-
-
-
-
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_export_config_configure_round_trip_security_keys(
@@ -1948,14 +1944,23 @@ def test_configure_commit_failure_is_not_retried(
 
 
 @pytest.mark.unit
-def test_legacy_mapping_validation_wrapper_delegates_to_renamed_helper() -> None:
+def test_legacy_mapping_validation_wrapper_delegates_to_renamed_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The retained __main__ compatibility seam must call the renamed validator."""
-    sections = {"audio": {}}
+    sections: dict[str, dict[str, Any]] = {"audio": {}}
+    delegate = MagicMock(return_value=sections)
+    monkeypatch.setattr(
+        "meshtastic.cli.configure_actions._validate_mapping_sections", delegate
+    )
 
     result = main_module._validate_non_empty_mapping_sections(
         top_level_key="module_config", section_mapping=sections
     )
 
+    delegate.assert_called_once()
+    assert delegate.call_args.kwargs["top_level_key"] == "module_config"
+    assert delegate.call_args.kwargs["section_mapping"] == sections
     assert result == sections
 
 
@@ -1981,7 +1986,9 @@ def test_configure_reconnect_verifies_normalized_channel_url(
     args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
     reconnect = MagicMock(return_value=main_module._ConfigureReconnectResult.VERIFIED)
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
-    monkeypatch.setattr(main_module, "_post_seturl_stability_check", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        main_module, "_post_seturl_stability_check", lambda *_a, **_k: True
+    )
     monkeypatch.setattr(main_module, "_post_configure_reconnect_and_verify", reconnect)
 
     main_module._handle_configure_command(iface, args, {})
@@ -2025,6 +2032,10 @@ def test_configure_prevalidates_all_phase1_values_before_any_mutation(
             {"lat": 0, "lon": 0, "alt": 1 << 31},
             "location.alt must fit the signed 32-bit position field",
         ),
+        (
+            {"lat": 0, "lon": 0, "alt": -(1 << 31) - 1},
+            "location.alt must fit the signed 32-bit position field",
+        ),
     ],
 )
 def test_configure_rejects_invalid_location_wire_values_before_mutation(
@@ -2045,3 +2056,31 @@ def test_configure_rejects_invalid_location_wire_values_before_mutation(
     _out, err = capsys.readouterr()
     assert expected_fragment in err
     target_node.setFixedPosition.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("lat", "lon"),
+    [(90.0, 180.0), (-90.0, -180.0)],
+)
+def test_configure_accepts_exact_location_boundaries(
+    lat: float,
+    lon: float,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inclusive geographic boundaries must remain valid configure inputs."""
+    config_path = tmp_path / "boundary-location.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"location": {"lat": lat, "lon": lon}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "meshtastic.cli.configure_actions.time.sleep", lambda _seconds: None
+    )
+    iface, target_node = _build_configure_interface()
+    args = SimpleNamespace(configure=[str(config_path)], dest=MAIN_LOCAL_ADDR)
+
+    main_module._handle_configure_command(iface, args, {})
+
+    target_node.setFixedPosition.assert_called_once_with(lat, lon, 0)

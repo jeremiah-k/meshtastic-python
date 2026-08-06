@@ -24,7 +24,7 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic._core_constants import LOCAL_ADDR
-from meshtastic.cli.context import CliContext, CliExit
+from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import admin_pb2, mesh_pb2
 
@@ -147,7 +147,9 @@ def send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-st
         socket_after_send = getattr(reset_interface, "socket", missing_transport)
         stream_after_send = getattr(reset_interface, "stream", missing_transport)
         wait_for_request_ack = getattr(reset_interface, "_wait_for_request_ack", None)
-        raise_wait_error = getattr(reset_interface, "_raise_wait_error_if_present", None)
+        raise_wait_error = getattr(
+            reset_interface, "_raise_wait_error_if_present", None
+        )
         scoped_wait_available = (
             request_id is not None
             and callable(wait_for_request_ack)
@@ -169,7 +171,9 @@ def send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-st
                 completed = wait_for_request_ack(
                     "receivedNak",
                     request_id,
-                    timeout_seconds=min(FACTORY_RESET_ACCEPTANCE_POLL_SECONDS, remaining),
+                    timeout_seconds=min(
+                        FACTORY_RESET_ACCEPTANCE_POLL_SECONDS, remaining
+                    ),
                 )
                 if completed:
                     raise_wait_error("receivedNak", request_id=request_id)
@@ -281,7 +285,10 @@ def post_factory_reset_ready_probe(interface: MeshInterface) -> None:
     interface : MeshInterface
         Connected interface; non-serial transports are ignored.
     """
-    if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
+    serial_interface_cls = getattr(meshtastic.serial_interface, "SerialInterface", None)
+    if not isinstance(serial_interface_cls, type) or not isinstance(
+        interface, serial_interface_cls
+    ):
         return
 
     logger.debug("Factory reset: closing serial interface to release port.")
@@ -347,12 +354,14 @@ def handle_ota_update(
         Destination classifier.
     """
     if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-        cli_exit(
+        _terminate_cli(
+            cli_exit,
             "Error: OTA update currently requires a TCP connection to the node (use --host).",
             1,
         )
     if not is_local_destination(interface, args.dest):
-        cli_exit(
+        _terminate_cli(
+            cli_exit,
             "Error: OTA update only supports the directly connected local node; "
             "omit --dest or use --dest ^local.",
             1,
@@ -361,8 +370,7 @@ def handle_ota_update(
     try:
         ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
     except meshtastic.ota.OTAError as exc:
-        cli_exit(f"OTA update failed: {exc}", 1)
-        raise AssertionError("cli_exit returned unexpectedly") from None
+        _terminate_cli(cli_exit, f"OTA update failed: {exc}", 1)
 
     cli_print(f"Triggering OTA update on {interface.hostname}...")
     interface.getNode(LOCAL_ADDR, requestChannels=False, **get_node_kwargs).startOTA(
@@ -379,12 +387,10 @@ def handle_ota_update(
         except meshtastic.ota.OTATransportError as exc:
             retries -= 1
             if retries == 0:
-                cli_exit(f"OTA update failed: {exc}", 1)
-                raise AssertionError("cli_exit returned unexpectedly") from None
+                _terminate_cli(cli_exit, f"OTA update failed: {exc}", 1)
             time.sleep(OTA_RETRY_DELAY_SECONDS)
         except meshtastic.ota.OTAError as exc:
-            cli_exit(f"OTA update failed: {exc}", 1)
-            raise AssertionError("cli_exit returned unexpectedly") from None
+            _terminate_cli(cli_exit, f"OTA update failed: {exc}", 1)
 
     cli_print("\nOTA update completed successfully!")
 
@@ -412,35 +418,30 @@ def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> Non
         outcome.wait_for_ack_nak = True
         hooks.cli_print("Removing fixed position and disabling fixed position setting")
         interface.getNode(args.dest, False, **get_node_kwargs).removeFixedPosition()
-    elif args.setlat or args.setlon or args.setalt:
+    elif any(value is not None for value in (args.setlat, args.setlon, args.setalt)):
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
-        if args.setalt:
+        if args.setalt is not None:
             try:
                 alt = int(args.setalt)
             except (TypeError, ValueError):
-                hooks.cli_exit(f"ERROR: Invalid altitude value: {args.setalt}", 1)
-                raise AssertionError("cli_exit returned unexpectedly") from None
+                _terminate_cli(
+                    hooks.cli_exit, f"ERROR: Invalid altitude value: {args.setalt}", 1
+                )
             if not POSITION_ALTITUDE_MIN <= alt <= POSITION_ALTITUDE_MAX:
-                hooks.cli_exit(
+                _terminate_cli(
+                    hooks.cli_exit,
                     "ERROR: altitude must fit the signed 32-bit position field, "
                     f"got: {alt}",
                     1,
                 )
-                raise AssertionError("cli_exit returned unexpectedly") from None
             hooks.cli_print(f"Fixing altitude at {alt} meters")
         else:
             alt = 0
         lat = _parse_coordinate(args.setlat, "latitude", hooks)
         lon = _parse_coordinate(args.setlon, "longitude", hooks)
-        if not -90.0 <= lat <= 90.0:
-            hooks.cli_exit(
-                f"ERROR: latitude must be between -90 and 90, got: {lat}", 1
-            )
-        if not -180.0 <= lon <= 180.0:
-            hooks.cli_exit(
-                f"ERROR: longitude must be between -180 and 180, got: {lon}", 1
-            )
+        _validate_coordinate_range(lat, "latitude", 90, hooks)
+        _validate_coordinate_range(lon, "longitude", 180, hooks)
         if args.setlat is not None:
             hooks.cli_print(f"Fixing latitude at {lat} degrees")
         if args.setlon is not None:
@@ -456,12 +457,14 @@ def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> Non
         long_name = args.set_owner.strip() if args.set_owner else None
         short_name = args.set_owner_short.strip() if args.set_owner_short else None
         if long_name is not None and not long_name:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: Long Name cannot be empty or contain only whitespace characters",
                 1,
             )
         if short_name is not None and not short_name:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: Short Name cannot be empty or contain only whitespace characters",
                 1,
             )
@@ -494,16 +497,16 @@ def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> Non
     if args.set_ham:
         ham_id = args.set_ham.strip()
         if not ham_id:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters",
                 1,
             )
         outcome.close_now = True
         hooks.cli_print(f"Setting Ham ID to {ham_id} and turning off encryption")
-        interface.getNode(args.dest, **get_node_kwargs).setOwner(
-            ham_id, is_licensed=True
-        )
-        interface.getNode(args.dest, **get_node_kwargs).turnOffEncryptionOnPrimaryChannel()
+        ham_node = interface.getNode(args.dest, **get_node_kwargs)
+        ham_node.setOwner(ham_id, is_licensed=True)
+        ham_node.turnOffEncryptionOnPrimaryChannel()
 
     _handle_reboot_and_reset_actions(context, hooks)
     if outcome.stop_processing:
@@ -515,13 +518,15 @@ def _parse_coordinate(
     raw_value: Any,
     coordinate_name: str,
     hooks: DeviceActionHooks,
-) -> float:
-    """Parse one CLI coordinate as degrees for the fixed-position command.
+) -> int | float:
+    """Parse one CLI coordinate using the historical dual representation.
 
     Parameters
     ----------
     raw_value : Any
-        Raw argparse value, or ``None`` when the coordinate was omitted.
+        Raw argparse value, or ``None`` when the coordinate was omitted. Integer
+        values represent protobuf coordinates premultiplied by ``1e7``; decimal
+        values represent degrees.
     coordinate_name : str
         Human-readable coordinate name for diagnostics.
     hooks : DeviceActionHooks
@@ -529,16 +534,71 @@ def _parse_coordinate(
 
     Returns
     -------
-    float
-        Parsed coordinate, or ``0.0`` for an omitted value.
+    int | float
+        Parsed scaled integer or decimal-degree coordinate. Omitted coordinates
+        retain the historical ``0.0`` default.
     """
     if raw_value is None:
         return 0.0
+    if isinstance(raw_value, bool):
+        _terminate_cli(
+            hooks.cli_exit,
+            f"ERROR: Invalid {coordinate_name} value: {raw_value}",
+            1,
+        )
+    if isinstance(raw_value, (int, float)):
+        return raw_value
     try:
-        return float(raw_value)
+        return int(raw_value)
     except (TypeError, ValueError):
-        hooks.cli_exit(f"ERROR: Invalid {coordinate_name} value: {raw_value}", 1)
-        raise AssertionError("cli_exit returned unexpectedly") from None
+        try:
+            return float(raw_value)
+        except (TypeError, ValueError):
+            _terminate_cli(
+                hooks.cli_exit,
+                f"ERROR: Invalid {coordinate_name} value: {raw_value}",
+                1,
+            )
+
+
+def _validate_coordinate_range(
+    value: int | float,
+    coordinate_name: str,
+    degree_limit: int,
+    hooks: DeviceActionHooks,
+) -> None:
+    """Validate a coordinate according to its CLI representation.
+
+    Parameters
+    ----------
+    value : int | float
+        Parsed coordinate. Integers are already scaled by ``1e7``; floats are
+        decimal degrees.
+    coordinate_name : str
+        Human-readable coordinate name for diagnostics.
+    degree_limit : int
+        Absolute geographic degree limit (90 for latitude, 180 for longitude).
+    hooks : DeviceActionHooks
+        CLI exit hook used for invalid values.
+    """
+    if isinstance(value, int):
+        scaled_limit = degree_limit * 10_000_000
+        if not -scaled_limit <= value <= scaled_limit:
+            _terminate_cli(
+                hooks.cli_exit,
+                f"ERROR: {coordinate_name} premultiplied integer must be between "
+                f"{-scaled_limit} and {scaled_limit}, got: {value}",
+                1,
+            )
+        return
+
+    if not -degree_limit <= value <= degree_limit:
+        _terminate_cli(
+            hooks.cli_exit,
+            f"ERROR: {coordinate_name} must be between {-degree_limit} and "
+            f"{degree_limit}, got: {value}",
+            1,
+        )
 
 
 def _handle_content_updates(context: CliContext, hooks: DeviceActionHooks) -> None:
@@ -563,10 +623,14 @@ def _handle_content_updates(context: CliContext, hooks: DeviceActionHooks) -> No
         outcome.wait_for_ack_nak = True
         node = interface.getNode(args.dest, False, **kwargs)
         if node.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            hooks.cli_print(f"Setting canned plugin message to {args.set_canned_message}")
+            hooks.cli_print(
+                f"Setting canned plugin message to {args.set_canned_message}"
+            )
             node.set_canned_message(args.set_canned_message)
         else:
-            logger.warning("Canned Message module is excluded by firmware; skipping set.")
+            logger.warning(
+                "Canned Message module is excluded by firmware; skipping set."
+            )
     if args.set_ringtone:
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
@@ -606,12 +670,12 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
                 all_fields |= position_config.PositionFlags.Value(field)
         except ValueError:
             supported = ", ".join(position_config.PositionFlags.keys())
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: Unsupported position field. Supported position fields are: "
                 f"{supported}. If no fields are specified, the current value is displayed.",
                 1,
             )
-            raise AssertionError("cli_exit returned unexpectedly") from None
         else:
             hooks.cli_print(f"Setting position fields to {all_fields}")
             hooks.set_pref(position_config, "position_flags", f"{all_fields:d}")
@@ -690,15 +754,7 @@ def _handle_reboot_and_reset_actions(
             hooks.send_local_factory_reset_and_wait(reset_node, full=full)
         else:
             reset_node.factoryReset(full=full)
-        serial_interface_cls = getattr(
-            meshtastic.serial_interface, "SerialInterface", None
-        )
-        if (
-            full
-            and is_local_reset
-            and isinstance(serial_interface_cls, type)
-            and isinstance(interface, serial_interface_cls)
-        ):
+        if full and is_local_reset:
             hooks.post_factory_reset_ready_probe(interface)
 
 
@@ -764,17 +820,22 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
 
     context.outcome.close_now = True
     if not hooks.is_local_destination(context.interface, args.dest):
-        hooks.cli_exit(
-            "Lockdown commands apply only to the directly connected local node.", 1
+        _terminate_cli(
+            hooks.cli_exit,
+            "Lockdown commands apply only to the directly connected local node.",
+            1,
         )
-    if lockdown_action in {"provision", "lock-now", "disable"} and not args.lockdown_yes:
+    if (
+        lockdown_action in {"provision", "lock-now", "disable"}
+        and not args.lockdown_yes
+    ):
         confirmation = (
             input(f"Type 'yes' to confirm lockdown {lockdown_action}: ")
             .strip()
             .casefold()
         )
         if confirmation != "yes":
-            hooks.cli_exit("Aborted.", 1)
+            _terminate_cli(hooks.cli_exit, "Aborted.", 1)
 
     try:
         passphrase = _read_lockdown_passphrase(args, lockdown_action, hooks)
@@ -787,8 +848,7 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
             disable=lockdown_action == "disable",
         )
     except (OSError, ValueError) as exc:
-        hooks.cli_exit(f"Invalid lockdown options: {exc}", 1)
-        raise AssertionError("cli_exit returned unexpectedly") from None
+        _terminate_cli(hooks.cli_exit, f"Invalid lockdown options: {exc}", 1)
 
     try:
         status = hooks.send_lockdown_auth(
@@ -798,8 +858,7 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
             allow_reboot_without_status=lockdown_action == "lock-now",
         )
     except (TimeoutError, ValueError, RuntimeError) as exc:
-        hooks.cli_exit(f"Lockdown command failed: {exc}", 1)
-        raise AssertionError("cli_exit returned unexpectedly") from None
+        _terminate_cli(hooks.cli_exit, f"Lockdown command failed: {exc}", 1)
 
     if status is None:
         hooks.cli_print("Lockdown command accepted; device may already be rebooting.")
@@ -812,7 +871,7 @@ def _handle_lockdown_action(context: CliContext, hooks: DeviceActionHooks) -> No
     if status.backoff_seconds:
         hooks.cli_print(f"Retry backoff: {status.backoff_seconds}s")
     if status.state == mesh_pb2.LockdownStatus.UNLOCK_FAILED:
-        hooks.cli_exit("Lockdown authentication failed.", 1)
+        _terminate_cli(hooks.cli_exit, "Lockdown authentication failed.", 1)
 
 
 def _read_lockdown_passphrase(
@@ -840,13 +899,13 @@ def _read_lockdown_passphrase(
         return hooks.read_lockdown_passphrase_file(args.lockdown_passphrase_file)
     if args.lockdown_passphrase is not None:
         if not args.insecure_lockdown_passphrase_on_command_line:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "--lockdown-passphrase requires "
                 "--insecure-lockdown-passphrase-on-command-line; "
                 "prefer an operator-only file or interactive entry.",
                 1,
             )
-            raise AssertionError("cli_exit returned unexpectedly") from None
         return hooks.validate_lockdown_passphrase(
             args.lockdown_passphrase.encode("utf-8")
         )
@@ -855,6 +914,5 @@ def _read_lockdown_passphrase(
     if lockdown_action == "provision":
         confirmed = getpass.getpass("Lockdown passphrase (confirm): ")
         if entered != confirmed:
-            hooks.cli_exit("Lockdown passphrases do not match.", 1)
-            raise AssertionError("cli_exit returned unexpectedly") from None
+            _terminate_cli(hooks.cli_exit, "Lockdown passphrases do not match.", 1)
     return hooks.validate_lockdown_passphrase(entered.encode("utf-8"))

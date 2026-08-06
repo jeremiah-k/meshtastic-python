@@ -47,7 +47,9 @@ def test_cleanup_connected_resources_runs_in_reverse_order() -> None:
 
 
 @pytest.mark.unit
-def test_cleanup_connected_resources_returns_first_failure(caplog: pytest.LogCaptureFixture) -> None:
+def test_cleanup_connected_resources_returns_first_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Cleanup should continue after failures while retaining the first exception."""
     context = _context()
     first = RuntimeError("first")
@@ -80,9 +82,11 @@ def test_dispatch_does_not_suppress_cleanup_base_exception(
         MagicMock(side_effect=ValueError("primary")),
     )
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt) as exc_info:
         dispatch.dispatch_connected(context, MagicMock())
 
+    assert isinstance(exc_info.value.__context__, ValueError)
+    assert str(exc_info.value.__context__) == "primary"
     assert context.outcome.cleanup_callbacks == []
 
 
@@ -137,3 +141,30 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
     later_action.assert_not_called()
     sleep.assert_called_once_with(2)
     context.interface.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_finalize_waits_for_ack_when_requested() -> None:
+    """An explicit --ack request must trigger the shared final ACK/NAK wait."""
+    context = _context()
+    context.interface = MagicMock()  # type: ignore[assignment]
+    context.args.ack = True
+    hooks = MagicMock()
+
+    dispatch._finalize_connected_actions(context, hooks)  # noqa: SLF001
+
+    context.interface.getNode.assert_called_once_with("^all", False)
+    context.interface.getNode.return_value.iface.waitForAckNak.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_finalize_skip_ack_wait_takes_precedence() -> None:
+    """Actions that own completion must suppress the shared ACK/NAK wait."""
+    context = _context()
+    context.interface = MagicMock()  # type: ignore[assignment]
+    context.args.ack = True
+    context.outcome.skip_ack_wait = True
+
+    dispatch._finalize_connected_actions(context, MagicMock())  # noqa: SLF001
+
+    context.interface.getNode.assert_not_called()

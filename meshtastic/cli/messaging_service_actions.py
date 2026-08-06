@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from meshtastic._core_constants import BROADCAST_ADDR
-from meshtastic.cli.context import CliContext, CliExit
+from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.protobuf import portnums_pb2
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,15 @@ GPIO_READ_POLL_INTERVAL_SECONDS = 1.0
 GPIO_READ_MAX_POLLS = 10
 GPIO_MASK_BITS = 64
 GPIO_MASK_MAX = (1 << GPIO_MASK_BITS) - 1
+TELEMETRY_TYPE_ALIASES = {
+    "device": "device_metrics",
+    "environment": "environment_metrics",
+    "air_quality": "air_quality_metrics",
+    "airquality": "air_quality_metrics",
+    "power": "power_metrics",
+    "localstats": "local_stats",
+    "local_stats": "local_stats",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,12 +114,13 @@ def _parse_gpio_mask(raw_value: Any, hooks: MessagingServiceHooks) -> int:
     """
     try:
         mask = int(raw_value, 16)
-    except (TypeError, ValueError) as exc:
-        hooks.cli_exit(f"Warning: Invalid GPIO mask: {raw_value}", 1)
-        raise AssertionError("cli_exit returned unexpectedly") from exc
+    except (TypeError, ValueError):
+        _terminate_cli(hooks.cli_exit, f"Warning: Invalid GPIO mask: {raw_value}", 1)
     if not 0 <= mask <= GPIO_MASK_MAX:
-        hooks.cli_exit(
-            f"Warning: GPIO mask must fit in {GPIO_MASK_BITS} bits: {raw_value}", 1
+        _terminate_cli(
+            hooks.cli_exit,
+            f"Warning: GPIO mask must fit in {GPIO_MASK_BITS} bits: {raw_value}",
+            1,
         )
     return mask
 
@@ -127,9 +137,10 @@ def _handle_messaging_actions(
         context.outcome.close_now = True
         channel_index = _selected_channel(hooks)
         if not hooks.check_channel(interface, channel_index):
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 f"Warning: {channel_index} is not a valid channel. "
-                "Channel must not be DISABLED."
+                "Channel must not be DISABLED.",
             )
         hooks.cli_print(
             f"Sending text message {args.sendtext} to {args.dest} "
@@ -158,25 +169,14 @@ def _handle_messaging_actions(
                 f"Sending traceroute request to {destination} on "
                 f"channelIndex:{channel_index} (this could take a while)"
             )
-            interface.sendTraceRoute(
-                destination, hop_limit, channelIndex=channel_index
-            )
+            interface.sendTraceRoute(destination, hop_limit, channelIndex=channel_index)
 
     if args.request_telemetry:
         if args.dest == BROADCAST_ADDR:
-            hooks.cli_exit("Warning: Must use a destination node ID.")
+            _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
         channel_index = _selected_channel(hooks)
         if hooks.check_channel(interface, channel_index):
-            telemetry_map = {
-                "device": "device_metrics",
-                "environment": "environment_metrics",
-                "air_quality": "air_quality_metrics",
-                "airquality": "air_quality_metrics",
-                "power": "power_metrics",
-                "localstats": "local_stats",
-                "local_stats": "local_stats",
-            }
-            telemetry_type = telemetry_map.get(
+            telemetry_type = TELEMETRY_TYPE_ALIASES.get(
                 args.request_telemetry, "device_metrics"
             )
             hooks.cli_print(
@@ -192,7 +192,7 @@ def _handle_messaging_actions(
 
     if args.request_position:
         if args.dest == BROADCAST_ADDR:
-            hooks.cli_exit("Warning: Must use a destination node ID.")
+            _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
         channel_index = _selected_channel(hooks)
         if hooks.check_channel(interface, channel_index):
             hooks.cli_print(
@@ -207,26 +207,27 @@ def _handle_messaging_actions(
 
     if args.gpio_wrb or args.gpio_rd or args.gpio_watch:
         if args.dest == BROADCAST_ADDR:
-            hooks.cli_exit("Warning: Must use a destination node ID.")
+            _terminate_cli(hooks.cli_exit, "Warning: Must use a destination node ID.")
         client = hooks.remote_hardware_client(interface)
 
         if args.gpio_wrb:
             bitmask = 0
             bitval = 0
-            for bit, value in args.gpio_wrb or []:
+            for bit, value in args.gpio_wrb:
                 try:
                     bit_index = int(bit)
                     bit_value = int(value)
                 except (TypeError, ValueError):
-                    hooks.cli_exit(
-                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}", 1
+                    _terminate_cli(
+                        hooks.cli_exit,
+                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}",
+                        1,
                     )
-                if (
-                    not 0 <= bit_index < GPIO_MASK_BITS
-                    or bit_value not in {0, 1}
-                ):
-                    hooks.cli_exit(
-                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}", 1
+                if not 0 <= bit_index < GPIO_MASK_BITS or bit_value not in {0, 1}:
+                    _terminate_cli(
+                        hooks.cli_exit,
+                        f"Warning: Invalid GPIO bit/value pair: {bit!r}={value!r}",
+                        1,
                     )
                 bitmask |= 1 << bit_index
                 bitval |= bit_value << bit_index
@@ -349,7 +350,9 @@ def _start_tunnel(context: CliContext, hooks: MessagingServiceHooks) -> None:
     if hooks.platform_system() != "Linux" or not args.tunnel:
         return
     if args.dest != BROADCAST_ADDR:
-        hooks.cli_exit("A tunnel can only be created using the local node.", 1)
+        _terminate_cli(
+            hooks.cli_exit, "A tunnel can only be created using the local node.", 1
+        )
 
     if context.interface.noProto:
         logger.warning("Not starting Tunnel - disabled by noProto")
@@ -374,32 +377,38 @@ def _handle_long_running_services(
 
     if args.slog or args.power_stress:
         if not hooks.powermon_available():
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "The powermon module could not be loaded. "
                 "You may need to run `poetry install --with powermon`. "
-                f"Import Error was: {hooks.powermon_error()}"
+                f"Import Error was: {hooks.powermon_error()}",
             )
 
         if args.slog:
-            if hooks.log_set_factory is None:
-                hooks.cli_exit(
+            log_set_factory = hooks.log_set_factory
+            if log_set_factory is None:
+                _terminate_cli(
+                    hooks.cli_exit,
                     "LogSet is required for --slog but not available. "
-                    "The powermon module loaded incompletely."
+                    "The powermon module loaded incompletely.",
                 )
-            log_set = hooks.log_set_factory(
+            log_set = log_set_factory(
                 interface,
                 args.slog if args.slog != "default" else None,
                 hooks.get_meter(),
             )
             context.outcome.cleanup_callbacks.append(log_set.close)
+            context.outcome.close_now = False
 
         if args.power_stress:
-            if hooks.power_stress_factory is None:
-                hooks.cli_exit(
+            power_stress_factory = hooks.power_stress_factory
+            if power_stress_factory is None:
+                _terminate_cli(
+                    hooks.cli_exit,
                     "PowerStress is required for --power-stress but not available. "
-                    "The powermon module loaded incompletely."
+                    "The powermon module loaded incompletely.",
                 )
-            hooks.power_stress_factory(interface).run()
+            power_stress_factory(interface).run()
             context.outcome.close_now = True
 
     if args.listen:

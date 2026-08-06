@@ -97,9 +97,7 @@ def test_messaging_actions_send_traceroute_with_selected_channel() -> None:
 
     _handle_messaging_actions(context, hooks)
 
-    interface.sendTraceRoute.assert_called_once_with(
-        "!00000003", 5, channelIndex=2
-    )
+    interface.sendTraceRoute.assert_called_once_with("!00000003", 5, channelIndex=2)
 
 
 @pytest.mark.unit
@@ -112,9 +110,7 @@ def test_messaging_actions_send_traceroute_with_selected_channel() -> None:
         ("unknown", "device_metrics"),
     ],
 )
-def test_messaging_actions_maps_telemetry_types(
-    requested: str, expected: str
-) -> None:
+def test_messaging_actions_maps_telemetry_types(requested: str, expected: str) -> None:
     """Telemetry request aliases should map to the historical metric names."""
     interface = _interface_double()
     context = _context(interface, request_telemetry=requested)
@@ -131,16 +127,25 @@ def test_messaging_actions_maps_telemetry_types(
 
 
 @pytest.mark.unit
-def test_messaging_actions_reject_broadcast_response_requests() -> None:
+@pytest.mark.parametrize(
+    ("overrides", "method_name"),
+    [
+        ({"request_telemetry": "device"}, "sendTelemetry"),
+        ({"request_position": True}, "sendPosition"),
+    ],
+)
+def test_messaging_actions_reject_broadcast_response_requests(
+    overrides: dict[str, Any], method_name: str
+) -> None:
     """Telemetry and position response requests require a concrete destination."""
     interface = _interface_double()
-    context = _context(interface, dest="^all", request_telemetry="device")
+    context = _context(interface, dest="^all", **overrides)
     hooks = _hooks()
 
     with pytest.raises(SystemExit):
         _handle_messaging_actions(context, hooks)
 
-    interface.sendTelemetry.assert_not_called()
+    getattr(interface, method_name).assert_not_called()
 
 
 @pytest.mark.unit
@@ -158,7 +163,7 @@ def test_messaging_actions_writes_gpio_bitmask() -> None:
 
 
 @pytest.mark.unit
-def test_information_actions_remote_nodes_stops_dispatch(capsys: pytest.CaptureFixture[str]) -> None:
+def test_information_actions_remote_nodes_stops_dispatch() -> None:
     """Remote node-list requests should retain the historical early-return behavior."""
     interface = _interface_double()
     context = _context(interface, nodes=True)
@@ -233,8 +238,8 @@ def test_rejected_no_proto_tunnel_preserves_prior_close_request() -> None:
 
 
 @pytest.mark.unit
-def test_sendtext_does_not_force_ack_wait_without_ack_flag() -> None:
-    """Text sends should leave ACK waiting under the explicit ``--ack`` option."""
+def test_sendtext_requests_protocol_ack_without_owning_final_wait() -> None:
+    """Text sends request an ACK while final blocking waits remain dispatch-owned."""
     interface = _interface_double()
     node = MagicMock()
     interface.getNode.return_value = node
@@ -243,8 +248,8 @@ def test_sendtext_does_not_force_ack_wait_without_ack_flag() -> None:
     _handle_messaging_actions(context, _hooks())
 
     assert context.outcome.close_now is True
-    assert context.outcome.wait_for_ack_nak is False
     interface.sendText.assert_called_once()
+    assert interface.sendText.call_args.kwargs["wantAck"] is True
 
 
 @pytest.mark.unit
@@ -327,3 +332,67 @@ def test_gpio_write_rejects_bit_index_outside_uint64() -> None:
         _handle_messaging_actions(context, hooks)
 
     client.writeGPIOs.assert_not_called()
+
+
+@pytest.mark.unit
+def test_slog_overrides_prior_one_shot_close_request() -> None:
+    """Starting structured logging must keep the connection alive until cleanup."""
+    interface = _interface_double()
+    log_set = MagicMock()
+    context = _context(interface, slog="default")
+    context.outcome.close_now = True
+    hooks = _hooks(log_set_factory=MagicMock(return_value=log_set))
+
+    _handle_long_running_services(context, hooks)
+
+    assert context.outcome.close_now is False
+    assert context.outcome.cleanup_callbacks == [log_set.close]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("service", ["slog", "power_stress"])
+def test_missing_optional_service_factory_fails_closed(service: str) -> None:
+    """Missing optional factories must never be called after a returning exit seam."""
+    interface = _interface_double()
+    returning_exit = MagicMock()
+    overrides: dict[str, Any] = {"cli_exit": returning_exit}
+    context_overrides: dict[str, Any] = {}
+    if service == "slog":
+        overrides["log_set_factory"] = None
+        context_overrides["slog"] = "default"
+    else:
+        overrides["power_stress_factory"] = None
+        context_overrides["power_stress"] = True
+    context = _context(interface, **context_overrides)
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        _handle_long_running_services(context, _hooks(**overrides))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("overrides", "expected_message"),
+    [
+        ({"gpio_rd": "10000000000000000"}, "GPIO mask"),
+        ({"gpio_wrb": [("not-a-bit", "1")]}, "GPIO bit/value"),
+        ({"gpio_wrb": [("64", "1")]}, "GPIO bit/value"),
+    ],
+)
+def test_gpio_validation_fails_closed_with_returning_exit(
+    overrides: dict[str, Any], expected_message: str
+) -> None:
+    """Invalid GPIO input must not reach remote hardware if the exit seam returns."""
+    interface = _interface_double()
+    client = MagicMock()
+    cli_exit = MagicMock()
+    hooks = _hooks(
+        cli_exit=cli_exit, remote_hardware_client=MagicMock(return_value=client)
+    )
+    context = _context(interface, **overrides)
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        _handle_messaging_actions(context, hooks)
+
+    assert expected_message in str(cli_exit.call_args)
+    client.writeGPIOs.assert_not_called()
+    client.readGPIOs.assert_not_called()

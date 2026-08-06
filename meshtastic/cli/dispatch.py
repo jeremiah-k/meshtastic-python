@@ -89,7 +89,9 @@ def _cleanup_connected_resources(context: CliContext) -> BaseException | None:
             if first_error is None:
                 first_error = exc
             else:
-                logger.warning("Additional connected-action cleanup failed", exc_info=True)
+                logger.warning(
+                    "Additional connected-action cleanup failed", exc_info=True
+                )
     context.outcome.cleanup_callbacks.clear()
     return first_error
 
@@ -136,6 +138,9 @@ def dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
     finally:
         cleanup_error = _cleanup_connected_resources(context)
         if cleanup_error is not None:
+            # Control-flow BaseExceptions (for example KeyboardInterrupt/SystemExit)
+            # raised by cleanup must remain observable, even while another error is
+            # unwinding. The original action failure remains on ``__context__``.
             if action_error is None or not isinstance(cleanup_error, Exception):
                 raise cleanup_error
             logger.warning(

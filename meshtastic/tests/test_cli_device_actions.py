@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -52,7 +53,7 @@ def _context(interface: object, **args: object) -> CliContext:
     """Build the minimal connected CLI context needed by a focused handler test."""
     return CliContext(
         interface=interface,  # type: ignore[arg-type]
-        args=SimpleNamespace(**args),
+        args=argparse.Namespace(**args),
         get_node_kwargs={},
         outcome=ActionOutcome(),
     )
@@ -222,3 +223,133 @@ def test_lockdown_confirmation_mismatch_guard_rejects_returning_cli_exit(
 
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
         device_actions._read_lockdown_passphrase(args, "provision", _hooks())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("failure_kind", ["transport", "destination"])
+def test_ota_preconditions_reject_returning_cli_exit(
+    monkeypatch: pytest.MonkeyPatch, failure_kind: str
+) -> None:
+    """Rejected OTA transport/destination preconditions must never continue."""
+    if failure_kind == "transport":
+        interface = MagicMock()
+        local_destination = MagicMock(return_value=True)
+    else:
+        interface = _prepare_ota(monkeypatch, MagicMock())
+        local_destination = MagicMock(return_value=False)
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions.handle_ota_update(
+            interface,  # type: ignore[arg-type]
+            argparse.Namespace(ota_update="firmware.bin", dest="!remote"),
+            {},
+            cli_exit=_returning_cli_exit,  # type: ignore[arg-type]
+            cli_print=MagicMock(),
+            is_local_destination=local_destination,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("args", "expected_fragment"),
+    [
+        ({"setlat": "91.0", "setlon": None, "setalt": None}, "latitude"),
+        ({"setlat": None, "setlon": "181.0", "setalt": None}, "longitude"),
+        ({"set_owner": "   "}, "Long Name"),
+        ({"set_owner_short": "   "}, "Short Name"),
+        ({"set_ham": "   "}, "Ham radio callsign"),
+    ],
+)
+def test_device_validation_guards_reject_returning_cli_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    args: dict[str, object],
+    expected_fragment: str,
+) -> None:
+    """Fatal device validation must not reach a mutating operation after exit."""
+    interface = MagicMock()
+    defaults: dict[str, object] = {
+        "set_time": None,
+        "remove_position": False,
+        "setlat": None,
+        "setlon": None,
+        "setalt": None,
+        "set_owner": None,
+        "set_owner_short": None,
+        "set_is_unmessageable": None,
+        "set_ham": None,
+        "dest": "^local",
+    }
+    defaults.update(args)
+    context = _context(interface, **defaults)
+    exit_mock = MagicMock()
+    hooks = _hooks(cli_exit=exit_mock)
+    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
+    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
+    monkeypatch.setattr(
+        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
+    )
+    monkeypatch.setattr(
+        device_actions, "_handle_node_database_actions", lambda *_a: None
+    )
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions._handle_device_actions(context, hooks)
+
+    assert expected_fragment in str(exit_mock.call_args)
+    interface.getNode.return_value.setFixedPosition.assert_not_called()
+    interface.getNode.return_value.setOwner.assert_not_called()
+
+
+@pytest.mark.unit
+def test_lockdown_preconditions_reject_returning_cli_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lockdown must fail closed on non-local targets and rejected confirmation."""
+    remote = _lockdown_context()
+    remote.args.dest = "!remote"
+    hooks = _hooks(is_local_destination=MagicMock(return_value=False))
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions._handle_lockdown_action(remote, hooks)
+    hooks.send_lockdown_auth.assert_not_called()
+
+    confirm = _lockdown_context()
+    confirm.args.lockdown_unlock = False
+    confirm.args.lockdown_provision = True
+    monkeypatch.setattr("builtins.input", lambda _prompt: "no")
+    hooks = _hooks(is_local_destination=MagicMock(return_value=True))
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions._handle_lockdown_action(confirm, hooks)
+    hooks.send_lockdown_auth.assert_not_called()
+
+
+@pytest.mark.unit
+def test_numeric_zero_fixed_position_is_not_treated_as_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Programmatic zero coordinates must still enter the fixed-position action."""
+    interface = MagicMock()
+    context = _context(
+        interface,
+        set_time=None,
+        remove_position=False,
+        setlat=0.0,
+        setlon=None,
+        setalt=None,
+        set_owner=None,
+        set_owner_short=None,
+        set_is_unmessageable=None,
+        set_ham=None,
+        dest="^local",
+    )
+    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
+    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
+    monkeypatch.setattr(
+        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
+    )
+    monkeypatch.setattr(
+        device_actions, "_handle_node_database_actions", lambda *_a: None
+    )
+
+    device_actions._handle_device_actions(context, _hooks())
+
+    interface.getNode.return_value.setFixedPosition.assert_called_once_with(0.0, 0.0, 0)

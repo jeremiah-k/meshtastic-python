@@ -19,7 +19,7 @@ from typing import Any, NamedTuple
 import yaml
 
 import meshtastic.util
-from meshtastic.cli.context import CliContext, CliExit
+from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.configure_verify import (
     _verify_channel_url_against_state,
     _verify_requested_fields,
@@ -90,20 +90,26 @@ class _Phase1ConfigureValues:
         Normalized short owner name when requested.
     location : tuple[float, float, int] | None
         Validated latitude, longitude, and altitude when requested.
+    altitude_specified : bool
+        Whether the input location explicitly contained an altitude.
     canned_messages : str | None
         Canned-message payload when requested.
     ringtone : str | None
         Ringtone payload when requested.
     channel_url : str | None
         Stripped channel URL when requested.
+    channel_url_key : str | None
+        Original accepted channel-URL alias used by the input document.
     """
 
     owner: str | None = None
     owner_short: str | None = None
     location: tuple[float, float, int] | None = None
+    altitude_specified: bool = False
     canned_messages: str | None = None
     ringtone: str | None = None
     channel_url: str | None = None
+    channel_url_key: str | None = None
 
 
 class _PreparedConfigureDocument(NamedTuple):
@@ -111,8 +117,6 @@ class _PreparedConfigureDocument(NamedTuple):
 
     Attributes
     ----------
-    configuration : dict[str, Any]
-        Validated top-level YAML mapping.
     phase1 : _Phase1ConfigureValues
         Normalized direct-write values.
     config_sections : dict[str, dict[str, Any]]
@@ -121,7 +125,6 @@ class _PreparedConfigureDocument(NamedTuple):
         Validated LocalModuleConfig section mappings.
     """
 
-    configuration: dict[str, Any]
     phase1: _Phase1ConfigureValues
     config_sections: dict[str, dict[str, Any]]
     module_config_sections: dict[str, dict[str, Any]]
@@ -476,9 +479,10 @@ def _validate_mapping_sections(
     validated_sections: dict[str, dict[str, Any]] = {}
     for section_name, section_value in section_mapping.items():
         if not isinstance(section_value, dict):
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 f"ERROR: '{top_level_key}.{section_name}' must be a mapping, got "
-                f"{type(section_value).__name__}"
+                f"{type(section_value).__name__}",
             )
         validated_sections[section_name] = section_value
     return validated_sections
@@ -516,9 +520,10 @@ def _preflight_configure_sections(
                 field_suffix = (
                     f" Invalid field: {failed_fields[0]}." if failed_fields else ""
                 )
-                hooks.cli_exit(
+                _terminate_cli(
+                    hooks.cli_exit,
                     f"Failed to apply {top_level_key} section {section!r} "
-                    f"due to structural errors.{field_suffix}"
+                    f"due to structural errors.{field_suffix}",
                 )
     finally:
         hooks.preflight_mode.reset(token)
@@ -763,10 +768,10 @@ def _apply_configure_channel_url(
 ) -> bool:
     """Validate and apply one configured channel URL without exposing it."""
     if not isinstance(raw_channel_url, str):
-        hooks.cli_exit(f"ERROR: {config_key} must be a string.")
+        _terminate_cli(hooks.cli_exit, f"ERROR: {config_key} must be a string.")
     requested_channel_url = raw_channel_url.strip()
     if not requested_channel_url:
-        hooks.cli_exit(f"ERROR: {config_key} must not be blank.")
+        _terminate_cli(hooks.cli_exit, f"ERROR: {config_key} must not be blank.")
 
     if hooks.channel_url_matches_current_device_state(
         target_node, requested_channel_url
@@ -865,79 +870,92 @@ def _validate_phase1_configuration(
         raw_owner = configuration["owner"]
         owner = "" if raw_owner is None else str(raw_owner).strip()
         if not owner:
-            hooks.cli_exit(
-                "ERROR: Long Name cannot be empty or contain only whitespace characters"
+            _terminate_cli(
+                hooks.cli_exit,
+                "ERROR: Long Name cannot be empty or contain only whitespace characters",
             )
 
     owner_short: str | None = None
-    owner_short_key = (
-        "owner_short" if "owner_short" in configuration else "ownerShort"
-    )
+    owner_short_key = "owner_short" if "owner_short" in configuration else "ownerShort"
     if owner_short_key in configuration:
         raw_owner_short = configuration[owner_short_key]
-        owner_short = (
-            "" if raw_owner_short is None else str(raw_owner_short).strip()
-        )
+        owner_short = "" if raw_owner_short is None else str(raw_owner_short).strip()
         if not owner_short:
-            hooks.cli_exit(
-                "ERROR: Short Name cannot be empty or contain only whitespace characters"
+            _terminate_cli(
+                hooks.cli_exit,
+                "ERROR: Short Name cannot be empty or contain only whitespace characters",
             )
 
     location_values: tuple[float, float, int] | None = None
+    altitude_specified = False
     if "location" in configuration:
         location = configuration["location"]
         if not isinstance(location, dict) or not location:
-            hooks.cli_exit(
-                "location must be a non-empty mapping with lat, lon, and optional alt"
+            _terminate_cli(
+                hooks.cli_exit,
+                "location must be a non-empty mapping with lat, lon, and optional alt",
             )
         unknown_location_keys = set(location) - {"lat", "lon", "alt"}
         if unknown_location_keys:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "location contains unknown keys: "
-                f"{', '.join(sorted(unknown_location_keys))}. Allowed: lat, lon, alt"
+                f"{', '.join(sorted(unknown_location_keys))}. Allowed: lat, lon, alt",
             )
         if "lat" not in location or "lon" not in location:
-            hooks.cli_exit("location requires both lat and lon")
+            _terminate_cli(hooks.cli_exit, "location requires both lat and lon")
         if isinstance(location["lat"], bool):
-            hooks.cli_exit(
-                f"location.lat must be a number, got: {location['lat']!r}"
+            _terminate_cli(
+                hooks.cli_exit,
+                f"location.lat must be a number, got: {location['lat']!r}",
             )
         try:
             lat = float(location["lat"])
         except (ValueError, TypeError):
-            hooks.cli_exit(
-                f"location.lat must be a number, got: {location['lat']!r}"
+            _terminate_cli(
+                hooks.cli_exit,
+                f"location.lat must be a number, got: {location['lat']!r}",
             )
         if isinstance(location["lon"], bool):
-            hooks.cli_exit(
-                f"location.lon must be a number, got: {location['lon']!r}"
+            _terminate_cli(
+                hooks.cli_exit,
+                f"location.lon must be a number, got: {location['lon']!r}",
             )
         try:
             lon = float(location["lon"])
         except (ValueError, TypeError):
-            hooks.cli_exit(
-                f"location.lon must be a number, got: {location['lon']!r}"
+            _terminate_cli(
+                hooks.cli_exit,
+                f"location.lon must be a number, got: {location['lon']!r}",
             )
         if not -90.0 <= lat <= 90.0:
-            hooks.cli_exit(f"location.lat must be between -90 and 90, got: {lat}")
+            _terminate_cli(
+                hooks.cli_exit, f"location.lat must be between -90 and 90, got: {lat}"
+            )
         if not -180.0 <= lon <= 180.0:
-            hooks.cli_exit(f"location.lon must be between -180 and 180, got: {lon}")
+            _terminate_cli(
+                hooks.cli_exit, f"location.lon must be between -180 and 180, got: {lon}"
+            )
         alt = 0
-        if "alt" in location:
+        altitude_specified = "alt" in location
+        if altitude_specified:
             if isinstance(location["alt"], bool):
-                hooks.cli_exit(
-                    f"location.alt must be an integer, got: {location['alt']!r}"
+                _terminate_cli(
+                    hooks.cli_exit,
+                    f"location.alt must be an integer, got: {location['alt']!r}",
                 )
             try:
                 alt = int(location["alt"])
             except (ValueError, TypeError):
-                hooks.cli_exit(
-                    f"location.alt must be an integer, got: {location['alt']!r}"
+                _terminate_cli(
+                    hooks.cli_exit,
+                    f"location.alt must be an integer, got: {location['alt']!r}",
                 )
             if not POSITION_ALTITUDE_MIN <= alt <= POSITION_ALTITUDE_MAX:
-                hooks.cli_exit(
+                _terminate_cli(
+                    hooks.cli_exit,
                     "location.alt must fit the signed 32-bit position field, "
-                    f"got: {alt}"
+                    f"got: {alt}",
                 )
         location_values = (lat, lon, alt)
 
@@ -958,28 +976,37 @@ def _validate_phase1_configuration(
             return None
         value = configuration[key]
         if not isinstance(value, str):
-            hooks.cli_exit(f"ERROR: {key} must be a string.")
+            _terminate_cli(hooks.cli_exit, f"ERROR: {key} must be a string.")
         return value
 
-    channel_url_key = (
-        "channel_url" if "channel_url" in configuration else "channelUrl"
-    )
+    channel_url_key: str | None = None
+    if "channel_url" in configuration:
+        channel_url_key = "channel_url"
+    elif "channelUrl" in configuration:
+        channel_url_key = "channelUrl"
+
     channel_url: str | None = None
-    if channel_url_key in configuration:
+    if channel_url_key is not None:
         raw_channel_url = configuration[channel_url_key]
         if not isinstance(raw_channel_url, str):
-            hooks.cli_exit(f"ERROR: {channel_url_key} must be a string.")
+            _terminate_cli(
+                hooks.cli_exit, f"ERROR: {channel_url_key} must be a string."
+            )
         channel_url = raw_channel_url.strip()
         if not channel_url:
-            hooks.cli_exit(f"ERROR: {channel_url_key} must not be blank.")
+            _terminate_cli(
+                hooks.cli_exit, f"ERROR: {channel_url_key} must not be blank."
+            )
 
     return _Phase1ConfigureValues(
         owner=owner,
         owner_short=owner_short,
         location=location_values,
+        altitude_specified=altitude_specified,
         canned_messages=_optional_string("canned_messages"),
         ringtone=_optional_string("ringtone"),
         channel_url=channel_url,
+        channel_url_key=channel_url_key,
     )
 
 
@@ -1007,34 +1034,44 @@ def _load_and_validate_configure_document(
             raw_text = file.read()
         configuration = yaml.safe_load(raw_text)
     except OSError as exc:
-        hooks.cli_exit(f"ERROR: Failed to read configuration file: {exc}")
+        _terminate_cli(
+            hooks.cli_exit, f"ERROR: Failed to read configuration file: {exc}"
+        )
     except (yaml.YAMLError, UnicodeDecodeError) as exc:
-        hooks.cli_exit(f"ERROR: Failed to parse YAML configuration: {exc}")
+        _terminate_cli(
+            hooks.cli_exit, f"ERROR: Failed to parse YAML configuration: {exc}"
+        )
 
     if configuration is None:
-        hooks.cli_exit("ERROR: YAML configuration file is empty")
+        _terminate_cli(hooks.cli_exit, "ERROR: YAML configuration file is empty")
     if not isinstance(configuration, dict):
-        hooks.cli_exit(
+        _terminate_cli(
+            hooks.cli_exit,
             "ERROR: YAML configuration must be a mapping/dictionary, got "
-            f"{type(configuration).__name__}"
+            f"{type(configuration).__name__}",
         )
     if not configuration:
-        hooks.cli_exit("ERROR: Configuration file is empty; nothing to configure.")
+        _terminate_cli(
+            hooks.cli_exit, "ERROR: Configuration file is empty; nothing to configure."
+        )
 
     unknown_keys = set(configuration) - ALLOWED_CONFIGURE_KEYS
     if unknown_keys:
-        hooks.cli_exit(
-            f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(unknown_keys))}"
+        _terminate_cli(
+            hooks.cli_exit,
+            f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(unknown_keys))}",
         )
     if "channel_url" in configuration and "channelUrl" in configuration:
-        hooks.cli_exit(
+        _terminate_cli(
+            hooks.cli_exit,
             "ERROR: Cannot specify both 'channel_url' and 'channelUrl' in the same "
-            "configuration file; use one."
+            "configuration file; use one.",
         )
     if "owner_short" in configuration and "ownerShort" in configuration:
-        hooks.cli_exit(
+        _terminate_cli(
+            hooks.cli_exit,
             "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same "
-            "configuration file; use one."
+            "configuration file; use one.",
         )
 
     phase1_values = _validate_phase1_configuration(hooks, configuration)
@@ -1043,10 +1080,11 @@ def _load_and_validate_configure_document(
     if "config" in configuration:
         config_value = configuration["config"]
         if not isinstance(config_value, dict) or not config_value:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: 'config' must be a non-empty mapping, got "
                 f"{type(config_value).__name__}"
-                f"{' (empty)' if isinstance(config_value, dict) else ''}"
+                f"{' (empty)' if isinstance(config_value, dict) else ''}",
             )
         config_sections = _validate_mapping_sections(
             hooks, top_level_key="config", section_mapping=config_value
@@ -1056,10 +1094,11 @@ def _load_and_validate_configure_document(
     if "module_config" in configuration:
         module_config_value = configuration["module_config"]
         if not isinstance(module_config_value, dict) or not module_config_value:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: 'module_config' must be a non-empty mapping, got "
                 f"{type(module_config_value).__name__}"
-                f"{' (empty)' if isinstance(module_config_value, dict) else ''}"
+                f"{' (empty)' if isinstance(module_config_value, dict) else ''}",
             )
         module_config_sections = _validate_mapping_sections(
             hooks,
@@ -1068,7 +1107,6 @@ def _load_and_validate_configure_document(
         )
 
     return _PreparedConfigureDocument(
-        configuration=configuration,
         phase1=phase1_values,
         config_sections=config_sections,
         module_config_sections=module_config_sections,
@@ -1096,7 +1134,6 @@ def _apply_phase1_configuration(
     bool
         ``True`` only when a channel URL write was actually sent.
     """
-    configuration = prepared.configuration
     values = prepared.phase1
     phase1_started = False
 
@@ -1122,7 +1159,7 @@ def _apply_phase1_configuration(
     if values.location is not None:
         _begin_phase1()
         lat, lon, alt = values.location
-        if "alt" in configuration["location"]:
+        if values.altitude_specified:
             hooks.cli_print(f"Fixing altitude at {alt} meters")
         hooks.cli_print(f"Fixing latitude at {lat} degrees")
         hooks.cli_print(f"Fixing longitude at {lon} degrees")
@@ -1145,13 +1182,13 @@ def _apply_phase1_configuration(
     seturl_executed = False
     if values.channel_url is not None:
         _begin_phase1()
+        if values.channel_url_key is None:
+            raise AssertionError("normalized channel URL is missing its source key")
         seturl_executed = _apply_configure_channel_url(
             hooks,
             target_node,
             values.channel_url,
-            config_key=(
-                "channel_url" if "channel_url" in configuration else "channelUrl"
-            ),
+            config_key=values.channel_url_key,
         )
 
     if phase1_started:
@@ -1220,8 +1257,9 @@ def _apply_settings_transaction(
                     ", ".join(repr(field) for field in failed_fields),
                 )
             if not applied:
-                hooks.cli_exit(
-                    f"Failed to apply {label} section {section!r} due to structural errors."
+                _terminate_cli(
+                    hooks.cli_exit,
+                    f"Failed to apply {label} section {section!r} due to structural errors.",
                 )
             target_node.writeConfig(meshtastic.util.camel_to_snake(section))
             remaining_writes -= 1
@@ -1355,7 +1393,9 @@ def _handle_configure_command(
     """
     prepared = _load_and_validate_configure_document(hooks, args.configure[0])
     target_node = interface.getNode(args.dest, False, **get_node_kwargs)
-    has_config_writes = bool(prepared.config_sections or prepared.module_config_sections)
+    has_config_writes = bool(
+        prepared.config_sections or prepared.module_config_sections
+    )
     is_local_target = hooks.is_local_destination(interface, args.dest)
 
     if has_config_writes:
@@ -1366,10 +1406,11 @@ def _handle_configure_command(
             module_config_sections=prepared.module_config_sections,
         )
         if prepared.phase1.channel_url is not None and not is_local_target:
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: Combining channel_url with additional configuration writes "
                 "is not supported for remote nodes. Apply channel_url and "
-                "configuration in separate operations."
+                "configuration in separate operations.",
             )
 
     seturl_executed = _apply_phase1_configuration(hooks, target_node, prepared)
@@ -1377,9 +1418,10 @@ def _handle_configure_command(
         if not hooks.post_seturl_stability_check(
             interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
         ):
-            hooks.cli_exit(
+            _terminate_cli(
+                hooks.cli_exit,
                 "ERROR: channel_url applied, but transport did not stabilize for "
-                "additional configuration writes; aborting before Phase 2."
+                "additional configuration writes; aborting before Phase 2.",
             )
 
     settings_transaction_started = has_config_writes
@@ -1406,6 +1448,7 @@ def _handle_configure_command(
         settings_transaction_started=settings_transaction_started,
         phase1_channel_url_applied=seturl_executed and is_local_target,
     )
+
 
 def _handle_configure_actions(
     context: CliContext,
@@ -1460,5 +1503,5 @@ def _handle_configure_actions(
         with open(args.export_config, "w", encoding="utf-8") as output_file:
             output_file.write(config_text)
     except OSError as exc:
-        hooks.cli_exit(f"ERROR: Failed to write config file: {exc}", 1)
+        _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
     hooks.cli_print(f"Exported configuration to {args.export_config}")
