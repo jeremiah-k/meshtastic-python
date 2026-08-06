@@ -576,6 +576,26 @@ def _refresh_no_disconnect_verify_state(
             request_channels(0)
 
 
+def _device_lora_config(target_node: Any) -> Any | None:
+    """Return the loaded device LoRa config, or ``None`` when unavailable.
+
+    Parameters
+    ----------
+    target_node : Any
+        Node whose loaded local configuration is inspected.
+
+    Returns
+    -------
+    Any | None
+        Loaded LoRa protobuf message when present, otherwise ``None``.
+    """
+    local_config = getattr(target_node, "localConfig", None)
+    has_field = getattr(local_config, "HasField", None)
+    if local_config is None or not callable(has_field) or not has_field("lora"):
+        return None
+    return local_config.lora
+
+
 def _channel_url_matches_current_device_state(
     target_node: Any,
     requested_channel_url: str,
@@ -585,14 +605,13 @@ def _channel_url_matches_current_device_state(
     ),
 ) -> bool:
     """Return True when requested channel URL already matches loaded device state."""
-    local_config = getattr(target_node, "localConfig", None)
-    has_field = getattr(local_config, "HasField", None)
-    if local_config is None or not callable(has_field) or not has_field("lora"):
+    device_lora_config = _device_lora_config(target_node)
+    if device_lora_config is None:
         return False
     return verify_channel_url_against_state(
         requested_channel_url,
         device_channels=getattr(target_node, "channels", None),
-        device_lora_config=local_config.lora,
+        device_lora_config=device_lora_config,
         emit_warnings=False,
     )
 
@@ -703,13 +722,7 @@ def _verify_post_reconnect_config(
     verified_fields: list[str] = []
 
     if verify_channel_url:
-        local_config = getattr(target_node, "localConfig", None)
-        has_field = getattr(local_config, "HasField", None)
-        device_lora_config = (
-            local_config.lora
-            if local_config is not None and callable(has_field) and has_field("lora")
-            else None
-        )
+        device_lora_config = _device_lora_config(target_node)
         if not verify_channel_url_against_state(
             verify_channel_url,
             device_channels=getattr(target_node, "channels", None),

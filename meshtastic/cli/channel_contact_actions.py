@@ -314,6 +314,29 @@ def _handle_channel_mutations(context: CliContext, hooks: ChannelContactHooks) -
     _handle_channel_update(context, hooks)
 
 
+def _enum_name_or_fallback(enum_wrapper: Any, value: Any, prefix: str) -> str:
+    """Return a protobuf enum name or a stable numeric fallback.
+
+    Parameters
+    ----------
+    enum_wrapper : Any
+        Protobuf enum wrapper exposing ``Name``.
+    value : Any
+        Enum numeric value to render.
+    prefix : str
+        Prefix for unknown numeric values.
+
+    Returns
+    -------
+    str
+        Schema enum name, or ``prefix`` followed by the numeric value.
+    """
+    try:
+        return cast(str, enum_wrapper.Name(cast(Any, value)))
+    except ValueError:
+        return f"{prefix}{value}"
+
+
 def _handle_region_preset_display(
     context: CliContext, hooks: ChannelContactHooks
 ) -> None:
@@ -337,26 +360,20 @@ def _handle_region_preset_display(
         return
 
     for region, info in sorted(interface.regionPresets.items()):
-        try:
-            region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(
-                cast(Any, region)
+        region_name = _enum_name_or_fallback(
+            config_pb2.Config.LoRaConfig.RegionCode, region, "REGION_"
+        )
+        preset_names = [
+            _enum_name_or_fallback(
+                config_pb2.Config.LoRaConfig.ModemPreset, value, "PRESET_"
             )
-        except ValueError:
-            region_name = f"REGION_{region}"
-        preset_names: list[str] = []
-        for value in info.presets:
-            try:
-                preset_names.append(
-                    config_pb2.Config.LoRaConfig.ModemPreset.Name(cast(Any, value))
-                )
-            except ValueError:
-                preset_names.append(f"PRESET_{value}")
-        try:
-            default_name = config_pb2.Config.LoRaConfig.ModemPreset.Name(
-                cast(Any, info.default_preset)
-            )
-        except ValueError:
-            default_name = f"PRESET_{info.default_preset}"
+            for value in info.presets
+        ]
+        default_name = _enum_name_or_fallback(
+            config_pb2.Config.LoRaConfig.ModemPreset,
+            info.default_preset,
+            "PRESET_",
+        )
         license_note = " licensed-only" if info.licensed_only else ""
         hooks.cli_print(
             f"{region_name}: default={default_name}{license_note}; "
