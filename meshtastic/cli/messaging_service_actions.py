@@ -242,11 +242,16 @@ def _handle_messaging_actions(
             bitmask = _parse_gpio_mask(args.gpio_rd, hooks)
             hooks.cli_print(f"Reading GPIO mask 0x{bitmask:x} from {args.dest}")
             interface.mask = bitmask
+            # Reset per-request state so a prior GPIO response cannot make this read
+            # appear complete before its own callback arrives.
+            interface.gotResponse = False
             client.readGPIOs(args.dest, bitmask, None)
             for _ in range(GPIO_READ_MAX_POLLS):
                 time.sleep(GPIO_READ_POLL_INTERVAL_SECONDS)
                 if interface.gotResponse:
                     break
+            else:
+                hooks.cli_print("Warning: no GPIO response received.")
             logger.debug("end of gpio_rd")
 
         if args.gpio_watch:

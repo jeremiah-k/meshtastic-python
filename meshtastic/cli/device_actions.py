@@ -15,7 +15,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from pubsub import pub
 
@@ -291,9 +291,11 @@ def post_factory_reset_ready_probe(interface: MeshInterface) -> None:
     ):
         return
 
+    serial_interface = cast(meshtastic.serial_interface.SerialInterface, interface)
+
     logger.debug("Factory reset: closing serial interface to release port.")
     try:
-        interface.close()
+        serial_interface.close()
     except Exception:
         logger.debug("Factory reset: initial serial close failed.", exc_info=True)
 
@@ -307,9 +309,9 @@ def post_factory_reset_ready_probe(interface: MeshInterface) -> None:
         "_suppress_connect_failure_logging": True,
     }
     probe_start = time.monotonic()
-    with temporary_instance_attributes(interface, probe_overrides):
+    with temporary_instance_attributes(serial_interface, probe_overrides):
         try:
-            interface.connect()
+            serial_interface.connect()
             logger.debug(
                 "Factory reset: reconnect probe succeeded in %.2fs.",
                 time.monotonic() - probe_start,
@@ -322,7 +324,7 @@ def post_factory_reset_ready_probe(interface: MeshInterface) -> None:
                 exc,
             )
     try:
-        interface.close()
+        serial_interface.close()
     except Exception:
         logger.debug("Factory reset: final serial close failed.", exc_info=True)
 
@@ -451,7 +453,7 @@ def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> Non
             lat, lon, alt
         )
 
-    if args.set_owner or args.set_owner_short or args.set_is_unmessageable:
+    if args.set_owner or args.set_owner_short or args.set_is_unmessageable is not None:
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
         long_name = args.set_owner.strip() if args.set_owner else None

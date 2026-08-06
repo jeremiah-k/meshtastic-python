@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
 
 from meshtastic.cli import device_actions
-from meshtastic.cli.context import ActionOutcome, CliContext
+from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
+from meshtastic.mesh_interface import MeshInterface
 
 
 class _DummyTCPInterface:
@@ -30,9 +31,9 @@ def _returning_cli_exit(*_args: object, **_kwargs: object) -> None:
     """Model an injected exit seam that incorrectly returns to its caller."""
 
 
-def _hooks(**overrides: object) -> device_actions.DeviceActionHooks:
+def _hooks(**overrides: Any) -> device_actions.DeviceActionHooks:
     """Build device-action hooks with a deliberately returning exit seam."""
-    values: dict[str, object] = {
+    values: dict[str, Any] = {
         "cli_exit": _returning_cli_exit,
         "cli_print": MagicMock(),
         "set_pref": MagicMock(return_value=True),
@@ -46,13 +47,13 @@ def _hooks(**overrides: object) -> device_actions.DeviceActionHooks:
         "validate_lockdown_passphrase": MagicMock(return_value=b"secret"),
     }
     values.update(overrides)
-    return device_actions.DeviceActionHooks(**values)  # type: ignore[arg-type]
+    return device_actions.DeviceActionHooks(**values)
 
 
 def _context(interface: object, **args: object) -> CliContext:
     """Build the minimal connected CLI context needed by a focused handler test."""
     return CliContext(
-        interface=interface,  # type: ignore[arg-type]
+        interface=cast(MeshInterface, interface),
         args=argparse.Namespace(**args),
         get_node_kwargs={},
         outcome=ActionOutcome(),
@@ -94,10 +95,10 @@ def _prepare_ota(
 def _run_ota(interface: _DummyTCPInterface) -> None:
     """Invoke the OTA helper with the returning-exit test seam."""
     device_actions.handle_ota_update(
-        interface,  # type: ignore[arg-type]
+        cast(MeshInterface, interface),
         SimpleNamespace(ota_update="firmware.bin", dest="^local"),
         {},
-        cli_exit=_returning_cli_exit,  # type: ignore[arg-type]
+        cli_exit=cast(CliExit, _returning_cli_exit),
         cli_print=MagicMock(),
         is_local_destination=lambda *_args: True,
     )
@@ -226,27 +227,37 @@ def test_lockdown_confirmation_mismatch_guard_rejects_returning_cli_exit(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("failure_kind", ["transport", "destination"])
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_fragment"),
+    [
+        ("transport", "requires a TCP connection"),
+        ("destination", "directly connected local node"),
+    ],
+)
 def test_ota_preconditions_reject_returning_cli_exit(
-    monkeypatch: pytest.MonkeyPatch, failure_kind: str
+    monkeypatch: pytest.MonkeyPatch, failure_kind: str, expected_fragment: str
 ) -> None:
-    """Rejected OTA transport/destination preconditions must never continue."""
+    """Rejected OTA preconditions must fail closed with the correct diagnostic."""
+    interface: object
     if failure_kind == "transport":
         interface = MagicMock()
         local_destination = MagicMock(return_value=True)
     else:
         interface = _prepare_ota(monkeypatch, MagicMock())
         local_destination = MagicMock(return_value=False)
+    exit_mock = MagicMock()
 
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
         device_actions.handle_ota_update(
-            interface,  # type: ignore[arg-type]
+            cast(MeshInterface, interface),
             argparse.Namespace(ota_update="firmware.bin", dest="!remote"),
             {},
-            cli_exit=_returning_cli_exit,  # type: ignore[arg-type]
+            cli_exit=cast(CliExit, exit_mock),
             cli_print=MagicMock(),
             is_local_destination=local_destination,
         )
+
+    assert expected_fragment in str(exit_mock.call_args)
 
 
 @pytest.mark.unit
@@ -307,19 +318,27 @@ def test_lockdown_preconditions_reject_returning_cli_exit(
     """Lockdown must fail closed on non-local targets and rejected confirmation."""
     remote = _lockdown_context()
     remote.args.dest = "!remote"
-    hooks = _hooks(is_local_destination=MagicMock(return_value=False))
+    remote_send = MagicMock(return_value=None)
+    hooks = _hooks(
+        is_local_destination=MagicMock(return_value=False),
+        send_lockdown_auth=remote_send,
+    )
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
         device_actions._handle_lockdown_action(remote, hooks)
-    hooks.send_lockdown_auth.assert_not_called()
+    remote_send.assert_not_called()
 
     confirm = _lockdown_context()
     confirm.args.lockdown_unlock = False
     confirm.args.lockdown_provision = True
     monkeypatch.setattr("builtins.input", lambda _prompt: "no")
-    hooks = _hooks(is_local_destination=MagicMock(return_value=True))
+    confirm_send = MagicMock(return_value=None)
+    hooks = _hooks(
+        is_local_destination=MagicMock(return_value=True),
+        send_lockdown_auth=confirm_send,
+    )
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
         device_actions._handle_lockdown_action(confirm, hooks)
-    hooks.send_lockdown_auth.assert_not_called()
+    confirm_send.assert_not_called()
 
 
 @pytest.mark.unit
@@ -353,3 +372,258 @@ def test_numeric_zero_fixed_position_is_not_treated_as_omitted(
     device_actions._handle_device_actions(context, _hooks())
 
     interface.getNode.return_value.setFixedPosition.assert_called_once_with(0.0, 0.0, 0)
+
+
+@pytest.mark.unit
+def test_false_unmessageable_value_is_applied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A programmatic False unmessageable value must not be dropped by truthiness."""
+    interface = MagicMock()
+    context = _context(
+        interface,
+        set_time=None,
+        remove_position=False,
+        setlat=None,
+        setlon=None,
+        setalt=None,
+        set_owner=None,
+        set_owner_short=None,
+        set_is_unmessageable=False,
+        set_ham=None,
+        dest="^local",
+    )
+    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
+    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
+    monkeypatch.setattr(
+        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
+    )
+    monkeypatch.setattr(
+        device_actions, "_handle_node_database_actions", lambda *_a: None
+    )
+
+    device_actions._handle_device_actions(context, _hooks())
+
+    interface.getNode.return_value.setOwner.assert_called_once_with(
+        long_name=None, short_name=None, is_unmessagable=False
+    )
+
+
+@pytest.mark.unit
+def test_owner_long_and_short_names_share_one_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Combined owner names should be logged and written together exactly once."""
+    interface = MagicMock()
+    cli_print = MagicMock()
+    context = _context(
+        interface,
+        set_time=None,
+        remove_position=False,
+        setlat=None,
+        setlon=None,
+        setalt=None,
+        set_owner="Long Name",
+        set_owner_short="LN",
+        set_is_unmessageable=None,
+        set_ham=None,
+        dest="^local",
+    )
+    monkeypatch.setattr(device_actions, "_handle_content_updates", lambda *_a: None)
+    monkeypatch.setattr(device_actions, "_handle_position_fields", lambda *_a: None)
+    monkeypatch.setattr(
+        device_actions, "_handle_reboot_and_reset_actions", lambda *_a: None
+    )
+    monkeypatch.setattr(
+        device_actions, "_handle_node_database_actions", lambda *_a: None
+    )
+
+    device_actions._handle_device_actions(context, _hooks(cli_print=cli_print))
+
+    cli_print.assert_any_call("Setting device owner to Long Name and short name to LN")
+    interface.getNode.return_value.setOwner.assert_called_once_with(
+        long_name="Long Name", short_name="LN", is_unmessagable=None
+    )
+
+
+@pytest.mark.unit
+def test_coordinate_parser_rejects_boolean_and_unparseable_values() -> None:
+    """Boolean and nonnumeric coordinate values should terminate through the CLI seam."""
+    for raw in (True, object()):
+        with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+            device_actions._parse_coordinate(raw, "latitude", _hooks())
+
+
+@pytest.mark.unit
+def test_position_fields_write_and_read_paths() -> None:
+    """Position-field actions should cover both mutation and display contracts."""
+    interface = MagicMock()
+    node = interface.getNode.return_value
+    position = node.localConfig.position
+    position.PositionFlags.Value.side_effect = [1, 4]
+    write_context = _context(interface, pos_fields=["ALTITUDE", "TIME"], dest="^local")
+    set_pref = MagicMock(return_value=True)
+    hooks = _hooks(set_pref=set_pref, cli_print=MagicMock())
+
+    device_actions._handle_position_fields(write_context, hooks)
+
+    set_pref.assert_called_once_with(position, "position_flags", "5")
+    node.writeConfig.assert_called_once_with("position")
+
+    position.PositionFlags.values.return_value = [1, 2, 4]
+    position.position_flags = 5
+    position.PositionFlags.Name.side_effect = lambda value: {1: "ALTITUDE", 4: "TIME"}[
+        value
+    ]
+    read_context = _context(interface, pos_fields=[], dest="^local")
+    read_print = MagicMock()
+    device_actions._handle_position_fields(read_context, _hooks(cli_print=read_print))
+    read_print.assert_called_once_with("ALTITUDE TIME")
+
+
+@pytest.mark.unit
+def test_remote_factory_reset_uses_direct_factory_reset() -> None:
+    """Remote reset must use Node.factoryReset without the local acceptance probe."""
+    interface = MagicMock()
+    reset_node = interface.getNode.return_value
+    args = argparse.Namespace(
+        reboot=False,
+        reboot_ota=False,
+        enter_dfu=False,
+        shutdown=False,
+        ota_update=None,
+        device_metadata=False,
+        begin_edit=False,
+        commit_edit=False,
+        factory_reset=True,
+        factory_reset_device=False,
+        dest="!remote",
+    )
+    context = CliContext(
+        interface=cast(MeshInterface, interface),
+        args=args,
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+    local_wait = MagicMock()
+    hooks = _hooks(
+        is_local_destination=MagicMock(return_value=False),
+        send_local_factory_reset_and_wait=local_wait,
+    )
+
+    device_actions._handle_reboot_and_reset_actions(context, hooks)
+
+    reset_node.factoryReset.assert_called_once_with(full=False)
+    local_wait.assert_not_called()
+
+
+@pytest.mark.unit
+def test_factory_reset_probe_logs_close_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Serial readiness probing should tolerate both initial and final close failures."""
+
+    class SerialDouble:
+        def __init__(self) -> None:
+            self.close = MagicMock(
+                side_effect=[RuntimeError("initial"), RuntimeError("final")]
+            )
+            self.connect = MagicMock()
+
+    serial = SerialDouble()
+    monkeypatch.setattr(
+        device_actions.meshtastic.serial_interface, "SerialInterface", SerialDouble
+    )
+    monkeypatch.setattr(
+        device_actions.time, "monotonic", MagicMock(side_effect=[0.0, 0.1])
+    )
+
+    device_actions.post_factory_reset_ready_probe(cast(MeshInterface, serial))
+
+    assert serial.close.call_count == 2
+    serial.connect.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_factory_reset_legacy_acknowledgment_rejects_nak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy acknowledgment state should turn a received NAK into a reset error."""
+    iface = MagicMock()
+    iface.MeshInterfaceError = device_actions.MeshInterface.MeshInterfaceError
+    iface._wait_for_request_ack = None
+    iface._raise_wait_error_if_present = None
+    iface._acknowledgment.receivedAck = False
+    iface._acknowledgment.receivedImplAck = False
+    iface._acknowledgment.receivedNak = True
+    node = MagicMock(iface=iface)
+    node.factoryReset.return_value = SimpleNamespace(id=1)
+    monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
+    monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
+
+    with pytest.raises(
+        device_actions.MeshInterface.MeshInterfaceError, match="rejected"
+    ):
+        device_actions.send_local_factory_reset_and_wait(
+            node, full=False, cli_print=MagicMock(), timeout=1.0
+        )
+
+
+@pytest.mark.unit
+def test_factory_reset_transport_change_checks_scoped_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reboot disconnect should still surface any scoped ACK/NAK error first."""
+    iface = MagicMock()
+    iface._wait_for_request_ack = None
+    raise_wait_error = MagicMock()
+    iface._raise_wait_error_if_present = raise_wait_error
+    iface._acknowledgment.receivedAck = False
+    iface._acknowledgment.receivedImplAck = False
+    iface._acknowledgment.receivedNak = False
+    iface.isConnected.is_set.return_value = False
+    node = MagicMock(iface=iface)
+    node.factoryReset.return_value = SimpleNamespace(id=0)
+    monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
+    monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
+
+    result = device_actions.send_local_factory_reset_and_wait(
+        node, full=False, cli_print=MagicMock(), timeout=1.0
+    )
+
+    assert result is node.factoryReset.return_value
+    raise_wait_error.assert_called_with("receivedNak", request_id=None)
+
+
+@pytest.mark.unit
+def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timeout cleanup should probe scoped error state and never mask unsubscribe failure."""
+    iface = MagicMock()
+    iface.MeshInterfaceError = device_actions.MeshInterface.MeshInterfaceError
+    iface._wait_for_request_ack = None
+    raise_wait_error = MagicMock()
+    iface._raise_wait_error_if_present = raise_wait_error
+    iface._acknowledgment.receivedAck = False
+    iface._acknowledgment.receivedImplAck = False
+    iface._acknowledgment.receivedNak = False
+    node = MagicMock(iface=iface)
+    node.factoryReset.return_value = SimpleNamespace(id=0)
+    ticks = iter([0.0, 2.0])
+    monkeypatch.setattr(device_actions.time, "monotonic", lambda: next(ticks, 2.0))
+    monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
+    monkeypatch.setattr(
+        device_actions.pub,
+        "unsubscribe",
+        MagicMock(side_effect=RuntimeError("unsubscribe")),
+    )
+
+    with pytest.raises(
+        device_actions.MeshInterface.MeshInterfaceError, match="Timed out"
+    ):
+        device_actions.send_local_factory_reset_and_wait(
+            node, full=False, cli_print=MagicMock(), timeout=1.0
+        )
+
+    raise_wait_error.assert_called_with("receivedNak", request_id=None)

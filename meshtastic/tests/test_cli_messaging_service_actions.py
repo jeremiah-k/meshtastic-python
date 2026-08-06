@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, create_autospec
 import pytest
 
 from meshtastic.cli.context import ActionOutcome, CliContext
-from meshtastic.mesh_interface import MeshInterface
 from meshtastic.cli.messaging_service_actions import (
     MessagingServiceHooks,
     _handle_content_reads,
@@ -17,6 +16,7 @@ from meshtastic.cli.messaging_service_actions import (
     _handle_long_running_services,
     _handle_messaging_actions,
 )
+from meshtastic.mesh_interface import MeshInterface
 
 
 def _args(**overrides: Any) -> argparse.Namespace:
@@ -396,3 +396,207 @@ def test_gpio_validation_fails_closed_with_returning_exit(
     assert expected_message in str(cli_exit.call_args)
     client.writeGPIOs.assert_not_called()
     client.readGPIOs.assert_not_called()
+
+
+@pytest.mark.unit
+def test_gpio_mask_accepts_full_uint64_range() -> None:
+    """The largest valid uint64 GPIO mask should parse without truncation."""
+    from meshtastic.cli import messaging_service_actions as actions
+
+    assert actions._parse_gpio_mask("ffffffffffffffff", _hooks()) == (1 << 64) - 1
+
+
+@pytest.mark.unit
+def test_position_request_sends_on_selected_channel() -> None:
+    """A valid position request should use the selected channel and await response."""
+    interface = _interface_double()
+    context = _context(interface, request_position=True)
+
+    _handle_messaging_actions(context, _hooks())
+
+    interface.sendPosition.assert_called_once_with(
+        destinationId="!00000002", wantResponse=True, channelIndex=2
+    )
+
+
+@pytest.mark.unit
+def test_gpio_read_resets_state_and_stops_on_own_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each GPIO read must reset stale response state and stop on its own callback."""
+    from meshtastic.cli import messaging_service_actions as actions
+
+    interface = _interface_double()
+    interface.gotResponse = True
+    client = MagicMock()
+
+    def _respond(*_args: Any) -> None:
+        assert interface.gotResponse is False
+        interface.gotResponse = True
+
+    client.readGPIOs.side_effect = _respond
+    sleep = MagicMock()
+    monkeypatch.setattr(actions.time, "sleep", sleep)
+    context = _context(interface, gpio_rd="0x10")
+
+    _handle_messaging_actions(
+        context, _hooks(remote_hardware_client=MagicMock(return_value=client))
+    )
+
+    assert interface.mask == 0x10
+    client.readGPIOs.assert_called_once_with("!00000002", 0x10, None)
+    sleep.assert_called_once_with(actions.GPIO_READ_POLL_INTERVAL_SECONDS)
+
+
+@pytest.mark.unit
+def test_gpio_read_timeout_is_diagnostic_not_attribute_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unanswered GPIO read should exhaust its poll budget and warn cleanly."""
+    from meshtastic.cli import messaging_service_actions as actions
+
+    interface = _interface_double()
+    client = MagicMock()
+    cli_print = MagicMock()
+    sleep = MagicMock()
+    monkeypatch.setattr(actions.time, "sleep", sleep)
+    context = _context(interface, gpio_rd="0x1")
+
+    _handle_messaging_actions(
+        context,
+        _hooks(
+            cli_print=cli_print,
+            remote_hardware_client=MagicMock(return_value=client),
+        ),
+    )
+
+    assert interface.gotResponse is False
+    assert sleep.call_count == actions.GPIO_READ_MAX_POLLS
+    cli_print.assert_any_call("Warning: no GPIO response received.")
+
+
+@pytest.mark.unit
+def test_gpio_watch_sends_watch_before_propagating_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Watch mode should issue the remote watch request before its long-running sleep."""
+    from meshtastic.cli import messaging_service_actions as actions
+
+    interface = _interface_double()
+    client = MagicMock()
+    client.watchGPIOs.side_effect = [None, KeyboardInterrupt()]
+    sleep = MagicMock()
+    monkeypatch.setattr(actions.time, "sleep", sleep)
+    context = _context(interface, gpio_watch="0x4")
+
+    with pytest.raises(KeyboardInterrupt):
+        _handle_messaging_actions(
+            context, _hooks(remote_hardware_client=MagicMock(return_value=client))
+        )
+
+    assert client.watchGPIOs.call_count == 2
+    client.watchGPIOs.assert_called_with("!00000002", 0x4)
+    sleep.assert_called_once_with(actions.GPIO_WATCH_INTERVAL_SECONDS)
+
+
+@pytest.mark.unit
+def test_information_actions_info_paths_and_upgrade_notice(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Local info should include node detail and a discovered upgrade notice."""
+    interface = _interface_double()
+    interface.getNode.return_value = MagicMock()
+    context = _context(interface, dest="^all", info=True)
+
+    _handle_information_actions(
+        context,
+        _hooks(newer_version=MagicMock(return_value="9.9.9")),
+    )
+
+    interface.showInfo.assert_called_once_with()
+    interface.getNode.return_value.showInfo.assert_called_once_with()
+    assert "newer version v9.9.9" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_information_actions_remote_info_is_non_mutating(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Remote --info should explain the supported --get alternative."""
+    interface = _interface_double()
+    context = _context(interface, info=True)
+
+    _handle_information_actions(context, _hooks())
+
+    assert "remote node is not supported" in capsys.readouterr().out
+    interface.showInfo.assert_not_called()
+
+
+@pytest.mark.unit
+def test_show_fields_without_nodes_stops_processing() -> None:
+    """--show-fields alone should stop before later connected actions execute."""
+    interface = _interface_double()
+    context = _context(interface, show_fields=["user.id"])
+    cli_print = MagicMock()
+
+    _handle_information_actions(context, _hooks(cli_print=cli_print))
+
+    assert context.outcome.stop_processing is True
+    cli_print.assert_called_once_with("--show-fields can only be used with --nodes")
+
+
+@pytest.mark.unit
+def test_tunnel_rejects_remote_destination() -> None:
+    """Tunnel mode must fail closed for any non-local destination."""
+    from meshtastic.cli import messaging_service_actions as actions
+
+    interface = _interface_double()
+    context = _context(interface, tunnel=True, dest="!remote")
+
+    with pytest.raises(SystemExit):
+        actions._start_tunnel(context, _hooks())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("subnet", [None, "10.42.0.0/16"])
+def test_tunnel_starts_with_optional_subnet(
+    monkeypatch: pytest.MonkeyPatch, subnet: str | None
+) -> None:
+    """Eligible tunnel requests should keep the connection open and forward subnet."""
+    from meshtastic import tunnel
+    from meshtastic.cli import messaging_service_actions as actions
+
+    interface = _interface_double()
+    interface.noProto = False
+    context = _context(interface, tunnel=True, dest="^all", tunnel_net=subnet)
+    context.outcome.close_now = True
+    tunnel_factory = MagicMock()
+    monkeypatch.setattr(tunnel, "Tunnel", tunnel_factory)
+
+    actions._start_tunnel(context, _hooks())
+
+    assert context.outcome.close_now is False
+    if subnet is None:
+        tunnel_factory.assert_called_once_with(interface)
+    else:
+        tunnel_factory.assert_called_once_with(interface, subnet=subnet)
+
+
+@pytest.mark.unit
+def test_powermon_unavailable_reports_import_error() -> None:
+    """Optional power actions should fail with the captured import diagnostic."""
+    interface = _interface_double()
+    context = _context(interface, slog="default")
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+
+    with pytest.raises(SystemExit):
+        _handle_long_running_services(
+            context,
+            _hooks(
+                cli_exit=cli_exit,
+                powermon_available=MagicMock(return_value=False),
+                powermon_error=MagicMock(return_value=ImportError("missing meter")),
+            ),
+        )
+
+    assert "missing meter" in str(cli_exit.call_args)
