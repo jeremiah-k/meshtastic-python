@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import Future
 from threading import Event, RLock
-from typing import cast
+from typing import Any, Coroutine, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,6 +18,7 @@ from meshtastic.interfaces.ble.connection import (
 )
 from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS
 from meshtastic.interfaces.ble.errors import BLEDBusTransportError, BLEErrorHandler
+from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 
 pytestmark = pytest.mark.unit
 
@@ -73,6 +76,31 @@ class _LegacyDummyClient:
         self.close_calls += 1
 
 
+class _ImmediateRunner:
+    """Execute transport coroutines immediately for BLEClient unit tests."""
+
+    _thread = None
+
+    def _run_coroutine_threadsafe(
+        self, coro: Coroutine[Any, Any, Any]
+    ) -> Future[Any]:
+        future: Future[Any] = Future()
+        future.set_result(asyncio.run(coro))
+        return future
+
+
+class _DisconnectedBleakTransport:
+    """Bleak transport that still needs release after its peer disconnects."""
+
+    def __init__(self) -> None:
+        self.address = "AA:BB:CC:DD:EE:FF"
+        self.is_connected = False
+        self.disconnect_calls = 0
+
+    async def disconnect(self) -> None:
+        self.disconnect_calls += 1
+
+
 def _make_client_manager() -> ClientManager:
     return ClientManager(
         state_manager=MagicMock(),
@@ -80,6 +108,26 @@ def _make_client_manager() -> ClientManager:
         thread_coordinator=MagicMock(),
         error_handler=cast(BLEErrorHandler, _ErrorHandler()),
     )
+
+
+def test_safe_close_client_releases_transport_after_remote_disconnect() -> None:
+    """Manager cleanup should release transport after a remote disconnect."""
+    manager = _make_client_manager()
+    client = BLEClient()
+    transport = _DisconnectedBleakTransport()
+    client.bleak_client = cast(Any, transport)
+    client._runner = cast(BLECoroutineRunner, _ImmediateRunner())
+    done = Event()
+
+    manager._safe_close_client(
+        client,
+        event=done,
+        disconnect_timeout=1.5,
+    )
+
+    assert done.is_set()
+    assert transport.disconnect_calls == 1
+    assert client.bleak_client is None
 
 
 def test_safe_close_client_skips_disconnect_for_disconnected_client() -> None:

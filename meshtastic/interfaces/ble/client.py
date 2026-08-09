@@ -1021,9 +1021,11 @@ class BLEClient:
     def close(self, timeout: float | None = None) -> None:
         """Close the BLEClient and perform a best-effort shutdown.
 
-        If an underlying Bleak client exists and is connected, this attempts a
-        bounded disconnect and suppresses any disconnect errors so shutdown
-        remains best-effort and idempotent. The method is thread-safe (uses an
+        If an underlying Bleak client exists, this attempts a bounded disconnect
+        and suppresses any disconnect errors so shutdown remains best-effort and
+        idempotent. Disconnect is required even when Bleak already reports the
+        peer disconnected because backend transports can still own resources
+        such as a BlueZ D-Bus connection. The method is thread-safe (uses an
         internal close lock), marks the wrapper as closed, and cancels any
         tracked pending futures to unblock waiting callers. This does not stop
         or affect the shared BLE event loop used by other clients.
@@ -1038,8 +1040,12 @@ class BLEClient:
             if getattr(self, "_closed", False):
                 return
 
-            # Best effort: disconnect active transport before closing this wrapper.
-            if getattr(self, "bleak_client", None) is not None and self.is_connected():
+            # Best effort: release the transport before closing this wrapper.
+            # Logical connection state is not a transport-ownership signal: after
+            # a remote BlueZ disconnect, Bleak reports ``is_connected = False``
+            # while its per-session D-Bus connection remains open until
+            # ``disconnect()`` runs.
+            if getattr(self, "bleak_client", None) is not None:
                 disconnect_timeout = (
                     DISCONNECT_TIMEOUT_SECONDS if timeout is None else timeout
                 )

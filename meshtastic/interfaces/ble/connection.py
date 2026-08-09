@@ -739,7 +739,8 @@ class ClientManager:
                     )
                 else:
                     logger.debug(
-                        "Skipping BLE client disconnect during shutdown: client is not connected."
+                        "Skipping pre-close BLE client disconnect: client is not "
+                        "connected; close() will release any remaining transport resources."
                     )
             elif skip_disconnect:
                 logger.debug(
