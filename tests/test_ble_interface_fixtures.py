@@ -604,12 +604,24 @@ class DummyClient:
         if self.on_unpair is not None:
             self.on_unpair()
 
-    def close(self) -> None:
-        """Record that the client was closed.
+    def close(self, timeout: float | None = None) -> None:
+        """Release the transport and record that the client was closed.
 
-        Increments the internal `close_calls` counter so tests can assert how many times `close()` was invoked.
+        This mirrors ``BLEClient.close()`` ownership: when a transport exists,
+        close performs a best-effort disconnect before clearing client state.
+
+        Parameters
+        ----------
+        timeout : float | None
+            Optional close-time disconnect timeout. The synchronous test double
+            accepts but does not enforce it.
         """
         self.close_calls += 1
+        if self.bleak_client is not None:
+            try:
+                self.disconnect(await_timeout=timeout)
+            except Exception:  # noqa: BLE001 - mirror best-effort production close
+                pass
         self._initialized = False
         self.bleak_client = None
 

@@ -43,9 +43,9 @@ def _refresh_connection_symbols() -> None:
     globals()["ClientManager"] = connection_module.ClientManager
     globals()["ConnectionOrchestrator"] = connection_module.ConnectionOrchestrator
     globals()["ConnectionValidator"] = connection_module.ConnectionValidator
-    globals()[
-        "_is_device_not_found_error"
-    ] = connection_module._is_device_not_found_error
+    globals()["_is_device_not_found_error"] = (
+        connection_module._is_device_not_found_error
+    )
 
 
 class MockBLEError(Exception):
@@ -466,17 +466,13 @@ def test_client_manager_safe_close_client_prefers_public_safe_cleanup() -> None:
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
 
     mock_client = MagicMock()
-    mock_client._closed = False
-    mock_client.bleak_client = object()
-    mock_client.is_connected = MagicMock()
-    mock_client.is_connected.return_value = True
 
     manager._safe_close_client(mock_client)
 
-    assert error_handler.safe_cleanup.call_count == 2
+    error_handler.safe_cleanup.assert_called_once()
     error_handler._safe_cleanup.assert_not_called()
-    mock_client.disconnect.assert_called_once()
-    mock_client.close.assert_called_once()
+    mock_client.disconnect.assert_not_called()
+    mock_client.close.assert_called_once_with(timeout=None)
 
 
 @pytest.mark.unit
@@ -1963,10 +1959,10 @@ def test_reconnect_worker_returns_when_interface_already_connected() -> None:
 
 
 @pytest.mark.unit
-def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout() -> (
+def test_client_manager_safe_close_client_fallback_on_unsupported_close_timeout() -> (
     None
 ):
-    """_safe_close_client should fallback to no-arg disconnect when await_timeout is unsupported."""
+    """_safe_close_client should fall back when close() rejects timeout."""
     state_manager = BLEStateManager()
     lock = RLock()
     thread_coordinator = MagicMock()
@@ -1975,31 +1971,22 @@ def test_client_manager_safe_close_client_fallback_on_unsupported_await_timeout(
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
 
     mock_client = MagicMock()
-    mock_client._closed = False
-    mock_client.bleak_client = object()
-    mock_client.is_connected = MagicMock()
-    mock_client.is_connected.return_value = True
 
-    def _reject_await_timeout(*, await_timeout: float | None = None) -> None:
-        if await_timeout is not None:
-            raise TypeError(
-                "disconnect() got an unexpected keyword argument 'await_timeout'"
-            )
+    def _reject_timeout(*, timeout: float | None = None) -> None:
+        if timeout is not None:
+            raise TypeError("close() got an unexpected keyword argument 'timeout'")
 
-    mock_client.disconnect = MagicMock()
-    mock_client.disconnect.side_effect = _reject_await_timeout
+    mock_client.close = MagicMock(side_effect=_reject_timeout)
 
-    manager._safe_close_client(mock_client)
+    manager._safe_close_client(mock_client, disconnect_timeout=1.0)
 
-    assert mock_client.disconnect.call_count == 2
-    mock_client.close.assert_called_once()
+    assert mock_client.close.call_count == 2
+    mock_client.disconnect.assert_not_called()
 
 
 @pytest.mark.unit
-def test_client_manager_safe_close_client_does_not_fallback_on_unrelated_typeerror() -> (
-    None
-):
-    """_safe_close_client should NOT attempt no-arg disconnect fallback for unrelated TypeError."""
+def test_client_manager_safe_close_client_reraises_unrelated_close_typeerror() -> None:
+    """_safe_close_client should not retry an unrelated close TypeError."""
     state_manager = BLEStateManager()
     lock = RLock()
     thread_coordinator = MagicMock()
@@ -2008,23 +1995,18 @@ def test_client_manager_safe_close_client_does_not_fallback_on_unrelated_typeerr
     manager = ClientManager(state_manager, lock, thread_coordinator, error_handler)
 
     mock_client = MagicMock()
-    mock_client._closed = False
-    mock_client.bleak_client = object()
-    mock_client.is_connected = MagicMock()
-    mock_client.is_connected.return_value = True
 
-    def _raise_unrelated(*, await_timeout: float | None = None) -> None:
-        del await_timeout
+    def _raise_unrelated(*, timeout: float | None = None) -> None:
+        del timeout
         raise TypeError("takes 1 positional argument but 2 were given")
 
-    mock_client.disconnect = MagicMock()
-    mock_client.disconnect.side_effect = _raise_unrelated
+    mock_client.close = MagicMock(side_effect=_raise_unrelated)
 
-    # _safe_close_client should swallow the error and still run close()
-    manager._safe_close_client(mock_client)
+    with pytest.raises(TypeError, match="takes 1 positional argument"):
+        manager._safe_close_client(mock_client, disconnect_timeout=1.0)
 
-    assert mock_client.disconnect.call_count == 1
-    mock_client.close.assert_called_once()
+    mock_client.close.assert_called_once_with(timeout=1.0)
+    mock_client.disconnect.assert_not_called()
 
 
 @pytest.mark.unit
