@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import Future
-from threading import Event, RLock
+from threading import Event, RLock, Thread
 from typing import Any, Coroutine, cast
 from unittest.mock import MagicMock
 
@@ -16,7 +16,6 @@ from meshtastic.interfaces.ble.connection import (
     ClientManager,
     ConnectionOrchestrator,
 )
-from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS
 from meshtastic.interfaces.ble.errors import BLEDBusTransportError, BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 
@@ -34,23 +33,11 @@ class _ErrorHandler:
 class _DummyClient:
     """Minimal BLE client double for shutdown behavior tests."""
 
-    def __init__(self, *, connected: bool) -> None:
-        self._closed = False
-        self._connected = connected
-        self.bleak_client = object()
-        self.disconnect_calls = 0
-        self.close_calls = 0
-        self.last_disconnect_timeout: float | None = None
+    def __init__(self) -> None:
+        self.close_calls: int = 0
         self.last_close_timeout: float | None = None
 
-    def is_connected(self) -> bool:
-        return self._connected
-
-    def disconnect(self, *, await_timeout: float) -> None:
-        self.disconnect_calls += 1
-        self.last_disconnect_timeout = await_timeout
-
-    def close(self, timeout: float | None = None) -> None:  # type: ignore[no-untyped-def]
+    def close(self, timeout: float | None = None) -> None:
         self.close_calls += 1
         self.last_close_timeout = timeout
 
@@ -58,47 +45,68 @@ class _DummyClient:
 class _LegacyDummyClient:
     """Legacy BLE client double that does not accept timeout in close()."""
 
-    def __init__(self, *, connected: bool) -> None:
-        self._connected = connected
-        self.bleak_client = object()
-        self.disconnect_calls = 0
-        self.close_calls = 0
-        self.last_disconnect_timeout: float | None = None
-
-    def is_connected(self) -> bool:
-        return self._connected
-
-    def disconnect(self, *, await_timeout: float) -> None:
-        self.disconnect_calls += 1
-        self.last_disconnect_timeout = await_timeout
+    def __init__(self) -> None:
+        self.close_calls: int = 0
 
     def close(self) -> None:
         self.close_calls += 1
 
 
 class _ImmediateRunner:
-    """Execute transport coroutines immediately for BLEClient unit tests."""
+    """Execute transport coroutines on an isolated event-loop thread."""
 
-    _thread = None
+    _thread: Thread | None = None
 
-    def _run_coroutine_threadsafe(
-        self, coro: Coroutine[Any, Any, Any]
-    ) -> Future[Any]:
+    def _run_coroutine_threadsafe(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         future: Future[Any] = Future()
-        future.set_result(asyncio.run(coro))
+
+        def _run() -> None:
+            try:
+                future.set_result(asyncio.run(coro))
+            except Exception as exc:  # noqa: BLE001 - mirror Future propagation
+                future.set_exception(exc)
+
+        thread = Thread(target=_run)
+        self._thread = thread
+        thread.start()
+        thread.join()
+        self._thread = None
         return future
 
 
-class _DisconnectedBleakTransport:
-    """Bleak transport that still needs release after its peer disconnects."""
+class _BleakTransport:
+    """Bleak transport double that records cleanup attempts."""
 
-    def __init__(self) -> None:
-        self.address = "AA:BB:CC:DD:EE:FF"
-        self.is_connected = False
-        self.disconnect_calls = 0
+    def __init__(
+        self,
+        *,
+        connected: bool,
+        disconnect_error: Exception | None = None,
+    ) -> None:
+        self.address: str = "AA:BB:CC:DD:EE:FF"
+        self.is_connected: bool = connected
+        self.disconnect_calls: int = 0
+        self.disconnect_error: Exception | None = disconnect_error
 
     async def disconnect(self) -> None:
         self.disconnect_calls += 1
+        if self.disconnect_error is not None:
+            raise self.disconnect_error
+
+
+def _make_ble_client(
+    *,
+    connected: bool,
+    disconnect_error: Exception | None = None,
+) -> tuple[BLEClient, _BleakTransport]:
+    client = BLEClient()
+    transport = _BleakTransport(
+        connected=connected,
+        disconnect_error=disconnect_error,
+    )
+    client.bleak_client = cast(Any, transport)
+    client._runner = cast(BLECoroutineRunner, _ImmediateRunner())
+    return client, transport
 
 
 def _make_client_manager() -> ClientManager:
@@ -113,10 +121,7 @@ def _make_client_manager() -> ClientManager:
 def test_safe_close_client_releases_transport_after_remote_disconnect() -> None:
     """Manager cleanup should release transport after a remote disconnect."""
     manager = _make_client_manager()
-    client = BLEClient()
-    transport = _DisconnectedBleakTransport()
-    client.bleak_client = cast(Any, transport)
-    client._runner = cast(BLECoroutineRunner, _ImmediateRunner())
+    client, transport = _make_ble_client(connected=False)
     done = Event()
 
     manager._safe_close_client(
@@ -130,37 +135,39 @@ def test_safe_close_client_releases_transport_after_remote_disconnect() -> None:
     assert client.bleak_client is None
 
 
-def test_safe_close_client_skips_disconnect_for_disconnected_client() -> None:
-    """Disconnected clients should not trigger an unnecessary disconnect timeout path."""
+def test_safe_close_client_disconnects_connected_transport_once() -> None:
+    """Manager cleanup should disconnect a connected transport exactly once."""
     manager = _make_client_manager()
-    client = _DummyClient(connected=False)
+    client, transport = _make_ble_client(connected=True)
     done = Event()
 
-    manager._safe_close_client(cast(BLEClient, client), event=done)
+    manager._safe_close_client(client, event=done)
 
     assert done.is_set()
-    assert client.disconnect_calls == 0
-    assert client.close_calls == 1
+    assert transport.disconnect_calls == 1
+    assert client.bleak_client is None
 
 
-def test_safe_close_client_disconnects_connected_client_before_close() -> None:
-    """Connected clients should still run bounded disconnect before close."""
+def test_safe_close_client_clears_transport_after_disconnect_failure() -> None:
+    """Cleanup should finish and clear the transport after disconnect failure."""
     manager = _make_client_manager()
-    client = _DummyClient(connected=True)
+    client, transport = _make_ble_client(
+        connected=False,
+        disconnect_error=RuntimeError("transport cleanup failed"),
+    )
     done = Event()
 
-    manager._safe_close_client(cast(BLEClient, client), event=done)
+    manager._safe_close_client(client, event=done)
 
     assert done.is_set()
-    assert client.disconnect_calls == 1
-    assert client.last_disconnect_timeout == DISCONNECT_TIMEOUT_SECONDS
-    assert client.close_calls == 1
+    assert transport.disconnect_calls == 1
+    assert client.bleak_client is None
 
 
 def test_safe_close_client_passes_timeout_to_close() -> None:
     """Bounded disconnect timeout should flow through to client.close()."""
     manager = _make_client_manager()
-    client = _DummyClient(connected=True)
+    client = _DummyClient()
     done = Event()
     custom_timeout = 3.5
 
@@ -171,8 +178,6 @@ def test_safe_close_client_passes_timeout_to_close() -> None:
     )
 
     assert done.is_set()
-    assert client.disconnect_calls == 1
-    assert client.last_disconnect_timeout == custom_timeout
     assert client.close_calls == 1
     assert client.last_close_timeout == custom_timeout
 
@@ -180,7 +185,7 @@ def test_safe_close_client_passes_timeout_to_close() -> None:
 def test_safe_close_client_fallback_for_legacy_close() -> None:
     """Legacy client.close() without timeout should still be called once."""
     manager = _make_client_manager()
-    client = _LegacyDummyClient(connected=True)
+    client = _LegacyDummyClient()
     done = Event()
 
     manager._safe_close_client(
@@ -190,7 +195,6 @@ def test_safe_close_client_fallback_for_legacy_close() -> None:
     )
 
     assert done.is_set()
-    assert client.disconnect_calls == 1
     assert client.close_calls == 1
 
 
@@ -199,16 +203,6 @@ def test_safe_close_client_reraises_unrelated_typeerror() -> None:
     manager = _make_client_manager()
 
     class _BadClient:
-        def __init__(self) -> None:
-            self.bleak_client = object()
-            self._closed = False
-
-        def is_connected(self) -> bool:
-            return True
-
-        def disconnect(self, *, await_timeout: float) -> None:
-            pass
-
         def close(self, timeout: float | None = None) -> None:
             raise TypeError("something else broke")
 

@@ -671,82 +671,26 @@ class ClientManager:
         *,
         disconnect_timeout: float | None = None,
     ) -> None:
-        """Attempt to disconnect and close the given BLE client, suppressing any errors and optionally signal completion.
+        """Close the given BLE client and optionally signal completion.
 
         Parameters
         ----------
         client : BLEClient
-            BLE client to disconnect and close.
+            BLE client to close. The client owns its transport cleanup.
         event : Event | None
             Optional Event that will be set after cleanup completes. (Default value = None)
         disconnect_timeout : float | None
-            Optional maximum seconds passed to disconnect and close-time
-            disconnect operations.
+            Optional maximum seconds passed to the client's close-time transport
+            cleanup.
         """
         is_finalizing = getattr(sys, "is_finalizing", None)
-        skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
+        skip_close = bool(is_finalizing()) if callable(is_finalizing) else False
         safe_cleanup_hook = _resolve_declared_callable(
             self.error_handler, "safe_cleanup", "_safe_cleanup"
         )
 
         try:
-            if (
-                not skip_disconnect
-                and not _get_declared_member(client, "_closed", False)
-                and _get_declared_member(client, "bleak_client")
-            ):
-                is_connected = False
-                for probe_name in ("is_connected", "isConnected", "_is_connected"):
-                    is_connected_probe = _get_declared_member(client, probe_name)
-                    if callable(is_connected_probe):
-                        try:
-                            is_connected = bool(is_connected_probe())
-                        except (
-                            Exception
-                        ):  # noqa: BLE001 - shutdown must remain best effort
-                            logger.debug(
-                                "Failed to read BLE client connected state via %s during shutdown.",
-                                probe_name,
-                                exc_info=True,
-                            )
-                        if is_connected:
-                            break
-                    elif isinstance(is_connected_probe, bool):
-                        is_connected = is_connected_probe
-                        if is_connected:
-                            break
-                if is_connected:
-                    effective_disconnect_timeout = (
-                        DISCONNECT_TIMEOUT_SECONDS
-                        if disconnect_timeout is None
-                        else disconnect_timeout
-                    )
-
-                    def _disconnect_with_timeout() -> None:
-                        try:
-                            client.disconnect(
-                                await_timeout=effective_disconnect_timeout
-                            )
-                        except TypeError as exc:
-                            if not _is_unexpected_keyword_error(exc, "await_timeout"):
-                                raise
-                            client.disconnect()
-
-                    _run_safe_cleanup(
-                        _disconnect_with_timeout,
-                        "client disconnect",
-                        safe_cleanup_hook,
-                    )
-                else:
-                    logger.debug(
-                        "Skipping pre-close BLE client disconnect: client is not "
-                        "connected; close() will release any remaining transport resources."
-                    )
-            elif skip_disconnect:
-                logger.debug(
-                    "Skipping BLE client disconnect during interpreter finalization."
-                )
-            if not skip_disconnect:
+            if not skip_close:
                 close_error: TypeError | None = None
 
                 def _close_with_timeout() -> None:
@@ -768,7 +712,8 @@ class ClientManager:
                     raise close_error
             else:
                 logger.debug(
-                    "Skipping BLE client close during interpreter finalization."
+                    "Skipping BLE client and transport cleanup during interpreter "
+                    "finalization."
                 )
         finally:
             if event:
