@@ -1,7 +1,7 @@
 # Includes PEP 561 py.typed marker for type checker support
 [tool.poetry]
 name = "mtjk"
-version = "2.7.11.post4"
+version = "2.7.11.post5"
 description = "Python API & client shell for talking to Meshtastic devices"
 authors = ["Meshtastic Developers (upstream project authors)"]
 maintainers = ["Jeremiah K. <jeremiahk@gmx.com>"]
@@ -42,7 +42,6 @@ pytest = "9.1.1"
 pytest-cov = "7.1.0"
 pytest-timeout = "2.4.0"
 pdoc3 = "0.11.6"
-autopep8 = "2.3.2"
 pylint = "4.0.7"
 pyinstaller = "6.22.0"
 mypy = "2.3.0"

@@ -200,7 +200,10 @@ pub.subscribe(on_receive, "meshtastic.receive")
 
 ## Development Workflow
 
-Trunk is the repository's linter orchestrator (ruff, pylint, mypy, markdownlint, etc.).
+Trunk is the repository's linter orchestrator. It pins standalone tools such as
+Ruff, while Poetry pins project-aware Python tools such as Pylint and Mypy;
+Trunk invokes the latter through the `pylint-poetry` and `mypy-poetry`
+definitions. Mypy is the canonical Python type checker.
 
 1. Install dependencies: `poetry install --all-extras --with dev`
 2. Make changes

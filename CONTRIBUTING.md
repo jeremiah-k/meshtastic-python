@@ -128,6 +128,33 @@ make ci
 
 This runs the same checks as CI (pylint for library code, ruff for tests, mypy, pytest with coverage).
 
+### Quality-tool ownership
+
+Trunk is the repository-wide linter orchestrator and the version source for
+standalone tools such as Ruff, Black, isort, ShellCheck, and the security
+scanners. Their pins live in `.trunk/trunk.yaml`; do not copy them into a
+second versions file. The standalone Ruff CI job reads its install version
+directly from that configuration through `bin/check_quality_tool_versions.py`.
+
+Poetry owns the Python environment and pins project-aware Python tools such as
+Pylint and Mypy in `pyproject.toml` and `poetry.lock`. Trunk's
+`pylint-poetry` and `mypy-poetry` definitions orchestrate those
+Poetry-installed tools rather than installing competing copies. Pylint behavior
+is configured in `.pylintrc`, and Ruff behavior is configured in `ruff.toml`
+plus Trunk's managed base configuration.
+
+The Poetry application version used to install those dependencies is a build
+tool rather than a project dependency. It is pinned in CI and container builds,
+and one Renovate custom manager updates every `poetry==X.Y.Z` installation in a
+single dependency branch. The container-only export plugin is independently
+pinned and maintained by Renovate so image dependency resolution is
+reproducible without adding the plugin to every development environment.
+
+Mypy is the canonical Python type checker for this repository. Pyright is not
+part of the quality gate: maintaining two overlapping type-checker baselines
+added cost without a distinct compatibility guarantee, and a static Pyright
+virtualenv path cannot reliably identify Poetry's environment across machines.
+
 ### Unified lint/type check via Trunk
 
 Run lint and type checks (including Poetry-managed `pylint` + `mypy`) with one command:
@@ -144,8 +171,8 @@ Alternatively, run each check individually:
 
 ```bash
 poetry run pytest --cov=meshtastic --cov-report=xml
-poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
-ruff check meshtastic/tests tests
+poetry run pylint meshtastic examples/
+.trunk/trunk check --filter=ruff meshtastic/tests tests
 poetry run mypy meshtastic/
 ```
 
@@ -159,19 +186,6 @@ This requires Docker and runs stable daemon-focused integration tests in
 `meshtastic/tests/test_meshtasticd_ci.py` and
 `meshtastic/tests/test_meshtasticd_tcp_interface_ci.py` against a simulated
 localhost daemon.
-
-To run the dual-daemon integration lane locally (Linux only; channel
-blueprint/export reuse and admin checks across two simulator instances):
-
-```bash
-./bin/run-multinode-with-meshtasticd.sh
-```
-
-This uses Linux host networking, starts two `meshtasticd` simulators on
-`localhost:4401` and `localhost:4402`, and runs
-`meshtastic/tests/test_meshtasticd_multinode_ci.py`. Linux is required because
-the script depends on host-networking behavior that is not portable to
-macOS/Windows.
 
 To run the full legacy smokevirt suite manually:
 
@@ -208,23 +222,5 @@ For stricter type checking (optional, not required by CI):
 ```bash
 poetry run mypy meshtastic/ --strict
 ```
-
-### Using GitHub CI actions locally
-
-- You need to have act installed. You can get it at https://nektosact.com/
-- `bin/run-ci-local.sh` is the canonical local runner and reads `LOCAL_PYTHON_VERSION` (default defined in that script).
-- on Linux: `./bin/run-ci-local.sh`
-- on Windows (Git Bash/WSL, POSIX shell syntax):
-  - Linux checks (Linux Docker): `LOCAL_PYTHON_VERSION=3.13 ./bin/run-ci-local.sh`
-  - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:${LOCAL_PYTHON_VERSION:-3.13}"`
-- on Windows (PowerShell):
-  - Linux checks (Linux Docker): `$env:LOCAL_PYTHON_VERSION = "3.13"; ./bin/run-ci-local.sh`
-  - Windows checks (Windows host): `$env:LOCAL_PYTHON_VERSION = "3.13"; act -P windows-latest=-self-hosted --matrix "python-version:$env:LOCAL_PYTHON_VERSION"`
-
-The `-P ...=-self-hosted` mapping is optional. It tells `act` to run that job on
-your host machine instead of in a container, which can be useful for
-performance and for checks that need host-specific behavior. If you prefer
-containerized runs, omit the `-P` mapping (as in the Linux-on-Windows example
-above).
 
 For more commands see [CI workflow](.github/workflows/ci.yml)

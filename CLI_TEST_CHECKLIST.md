@@ -256,7 +256,8 @@ bash -c 'while true; do meshtasticd -s --fsdir=/var/lib/meshtasticd; sleep 2; do
 ```
 
 This allows reboot, factory-reset, and configure operations to work end-to-end in CI.
-Both `run-smokevirt-with-meshtasticd.sh` and `run-multinode-with-meshtasticd.sh` have been updated.
+The maintained Docker entrypoint for this coverage is
+`run-smokevirt-with-meshtasticd.sh`.
 
 ---
 
@@ -266,7 +267,7 @@ Both `run-smokevirt-with-meshtasticd.sh` and `run-multinode-with-meshtasticd.sh`
 
 - [x] `test_meshtasticd_ci.py` - Single-node integration (export/configure roundtrip) ✅ 25 passed
 - [x] `test_meshtasticd_tcp_interface_ci.py` - TCP interface integration ✅ 25 passed
-- [x] `test_meshtasticd_multinode_ci.py` - Multi-node integration (channel blueprint, saturation) ✅ 1 passed, 2 xfailed (expected)
+- [x] `test_simradio_mesh.py` - Three-node routing, relay, hop-limit, direct-message, and traceroute coverage
 
 ### Docker Wrapper Fix (Details)
 
