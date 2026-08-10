@@ -195,11 +195,25 @@ def test_channel_delete_fails_closed_if_exit_seam_returns() -> None:
         get_node_kwargs={},
         outcome=ActionOutcome(),
     )
-    hooks = MagicMock(spec=ChannelContactHooks)
-    hooks.get_channel_index.return_value = None
-    hooks.cli_exit = MagicMock()
+    cli_exit = MagicMock()
+    hooks = ChannelContactHooks(
+        cli_exit=cli_exit,
+        cli_print=MagicMock(),
+        get_channel_index=MagicMock(return_value=None),
+        set_channel_index=MagicMock(),
+        resolve_pref=MagicMock(),
+        set_pref=MagicMock(),
+        fatal_preference_value_errors=MagicMock(),
+        preference_value_error=ValueError,
+        print_channel_field_choices=MagicMock(),
+        is_local_destination=MagicMock(),
+        modem_preset_shorthands=(),
+    )
 
     with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
         _handle_channel_delete(context, hooks)
 
+    cli_exit.assert_called_once_with(
+        "Warning: Need to specify '--ch-index' for '--ch-del'.", 1
+    )
     interface.getNode.assert_not_called()
