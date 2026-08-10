@@ -485,9 +485,7 @@ def test_position_request_sends_on_selected_channel() -> None:
 
 
 @pytest.mark.unit
-def test_gpio_read_resets_state_and_stops_on_own_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_gpio_read_resets_state_and_stops_on_own_response() -> None:
     """Each GPIO read must reset stale response state and stop on its own callback."""
     interface = _interface_double()
     interface.gotResponse = True
@@ -499,11 +497,14 @@ def test_gpio_read_resets_state_and_stops_on_own_response(
 
     client.readGPIOs.side_effect = _respond
     sleep = MagicMock()
-    monkeypatch.setattr(actions.time, "sleep", sleep)
     context = _context(interface, gpio_rd="0x10")
 
     _handle_messaging_actions(
-        context, _hooks(remote_hardware_client=MagicMock(return_value=client))
+        context,
+        _hooks(
+            remote_hardware_client=MagicMock(return_value=client),
+            sleep=sleep,
+        ),
     )
 
     assert interface.mask == 0x10
@@ -512,15 +513,12 @@ def test_gpio_read_resets_state_and_stops_on_own_response(
 
 
 @pytest.mark.unit
-def test_gpio_read_timeout_is_diagnostic_not_attribute_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_gpio_read_timeout_is_diagnostic_not_attribute_error() -> None:
     """An unanswered GPIO read should exhaust its poll budget and warn cleanly."""
     interface = _interface_double()
     client = MagicMock()
     cli_print = MagicMock()
     sleep = MagicMock()
-    monkeypatch.setattr(actions.time, "sleep", sleep)
     context = _context(interface, gpio_rd="0x1")
 
     _handle_messaging_actions(
@@ -528,6 +526,7 @@ def test_gpio_read_timeout_is_diagnostic_not_attribute_error(
         _hooks(
             cli_print=cli_print,
             remote_hardware_client=MagicMock(return_value=client),
+            sleep=sleep,
         ),
     )
 
@@ -537,20 +536,21 @@ def test_gpio_read_timeout_is_diagnostic_not_attribute_error(
 
 
 @pytest.mark.unit
-def test_gpio_watch_sends_watch_before_propagating_interrupt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_gpio_watch_sends_watch_before_propagating_interrupt() -> None:
     """Watch mode should issue the remote watch request before its long-running sleep."""
     interface = _interface_double()
     client = MagicMock()
     client.watchGPIOs.side_effect = [None, KeyboardInterrupt()]
     sleep = MagicMock()
-    monkeypatch.setattr(actions.time, "sleep", sleep)
     context = _context(interface, gpio_watch="0x4")
 
     with pytest.raises(KeyboardInterrupt):
         _handle_messaging_actions(
-            context, _hooks(remote_hardware_client=MagicMock(return_value=client))
+            context,
+            _hooks(
+                remote_hardware_client=MagicMock(return_value=client),
+                sleep=sleep,
+            ),
         )
 
     assert client.watchGPIOs.call_count == 2

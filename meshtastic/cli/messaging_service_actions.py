@@ -59,6 +59,7 @@ class MessagingServiceHooks:
     power_stress_factory: Callable[[Any], Any] | None
     get_meter: Callable[[], Any]
     platform_system: Callable[[], str] = platform.system
+    sleep: Callable[[float], None] = time.sleep
 
 
 def _selected_channel(hooks: MessagingServiceHooks) -> int:
@@ -272,7 +273,7 @@ def _handle_messaging_actions(
             interface.gotResponse = False
             client.readGPIOs(args.dest, bitmask, None)
             for _ in range(GPIO_READ_MAX_POLLS):
-                time.sleep(GPIO_READ_POLL_INTERVAL_SECONDS)
+                hooks.sleep(GPIO_READ_POLL_INTERVAL_SECONDS)
                 if interface.gotResponse:
                     break
             else:
@@ -287,7 +288,7 @@ def _handle_messaging_actions(
             )
             while True:
                 client.watchGPIOs(args.dest, bitmask)
-                time.sleep(GPIO_WATCH_INTERVAL_SECONDS)
+                hooks.sleep(GPIO_WATCH_INTERVAL_SECONDS)
 
 
 def _handle_content_reads(context: CliContext) -> None:
