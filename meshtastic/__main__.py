@@ -1972,6 +1972,9 @@ def common() -> None:
             printAvailableConfigFields()
             return
 
+        if args.configure and len(args.configure) != 1:
+            parser.error("--configure may be specified only once per invocation")
+
         # Early validation for owner names before attempting device connection
         if args.set_owner is not None:
             stripped_long_name = args.set_owner.strip()

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
-from meshtastic.cli import configure_actions
+from meshtastic.cli import configure_actions, configure_values
 from meshtastic.cli.configure_actions import (
     ConfigureActionHooks,
     ConfigureHooks,
@@ -430,6 +430,8 @@ def test_close_failed_settings_transaction_reports_close_failure() -> None:
         {"location": {"lat": 0, "lon": 181}},
         {"location": {"lat": 0, "lon": 0, "alt": True}},
         {"location": {"lat": 0, "lon": 0, "alt": "bad"}},
+        {"location": {"lat": 0, "lon": 0, "alt": 1.5}},
+        {"location": {"lat": 0, "lon": 0, "alt": float("inf")}},
         {"location": {"lat": 0, "lon": 0, "alt": 1 << 31}},
         {"canned_messages": 123},
         {"ringtone": object()},
@@ -442,13 +444,13 @@ def test_direct_write_validation_rejects_all_invalid_direct_write_shapes(
 ) -> None:
     """Ensure deterministic direct-write validation fails before device mutation."""
     with pytest.raises(SystemExit):
-        configure_actions._validate_direct_configuration(_hooks(), configuration)
+        configure_values._validate_direct_configuration(_hooks(), configuration)
 
 
 @pytest.mark.unit
 def test_direct_write_validation_preserves_alias_and_altitude_metadata() -> None:
     """Normalized direct-write values should carry all apply-time shape decisions."""
-    values = configure_actions._validate_direct_configuration(
+    values = configure_values._validate_direct_configuration(
         _hooks(),
         {
             "owner": " Owner ",
@@ -477,6 +479,15 @@ def test_direct_write_validation_preserves_alias_and_altitude_metadata() -> None
         ("unknown: true", "Unknown top-level key(s)"),
         ("owner_short: A\nownerShort: B", "both 'owner_short' and 'ownerShort'"),
         ("channel_url: x\nchannelUrl: y", "both 'channel_url' and 'channelUrl'"),
+        ("1: value", "configuration keys must be strings"),
+        (
+            "location:\n  lat: 0\n  lon: 0\n  1: value",
+            "configuration.location keys must be strings",
+        ),
+        (
+            "config:\n  1:\n    enabled: true",
+            "configuration.config keys must be strings",
+        ),
         ("config: []", "'config' must be a non-empty mapping"),
         ("module_config: []", "'module_config' must be a non-empty mapping"),
     ],
@@ -514,7 +525,7 @@ def test_apply_direct_configuration_prints_explicit_altitude_and_applies_all_val
     cli_print = MagicMock()
     hooks = _hooks(cli_print=cli_print)
     prepared = configure_actions._PreparedConfigureDocument(
-        direct_values=configure_actions._DirectConfigureValues(
+        direct_values=configure_values._DirectConfigureValues(
             owner="Owner",
             owner_short="OS",
             location=(1.0, 2.0, 3),
@@ -664,7 +675,7 @@ def test_post_reconnect_local_config_mismatch_is_incomplete(
 def test_apply_direct_configuration_rejects_inconsistent_normalized_url() -> None:
     """Prepared configure values must never carry a URL without its source alias."""
     prepared = configure_actions._PreparedConfigureDocument(
-        direct_values=configure_actions._DirectConfigureValues(
+        direct_values=configure_values._DirectConfigureValues(
             channel_url="https://example.invalid/#abc", channel_url_key=None
         ),
         config_sections={},
@@ -952,3 +963,25 @@ def test_matching_channel_url_reports_no_request_sent(
     assert result.settings_transaction_started is False
     assert result.local_channel_url_applied is False
     node.setURL.assert_not_called()
+
+
+@pytest.mark.unit
+def test_configure_command_rejects_multiple_documents_before_device_access() -> None:
+    """Repeated --configure options must not silently ignore later documents."""
+    interface = MagicMock()
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    args = argparse.Namespace(
+        configure=["first.yaml", "second.yaml"],
+        dest="^local",
+    )
+
+    with pytest.raises(SystemExit):
+        configure_actions._handle_configure_command(
+            _hooks(cli_exit=cast(CliExit, cli_exit)),
+            interface,
+            args,
+            {},
+        )
+
+    assert "only once" in str(cli_exit.call_args)
+    interface.getNode.assert_not_called()

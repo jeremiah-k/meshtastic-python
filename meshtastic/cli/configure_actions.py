@@ -17,6 +17,7 @@ from typing import Any, NamedTuple
 import yaml
 
 import meshtastic.util
+from meshtastic.cli import configure_values
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.configure_verify import (
     _verify_channel_url_against_state,
@@ -38,8 +39,6 @@ SETURL_STABILITY_MAX_ATTEMPTS = 3
 SETURL_STABILITY_WINDOW_SECONDS = 1.5
 SETURL_RECONNECT_WAIT_SECONDS = 10.0
 SETURL_STABILITY_POLL_SECONDS = 0.1
-POSITION_ALTITUDE_MIN = -(1 << 31)
-POSITION_ALTITUDE_MAX = (1 << 31) - 1
 CONFIGURE_DIRECT_SETTINGS_HEADER = (
     "Applying direct configuration values "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -146,60 +145,12 @@ class _ConfigureCommandResult(tuple[bool, bool]):
         return self[1]
 
 
-@dataclass(frozen=True, slots=True)
-class _DirectConfigureValues:
-    """Validated non-transactional configuration values ready for device writes.
-
-    Attributes
-    ----------
-    owner : str | None
-        Normalized long owner name when requested.
-    owner_short : str | None
-        Normalized short owner name when requested.
-    location : tuple[float, float, int] | None
-        Validated latitude, longitude, and altitude when requested.
-    altitude_specified : bool
-        Whether the input location explicitly contained an altitude.
-    canned_messages : str | None
-        Canned-message payload when requested.
-    ringtone : str | None
-        Ringtone payload when requested.
-    channel_url : str | None
-        Stripped channel URL when requested.
-    channel_url_key : str | None
-        Original accepted channel-URL alias used by the input document.
-    """
-
-    owner: str | None = None
-    owner_short: str | None = None
-    location: tuple[float, float, int] | None = None
-    altitude_specified: bool = False
-    canned_messages: str | None = None
-    ringtone: str | None = None
-    channel_url: str | None = None
-    channel_url_key: str | None = None
-
-    @property
-    def has_non_url_writes(self) -> bool:
-        """Return whether validated direct values require a non-URL device write."""
-        return any(
-            value is not None
-            for value in (
-                self.owner,
-                self.owner_short,
-                self.location,
-                self.canned_messages,
-                self.ringtone,
-            )
-        )
-
-
 class _PreparedConfigureDocument(NamedTuple):
     """Validated YAML document and normalized values ready for device access.
 
     Attributes
     ----------
-    direct_values : _DirectConfigureValues
+    direct_values : configure_values._DirectConfigureValues
         Normalized direct-write values.
     config_sections : dict[str, dict[str, Any]]
         Validated LocalConfig section mappings.
@@ -207,7 +158,7 @@ class _PreparedConfigureDocument(NamedTuple):
         Validated LocalModuleConfig section mappings.
     """
 
-    direct_values: _DirectConfigureValues
+    direct_values: configure_values._DirectConfigureValues
     config_sections: dict[str, dict[str, Any]]
     module_config_sections: dict[str, dict[str, Any]]
 
@@ -558,6 +509,11 @@ def _validate_mapping_sections(
         mappings (for example ``audio: {}``) are valid because exports use them
         to represent protobuf default values.
     """
+    _validate_string_mapping_keys(
+        hooks,
+        section_mapping,
+        path=top_level_key,
+    )
     validated_sections: dict[str, dict[str, Any]] = {}
     for section_name, section_value in section_mapping.items():
         if not isinstance(section_value, dict):
@@ -568,6 +524,28 @@ def _validate_mapping_sections(
             )
         validated_sections[section_name] = section_value
     return validated_sections
+
+
+def _validate_string_mapping_keys(
+    hooks: ConfigureHooks,
+    mapping: dict[Any, Any],
+    *,
+    path: str,
+) -> None:
+    """Reject YAML mapping keys that cannot name configuration fields."""
+    for key, value in mapping.items():
+        if not isinstance(key, str):
+            _terminate_cli(
+                hooks.cli_exit,
+                f"ERROR: {path} keys must be strings, got {key!r} "
+                f"({type(key).__name__}).",
+            )
+        if isinstance(value, dict):
+            _validate_string_mapping_keys(
+                hooks,
+                value,
+                path=f"{path}.{key}",
+            )
 
 
 def _preflight_configure_sections(
@@ -940,176 +918,6 @@ def _close_failed_settings_transaction(
         )
 
 
-def _validate_direct_configuration(
-    hooks: ConfigureHooks,
-    configuration: dict[str, Any],
-) -> _DirectConfigureValues:
-    """Validate and normalize non-transactional configuration before device mutation.
-
-    Parameters
-    ----------
-    hooks : ConfigureHooks
-        CLI reporting and exit hooks.
-    configuration : dict[str, Any]
-        Parsed top-level YAML mapping.
-
-    Returns
-    -------
-    _DirectConfigureValues
-        Normalized values for all present direct-write actions. Missing actions
-        remain ``None``.
-
-    Notes
-    -----
-    Validation is intentionally completed before any device mutation. This
-    prevents a later malformed value from leaving an avoidable partially applied
-    configuration.
-    """
-    owner: str | None = None
-    if "owner" in configuration:
-        raw_owner = configuration["owner"]
-        owner = "" if raw_owner is None else str(raw_owner).strip()
-        if not owner:
-            _terminate_cli(
-                hooks.cli_exit,
-                "ERROR: Long Name cannot be empty or contain only whitespace characters",
-            )
-
-    owner_short: str | None = None
-    owner_short_key = "owner_short" if "owner_short" in configuration else "ownerShort"
-    if owner_short_key in configuration:
-        raw_owner_short = configuration[owner_short_key]
-        owner_short = "" if raw_owner_short is None else str(raw_owner_short).strip()
-        if not owner_short:
-            _terminate_cli(
-                hooks.cli_exit,
-                "ERROR: Short Name cannot be empty or contain only whitespace characters",
-            )
-
-    location_values: tuple[float, float, int] | None = None
-    altitude_specified = False
-    if "location" in configuration:
-        location = configuration["location"]
-        if not isinstance(location, dict) or not location:
-            _terminate_cli(
-                hooks.cli_exit,
-                "location must be a non-empty mapping with lat, lon, and optional alt",
-            )
-        unknown_location_keys = set(location) - {"lat", "lon", "alt"}
-        if unknown_location_keys:
-            _terminate_cli(
-                hooks.cli_exit,
-                "location contains unknown keys: "
-                f"{', '.join(sorted(unknown_location_keys))}. Allowed: lat, lon, alt",
-            )
-        if "lat" not in location or "lon" not in location:
-            _terminate_cli(hooks.cli_exit, "location requires both lat and lon")
-        if isinstance(location["lat"], bool):
-            _terminate_cli(
-                hooks.cli_exit,
-                f"location.lat must be a number, got: {location['lat']!r}",
-            )
-        try:
-            lat = float(location["lat"])
-        except (ValueError, TypeError):
-            _terminate_cli(
-                hooks.cli_exit,
-                f"location.lat must be a number, got: {location['lat']!r}",
-            )
-        if isinstance(location["lon"], bool):
-            _terminate_cli(
-                hooks.cli_exit,
-                f"location.lon must be a number, got: {location['lon']!r}",
-            )
-        try:
-            lon = float(location["lon"])
-        except (ValueError, TypeError):
-            _terminate_cli(
-                hooks.cli_exit,
-                f"location.lon must be a number, got: {location['lon']!r}",
-            )
-        if not -90.0 <= lat <= 90.0:
-            _terminate_cli(
-                hooks.cli_exit, f"location.lat must be between -90 and 90, got: {lat}"
-            )
-        if not -180.0 <= lon <= 180.0:
-            _terminate_cli(
-                hooks.cli_exit, f"location.lon must be between -180 and 180, got: {lon}"
-            )
-        alt = 0
-        altitude_specified = "alt" in location
-        if altitude_specified:
-            if isinstance(location["alt"], bool):
-                _terminate_cli(
-                    hooks.cli_exit,
-                    f"location.alt must be an integer, got: {location['alt']!r}",
-                )
-            try:
-                alt = int(location["alt"])
-            except (ValueError, TypeError):
-                _terminate_cli(
-                    hooks.cli_exit,
-                    f"location.alt must be an integer, got: {location['alt']!r}",
-                )
-            if not POSITION_ALTITUDE_MIN <= alt <= POSITION_ALTITUDE_MAX:
-                _terminate_cli(
-                    hooks.cli_exit,
-                    "location.alt must fit the signed 32-bit position field, "
-                    f"got: {alt}",
-                )
-        location_values = (lat, lon, alt)
-
-    def _optional_string(key: str) -> str | None:
-        """Return an optional top-level string value after type validation.
-
-        Parameters
-        ----------
-        key : str
-            Top-level configuration key to inspect.
-
-        Returns
-        -------
-        str | None
-            String value when present, otherwise ``None``.
-        """
-        if key not in configuration:
-            return None
-        value = configuration[key]
-        if not isinstance(value, str):
-            _terminate_cli(hooks.cli_exit, f"ERROR: {key} must be a string.")
-        return value
-
-    channel_url_key: str | None = None
-    if "channel_url" in configuration:
-        channel_url_key = "channel_url"
-    elif "channelUrl" in configuration:
-        channel_url_key = "channelUrl"
-
-    channel_url: str | None = None
-    if channel_url_key is not None:
-        raw_channel_url = configuration[channel_url_key]
-        if not isinstance(raw_channel_url, str):
-            _terminate_cli(
-                hooks.cli_exit, f"ERROR: {channel_url_key} must be a string."
-            )
-        channel_url = raw_channel_url.strip()
-        if not channel_url:
-            _terminate_cli(
-                hooks.cli_exit, f"ERROR: {channel_url_key} must not be blank."
-            )
-
-    return _DirectConfigureValues(
-        owner=owner,
-        owner_short=owner_short,
-        location=location_values,
-        altitude_specified=altitude_specified,
-        canned_messages=_optional_string("canned_messages"),
-        ringtone=_optional_string("ringtone"),
-        channel_url=channel_url,
-        channel_url_key=channel_url_key,
-    )
-
-
 def _load_and_validate_configure_document(
     hooks: ConfigureHooks,
     path: str,
@@ -1155,6 +963,8 @@ def _load_and_validate_configure_document(
             hooks.cli_exit, "ERROR: Configuration file is empty; nothing to configure."
         )
 
+    _validate_string_mapping_keys(hooks, configuration, path="configuration")
+
     unknown_keys = set(configuration) - ALLOWED_CONFIGURE_KEYS
     if unknown_keys:
         _terminate_cli(
@@ -1174,7 +984,9 @@ def _load_and_validate_configure_document(
             "configuration file; use one.",
         )
 
-    direct_values = _validate_direct_configuration(hooks, configuration)
+    direct_values = configure_values._validate_direct_configuration(
+        hooks, configuration
+    )
 
     config_sections: dict[str, dict[str, Any]] = {}
     if "config" in configuration:
@@ -1474,6 +1286,11 @@ def _handle_configure_command(
         Named lifecycle flags describing whether a settings transaction ran and whether
         a local channel URL write was actually performed.
     """
+    if len(args.configure) != 1:
+        _terminate_cli(
+            hooks.cli_exit,
+            "ERROR: --configure may be specified only once per invocation.",
+        )
     prepared = _load_and_validate_configure_document(hooks, args.configure[0])
     target_node = interface.getNode(args.dest, False, **get_node_kwargs)
     has_config_writes = bool(
