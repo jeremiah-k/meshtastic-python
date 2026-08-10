@@ -20,7 +20,8 @@ WORKDIR /build
 # Without isolation, pip's --prefix=/install skips shared deps it considers
 # "already installed", causing missing modules in the runtime image.
 RUN python -m venv /opt/poetry && \
-    /opt/poetry/bin/pip install --no-cache-dir poetry==2.4.1 poetry-plugin-export
+    /opt/poetry/bin/pip install --no-cache-dir \
+    poetry==2.4.1 poetry-plugin-export==1.10.0
 
 # --- Layer 1: Dependency resolution and install (cached unless lock changes) ---
 COPY pyproject.toml poetry.lock README.md ./
@@ -36,7 +37,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --without dev \
     --without-hashes \
     --output requirements.txt && \
-    pip install --no-cache-dir --prefix=/install -r requirements.txt
+    pip install --no-cache-dir --no-deps --prefix=/install -r requirements.txt
 
 # --- Layer 2: Source + wheel build (rebuilt on every source change) ---
 COPY meshtastic/ meshtastic/

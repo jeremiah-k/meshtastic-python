@@ -43,11 +43,11 @@
       "automerge": false
     },
     {
-      "description": "Automerge protobuf submodule updates",
+      "description": "Regenerate protobuf outputs before manually merging submodule updates",
       "matchManagers": ["git-submodules"],
       "matchDepNames": ["protobufs"],
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
-      "automerge": true
+      "automerge": false
     },
     {
       "description": "Automerge meshtasticd Docker image updates (digest + version)",
@@ -71,6 +71,29 @@
       "depNameTemplate": "meshtastic/meshtasticd",
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Keep the Poetry installer version aligned across CI and container builds",
+      "managerFilePatterns": [
+        "/^Containerfile$/",
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": ["poetry==(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "poetry",
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "pep440"
+    },
+    {
+      "customType": "regex",
+      "description": "Keep the container's Poetry export plugin reproducibly pinned",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": [
+        "poetry-plugin-export==(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "poetry-plugin-export",
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "pep440"
     }
   ],
   "lockFileMaintenance": {
