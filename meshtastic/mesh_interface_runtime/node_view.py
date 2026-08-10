@@ -88,7 +88,7 @@ class NodeView:
     """Node accessor and presentation methods for MeshInterface.
 
     This class provides node lookup, node DB helpers, and presentation/display
-    methods (showInfo, showNodes). Shared interface state is accessed through a
+    methods (show_info, show_nodes). Shared interface state is accessed through a
     narrow internal capability port.
     """
 
@@ -107,7 +107,7 @@ class NodeView:
         return self._port.node_db_lock
 
     @property
-    def localNode(self) -> meshtastic.node.Node:
+    def local_node(self) -> meshtastic.node.Node:
         """Return the local node for this interface."""
         return self._port.local_node
 
@@ -117,12 +117,12 @@ class NodeView:
         return self._port.nodes
 
     @property
-    def nodesByNum(self) -> dict[int, dict[str, Any]] | None:
+    def nodes_by_num(self) -> dict[int, dict[str, Any]] | None:
         """Return the node-number-to-info dictionary, or None if not initialized."""
         return self._port.nodes_by_num
 
     @property
-    def myInfo(self) -> mesh_pb2.MyNodeInfo | None:
+    def my_info(self) -> mesh_pb2.MyNodeInfo | None:
         """Return the MyNodeInfo for this interface, or None."""
         return self._port.my_info
 
@@ -179,7 +179,7 @@ class NodeView:
         """
         self._handle_log_line(record.message)
 
-    def showInfo(self, file: IO[str] | None = None) -> str:
+    def show_info(self, file: IO[str] | None = None) -> str:
         """Return a human-readable JSON summary of the mesh interface including owner, local node info, metadata, and known nodes.
 
         The summary omits internal node fields (`raw`, `decoded`, `payload`) and normalizes stored MAC addresses
@@ -195,9 +195,9 @@ class NodeView:
         summary : str
             The formatted summary text that was written to `file`.
         """
-        owner = f"Owner: {self.getLongName()} ({self.getShortName()})"
+        owner = f"Owner: {self.get_long_name()} ({self.get_short_name()})"
         with self._node_db_lock:
-            my_info = self.myInfo
+            my_info = self.my_info
             metadata_info = self.metadata
             nodes_snapshot = (
                 [copy.deepcopy(node) for node in self.nodes.values()]
@@ -263,7 +263,7 @@ class NodeView:
             fields_data: dict[str, Any] = {}
             for col_name in fields:
                 if "." in col_name:
-                    raw_value = node_data.extractNodeFieldValue(node, col_name)
+                    raw_value = node_data.extract_node_field_value(node, col_name)
                 elif col_name == "since":
                     raw_value = node.get("lastHeard")
                 else:
@@ -301,7 +301,7 @@ class NodeView:
             tabulate(rows, headers="keys", missingval="N/A", tablefmt="fancy_grid")
         )
 
-    def showNodes(
+    def show_nodes(
         self, includeSelf: bool = True, showFields: list[str] | None = None
     ) -> str:
         """Produce a formatted table summarizing known mesh nodes.
@@ -325,14 +325,14 @@ class NodeView:
         """
         # Determine fields to show
         if not showFields:
-            fields = node_data.getDefaultShowFields()
+            fields = node_data.get_default_show_fields()
         else:
             fields = ["N", *showFields] if "N" not in showFields else list(showFields)
 
         # Get node data under lock
         with self._node_db_lock:
-            nodes_snapshot = list(self.nodesByNum.values()) if self.nodesByNum else []
-            local_node_num = self.localNode.nodeNum
+            nodes_snapshot = list(self.nodes_by_num.values()) if self.nodes_by_num else []
+            local_node_num = self.local_node.nodeNum
 
         if nodes_snapshot:
             node_count = len(nodes_snapshot)
@@ -352,12 +352,12 @@ class NodeView:
             )
 
         # Filter nodes
-        filtered_nodes = node_data.filterNodes(
+        filtered_nodes = node_data.filter_nodes(
             nodes_snapshot, includeSelf, local_node_num
         )
 
         # Sort nodes by lastHeard
-        sorted_nodes = node_data.sortNodes(filtered_nodes)
+        sorted_nodes = node_data.sort_nodes(filtered_nodes)
 
         # Build table data with field extraction and formatting
         rows = self._build_table_data(sorted_nodes, fields)
@@ -371,7 +371,7 @@ class NodeView:
         print(table)
         return table
 
-    def getNode(
+    def get_node(
         self,
         nodeId: str,
         requestChannels: bool = True,
@@ -407,7 +407,7 @@ class NodeView:
             If channel retrieval repeatedly fails or times out.
         """
         if nodeId in (LOCAL_ADDR, BROADCAST_ADDR):
-            return self.localNode
+            return self.local_node
         n = meshtastic.node.Node(
             self._port.facade,
             nodeId,
@@ -438,21 +438,21 @@ class NodeView:
                     break
         return n
 
-    def getMyNodeInfo(self) -> dict[str, Any] | None:
+    def get_my_node_info(self) -> dict[str, Any] | None:
         """Get the stored node-info dictionary for the local node.
 
         Returns
         -------
         dict[str, Any] | None
-            The local node's node-info entry from `nodesByNum`, or `None` if `myInfo`
-            or `nodesByNum` is unset or the local node entry is missing.
+            The local node's node-info entry from `nodes_by_num`, or `None` if `my_info`
+            or `nodes_by_num` is unset or the local node entry is missing.
         """
         with self._node_db_lock:
-            if self.myInfo is None or self.nodesByNum is None:
+            if self.my_info is None or self.nodes_by_num is None:
                 return None
-            return self.nodesByNum.get(self.myInfo.my_node_num)
+            return self.nodes_by_num.get(self.my_info.my_node_num)
 
-    def getMyUser(self) -> dict[str, Any] | None:
+    def get_my_user(self) -> dict[str, Any] | None:
         """Get the user information for the local node.
 
         Returns
@@ -460,12 +460,12 @@ class NodeView:
         user : dict[str, Any] | None
             The local node's `user` dictionary, or `None` if no local node info or no `user` field is present.
         """
-        nodeInfo = self.getMyNodeInfo()
+        nodeInfo = self.get_my_node_info()
         if nodeInfo is not None:
             return nodeInfo.get("user")
         return None
 
-    def getLongName(self) -> str | None:
+    def get_long_name(self) -> str | None:
         """Get the local user's configured long name.
 
         Returns
@@ -473,12 +473,12 @@ class NodeView:
         str | None
             The long name string if configured, `None` otherwise.
         """
-        user = self.getMyUser()
+        user = self.get_my_user()
         if user is not None:
             return user.get("longName")
         return None
 
-    def getShortName(self) -> str | None:
+    def get_short_name(self) -> str | None:
         """Get the local node user's short name.
 
         Returns
@@ -486,12 +486,12 @@ class NodeView:
         str | None
             The user's `shortName` if present, `None` otherwise.
         """
-        user = self.getMyUser()
+        user = self.get_my_user()
         if user is not None:
             return user.get("shortName")
         return None
 
-    def getPublicKey(self) -> bytes | None:
+    def get_public_key(self) -> bytes | None:
         """Return the local node's public key if available.
 
         Returns
@@ -499,12 +499,12 @@ class NodeView:
         bytes | None
             The local node's public key bytes if present, `None` otherwise.
         """
-        user = self.getMyUser()
+        user = self.get_my_user()
         if user is not None:
             return user.get("publicKey")
         return None
 
-    def getCannedMessage(self) -> str | None:
+    def get_canned_message(self) -> str | None:
         """Retrieve the canned (predefined) message configured for the local node.
 
         Returns
@@ -512,12 +512,12 @@ class NodeView:
         str | None
             The canned message text, or `None` if there is no local node or no canned message configured.
         """
-        node = self.localNode
+        node = self.local_node
         if node is not None:
             return node.get_canned_message()
         return None
 
-    def getRingtone(self) -> str | None:
+    def get_ringtone(self) -> str | None:
         """Get the local node's ringtone name or identifier.
 
         Returns
@@ -525,7 +525,7 @@ class NodeView:
         str | None
             The ringtone name or identifier as a string, or None if the local node or ringtone is unavailable.
         """
-        node = self.localNode
+        node = self.local_node
         if node is not None:
             return node.get_ringtone()
         return None
@@ -577,7 +577,7 @@ class NodeView:
             return BROADCAST_ADDR if isDest else "Unknown"
 
         with self._node_db_lock:
-            nodes = self.nodesByNum
+            nodes = self.nodes_by_num
             if nodes is None:
                 logger.debug(
                     "Node database not initialized while resolving node id for %s", num
@@ -608,7 +608,7 @@ class NodeView:
         Returns
         -------
         dict[str, Any]
-            The node info dictionary stored in self.nodesByNum for the given nodeNum.
+            The node info dictionary stored in self.nodes_by_num for the given nodeNum.
 
         Raises
         ------
@@ -621,11 +621,11 @@ class NodeView:
             )
 
         with self._node_db_lock:
-            if self.nodesByNum is None:
+            if self.nodes_by_num is None:
                 raise self._port.error_type("Node database not initialized")
 
-            if nodeNum in self.nodesByNum:
-                return self.nodesByNum[nodeNum]
+            if nodeNum in self.nodes_by_num:
+                return self.nodes_by_num[nodeNum]
             presumptive_id = f"!{nodeNum:08x}"
             n = {
                 "num": nodeNum,
@@ -636,5 +636,5 @@ class NodeView:
                     "hwModel": "UNSET",
                 },
             }
-            self.nodesByNum[nodeNum] = n
+            self.nodes_by_num[nodeNum] = n
             return n

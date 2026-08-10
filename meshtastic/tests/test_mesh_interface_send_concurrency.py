@@ -503,7 +503,7 @@ def test_send_alert_and_mqtt_proxy_paths(monkeypatch: pytest.MonkeyPatch) -> Non
     """sendAlert() and sendMqttClientProxyMessage() should delegate with expected payloads."""
     with MeshInterface(noProto=True) as iface:
         send_alert = MagicMock(return_value=mesh_pb2.MeshPacket())
-        monkeypatch.setattr(iface._send_pipeline, "sendAlert", send_alert)
+        monkeypatch.setattr(iface._send_pipeline, "send_alert", send_alert)
         response_cb = MagicMock()
         iface.sendAlert(
             "SOS",
@@ -522,7 +522,7 @@ def test_send_alert_and_mqtt_proxy_paths(monkeypatch: pytest.MonkeyPatch) -> Non
 
         send_mqtt = MagicMock()
         monkeypatch.setattr(
-            iface._send_pipeline, "sendMqttClientProxyMessage", send_mqtt
+            iface._send_pipeline, "send_mqtt_client_proxy_message", send_mqtt
         )
         iface.sendMqttClientProxyMessage("mesh/topic", b"payload")
 

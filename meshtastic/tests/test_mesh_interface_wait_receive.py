@@ -1791,15 +1791,15 @@ class _FakeSendPipeline:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
-    def sendText(self, *args: object, **kwargs: object) -> str:
+    def send_text(self, *args: object, **kwargs: object) -> str:
         self.calls.append(("sendText", args, kwargs))
         return "sent-text"
 
-    def sendAlert(self, *args: object, **kwargs: object) -> str:
+    def send_alert(self, *args: object, **kwargs: object) -> str:
         self.calls.append(("sendAlert", args, kwargs))
         return "sent-alert"
 
-    def sendMqttClientProxyMessage(self, *args: object, **kwargs: object) -> None:
+    def send_mqtt_client_proxy_message(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("sendMqttClientProxyMessage", args, kwargs))
 
 
@@ -1857,7 +1857,7 @@ def test_mesh_interface_handle_packet_delegates_to_receive_pipeline() -> None:
 
 @pytest.mark.unit
 def test_mesh_interface_send_text_delegates_to_send_pipeline() -> None:
-    """SendText should route through _send_pipeline.sendText, not local impl."""
+    """SendText should route through _send_pipeline.send_text, not local impl."""
     interface = MeshInterface.__new__(MeshInterface)
     fake: Any = _FakeSendPipeline()
     interface._send_pipeline = fake
@@ -1879,7 +1879,7 @@ def test_mesh_interface_send_text_delegates_to_send_pipeline() -> None:
 
 @pytest.mark.unit
 def test_mesh_interface_send_alert_delegates_to_send_pipeline() -> None:
-    """SendAlert should route through _send_pipeline.sendAlert, not local impl."""
+    """SendAlert should route through _send_pipeline.send_alert, not local impl."""
     interface = MeshInterface.__new__(MeshInterface)
     fake: Any = _FakeSendPipeline()
     interface._send_pipeline = fake

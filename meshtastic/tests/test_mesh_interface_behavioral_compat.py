@@ -1617,7 +1617,7 @@ class TestSendWaitEdgeCases:
         }
 
         # Process through the onResponse handler
-        iface._send_pipeline.onResponseTraceRoute(routing_packet)
+        iface._send_pipeline.on_response_trace_route(routing_packet)
 
         # Verify error was recorded
         assert (acknowledgment_attr, request_id) in iface._response_wait_errors
@@ -1648,7 +1648,7 @@ class TestSendWaitEdgeCases:
         }
 
         # Process through the onResponse handler
-        iface._send_pipeline.onResponseTraceRoute(malformed_packet)
+        iface._send_pipeline.on_response_trace_route(malformed_packet)
 
         # Verify error was recorded
         assert (acknowledgment_attr, request_id) in iface._response_wait_errors
@@ -1706,7 +1706,7 @@ class TestSendWaitEdgeCases:
         assert (acknowledgment_attr, request_id) not in iface._response_wait_acks
 
         # Process response
-        iface._send_pipeline.onResponseTraceRoute(response_packet)
+        iface._send_pipeline.on_response_trace_route(response_packet)
 
         # Verify ACK was recorded
         assert (acknowledgment_attr, request_id) in iface._response_wait_acks
@@ -1746,7 +1746,7 @@ class TestSendWaitEdgeCases:
         )
 
         # Process response
-        iface._send_pipeline.onResponseTraceRoute(response_packet)
+        iface._send_pipeline.on_response_trace_route(response_packet)
 
         # Verify ACK was recorded (response was processed successfully)
         assert (acknowledgment_attr, request_id) in iface._response_wait_acks

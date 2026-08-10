@@ -286,14 +286,14 @@ class TestSendPipelineProperties:
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
     ) -> None:
         """Test localNode property."""
-        assert send_pipeline.localNode is mock_interface.localNode
+        assert send_pipeline.local_node is mock_interface.localNode
 
     @pytest.mark.unit
     def test_my_info_property(
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
     ) -> None:
         """Test myInfo property."""
-        assert send_pipeline.myInfo is mock_interface.myInfo
+        assert send_pipeline.my_info is mock_interface.myInfo
 
     @pytest.mark.unit
     def test_nodes_property(
@@ -307,16 +307,16 @@ class TestSendPipelineProperties:
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
     ) -> None:
         """Test nodesByNum property."""
-        assert send_pipeline.nodesByNum is mock_interface.nodesByNum
+        assert send_pipeline.nodes_by_num is mock_interface.nodesByNum
 
     @pytest.mark.unit
     def test_config_id_property(
         self, send_pipeline: SendPipeline, mock_interface: MagicMock
     ) -> None:
         """Test configId property (lines 162-164)."""
-        assert send_pipeline.configId == 123
+        assert send_pipeline.config_id == 123
         mock_interface.configId = 456
-        assert send_pipeline.configId == 456
+        assert send_pipeline.config_id == 456
 
     @pytest.mark.unit
     def test_no_proto_property(
@@ -324,9 +324,9 @@ class TestSendPipelineProperties:
     ) -> None:
         """Test noProto property (lines 167-169)."""
         mock_interface.noProto = True
-        assert send_pipeline.noProto is True
+        assert send_pipeline.no_proto is True
         mock_interface.noProto = False
-        assert send_pipeline.noProto is False
+        assert send_pipeline.no_proto is False
 
     @pytest.mark.unit
     def test_acknowledgment_property(
@@ -349,9 +349,9 @@ class TestSendText:
     @pytest.mark.unit
     def test_send_text_calls_send_data(self, send_pipeline: SendPipeline) -> None:
         """Test that sendText calls sendData with encoded text."""
-        with patch.object(send_pipeline, "sendData") as mock_send_data:
+        with patch.object(send_pipeline, "send_data") as mock_send_data:
             mock_send_data.return_value = MagicMock()
-            send_pipeline.sendText(
+            send_pipeline.send_text(
                 text="Hello, World!",
                 destinationId="!1234abcd",
                 wantAck=True,
@@ -371,9 +371,9 @@ class TestSendAlert:
     @pytest.mark.unit
     def test_send_alert_calls_send_data(self, send_pipeline: SendPipeline) -> None:
         """Test that sendAlert calls sendData with ALERT_APP port."""
-        with patch.object(send_pipeline, "sendData") as mock_send_data:
+        with patch.object(send_pipeline, "send_data") as mock_send_data:
             mock_send_data.return_value = MagicMock()
-            send_pipeline.sendAlert(
+            send_pipeline.send_alert(
                 text="Alert message",
                 destinationId=BROADCAST_ADDR,
                 channelIndex=0,
@@ -393,7 +393,7 @@ class TestSendMqttClientProxyMessage:
     def test_send_mqtt_client_proxy_message(self, send_pipeline: SendPipeline) -> None:
         """Test sending MQTT client proxy message."""
         with patch.object(send_pipeline, "_send_to_radio") as mock_send:
-            send_pipeline.sendMqttClientProxyMessage("test/topic", b"test data")
+            send_pipeline.send_mqtt_client_proxy_message("test/topic", b"test data")
 
         mock_send.assert_called_once()
         call_args = mock_send.call_args[0][0]
@@ -410,7 +410,7 @@ class TestSendData:
         with patch.object(send_pipeline, "_clear_wait_error") as mock_clear:
             with patch.object(send_pipeline, "_send_data_with_wait") as mock_send:
                 mock_send.return_value = MagicMock()
-                send_pipeline.sendData(
+                send_pipeline.send_data(
                     b"test data",
                     destinationId=BROADCAST_ADDR,
                     portNum=portnums_pb2.PortNum.POSITION_APP,
@@ -426,7 +426,7 @@ class TestSendData:
         with patch.object(send_pipeline, "_clear_wait_error") as mock_clear:
             with patch.object(send_pipeline, "_send_data_with_wait") as mock_send:
                 mock_send.return_value = MagicMock()
-                send_pipeline.sendData(
+                send_pipeline.send_data(
                     b"test data",
                     destinationId=BROADCAST_ADDR,
                     portNum=portnums_pb2.PortNum.TEXT_MESSAGE_APP,
@@ -720,7 +720,7 @@ class TestOnResponsePosition:
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline._on_response_position"
         ) as mock_flow:
-            send_pipeline.onResponsePosition(packet)
+            send_pipeline.on_response_position(packet)
 
         mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
@@ -732,10 +732,10 @@ class TestSendPosition:
     def test_send_position_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendPosition delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.sendPosition"
+            "meshtastic.mesh_interface_runtime.send_pipeline.send_position"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
-            send_pipeline.sendPosition(
+            send_pipeline.send_position(
                 latitude=37.456,
                 longitude=-122.2345,
                 altitude=100,
@@ -762,7 +762,7 @@ class TestOnResponseTraceRoute:
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline._on_response_traceroute"
         ) as mock_flow:
-            send_pipeline.onResponseTraceRoute(packet)
+            send_pipeline.on_response_trace_route(packet)
 
         mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
@@ -774,9 +774,9 @@ class TestSendTraceRoute:
     def test_send_traceroute_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendTraceRoute delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.sendTraceroute"
+            "meshtastic.mesh_interface_runtime.send_pipeline.send_traceroute"
         ) as mock_flow:
-            send_pipeline.sendTraceRoute("!1234abcd", hopLimit=3, channelIndex=0)
+            send_pipeline.send_trace_route("!1234abcd", hopLimit=3, channelIndex=0)
 
         mock_flow.assert_called_once_with(
             send_pipeline._port.facade, "!1234abcd", 3, channelIndex=0
@@ -788,7 +788,7 @@ class TestSendTraceRoute:
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline._request_traceroute"
         ) as mock_flow:
-            result = send_pipeline.requestTraceRoute(
+            result = send_pipeline.request_trace_route(
                 "!1234abcd", hopLimit=3, channelIndex=1
             )
 
@@ -805,9 +805,9 @@ class TestSendTelemetry:
     def test_send_telemetry_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendTelemetry delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.sendTelemetry"
+            "meshtastic.mesh_interface_runtime.send_pipeline.send_telemetry"
         ) as mock_flow:
-            send_pipeline.sendTelemetry(
+            send_pipeline.send_telemetry(
                 destinationId=BROADCAST_ADDR,
                 wantResponse=True,
                 channelIndex=0,
@@ -827,7 +827,7 @@ class TestOnResponseTelemetry:
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline._on_response_telemetry"
         ) as mock_flow:
-            send_pipeline.onResponseTelemetry(packet)
+            send_pipeline.on_response_telemetry(packet)
 
         mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
@@ -843,7 +843,7 @@ class TestOnResponseWaypoint:
         with patch(
             "meshtastic.mesh_interface_runtime.send_pipeline._on_response_waypoint"
         ) as mock_flow:
-            send_pipeline.onResponseWaypoint(packet)
+            send_pipeline.on_response_waypoint(packet)
 
         mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
@@ -855,10 +855,10 @@ class TestSendWaypoint:
     def test_send_waypoint_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test sendWaypoint delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.sendWaypoint"
+            "meshtastic.mesh_interface_runtime.send_pipeline.send_waypoint"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
-            send_pipeline.sendWaypoint(
+            send_pipeline.send_waypoint(
                 name="Test Waypoint",
                 description="Test Description",
                 icon=1,
@@ -877,10 +877,10 @@ class TestDeleteWaypoint:
     def test_delete_waypoint_delegates(self, send_pipeline: SendPipeline) -> None:
         """Test deleteWaypoint delegates to flow function."""
         with patch(
-            "meshtastic.mesh_interface_runtime.send_pipeline.deleteWaypoint"
+            "meshtastic.mesh_interface_runtime.send_pipeline.delete_waypoint"
         ) as mock_flow:
             mock_flow.return_value = MagicMock()
-            send_pipeline.deleteWaypoint(
+            send_pipeline.delete_waypoint(
                 waypoint_id=12345,
                 destinationId=BROADCAST_ADDR,
             )
@@ -1077,24 +1077,6 @@ class TestSendPacket:
         assert "noProto" in caplog.text
 
 
-class TestSendPacketAlias:
-    """Tests for _sendPacket alias (lines 699-716)."""
-
-    @pytest.mark.unit
-    def test_send_packet_alias(self, send_pipeline: SendPipeline) -> None:
-        """Test that _sendPacket is an alias for _send_packet."""
-        mesh_packet = mesh_pb2.MeshPacket()
-
-        with patch.object(send_pipeline, "_send_packet") as mock_send:
-            send_pipeline._sendPacket(
-                mesh_packet,
-                destinationId=BROADCAST_ADDR,
-                wantAck=True,
-                hopLimit=3,
-            )
-
-        mock_send.assert_called_once()
-
 
 class TestWaitForConfig:
     """Tests for waitForConfig method (lines 718-727)."""
@@ -1110,7 +1092,7 @@ class TestWaitForConfig:
             True
         )
 
-        send_pipeline.waitForConfig()
+        send_pipeline.wait_for_config()
 
         mock_interface.localNode._channel_request_runtime._timeout_for_field.assert_called_once_with(
             "lora", LORA_CONFIG_WAIT_SECONDS
@@ -1125,7 +1107,7 @@ class TestWaitForConfig:
         mock_interface.localNode.waitForConfig.return_value = True
 
         with pytest.raises(Exception, match="Timed out"):
-            send_pipeline.waitForConfig()
+            send_pipeline.wait_for_config()
 
     @pytest.mark.unit
     def test_wait_for_config_lora_wait_failure_raises(
@@ -1142,7 +1124,7 @@ class TestWaitForConfig:
             mock_interface.MeshInterfaceError,
             match="Timed out waiting for interface config",
         ):
-            send_pipeline.waitForConfig()
+            send_pipeline.wait_for_config()
 
     @pytest.mark.unit
     def test_wait_for_config_lora_field_absent_graceful_success(
@@ -1174,7 +1156,7 @@ class TestWaitForConfig:
         mock_interface.localNode.waitForConfig.return_value = True
         mock_interface.localNode._channel_request_runtime = real_runtime
 
-        send_pipeline.waitForConfig()
+        send_pipeline.wait_for_config()
 
 
 class TestWaitForAckNak:
@@ -1191,7 +1173,7 @@ class TestWaitForAckNak:
         )
 
         # Should not raise
-        send_pipeline.waitForAckNak()
+        send_pipeline.wait_for_ack_nak()
 
     @pytest.mark.unit
     def test_wait_for_ack_nak_timeout_raises(
@@ -1204,7 +1186,7 @@ class TestWaitForAckNak:
         )
 
         with pytest.raises(Exception, match="Timed out"):
-            send_pipeline.waitForAckNak()
+            send_pipeline.wait_for_ack_nak()
 
 
 class TestWaitForTraceRoute:
@@ -1222,7 +1204,7 @@ class TestWaitForTraceRoute:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForTraceRoute(waitFactor=1.0)
+        send_pipeline.wait_for_trace_route(waitFactor=1.0)
 
     @pytest.mark.unit
     def test_wait_for_traceroute_with_request_id(
@@ -1236,7 +1218,7 @@ class TestWaitForTraceRoute:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForTraceRoute(waitFactor=1.0, request_id=12345)
+        send_pipeline.wait_for_trace_route(waitFactor=1.0, request_id=12345)
 
 
 class TestWaitForTelemetry:
@@ -1254,7 +1236,7 @@ class TestWaitForTelemetry:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForTelemetry()
+        send_pipeline.wait_for_telemetry()
 
     @pytest.mark.unit
     def test_wait_for_telemetry_with_request_id(
@@ -1268,7 +1250,7 @@ class TestWaitForTelemetry:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForTelemetry(request_id=12345)
+        send_pipeline.wait_for_telemetry(request_id=12345)
 
 
 class TestWaitForPosition:
@@ -1286,7 +1268,7 @@ class TestWaitForPosition:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForPosition()
+        send_pipeline.wait_for_position()
 
     @pytest.mark.unit
     def test_wait_for_position_with_request_id(
@@ -1300,7 +1282,7 @@ class TestWaitForPosition:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForPosition(request_id=12345)
+        send_pipeline.wait_for_position(request_id=12345)
 
 
 class TestWaitForWaypoint:
@@ -1318,7 +1300,7 @@ class TestWaitForWaypoint:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForWaypoint()
+        send_pipeline.wait_for_waypoint()
 
     @pytest.mark.unit
     def test_wait_for_waypoint_with_request_id(
@@ -1332,7 +1314,7 @@ class TestWaitForWaypoint:
         mock_interface._request_wait_runtime.retire_wait_request.side_effect = None
 
         # Should not raise
-        send_pipeline.waitForWaypoint(request_id=12345)
+        send_pipeline.wait_for_waypoint(request_id=12345)
 
 
 class TestSendToRadio:
@@ -1418,7 +1400,7 @@ class TestSendHeartbeat:
     def test_send_heartbeat(self, send_pipeline: SendPipeline) -> None:
         """Test sending heartbeat message."""
         with patch.object(send_pipeline, "_send_to_radio") as mock_send:
-            send_pipeline.sendHeartbeat()
+            send_pipeline.send_heartbeat()
 
         mock_send.assert_called_once()
         # call_args[0][0] would be the ToRadio message with heartbeat field set
