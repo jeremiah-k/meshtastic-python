@@ -94,6 +94,12 @@ def _cleanup_failed_resources(context: CliContext) -> BaseException | None:
     :class:`SystemExit` take precedence over ordinary cleanup exceptions so a
     later rollback callback cannot accidentally suppress an operator interrupt.
     Within the same priority class, the first failure in rollback order wins.
+
+    Returns
+    -------
+    BaseException | None
+        Highest-priority rollback failure, or ``None`` when every callback
+        completes.
     """
     errors: list[BaseException] = []
     for cleanup in reversed(context.outcome.failure_cleanup_callbacks):
