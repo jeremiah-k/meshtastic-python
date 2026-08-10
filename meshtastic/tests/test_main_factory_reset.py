@@ -503,7 +503,9 @@ def test_local_factory_reset_rejects_invalid_timeout_before_send() -> None:
         factoryReset=MagicMock(return_value=SimpleNamespace(id=123)),
     )
 
-    with pytest.raises(ValueError, match="timeout must be positive"):
+    with pytest.raises(
+        ValueError, match="factory reset acceptance timeout must be positive"
+    ):
         main_module._send_local_factory_reset_and_wait(
             reset_node,
             full=False,
