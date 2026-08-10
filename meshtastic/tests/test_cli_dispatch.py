@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from typing import cast
 from unittest.mock import MagicMock
 
@@ -270,8 +271,6 @@ def test_interface_close_failure_is_diagnostic_and_not_retried(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Keep transport-close failures diagnostic-only and consume the close request."""
-    import logging
-
     caplog.set_level(logging.DEBUG, logger=dispatch.__name__)
     context = _context()
     interface = MagicMock(autospec=MeshInterface)
@@ -284,6 +283,20 @@ def test_interface_close_failure_is_diagnostic_and_not_retried(
 
     interface.close.assert_called_once_with()
     assert "Error during interface close" in caplog.text
+
+
+@pytest.mark.unit
+def test_seriallog_active_skips_interface_close() -> None:
+    """An active seriallog owns the transport; one-shot close must be skipped."""
+    context = _context()
+    interface = MagicMock(autospec=MeshInterface)
+    context.interface = cast(MeshInterface, interface)
+    context.args.seriallog = "out.log"
+    context.outcome.close_now = True
+
+    dispatch._close_interface_if_requested(context)  # noqa: SLF001
+
+    interface.close.assert_not_called()
 
 
 @pytest.mark.unit
