@@ -574,16 +574,15 @@ def test_information_actions_info_paths_and_upgrade_notice(
 
 
 @pytest.mark.unit
-def test_information_actions_remote_info_is_non_mutating(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Remote --info should explain the supported --get alternative."""
+def test_information_actions_remote_info_is_non_mutating() -> None:
+    """Remote --info should explain the supported --get alternative via the quiet-aware hook."""
     interface = _interface_double()
     context = _context(interface, info=True)
+    cli_print = MagicMock()
 
-    _handle_information_actions(context, _hooks())
+    _handle_information_actions(context, _hooks(cli_print=cli_print))
 
-    assert "remote node is not supported" in capsys.readouterr().out
+    cli_print.assert_any_call("Showing info of remote node is not supported.")
     interface.showInfo.assert_not_called()
 
 

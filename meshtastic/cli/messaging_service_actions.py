@@ -334,8 +334,8 @@ def _handle_information_actions(
                     f' Consider running "{hooks.install_upgrade_hint}" ***\n'
                 )
         else:
-            print("Showing info of remote node is not supported.")
-            print(
+            hooks.cli_print("Showing info of remote node is not supported.")
+            hooks.cli_print(
                 "Use the '--get' command for a specific configuration "
                 "(e.g. 'lora') instead."
             )
