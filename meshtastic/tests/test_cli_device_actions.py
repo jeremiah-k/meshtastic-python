@@ -637,9 +637,12 @@ def test_factory_reset_scoped_wait_checks_error_before_return_and_retires_reques
     """A request-scoped ACK completion must surface NAK state before cleanup."""
     events: list[str] = []
     iface = MagicMock()
-    wait_for_request_ack = MagicMock(
-        side_effect=lambda *_args, **_kwargs: events.append("wait") or True
-    )
+
+    def _record_wait(*_args: object, **_kwargs: object) -> bool:
+        events.append("wait")
+        return True
+
+    wait_for_request_ack = MagicMock(side_effect=_record_wait)
     raise_wait_error = MagicMock(
         side_effect=lambda *_args, **_kwargs: events.append("raise")
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
+from typing import Any, NoReturn
 from unittest.mock import MagicMock, create_autospec
 
 import pytest
@@ -62,7 +62,7 @@ def _context(interface: Any, **arg_overrides: Any) -> CliContext:
     )
 
 
-def _cli_exit(_message: str, return_value: int = 1) -> None:
+def _cli_exit(_message: str, return_value: int = 1) -> NoReturn:
     raise SystemExit(return_value)
 
 

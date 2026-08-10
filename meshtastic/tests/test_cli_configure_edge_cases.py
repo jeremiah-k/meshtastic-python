@@ -594,7 +594,7 @@ def test_configure_actions_remote_export_and_write_failure(tmp_path: Path) -> No
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=(False, False)),
         export_config=export_config,
-        cli_exit=_cli_exit,
+        cli_exit=cast(CliExit, _cli_exit),
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=False),
     )
@@ -710,7 +710,7 @@ def test_configure_actions_no_export_and_stdout_export(
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=(False, False)),
         export_config=export_config,
-        cli_exit=_cli_exit,
+        cli_exit=cast(CliExit, _cli_exit),
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=True),
     )
@@ -847,7 +847,7 @@ def test_configure_noop_does_not_arm_shared_ack_wait() -> None:
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=result),
         export_config=MagicMock(),
-        cli_exit=_cli_exit,
+        cli_exit=cast(CliExit, _cli_exit),
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=True),
     )
@@ -879,7 +879,7 @@ def test_set_ack_wait_survives_later_configure_noop() -> None:
         handle_set_command=set_command,
         handle_configure_command=MagicMock(return_value=result),
         export_config=MagicMock(),
-        cli_exit=_cli_exit,
+        cli_exit=cast(CliExit, _cli_exit),
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=True),
     )
@@ -910,7 +910,7 @@ def test_configure_plain_tuple_hook_retains_legacy_ack_behavior() -> None:
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=(False, False)),
         export_config=MagicMock(),
-        cli_exit=_cli_exit,
+        cli_exit=cast(CliExit, _cli_exit),
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=True),
     )
