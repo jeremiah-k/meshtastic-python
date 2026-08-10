@@ -57,7 +57,7 @@ def channel_request_runtime(
 
 
 @pytest.mark.unit
-def test_setChannels_with_valid_channels_copies_and_normalizes(
+def test_set_channels_with_valid_channels_copies_and_normalizes(
     channel_request_runtime: _NodeChannelRequestRuntime,
     channel_state: _NodeChannelState,
 ) -> None:
@@ -77,7 +77,7 @@ def test_setChannels_with_valid_channels_copies_and_normalizes(
 
     source_channels = [source_channel1, source_channel2]
 
-    channel_request_runtime.setChannels(source_channels)
+    channel_request_runtime.set_channels(source_channels)
 
     # Verify channels were copied (not the same objects)
     assert channel_state.channels is not None
@@ -96,17 +96,17 @@ def test_setChannels_with_valid_channels_copies_and_normalizes(
 
 
 @pytest.mark.unit
-def test_requestChannels_with_starting_index_zero_resets_channels(
+def test_request_channels_with_starting_index_zero_resets_channels(
     channel_request_runtime: _NodeChannelRequestRuntime,
     channel_state: _NodeChannelState,
     mock_node: MagicMock,
 ) -> None:
-    """RequestChannels with starting_index=0 should reset channels and partialChannels."""
+    """Starting at index zero should reset complete and partial channel state."""
     # Set up pre-existing channels
     channel_state.channels = [channel_pb2.Channel()]
     channel_state.partial_channels = [channel_pb2.Channel()]
 
-    channel_request_runtime.requestChannels(starting_index=0)
+    channel_request_runtime.request_channels(starting_index=0)
 
     # Verify channels were reset
     assert channel_state.channels is None
@@ -116,18 +116,18 @@ def test_requestChannels_with_starting_index_zero_resets_channels(
 
 
 @pytest.mark.unit
-def test_requestChannels_with_starting_index_nonzero_preserves_channels(
+def test_request_channels_with_starting_index_nonzero_preserves_channels(
     channel_request_runtime: _NodeChannelRequestRuntime,
     channel_state: _NodeChannelState,
     mock_node: MagicMock,
 ) -> None:
-    """RequestChannels with starting_index>0 should not reset channels or partialChannels."""
+    """Starting above zero should preserve complete and partial channel state."""
     # Set up pre-existing channels
     existing_channel = channel_pb2.Channel()
     channel_state.channels = [existing_channel]
     channel_state.partial_channels = [channel_pb2.Channel()]
 
-    channel_request_runtime.requestChannels(starting_index=2)
+    channel_request_runtime.request_channels(starting_index=2)
 
     # Verify channels were NOT reset
     assert channel_state.channels == [existing_channel]
@@ -137,21 +137,19 @@ def test_requestChannels_with_starting_index_nonzero_preserves_channels(
 
 
 @pytest.mark.unit
-def test_requestChannels_calls_canonical_request_channel_method(
+def test_request_channels_calls_request_channel(
     channel_request_runtime: _NodeChannelRequestRuntime,
 ) -> None:
-    """RequestChannels should call requestChannel directly, not deprecated alias."""
-    channel_request_runtime.requestChannel = MagicMock()  # type: ignore[method-assign]
+    """request_channels should delegate the initial request to request_channel."""
     channel_request_runtime.request_channel = MagicMock()  # type: ignore[method-assign]
 
-    channel_request_runtime.requestChannels(starting_index=3)
+    channel_request_runtime.request_channels(starting_index=3)
 
-    channel_request_runtime.requestChannel.assert_called_once_with(3)
-    channel_request_runtime.request_channel.assert_not_called()
+    channel_request_runtime.request_channel.assert_called_once_with(3)
 
 
 @pytest.mark.unit
-def test_waitForConfig_falls_back_to_node_attribute_without_response_runtime(
+def test_wait_for_config_falls_back_to_node_attribute_without_response_runtime(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
@@ -162,21 +160,21 @@ def test_waitForConfig_falls_back_to_node_attribute_without_response_runtime(
 
     assert not hasattr(mock_node, "_channel_response_runtime")
 
-    result = channel_request_runtime.waitForConfig(attribute="channels")
+    result = channel_request_runtime.wait_for_config(attribute="channels")
 
     assert result is True
     mock_timeout.waitForSet.assert_called_once_with(mock_node, attrs=("channels",))
 
 
 @pytest.mark.unit
-def test_waitForConfig_observes_channels_installed_during_response_wait(
+def test_wait_for_config_observes_channels_installed_during_response_wait(
     channel_request_runtime: _NodeChannelRequestRuntime,
     channel_state: _NodeChannelState,
     mock_node: MagicMock,
 ) -> None:
     """Channel completion should be observed through the shared state owner."""
     response_runtime = MagicMock()
-    response_runtime.hasChannelRequestFailed.return_value = False
+    response_runtime.has_channel_request_failed.return_value = False
     mock_node._channel_response_runtime = response_runtime
 
     def _install_channels(
@@ -191,12 +189,12 @@ def test_waitForConfig_observes_channels_installed_during_response_wait(
 
     mock_node._timeout.waitForSet.side_effect = _install_channels  # noqa: SLF001
 
-    assert channel_request_runtime.waitForConfig(attribute="channels") is True
-    response_runtime.hasChannelRequestFailed.assert_not_called()
+    assert channel_request_runtime.wait_for_config(attribute="channels") is True
+    response_runtime.has_channel_request_failed.assert_not_called()
 
 
 @pytest.mark.unit
-def test_waitForConfig_with_non_channels_attribute(
+def test_wait_for_config_with_non_channels_attribute(
     channel_request_runtime: _NodeChannelRequestRuntime,
     mock_node: MagicMock,
 ) -> None:
@@ -205,7 +203,7 @@ def test_waitForConfig_with_non_channels_attribute(
     mock_timeout.waitForSet.return_value = True
     mock_node._timeout = mock_timeout  # noqa: SLF001
 
-    result = channel_request_runtime.waitForConfig(attribute="lora")
+    result = channel_request_runtime.wait_for_config(attribute="lora")
 
     assert result is True
     call_args = mock_timeout.waitForSet.call_args
@@ -228,7 +226,7 @@ def test_request_channel_sends_admin_message_with_correct_channel_num(
 
     mock_node._send_admin.return_value = mesh_pb2.MeshPacket()  # noqa: SLF001
 
-    result = channel_request_runtime.requestChannel(channel_num=3)
+    result = channel_request_runtime.request_channel(channel_num=3)
 
     # Verify _send_admin was called with correct message
     mock_node._send_admin.assert_called_once()  # noqa: SLF001
@@ -261,7 +259,7 @@ def test_request_channel_for_remote_node_logs_info(
     mock_node.iface = mock_iface
 
     with caplog.at_level(logging.INFO):
-        channel_request_runtime.requestChannel(channel_num=5)
+        channel_request_runtime.request_channel(channel_num=5)
 
     # Verify info log was emitted for remote node
     assert "Requesting channel 5 info from remote node" in caplog.text
@@ -283,7 +281,7 @@ def test_request_channel_for_local_node_logs_debug(
     mock_node.iface = mock_iface
 
     with caplog.at_level(logging.DEBUG):
-        channel_request_runtime.requestChannel(channel_num=2)
+        channel_request_runtime.request_channel(channel_num=2)
 
     # Verify debug log was emitted for local node
     assert "Requesting channel 2" in caplog.text
@@ -306,10 +304,10 @@ def test_request_channel_send_exception_marks_request_failed(
     mock_node._send_admin.side_effect = RuntimeError("send failed")  # noqa: SLF001
 
     with pytest.raises(RuntimeError, match="send failed"):
-        channel_request_runtime.requestChannel(channel_num=1)
+        channel_request_runtime.request_channel(channel_num=1)
 
-    channel_response_runtime.markChannelRequestSent.assert_called_once_with(1)
-    channel_response_runtime.markChannelRequestSendFailed.assert_called_once_with(1)
+    channel_response_runtime.mark_channel_request_sent.assert_called_once_with(1)
+    channel_response_runtime.mark_channel_request_send_failed.assert_called_once_with(1)
 
 
 @pytest.mark.unit

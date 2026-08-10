@@ -12,9 +12,7 @@ from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
 )
-from meshtastic.node_runtime.shared import (
-    isNamedAdminChannelName as _isNamedAdminChannelName,
-)
+from meshtastic.node_runtime.shared import _is_named_admin_channel_name
 from meshtastic.protobuf import admin_pb2, channel_pb2
 
 if TYPE_CHECKING:
@@ -159,7 +157,7 @@ class _NodeDeleteChannelRuntime:
             if (
                 channel.role != channel_pb2.Channel.Role.DISABLED
                 and channel.settings
-                and _isNamedAdminChannelName(channel.settings.name)
+                and _is_named_admin_channel_name(channel.settings.name)
             ):
                 return channel.index
         return 0

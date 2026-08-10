@@ -561,7 +561,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             list will be normalized (indices fixed) and padded as needed to meet expected
             channel count.
         """
-        self._channel_request_runtime.setChannels(channels)
+        self._channel_request_runtime.set_channels(channels)
 
     def requestChannels(self, startingIndex: int = 0) -> None:
         """Request channel definitions from the node, starting at the given channel index.
@@ -575,7 +575,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         startingIndex : int
             Zero-based channel index to start fetching from (typically 0-7). (Default value = 0)
         """
-        self._channel_request_runtime.requestChannels(starting_index=startingIndex)
+        self._channel_request_runtime.request_channels(starting_index=startingIndex)
 
     def _invalidate_channel_cache(self) -> None:
         """Clear cached channel state under the channel-state owner lock."""
@@ -597,7 +597,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
             `raw` bytes for the returned field.
         """
-        self._settings_response_runtime.handleSettingsResponse(p)
+        self._settings_response_runtime.handle_settings_response(p)
 
     def requestConfig(
         self, configType: int | FieldDescriptor, adminIndex: int | None = None
@@ -621,7 +621,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             configured admin channel is used. Pass 0 to force channel 0.
             (Default value = None)
         """
-        self._settings_runtime.requestConfig(
+        self._settings_runtime.request_config(
             configType,
             admin_index=adminIndex,
         )
@@ -650,7 +650,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         bool
             True if the attribute was set before the timeout expired, False otherwise.
         """
-        return self._channel_request_runtime.waitForConfig(attribute=attribute)
+        return self._channel_request_runtime.wait_for_config(attribute=attribute)
 
     def _raise_interface_error(self, message: str) -> NoReturn:
         """Raise a MeshInterface-style error with the provided message.
@@ -696,7 +696,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             If `config_name` is not one of the supported names, or if
             localConfig/moduleConfig has not been loaded.
         """
-        self._settings_runtime.writeConfig(config_name)
+        self._settings_runtime.write_config(config_name)
 
     def _write_channel_snapshot(
         self,
@@ -903,7 +903,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
         """
-        return self._owner_profile_runtime.setOwner(
+        return self._owner_profile_runtime.set_owner(
             long_name=long_name,
             short_name=short_name,
             is_licensed=is_licensed,
@@ -1058,7 +1058,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             module is not present, the ringtone is unavailable, or the request
             timed out.
         """
-        return self._content_request_runtime.readRingtone()
+        return self._content_request_runtime.read_ringtone()
 
     def _set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the node's ringtone.
@@ -1083,7 +1083,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If `ringtone` length exceeds 230 characters.
         """
-        return self._content_request_runtime.writeRingtone(ringtone)
+        return self._content_request_runtime.write_ringtone(ringtone)
 
     def onResponseRequestCannedMessagePluginMessageMessages(
         self, p: dict[str, Any]
@@ -1114,7 +1114,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         str | None
             str or None: The assembled canned message if available, or None if the module is unavailable or no response was received.
         """
-        return self._content_request_runtime.readCannedMessage()
+        return self._content_request_runtime.read_canned_message()
 
     def _set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's canned message.
@@ -1139,7 +1139,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If `message` length is greater than 200 characters.
         """
-        return self._content_request_runtime.writeCannedMessage(message)
+        return self._content_request_runtime.write_canned_message(message)
 
     # COMPAT_STABLE_SHIM: alias for getRingtone
     def get_ringtone(self) -> str | None:
@@ -1267,7 +1267,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             A MeshPacket for the sent admin request, or `None` if the admin message was not sent.
         """
-        return self._admin_command_runtime.exitSimulator()
+        return self._admin_command_runtime.exit_simulator()
 
     def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to reboot after a delay.
@@ -1296,7 +1296,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent admin packet if available, or `None` otherwise.
         """
-        return self._admin_command_runtime.beginSettingsTransaction()
+        return self._admin_command_runtime.begin_settings_transaction()
 
     def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Commit the node's open settings edit transaction.
@@ -1308,7 +1308,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin `MeshPacket` when available, or `None`.
         """
-        return self._admin_command_runtime.commitSettingsTransaction()
+        return self._admin_command_runtime.commit_settings_transaction()
 
     def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to perform an OTA reboot after a given delay.
@@ -1323,7 +1323,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was produced.
         """
-        return self._admin_command_runtime.rebootOta(secs)
+        return self._admin_command_runtime.reboot_ota(secs)
 
     def startOTA(
         self,
@@ -1359,7 +1359,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterfaceError
             If called for a non-local node.
         """
-        return self._admin_command_runtime.startOta(
+        return self._admin_command_runtime.start_ota(
             mode=mode,
             ota_file_hash=ota_file_hash,
             ota_mode=ota_mode,
@@ -1378,7 +1378,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent Admin message packet, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.enterDfuMode()
+        return self._admin_command_runtime.enter_dfu_mode()
 
     def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to shut down after a given number of seconds.
@@ -1442,7 +1442,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The sent admin packet if sending succeeded, or None otherwise.
         """
-        return self._admin_command_runtime.factoryReset(full=full)
+        return self._admin_command_runtime.factory_reset(full=full)
 
     def _get_factory_reset_request_value(self) -> int:
         """Return factory-reset sentinel value used for admin reset requests."""
@@ -1465,7 +1465,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The admin packet returned by the send operation if available, `None` otherwise.
         """
-        return self._admin_command_runtime.removeNode(nodeId)
+        return self._admin_command_runtime.remove_node(nodeId)
 
     def setFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node as a favorite in the target device's NodeDB.
@@ -1480,7 +1480,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The response packet if one was received, `None` otherwise.
         """
-        return self._admin_command_runtime.setFavorite(nodeId)
+        return self._admin_command_runtime.set_favorite(nodeId)
 
     def removeFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as a favorite in the device's NodeDB.
@@ -1495,7 +1495,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The Admin packet sent to the device, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.removeFavorite(nodeId)
+        return self._admin_command_runtime.remove_favorite(nodeId)
 
     def setIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node in the device NodeDB as ignored.
@@ -1510,7 +1510,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage/packet sent to request the change, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.setIgnored(nodeId)
+        return self._admin_command_runtime.set_ignored(nodeId)
 
     def removeIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as ignored in the device's NodeDB.
@@ -1525,7 +1525,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             `mesh_pb2.MeshPacket` if an AdminMessage was sent, `None` otherwise.
         """
-        return self._admin_command_runtime.removeIgnored(nodeId)
+        return self._admin_command_runtime.remove_ignored(nodeId)
 
     def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
         """Request that the node clear its stored NodeDB (node database).
@@ -1538,7 +1538,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent, or `None` if no packet was sent.
         """
-        return self._admin_command_runtime.resetNodeDb()
+        return self._admin_command_runtime.reset_node_db()
 
     def setFixedPosition(
         self, lat: int | float | None, lon: int | float | None, alt: int | None
@@ -1639,7 +1639,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             Decoded packet containing at minimum a 'decoded' key with routing and
             admin/raw get_device_metadata_response fields.
         """
-        self._metadata_response_runtime.handleMetadataResponse(p)
+        self._metadata_response_runtime.handle_metadata_response(p)
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.
@@ -1657,7 +1657,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
             - a routing message with 'routing.errorReason', or
             - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
         """
-        self._channel_response_runtime.handleChannelResponse(p)
+        self._channel_response_runtime.handle_channel_response(p)
 
     def onAckNak(self, p: dict[str, Any]) -> None:
         """Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
@@ -1693,7 +1693,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent to the interface, or `None` if sending was skipped (e.g., protocol disabled).
         """
-        return self._channel_request_runtime.requestChannel(channelNum)
+        return self._channel_request_runtime.request_channel(channelNum)
 
     # pylint: disable=R1710
     def _send_admin(

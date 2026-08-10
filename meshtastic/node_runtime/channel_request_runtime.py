@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class _HasChannelRequestFailed(Protocol):
     """Protocol for objects providing channel request failure check."""
 
-    def hasChannelRequestFailed(self) -> bool:
+    def has_channel_request_failed(self) -> bool:
         """Return True if a channel request has failed."""
         ...  # pylint: disable=unnecessary-ellipsis
 
@@ -27,16 +27,8 @@ class _HasChannelRequestFailed(Protocol):
 def _get_channel_request_failed_fn(
     channel_response_runtime: object,
 ) -> Callable[[], bool] | None:
-    """Extract hasChannelRequestFailed or has_channel_request_failed as callable."""
-    fn = getattr(
-        channel_response_runtime,
-        "hasChannelRequestFailed",
-        None,
-    ) or getattr(
-        channel_response_runtime,
-        "has_channel_request_failed",
-        None,
-    )
+    """Extract the channel-request failure probe when available."""
+    fn = getattr(channel_response_runtime, "has_channel_request_failed", None)
     if callable(fn):
         return cast(Callable[[], bool] | None, fn)
     return None
@@ -96,15 +88,11 @@ class _NodeChannelRequestRuntime:
         self._node = node
         self._channel_state = channel_state
 
-    def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
-        """Set channels from sequence with copy + normalization semantics."""
+    def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
+        """Set channels from a sequence with copy and normalization semantics."""
         self._channel_state.replace_with_copies(channels)
 
-    def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
-        """COMPAT_STABLE_SHIM: Silent alias for setChannels."""
-        return self.setChannels(channels)
-
-    def requestChannels(self, *, starting_index: int = 0) -> None:
+    def request_channels(self, *, starting_index: int = 0) -> None:
         """Bootstrap channel request flow from ``starting_index``."""
         logger.debug("requestChannels for nodeNum:%s", self._node.nodeNum)
         if not 0 <= starting_index < MAX_CHANNELS:
@@ -116,13 +104,9 @@ class _NodeChannelRequestRuntime:
             return
         if starting_index == 0:
             self._channel_state.reset_for_download()
-        self.requestChannel(starting_index)
+        self.request_channel(starting_index)
 
-    def request_channels(self, *, starting_index: int = 0) -> None:
-        """COMPAT_STABLE_SHIM: Silent alias for requestChannels."""
-        return self.requestChannels(starting_index=starting_index)
-
-    def waitForConfig(self, *, attribute: str = "channels") -> bool:
+    def wait_for_config(self, *, attribute: str = "channels") -> bool:
         """Wait for node attribute using historical timeout semantics."""
         if attribute == "channels":
             channel_response_runtime = getattr(
@@ -131,8 +115,7 @@ class _NodeChannelRequestRuntime:
                 None,
             )
             has_channel_request_failed = (
-                getattr(channel_response_runtime, "hasChannelRequestFailed", None)
-                or getattr(channel_response_runtime, "has_channel_request_failed", None)
+                getattr(channel_response_runtime, "has_channel_request_failed", None)
                 if channel_response_runtime is not None
                 else None
             )
@@ -171,10 +154,6 @@ class _NodeChannelRequestRuntime:
             attrs=(attribute,),
         )
 
-    def wait_for_config(self, *, attribute: str = "channels") -> bool:
-        """COMPAT_STABLE_SHIM: Silent alias for waitForConfig."""
-        return self.waitForConfig(attribute=attribute)
-
     def _timeout_for_field(self, field_name: str, max_secs: float) -> bool:
         """Wait for a localConfig field with a dedicated timeout.
 
@@ -199,7 +178,7 @@ class _NodeChannelRequestRuntime:
 
         return False
 
-    def requestChannel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
+    def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
         """Send one get-channel request preserving progress logging behavior."""
         if not 0 <= channel_num < MAX_CHANNELS:
             logger.warning(
@@ -214,18 +193,12 @@ class _NodeChannelRequestRuntime:
             None,
         )
         mark_channel_request_sent = (
-            getattr(channel_response_runtime, "markChannelRequestSent", None)
-            or getattr(channel_response_runtime, "mark_channel_request_sent", None)
+            getattr(channel_response_runtime, "mark_channel_request_sent", None)
             if channel_response_runtime is not None
             else None
         )
         mark_channel_request_send_failed = (
             getattr(
-                channel_response_runtime,
-                "markChannelRequestSendFailed",
-                None,
-            )
-            or getattr(
                 channel_response_runtime,
                 "mark_channel_request_send_failed",
                 None,
@@ -262,7 +235,3 @@ class _NodeChannelRequestRuntime:
             if callable(mark_channel_request_send_failed):
                 mark_channel_request_send_failed(channel_num)
         return request
-
-    def request_channel(self, channel_num: int) -> mesh_pb2.MeshPacket | None:
-        """COMPAT_STABLE_SHIM: Silent alias for requestChannel."""
-        return self.requestChannel(channel_num)

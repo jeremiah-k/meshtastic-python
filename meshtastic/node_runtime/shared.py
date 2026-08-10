@@ -40,9 +40,3 @@ def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
             continue
         ordered.append(index)
     return ordered
-
-
-# COMPAT_STABLE_SHIM: internal callers historically imported these helpers
-# without a leading underscore; keep them callable without warnings.
-isNamedAdminChannelName = _is_named_admin_channel_name
-orderedAdminIndexes = _ordered_admin_indexes

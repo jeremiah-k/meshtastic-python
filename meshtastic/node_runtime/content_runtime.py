@@ -419,7 +419,7 @@ class _NodeAdminContentRuntime:
             return None
         return self._node.onAckNak
 
-    def readRingtone(self) -> str | None:
+    def read_ringtone(self) -> str | None:
         """Read ringtone using cached-short-circuit + request/wait orchestration."""
         with self._ringtone_operation_lock:
             logger.debug("in get_ringtone()")
@@ -448,7 +448,7 @@ class _NodeAdminContentRuntime:
                 resolve_result=self._cache_store._resolve_ringtone_after_read,
             )
 
-    def writeRingtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
+    def write_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Write ringtone payload and invalidate local ringtone cache."""
         with self._ringtone_operation_lock:
             if not self._module_available_or_warn(
@@ -472,7 +472,7 @@ class _NodeAdminContentRuntime:
                 self._cache_store._invalidate_ringtone_cache()
             return send_result
 
-    def readCannedMessage(self) -> str | None:
+    def read_canned_message(self) -> str | None:
         """Read canned-message payload using cached-short-circuit + request/wait orchestration."""
         with self._canned_message_operation_lock:
             logger.debug("in get_canned_message()")
@@ -503,7 +503,7 @@ class _NodeAdminContentRuntime:
                 resolve_result=self._cache_store._resolve_canned_message_after_read,
             )
 
-    def writeCannedMessage(self, message: str) -> mesh_pb2.MeshPacket | None:
+    def write_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Write canned-message payload and invalidate local canned-message cache."""
         with self._canned_message_operation_lock:
             if not self._module_available_or_warn(
