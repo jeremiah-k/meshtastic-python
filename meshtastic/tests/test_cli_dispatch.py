@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
@@ -23,7 +23,7 @@ def _context() -> CliContext:
         seriallog=False,
         wait_to_disconnect=None,
     )
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     interface.devPath = ""
     return CliContext(
         interface=cast(MeshInterface, interface),
@@ -135,7 +135,7 @@ def test_print_connection_banner_variants(
 ) -> None:
     """Connection banners should describe generic, device, and stable paths."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     interface.devPath = dev_path
     interface._stable_path = stable_path
     context.interface = cast(MeshInterface, interface)
@@ -209,7 +209,7 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
 ) -> None:
     """Early action termination should skip later actions but still finalize/close."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     interface.devPath = ""
     context.interface = cast(MeshInterface, interface)
     context.args.wait_to_disconnect = 2
@@ -240,7 +240,7 @@ def test_stop_processing_still_runs_final_disconnect_lifecycle(
 def test_finalize_waits_for_ack_when_requested() -> None:
     """An explicit --ack request must trigger the shared final ACK/NAK wait."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     node = interface.getNode.return_value
     context.interface = cast(MeshInterface, interface)
     context.args.ack = True
@@ -256,7 +256,7 @@ def test_finalize_waits_for_ack_when_requested() -> None:
 def test_finalize_skip_ack_wait_takes_precedence() -> None:
     """Actions that own completion must suppress the shared ACK/NAK wait."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     context.interface = cast(MeshInterface, interface)
     context.args.ack = True
     context.outcome.skip_ack_wait = True
@@ -273,7 +273,7 @@ def test_interface_close_failure_is_diagnostic_and_not_retried(
     """Keep transport-close failures diagnostic-only and consume the close request."""
     caplog.set_level(logging.DEBUG, logger=dispatch.__name__)
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     interface.close.side_effect = RuntimeError("close failed")
     context.interface = cast(MeshInterface, interface)
     context.outcome.close_now = True
@@ -289,7 +289,7 @@ def test_interface_close_failure_is_diagnostic_and_not_retried(
 def test_seriallog_active_skips_interface_close() -> None:
     """An active seriallog owns the transport; one-shot close must be skipped."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     context.interface = cast(MeshInterface, interface)
     context.args.seriallog = "out.log"
     context.outcome.close_now = True
@@ -303,7 +303,7 @@ def test_seriallog_active_skips_interface_close() -> None:
 def test_finalize_waits_for_requested_unicast_ack() -> None:
     """A unicast operation that delegates completion must wait for ACK/NAK."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     node = interface.getNode.return_value
     context.interface = cast(MeshInterface, interface)
     context.args.dest = "!12345678"
@@ -318,7 +318,7 @@ def test_finalize_waits_for_requested_unicast_ack() -> None:
 def test_finalize_skips_delegated_ack_wait_for_broadcast() -> None:
     """Broadcast operations must not enter the shared ACK/NAK wait."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     context.interface = cast(MeshInterface, interface)
     context.outcome.wait_for_ack_nak = True
 
@@ -332,7 +332,7 @@ def test_finalize_skips_delegated_ack_wait_for_broadcast() -> None:
 def test_ack_wait_failure_still_closes_one_shot_interface() -> None:
     """A failed final ACK wait must not bypass a requested interface close."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     interface.devPath = ""
     interface.getNode.return_value.iface.waitForAckNak.side_effect = RuntimeError(
         "ack failed"
@@ -352,7 +352,7 @@ def test_action_failure_after_close_request_still_closes_interface(
 ) -> None:
     """An action failure after requesting closure must still close the interface."""
     context = _context()
-    interface = MagicMock(autospec=MeshInterface)
+    interface = create_autospec(MeshInterface, instance=True)
     interface.devPath = ""
     context.interface = cast(MeshInterface, interface)
 

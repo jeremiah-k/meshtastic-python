@@ -2,7 +2,7 @@
 
 from argparse import Namespace
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import create_autospec
 
 import pytest
 
@@ -30,7 +30,7 @@ def test_action_outcome_defaults_are_explicit() -> None:
 @pytest.mark.unit
 def test_cli_context_exposes_destination_and_shared_outcome() -> None:
     """Handlers should share one explicit lifecycle outcome through the context."""
-    interface = cast(MeshInterface, MagicMock(autospec=MeshInterface))
+    interface = cast(MeshInterface, create_autospec(MeshInterface, instance=True))
     args = Namespace(dest="!12345678")
     outcome = ActionOutcome(close_now=True, wait_for_ack_nak=False)
     context = CliContext(
@@ -49,7 +49,10 @@ def test_cli_context_exposes_destination_and_shared_outcome() -> None:
 def test_cli_context_destination_normalizes_compatibility_doubles() -> None:
     """Destination access should tolerate non-string compatibility test doubles."""
     context = CliContext(
-        interface=cast(MeshInterface, MagicMock(autospec=MeshInterface)),
+        interface=cast(
+            MeshInterface,
+            create_autospec(MeshInterface, instance=True),
+        ),
         args=Namespace(dest=1234),
         get_node_kwargs={},
     )
