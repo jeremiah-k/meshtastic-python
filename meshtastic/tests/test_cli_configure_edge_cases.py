@@ -464,6 +464,7 @@ def test_close_failed_settings_transaction_reports_close_failure() -> None:
         {"owner": None},
         {"owner_short": "   "},
         {"location": []},
+        {"location": {"lat": 1, "lon": 2, 3: "non-string key"}},
         {"location": {"lat": 1, "lon": 2, "bogus": 3}},
         {"location": {"lat": 1}},
         {"location": {"lat": True, "lon": 0}},
