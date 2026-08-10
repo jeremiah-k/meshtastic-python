@@ -118,11 +118,11 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         raise ValueError("factory reset acceptance timeout must be positive")
 
     disconnect_observed = threading.Event()
-    request_queued = threading.Event()
+    request_started = threading.Event()
 
     def _on_connection_lost(interface: MeshInterface) -> None:
-        """Record transport loss only after the destructive request is queued."""
-        if request_queued.is_set() and interface is reset_interface:
+        """Record transport loss once destructive request dispatch has started."""
+        if request_started.is_set() and interface is reset_interface:
             disconnect_observed.set()
 
     acknowledgment = getattr(reset_interface, "_acknowledgment", None)
@@ -134,6 +134,9 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
     request: mesh_pb2.MeshPacket | None = None
     request_id: int | None = None
     try:
+        # Arm the observer before the synchronous send. A local device may reboot
+        # and publish connection loss before ``factoryReset`` returns its packet.
+        request_started.set()
         request = reset_node.factoryReset(full=full)
         if request is None:
             return None
@@ -141,7 +144,6 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         raw_request_id = getattr(request, "id", None)
         if isinstance(raw_request_id, int) and not isinstance(raw_request_id, bool):
             request_id = raw_request_id if raw_request_id > 0 else None
-        request_queued.set()
 
         missing_transport = object()
         socket_after_send = getattr(reset_interface, "socket", missing_transport)
@@ -674,7 +676,8 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
     )
     if args.pos_fields:
         outcome.close_now = True
-        position_config = interface.getNode(args.dest, **kwargs).localConfig.position
+        node = interface.getNode(args.dest, **kwargs)
+        position_config = node.localConfig.position
         all_fields = 0
         try:
             for field in args.pos_fields:
@@ -698,7 +701,7 @@ def _handle_position_fields(context: CliContext, hooks: DeviceActionHooks) -> No
                     1,
                 )
             hooks.cli_print("Writing modified preferences to device")
-            interface.getNode(args.dest, **kwargs).writeConfig("position")
+            node.writeConfig("position")
     elif args.pos_fields is not None:
         outcome.close_now = True
         position_config = interface.getNode(args.dest, **kwargs).localConfig.position

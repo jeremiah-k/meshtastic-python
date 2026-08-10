@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -60,6 +61,24 @@ def _context(interface: object, **args: object) -> CliContext:
     )
 
 
+def _install_clock(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    monotonic: Callable[[], float] | None = None,
+    sleep: Callable[[float], None] | None = None,
+) -> None:
+    """Install a device-runtime clock without changing the shared ``time`` module."""
+    current_time = device_actions.time
+    monkeypatch.setattr(
+        device_actions,
+        "time",
+        SimpleNamespace(
+            monotonic=current_time.monotonic if monotonic is None else monotonic,
+            sleep=current_time.sleep if sleep is None else sleep,
+        ),
+    )
+
+
 @pytest.fixture
 def isolated_device_handlers(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub nested device handlers so focused tests isolate top-level behavior."""
@@ -100,7 +119,7 @@ def _prepare_ota(
         device_actions.meshtastic.tcp_interface, "TCPInterface", _DummyTCPInterface
     )
     monkeypatch.setattr(device_actions.meshtastic.ota, "ESP32WiFiOTA", ota_factory)
-    monkeypatch.setattr(device_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
     return _DummyTCPInterface()
 
 
@@ -500,7 +519,9 @@ def test_position_fields_write_and_read_paths() -> None:
 
     set_pref.assert_called_once_with(position, "position_flags", "5")
     node.writeConfig.assert_called_once_with("position")
+    interface.getNode.assert_called_once_with("^local")
 
+    interface.getNode.reset_mock()
     position.PositionFlags.values.return_value = [1, 2, 4]
     position.position_flags = 5
     position.PositionFlags.Name.side_effect = lambda value: {1: "ALTITUDE", 4: "TIME"}[
@@ -510,6 +531,7 @@ def test_position_fields_write_and_read_paths() -> None:
     read_print = MagicMock()
     device_actions._handle_position_fields(read_context, _hooks(cli_print=read_print))
     read_print.assert_called_once_with("ALTITUDE TIME")
+    interface.getNode.assert_called_once_with("^local")
 
 
 @pytest.mark.unit
@@ -568,9 +590,7 @@ def test_factory_reset_probe_logs_close_failures(
         device_actions.meshtastic.serial_interface, "SerialInterface", SerialDouble
     )
     ticks = iter([0.0, 0.1])
-    monkeypatch.setattr(
-        device_actions.time, "monotonic", lambda: next(ticks, 0.1)
-    )
+    _install_clock(monkeypatch, monotonic=lambda: next(ticks, 0.1))
 
     device_actions._post_factory_reset_ready_probe(cast(MeshInterface, serial))
 
@@ -620,7 +640,7 @@ def test_factory_reset_transport_change_checks_scoped_error(
     node.factoryReset.return_value = SimpleNamespace(id=0)
     monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
     monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
-    monkeypatch.setattr(device_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
 
     result = device_actions._send_local_factory_reset_and_wait(
         node, full=False, cli_print=MagicMock(), timeout=1.0
@@ -628,6 +648,50 @@ def test_factory_reset_transport_change_checks_scoped_error(
 
     assert result is node.factoryReset.return_value
     raise_wait_error.assert_called_with("receivedNak", request_id=None)
+
+
+@pytest.mark.unit
+def test_factory_reset_observes_disconnect_during_synchronous_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reboot published before the send returns must count as reset acceptance."""
+    iface = MagicMock()
+    iface.MeshInterfaceError = device_actions.MeshInterface.MeshInterfaceError
+    iface._wait_for_request_ack = None
+    iface._raise_wait_error_if_present = None
+    iface._acknowledgment.receivedAck = False
+    iface._acknowledgment.receivedImplAck = False
+    iface._acknowledgment.receivedNak = False
+    iface.isConnected.is_set.return_value = True
+    request = SimpleNamespace(id=0)
+    subscribers: list[Callable[[MeshInterface], None]] = []
+
+    def _subscribe(
+        callback: Callable[[MeshInterface], None], _topic: str
+    ) -> None:
+        subscribers.append(callback)
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is False
+        subscribers[0](iface)
+        return request
+
+    node = MagicMock(iface=iface)
+    node.factoryReset.side_effect = _factory_reset
+    monkeypatch.setattr(device_actions.pub, "subscribe", _subscribe)
+    monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
+    ticks = iter([0.0, 0.0, 2.0])
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 2.0),
+        sleep=lambda _seconds: None,
+    )
+
+    result = device_actions._send_local_factory_reset_and_wait(
+        node, full=False, cli_print=MagicMock(), timeout=1.0
+    )
+
+    assert result is request
 
 
 @pytest.mark.unit
@@ -690,7 +754,7 @@ def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_fai
     node = MagicMock(iface=iface)
     node.factoryReset.return_value = SimpleNamespace(id=0)
     ticks = iter([0.0, 2.0])
-    monkeypatch.setattr(device_actions.time, "monotonic", lambda: next(ticks, 2.0))
+    _install_clock(monkeypatch, monotonic=lambda: next(ticks, 2.0))
     monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
     monkeypatch.setattr(
         device_actions.pub,
