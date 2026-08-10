@@ -118,11 +118,11 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         raise ValueError("factory reset acceptance timeout must be positive")
 
     disconnect_observed = threading.Event()
-    request_started = threading.Event()
+    request_queued = threading.Event()
 
     def _on_connection_lost(interface: MeshInterface) -> None:
-        """Record transport loss once destructive request dispatch has started."""
-        if request_started.is_set() and interface is reset_interface:
+        """Record transport loss only after the reset request is queued."""
+        if request_queued.is_set() and interface is reset_interface:
             disconnect_observed.set()
 
     acknowledgment = getattr(reset_interface, "_acknowledgment", None)
@@ -134,12 +134,14 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
     request: mesh_pb2.MeshPacket | None = None
     request_id: int | None = None
     try:
-        # Arm the observer before the synchronous send. A local device may reboot
-        # and publish connection loss before ``factoryReset`` returns its packet.
-        request_started.set()
         request = reset_node.factoryReset(full=full)
         if request is None:
             return None
+        # A connection-loss event observed before the send returns is not tied to
+        # this request and cannot prove that firmware accepted a destructive reset.
+        # Genuine reset transport loss remains visible through the connection and
+        # transport snapshots below even if publication raced with this boundary.
+        request_queued.set()
 
         raw_request_id = getattr(request, "id", None)
         if isinstance(raw_request_id, int) and not isinstance(raw_request_id, bool):

@@ -651,50 +651,6 @@ def test_factory_reset_transport_change_checks_scoped_error(
 
 
 @pytest.mark.unit
-def test_factory_reset_observes_disconnect_during_synchronous_send(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A reboot published before the send returns must count as reset acceptance."""
-    iface = MagicMock()
-    iface.MeshInterfaceError = device_actions.MeshInterface.MeshInterfaceError
-    iface._wait_for_request_ack = None
-    iface._raise_wait_error_if_present = None
-    iface._acknowledgment.receivedAck = False
-    iface._acknowledgment.receivedImplAck = False
-    iface._acknowledgment.receivedNak = False
-    iface.isConnected.is_set.return_value = True
-    request = SimpleNamespace(id=0)
-    subscribers: list[Callable[[MeshInterface], None]] = []
-
-    def _subscribe(
-        callback: Callable[[MeshInterface], None], _topic: str
-    ) -> None:
-        subscribers.append(callback)
-
-    def _factory_reset(*, full: bool) -> SimpleNamespace:
-        assert full is False
-        subscribers[0](iface)
-        return request
-
-    node = MagicMock(iface=iface)
-    node.factoryReset.side_effect = _factory_reset
-    monkeypatch.setattr(device_actions.pub, "subscribe", _subscribe)
-    monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
-    ticks = iter([0.0, 0.0, 2.0])
-    _install_clock(
-        monkeypatch,
-        monotonic=lambda: next(ticks, 2.0),
-        sleep=lambda _seconds: None,
-    )
-
-    result = device_actions._send_local_factory_reset_and_wait(
-        node, full=False, cli_print=MagicMock(), timeout=1.0
-    )
-
-    assert result is request
-
-
-@pytest.mark.unit
 def test_factory_reset_scoped_wait_checks_error_before_return_and_retires_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
