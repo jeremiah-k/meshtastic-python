@@ -100,6 +100,13 @@ def _require_channel(interface: Any, hooks: MessagingServiceHooks) -> int:
     return channel_index
 
 
+_CONTROL_ESCAPES = {
+    "\n": r"\n",
+    "\r": r"\r",
+    "\t": r"\t",
+}
+
+
 def _escape_terminal_controls(value: Any) -> str:
     """Render terminal control characters as inert escape text.
 
@@ -118,12 +125,7 @@ def _escape_terminal_controls(value: Any) -> str:
     for character in text:
         codepoint = ord(character)
         if codepoint < 0x20 or 0x7F <= codepoint <= 0x9F:
-            escapes = {
-                "\n": r"\n",
-                "\r": r"\r",
-                "\t": r"\t",
-            }
-            escaped.append(escapes.get(character, f"\\x{codepoint:02x}"))
+            escaped.append(_CONTROL_ESCAPES.get(character, f"\\x{codepoint:02x}"))
         else:
             escaped.append(character)
     return "".join(escaped)
@@ -386,14 +388,13 @@ def _start_tunnel(context: CliContext, hooks: MessagingServiceHooks) -> None:
         logger.warning("Not starting Tunnel - disabled by noProto")
         return
 
-    context.outcome.close_now = False
-
     from meshtastic import tunnel  # pylint: disable=import-outside-toplevel
 
     if args.tunnel_net:
         tunnel_instance = tunnel.Tunnel(context.interface, subnet=args.tunnel_net)
     else:
         tunnel_instance = tunnel.Tunnel(context.interface)
+    context.outcome.close_now = False
     context.outcome.failure_cleanup_callbacks.append(tunnel_instance.close)
 
 
