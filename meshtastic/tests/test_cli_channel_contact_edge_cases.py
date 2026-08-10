@@ -14,6 +14,7 @@ from meshtastic.cli.channel_contact_actions import ChannelContactHooks
 from meshtastic.cli.context import ActionOutcome, CliContext
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import Node
+from meshtastic.protobuf import channel_pb2
 
 
 def _cli_exit(_message: str, return_value: int = 1) -> NoReturn:
@@ -150,6 +151,35 @@ def test_channel_update_rejects_failed_preference_write() -> None:
             _context(interface, ch_set=[["name", "mesh"]]), hooks
         )
     interface.getNode.return_value.writeChannel.assert_not_called()
+
+
+@pytest.mark.unit
+def test_channel_disable_remains_authoritative_when_settings_change() -> None:
+    """A settings update must not re-enable an explicitly disabled channel."""
+    interface, node = _interface_with_node()
+    primary = channel_pb2.Channel(index=0, role=channel_pb2.Channel.Role.PRIMARY)
+    channel = channel_pb2.Channel(index=1, role=channel_pb2.Channel.Role.SECONDARY)
+    channel.settings.name = "old"
+    node.channels = [primary, channel]
+
+    def set_pref(target: Any, name: str, value: Any) -> bool:
+        setattr(target, name, value)
+        return True
+
+    hooks = _hooks(set_pref=MagicMock(side_effect=set_pref))
+
+    actions._handle_channel_update(
+        _context(
+            interface,
+            ch_disable=True,
+            ch_set=[["name", "mesh"]],
+        ),
+        hooks,
+    )
+
+    assert channel.settings.name == "mesh"
+    assert channel.role == channel_pb2.Channel.Role.DISABLED
+    node.writeChannel.assert_called_once_with(1)
 
 
 @pytest.mark.unit

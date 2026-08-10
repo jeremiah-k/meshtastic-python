@@ -232,7 +232,7 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
             1,
         )
 
-    enable = True
+    enable = not args.ch_disable
     if args.ch_enable or args.ch_disable:
         hooks.cli_print(
             "Warning: --ch-enable and --ch-disable can produce noncontiguous channels, "
@@ -243,8 +243,6 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
             _terminate_cli(
                 hooks.cli_exit, "Warning: Cannot enable/disable PRIMARY channel."
             )
-        enable = not args.ch_disable
-
     pending_settings = type(channel.settings)()
     pending_settings.CopyFrom(channel.settings)
     channel_update_valid = True
@@ -268,8 +266,6 @@ def _handle_channel_update(context: CliContext, hooks: ChannelContactHooks) -> N
                 _terminate_cli(
                     hooks.cli_exit, f"Invalid value for channel setting {pref[0]}.", 1
                 )
-        enable = True
-
     if not channel_update_valid:
         _terminate_cli(
             hooks.cli_exit,
