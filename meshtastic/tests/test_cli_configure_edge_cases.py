@@ -7,6 +7,7 @@ import contextvars
 import os
 import stat
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NoReturn, cast
@@ -92,6 +93,24 @@ def _interface(connected: bool = True) -> MagicMock:
     return iface
 
 
+def _install_clock(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    monotonic: Callable[[], float] | None = None,
+    sleep: Callable[[float], None] | None = None,
+) -> None:
+    """Install a configure-runtime clock without changing shared time functions."""
+    current_time = configure_actions.time
+    monkeypatch.setattr(
+        configure_actions,
+        "time",
+        SimpleNamespace(
+            monotonic=current_time.monotonic if monotonic is None else monotonic,
+            sleep=current_time.sleep if sleep is None else sleep,
+        ),
+    )
+
+
 @pytest.mark.unit
 def test_reconnect_verify_reports_refresh_failure(
     monkeypatch: pytest.MonkeyPatch,
@@ -100,10 +119,11 @@ def test_reconnect_verify_reports_refresh_failure(
     iface = _interface()
     iface.getNode.return_value = MagicMock()
     ticks = iter(float(value) for value in range(20))
-    monkeypatch.setattr(
-        configure_actions.time, "monotonic", lambda: next(ticks, 20.0)
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
     )
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         configure_actions,
         "_refresh_no_disconnect_verify_state",
@@ -128,10 +148,11 @@ def test_reconnect_verify_reports_unexpected_verifier_failure(
     iface = _interface()
     iface.getNode.return_value = MagicMock()
     ticks = iter(float(value) for value in range(20))
-    monkeypatch.setattr(
-        configure_actions.time, "monotonic", lambda: next(ticks, 20.0)
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
     )
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         configure_actions, "_refresh_no_disconnect_verify_state", MagicMock()
     )
@@ -199,8 +220,11 @@ def test_seturl_stability_reconnect_hook_success(
     iface._attempt_reconnect = MagicMock(return_value=True)
     iface.waitForConfig = MagicMock()
     ticks = iter(float(value) for value in range(20))
-    monkeypatch.setattr(configure_actions.time, "monotonic", lambda: next(ticks, 20.0))
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
+    )
 
     assert configure_actions._post_seturl_stability_check(iface, timeout=10.0)
     iface._attempt_reconnect.assert_called_once_with()
@@ -216,8 +240,11 @@ def test_seturl_stability_reconnect_and_connect_fail(
     iface.isConnected = _ConnectionEvent([False] * 20)
     iface._attempt_reconnect = MagicMock(side_effect=RuntimeError("reconnect"))
     iface.connect = MagicMock(side_effect=RuntimeError("connect"))
-    monkeypatch.setattr(configure_actions.time, "monotonic", lambda: 0.0)
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: None,
+    )
 
     assert configure_actions._post_seturl_stability_check(iface, timeout=1.0) is False
     assert (
@@ -235,7 +262,7 @@ def test_seturl_stability_respects_expired_deadline(
     iface = MagicMock()
     iface.isConnected = _ConnectionEvent([False])
     ticks = iter([0.0, 2.0])
-    monkeypatch.setattr(configure_actions.time, "monotonic", lambda: next(ticks, 2.0))
+    _install_clock(monkeypatch, monotonic=lambda: next(ticks, 2.0))
 
     assert configure_actions._post_seturl_stability_check(iface, timeout=1.0) is False
 
@@ -243,16 +270,28 @@ def test_seturl_stability_respects_expired_deadline(
 @pytest.mark.unit
 def test_seturl_stability_detects_drop_during_window(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A transport drop inside the stability window should retry then fail boundedly."""
     iface = MagicMock()
-    # Per attempt: connected gate, first window check false. Repeat three times.
-    iface.isConnected = _ConnectionEvent([True, False, True, False, True, False])
+    # Per attempt: initial gate, pre-window gate, first window check.
+    iface.isConnected = _ConnectionEvent(
+        [True, True, False] * configure_actions.SETURL_STABILITY_MAX_ATTEMPTS
+    )
     ticks = iter(float(value) for value in range(20))
-    monkeypatch.setattr(configure_actions.time, "monotonic", lambda: next(ticks, 20.0))
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
+    )
 
-    assert configure_actions._post_seturl_stability_check(iface, timeout=1.0) is False
+    assert (
+        configure_actions._post_seturl_stability_check(iface, timeout=100.0) is False
+    )
+    iface.waitForConfig.assert_not_called()
+    assert caplog.text.count("Transport dropped during stability window") == (
+        configure_actions.SETURL_STABILITY_MAX_ATTEMPTS
+    )
 
 
 @pytest.mark.unit
@@ -264,8 +303,11 @@ def test_seturl_stability_retries_config_reload_failure(
     iface.isConnected = _ConnectionEvent([True] * 30)
     iface.waitForConfig.side_effect = RuntimeError("reload")
     ticks = iter(float(value) for value in range(40))
-    monkeypatch.setattr(configure_actions.time, "monotonic", lambda: next(ticks, 40.0))
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 40.0),
+        sleep=lambda _seconds: None,
+    )
 
     assert configure_actions._post_seturl_stability_check(iface, timeout=100.0) is False
     assert (
@@ -540,7 +582,7 @@ def test_apply_direct_configuration_prints_explicit_altitude_and_applies_all_val
         config_sections={},
         module_config_sections={},
     )
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
 
     result = configure_actions._apply_direct_configuration(hooks, node, prepared)
 
@@ -639,21 +681,6 @@ def test_configure_actions_remote_export_and_write_failure(tmp_path: Path) -> No
 
 
 @pytest.mark.unit
-def test_seturl_stability_marks_midwindow_drop_unstable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A connection that drops after entering the stability window must retry."""
-    iface = MagicMock()
-    iface.isConnected = _ConnectionEvent([True, True, False])
-    ticks = iter(float(value) for value in range(20))
-    monkeypatch.setattr(configure_actions.time, "monotonic", lambda: next(ticks, 20.0))
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
-
-    assert configure_actions._post_seturl_stability_check(iface, timeout=100.0) is False
-    iface.waitForConfig.assert_not_called()
-
-
-@pytest.mark.unit
 def test_post_reconnect_local_config_mismatch_is_incomplete(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -693,7 +720,7 @@ def test_settings_transaction_logs_unknown_fields_without_rejecting_section(
 ) -> None:
     """Unknown nested fields may be skipped while known fields still persist."""
     node = MagicMock()
-    monkeypatch.setattr(configure_actions.time, "sleep", lambda _seconds: None)
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
 
     def _traverse(
         _section: str, _values: dict[str, Any], _root: Any, *, failed_fields: list[str]
