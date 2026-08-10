@@ -76,6 +76,10 @@ def test_ruff_version_reader_rejects_missing_malformed_or_duplicate_pins(
     [
         ("runtimes:\n  enabled: []\n", "top-level lint section"),
         ("lint:\n  disabled:\n    - ruff\n", "lint.enabled section"),
+        (
+            "lint:\n  rules:\n    enabled:\n      - ruff@0.16.2\n",
+            "lint.enabled section",
+        ),
     ],
 )
 def test_ruff_version_reader_requires_the_lint_enabled_section(

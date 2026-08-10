@@ -79,7 +79,7 @@
         "/^Containerfile$/",
         "/^\\.github/workflows/[^/]+\\.ya?ml$/"
       ],
-      "matchStrings": ["poetry==(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "matchStrings": ["poetry==(?<currentValue>[^\\s\"']+)"],
       "depNameTemplate": "poetry",
       "datasourceTemplate": "pypi",
       "versioningTemplate": "pep440"
@@ -88,9 +88,7 @@
       "customType": "regex",
       "description": "Keep the container's Poetry export plugin reproducibly pinned",
       "managerFilePatterns": ["/^Containerfile$/"],
-      "matchStrings": [
-        "poetry-plugin-export==(?<currentValue>\\d+\\.\\d+\\.\\d+)"
-      ],
+      "matchStrings": ["poetry-plugin-export==(?<currentValue>[^\\s\"']+)"],
       "depNameTemplate": "poetry-plugin-export",
       "datasourceTemplate": "pypi",
       "versioningTemplate": "pep440"

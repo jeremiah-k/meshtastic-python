@@ -17,9 +17,7 @@ _RUFF_PIN_PATTERN = re.compile(
     flags=re.MULTILINE,
 )
 _TOP_LEVEL_LINT_PATTERN = re.compile(r"^lint:[ \t]*$", flags=re.MULTILINE)
-_ENABLED_PATTERN = re.compile(
-    r"^(?P<indent>[ ]+)enabled:[ \t]*$", flags=re.MULTILINE
-)
+_ENABLED_PATTERN = re.compile(r"^(?P<indent>[ ]{2})enabled:[ \t]*$", flags=re.MULTILINE)
 
 
 def _lint_enabled_block(trunk_text: str) -> str:
@@ -96,7 +94,18 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Publish the Ruff version configured by Trunk."""
+    """Publish the Ruff version configured by Trunk.
+
+    Parameters
+    ----------
+    argv : Sequence[str] | None
+        Command-line arguments to parse, or ``None`` to read from ``sys.argv``.
+
+    Returns
+    -------
+    int
+        Zero after publishing the configured version successfully.
+    """
     args = _parse_args(argv)
     ruff_version = _ruff_version_from_trunk()
     if args.github_env is not None:
