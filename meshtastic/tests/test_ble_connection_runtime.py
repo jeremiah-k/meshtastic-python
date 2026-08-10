@@ -12,6 +12,7 @@ import pytest
 from bleak.exc import BleakDBusError
 
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
     ConnectionOrchestrator,
@@ -160,6 +161,48 @@ def test_safe_close_client_clears_transport_after_disconnect_failure() -> None:
     manager._safe_close_client(client, event=done)
 
     assert done.is_set()
+    assert transport.disconnect_calls == 1
+    assert client.bleak_client is None
+
+
+def test_close_forwards_timeout_as_disconnect_await_timeout() -> None:
+    """BLEClient.close(timeout=...) must forward the value as disconnect(await_timeout=...)."""
+    client, _transport = _make_ble_client(connected=True)
+    captured: dict[str, float | None] = {}
+
+    def _spy_disconnect(*, await_timeout: float | None = None) -> None:
+        captured["await_timeout"] = await_timeout
+
+    client.disconnect = _spy_disconnect  # type: ignore[assignment]
+
+    custom_timeout = 4.25
+    client.close(timeout=custom_timeout)
+
+    assert captured.get("await_timeout") == custom_timeout
+
+
+def test_close_default_timeout_uses_disconnect_constant() -> None:
+    """close() with no timeout must forward DISCONNECT_TIMEOUT_SECONDS as await_timeout."""
+    client, _transport = _make_ble_client(connected=True)
+    captured: dict[str, float | None] = {}
+
+    def _spy_disconnect(*, await_timeout: float | None = None) -> None:
+        captured["await_timeout"] = await_timeout
+
+    client.disconnect = _spy_disconnect  # type: ignore[assignment]
+
+    client.close()
+
+    assert captured.get("await_timeout") == DISCONNECT_TIMEOUT_SECONDS
+
+
+def test_close_is_idempotent_and_disconnects_once() -> None:
+    """Repeated close() calls must disconnect the transport at most once."""
+    client, transport = _make_ble_client(connected=True)
+
+    client.close()
+    client.close()
+
     assert transport.disconnect_calls == 1
     assert client.bleak_client is None
 
