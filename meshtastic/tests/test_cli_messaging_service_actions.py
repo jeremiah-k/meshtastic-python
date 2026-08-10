@@ -22,6 +22,7 @@ from meshtastic.protobuf import portnums_pb2
 
 
 def _args(**overrides: Any) -> argparse.Namespace:
+    """Build parser-faithful defaults for messaging/service action tests."""
     values: dict[str, Any] = {
         "sendtext": None,
         "private": False,
@@ -54,6 +55,7 @@ def _interface_double() -> MagicMock:
 
 
 def _context(interface: Any, **arg_overrides: Any) -> CliContext:
+    """Build a connected action context around a test interface double."""
     return CliContext(
         interface=interface,
         args=_args(**arg_overrides),
@@ -63,10 +65,12 @@ def _context(interface: Any, **arg_overrides: Any) -> CliContext:
 
 
 def _cli_exit(_message: str, return_value: int = 1) -> NoReturn:
+    """Raise ``SystemExit`` in place of the production CLI-exit hook."""
     raise SystemExit(return_value)
 
 
 def _hooks(**overrides: Any) -> MessagingServiceHooks:
+    """Build messaging-service hooks with deterministic defaults."""
     values: dict[str, Any] = {
         "cli_exit": _cli_exit,
         "cli_print": MagicMock(),
