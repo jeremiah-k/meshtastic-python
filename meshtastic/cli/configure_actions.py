@@ -1,9 +1,7 @@
 """Configure/set execution runtime for the connected Meshtastic CLI.
 
-The public entrypoint remains :mod:`meshtastic.__main__`. This module owns the
-configure transaction lifecycle, SetURL stability handling, reconnect verification,
-and configure-file action dispatch. Preference parsing remains a separately preserved
-entrypoint compatibility seam and is injected explicitly.
+Owns the configure transaction lifecycle, SetURL stability handling, reconnect
+verification, and configure-file dispatch; preference parsing is injected explicitly.
 """
 
 from __future__ import annotations
