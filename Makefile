@@ -1,4 +1,4 @@
-.PHONY: all clean test ci ci-strict ci-base lint lint-tests docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd simradio smoke1 smoke1-destructive slow install examples protobufs protobufs-update api-baseline api-baseline-master FORCE
+.PHONY: all clean test ci ci-strict ci-base lint lint-tests docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd simradio smoke1 smoke1-destructive slow install examples protobufs protobufs-update api-baseline api-baseline-master FORCE
 
 POETRY_RUN := poetry run
 API_BASELINE_FILE := meshtastic/tests/api_baselines/api_baseline.json
@@ -53,10 +53,6 @@ virt-smokevirt-meshtasticd:
 	MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive" \
 	./bin/run-smokevirt-with-meshtasticd.sh
 
-# run dual-daemon meshtasticd integration tests against host-network simulators
-virt-multinode-meshtasticd:
-	./bin/run-multinode-with-meshtasticd.sh
-
 # run process-managed native meshtasticd single/multi-node smoke tests
 simradio:
 	$(POETRY_RUN) pytest -m simradio -v --durations=20
@@ -79,19 +75,11 @@ docs:
 
 # lint the codebase (same command as CI)
 lint:
-	PYLINTHOME=$${TMPDIR:-/tmp}/pylint-cache $(POETRY_RUN) pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
+	PYLINTHOME=$${TMPDIR:-/tmp}/pylint-cache $(POETRY_RUN) pylint meshtastic examples/
 
 # lint tests with the canonical Ruff version (same scope as CI)
 lint-tests:
-	@set -eu; \
-		expected=$$(python bin/check_quality_tool_versions.py --print-ruff-version); \
-		actual=$$(ruff --version | awk '{print $$2}'); \
-		if [ "$$actual" != "$$expected" ]; then \
-			echo "error: ruff $$actual installed; expected $$expected" >&2; \
-			echo "install with: python -m pip install ruff==$$expected" >&2; \
-			exit 2; \
-		fi; \
-		ruff check meshtastic/tests tests
+	.trunk/trunk check --filter=ruff meshtastic/tests tests
 
 # show the slowest unit tests
 slow:

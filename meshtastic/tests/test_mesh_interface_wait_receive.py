@@ -1160,8 +1160,8 @@ def test_handle_from_radio_config_update_skips_unsupported_local_cache_fields() 
         iface._handle_from_radio(msg_supported.SerializeToString())
         assert iface.localNode.localConfig.HasField("device")
 
-        # Regression coverage for multinode CI: these fields may exist on
-        # FromRadio.config but not on localNode.localConfig.
+        # These fields may exist on FromRadio.config but not on
+        # localNode.localConfig in newer firmware schemas.
         source_fields = config_pb2.Config.DESCRIPTOR.fields_by_name
         target_fields = iface.localNode.localConfig.DESCRIPTOR.fields_by_name
 

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
-	echo "Usage: $0 <title> <runner-script> <log-dir> [single|multinode] [--no-logs]" >&2
+	echo "Usage: $0 <title> <runner-script> <log-dir> [--no-logs]" >&2
 	echo "  Provide a non-empty <log-dir> when log processing is expected." >&2
 	echo "  Use --no-logs to explicitly skip log processing." >&2
 	exit 1
@@ -14,24 +14,14 @@ RUNNER_SCRIPT="$2"
 LOG_DIR="$3"
 shift 3
 
-MODE="single"
 NO_LOGS=false
-mode_set=false
 while (($# > 0)); do
 	case "$1" in
-	single | multinode)
-		if [[ ${mode_set} == true ]]; then
-			echo "Mode provided multiple times. Use one of: single, multinode." >&2
-			exit 1
-		fi
-		MODE="$1"
-		mode_set=true
-		;;
 	--no-logs)
 		NO_LOGS=true
 		;;
 	*)
-		echo "Unexpected argument: $1. Expected optional mode (single|multinode) and/or --no-logs." >&2
+		echo "Unexpected argument: $1. Expected optional --no-logs." >&2
 		exit 1
 		;;
 	esac
@@ -86,14 +76,9 @@ for log_file in "${log_files[@]}"; do
 	awk_counts="$(
 		awk '
 			/PACKET FROM PHONE|handleReceived|Forwarding to phone|FromRadio=STATE_SEND_PACKETS/ { packet_count++ }
-			/Start multicast thread/ { multicast_count++ }
-			END { print NR + 0, packet_count + 0, multicast_count + 0 }
+			END { print NR + 0, packet_count + 0 }
 		' "${log_file}"
 	)"
-	read -r line_count packetish_count multicast_count <<<"${awk_counts}"
-	summary="  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}"
-	if [[ ${MODE} == "multinode" ]]; then
-		summary+=", multicast=${multicast_count}"
-	fi
-	echo "${summary}"
+	read -r line_count packetish_count <<<"${awk_counts}"
+	echo "  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}"
 done

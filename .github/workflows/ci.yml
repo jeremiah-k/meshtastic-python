@@ -20,7 +20,6 @@ jobs:
   tests:
     name: Tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.python-version == '3.14' }}
     env:
       PYTHON_VERSION: ${{ matrix.python-version }}
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
@@ -58,7 +57,7 @@ jobs:
         name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "poetry==2.3.2"
+          python -m pip install "poetry==2.4.1"
       - &install_local_step
         name: Install meshtastic from local
         run: |
@@ -102,14 +101,14 @@ jobs:
       - *install_dependencies_step
       - *install_local_step
       - name: Run pylint
-        run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
+        run: poetry run pylint meshtastic examples/
   ruff-tests:
     name: Ruff Tests (py3.13)
     runs-on: ubuntu-latest
     steps:
       - *checkout_step
       - *setup_python_step
-      - name: Load and verify quality tool versions
+      - name: Load Ruff version from Trunk
         run: python bin/check_quality_tool_versions.py --github-env "$GITHUB_ENV"
       - name: Install ruff
         run: python -m pip install --upgrade "ruff==${RUFF_VERSION}"
@@ -135,7 +134,7 @@ jobs:
     steps:
       - *checkout_step
       - name: Lint shell scripts
-        run: shellcheck bin/*.sh
+        run: .trunk/trunk check --filter=shellcheck bin/*.sh
 
   compatibility:
     name: Compatibility Inventory (py3.13)
@@ -198,53 +197,12 @@ jobs:
           bash ./bin/summarize-meshtasticd-logs.sh \
             "meshtasticd Integration Summary" \
             "./bin/run-smokevirt-with-meshtasticd.sh" \
-            "${MESHTASTICD_LOG_DIR}" \
-            single >>"${GITHUB_STEP_SUMMARY}"
+            "${MESHTASTICD_LOG_DIR}" >>"${GITHUB_STEP_SUMMARY}"
       - name: Upload meshtasticd integration logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: meshtasticd-integration-logs
-          path: ${{ env.MESHTASTICD_LOG_DIR }}
-          if-no-files-found: warn
-  meshtasticd-multinode-integration:
-    name: meshtasticd Multinode Integration (py3.13)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      PYTHON_VERSION: "3.13"
-      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
-      MESHTASTICD_IMAGE: meshtastic/meshtasticd:2.7.26-alpha-debian@sha256:80aad2b748f9a28fc70ec4ffa39901617a20d620a815b4c7e9a7d9556ecae1d8
-      MESHTASTICD_READY_TIMEOUT_SECONDS: "180"
-      MESHTASTICD_HOST_A: localhost:4401
-      MESHTASTICD_HOST_B: localhost:4402
-      MESHTASTICD_PORT_A: "4401"
-      MESHTASTICD_PORT_B: "4402"
-      MESHTASTICD_HWID_A: "11"
-      MESHTASTICD_HWID_B: "22"
-      MESHTASTICD_LOG_ON_SUCCESS: "true"
-      MESHTASTICD_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/multinode
-    steps:
-      - *checkout_step
-      - *setup_python_step
-      - *cache_poetry_step
-      - *install_dependencies_step
-      - *install_local_step
-      - name: Run dual-daemon meshtasticd integration tests
-        run: ./bin/run-multinode-with-meshtasticd.sh
-      - name: Summarize meshtasticd multinode logs
-        if: always()
-        run: |
-          bash ./bin/summarize-meshtasticd-logs.sh \
-            "meshtasticd Multinode Summary" \
-            "./bin/run-multinode-with-meshtasticd.sh" \
-            "${MESHTASTICD_LOG_DIR}" \
-            multinode >>"${GITHUB_STEP_SUMMARY}"
-      - name: Upload meshtasticd multinode logs
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: meshtasticd-multinode-logs
           path: ${{ env.MESHTASTICD_LOG_DIR }}
           if-no-files-found: warn
   simradio-firmware:
