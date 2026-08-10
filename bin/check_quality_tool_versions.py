@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify standalone quality-tool pins agree with repository configuration."""
+"""Read standalone quality-tool versions from the Trunk configuration."""
 
 from __future__ import annotations
 
@@ -9,60 +9,72 @@ from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-VERSIONS_FILE = REPO_ROOT / "tools" / "quality_versions.env"
 TRUNK_CONFIG = REPO_ROOT / ".trunk" / "trunk.yaml"
-_ENV_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# This intentionally follows Trunk's generated ``lint.enabled`` list-item format.
+# A format change must fail loudly so CI never installs an unintended Ruff version.
+_RUFF_PIN_PATTERN = re.compile(
+    r"^[ \t]*-[ \t]+ruff@(?P<version>\d+\.\d+\.\d+)[ \t]*$",
+    flags=re.MULTILINE,
+)
+_TOP_LEVEL_LINT_PATTERN = re.compile(r"^lint:[ \t]*$", flags=re.MULTILINE)
+_ENABLED_PATTERN = re.compile(
+    r"^(?P<indent>[ ]+)enabled:[ \t]*$", flags=re.MULTILINE
+)
 
 
-def _load_env_values() -> dict[str, str]:
-    """Parse the canonical versions file without executing it as shell code."""
-    values: dict[str, str] = {}
-    for line_number, raw_line in enumerate(
-        VERSIONS_FILE.read_text(encoding="utf-8").splitlines(), start=1
-    ):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line.removeprefix("export ").lstrip()
-        name, separator, value = line.partition("=")
-        name = name.strip()
-        value = value.strip()
-        if not separator or not _ENV_NAME_PATTERN.fullmatch(name) or not value:
-            raise RuntimeError(
-                f"Invalid NAME=value entry in {VERSIONS_FILE}:{line_number}: {raw_line!r}"
-            )
-        if name in values:
-            raise RuntimeError(
-                f"Duplicate {name} entry in {VERSIONS_FILE}:{line_number}"
-            )
-        values[name] = value
-    return values
-
-
-def _load_env_version(name: str) -> str:
-    """Return one required version from the canonical versions file."""
-    values = _load_env_values()
-    try:
-        return values[name]
-    except KeyError as exc:
-        raise RuntimeError(f"Missing {name} in {VERSIONS_FILE}") from exc
-
-
-def _validated_ruff_version() -> str:
-    """Return the canonical Ruff version after validating the Trunk pin."""
-    ruff_version = _load_env_version("RUFF_VERSION")
-    trunk_text = TRUNK_CONFIG.read_text(encoding="utf-8")
-    match = re.search(r"^\s*- ruff@([^\s]+)\s*$", trunk_text, flags=re.MULTILINE)
-    if match is None:
-        raise RuntimeError(f"Missing Ruff pin in {TRUNK_CONFIG}")
-    trunk_version = match.group(1)
-    if trunk_version != ruff_version:
+def _lint_enabled_block(trunk_text: str) -> str:
+    """Return the text governed by Trunk's top-level ``lint.enabled`` key."""
+    lint_matches = list(_TOP_LEVEL_LINT_PATTERN.finditer(trunk_text))
+    if len(lint_matches) != 1:
         raise RuntimeError(
-            "Ruff version mismatch: "
-            f"tools/quality_versions.env={ruff_version}, trunk={trunk_version}"
+            f"Expected exactly one top-level lint section in {TRUNK_CONFIG}; "
+            f"found {len(lint_matches)}"
         )
-    return ruff_version
+
+    lint_start = lint_matches[0].end()
+    next_top_level = re.search(r"^\S", trunk_text[lint_start:], flags=re.MULTILINE)
+    lint_end = (
+        lint_start + next_top_level.start()
+        if next_top_level is not None
+        else len(trunk_text)
+    )
+    lint_block = trunk_text[lint_start:lint_end]
+
+    enabled_matches = list(_ENABLED_PATTERN.finditer(lint_block))
+    if len(enabled_matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one lint.enabled section in {TRUNK_CONFIG}; "
+            f"found {len(enabled_matches)}"
+        )
+
+    enabled_match = enabled_matches[0]
+    enabled_indent = len(enabled_match.group("indent"))
+    enabled_start = enabled_match.end()
+    enabled_lines: list[str] = []
+    for line in lint_block[enabled_start:].splitlines():
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= enabled_indent:
+            break
+        enabled_lines.append(line)
+    return "\n".join(enabled_lines)
+
+
+def _ruff_version_from_trunk() -> str:
+    """Return the single canonical Ruff version pinned by Trunk."""
+    try:
+        trunk_text = TRUNK_CONFIG.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to read Trunk configuration at {TRUNK_CONFIG}: {exc}"
+        ) from exc
+
+    matches = list(_RUFF_PIN_PATTERN.finditer(_lint_enabled_block(trunk_text)))
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one Ruff pin in {TRUNK_CONFIG} using the form "
+            "'- ruff@X.Y.Z'; "
+            f"found {len(matches)}"
+        )
+    return matches[0].group("version")
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -84,16 +96,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Validate configured standalone tool versions and return a process status."""
+    """Publish the Ruff version configured by Trunk."""
     args = _parse_args(argv)
-    ruff_version = _validated_ruff_version()
+    ruff_version = _ruff_version_from_trunk()
     if args.github_env is not None:
         with args.github_env.open("a", encoding="utf-8") as env_file:
             env_file.write(f"RUFF_VERSION={ruff_version}\n")
     if args.print_ruff_version:
         print(ruff_version)
     else:
-        print(f"Quality tool versions are coherent (ruff {ruff_version}).")
+        print(f"Ruff version from Trunk: {ruff_version}")
     return 0
 
 

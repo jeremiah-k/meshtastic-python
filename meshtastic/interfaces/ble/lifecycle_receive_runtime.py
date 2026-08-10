@@ -19,14 +19,14 @@ RECEIVE_START_PENDING_TIMEOUT_SECONDS = 1.0
 RECEIVE_START_SNAPSHOT_MAX_ATTEMPTS = 16
 
 
-def _thread_display_name(thread: object) -> str:
+def _thread_display_name(thread: ThreadLike) -> str:
     """Return a defensive display name for a thread-like collaborator.
 
     Attribute access and ``repr`` may execute collaborator-owned code, so this
     helper is called only outside the shared session lock.
     """
     try:
-        raw_name = getattr(thread, "name")
+        raw_name = thread.name
     except Exception:  # noqa: BLE001 - diagnostics must never disrupt lifecycle
         raw_name = None
     if isinstance(raw_name, str) and raw_name:
