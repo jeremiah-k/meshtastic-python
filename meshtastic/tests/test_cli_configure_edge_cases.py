@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import contextvars
+import os
+import stat
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -746,6 +748,44 @@ def test_configure_actions_no_export_and_stdout_export(
     )
     configure_actions._handle_configure_actions(stdout_export, hooks)
     assert "config: true" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="requires POSIX file modes")
+def test_configure_export_restricts_existing_file_permissions(tmp_path: Path) -> None:
+    """Secret-bearing exports must replace permissive modes with owner-only access."""
+    export_path = tmp_path / "config.yaml"
+    export_path.write_text("stale: true\n", encoding="utf-8")
+    export_path.chmod(0o644)
+    interface = cast(MeshInterface, MagicMock())
+    hooks = ConfigureActionHooks(
+        handle_set_command=MagicMock(),
+        handle_configure_command=MagicMock(return_value=(False, False)),
+        export_config=MagicMock(return_value="config:\n  security:\n    privateKey: secret\n"),
+        cli_exit=cast(CliExit, _cli_exit),
+        cli_print=MagicMock(),
+        is_local_destination=MagicMock(return_value=True),
+    )
+    context = CliContext(
+        interface=interface,
+        args=argparse.Namespace(
+            set=None,
+            configure=None,
+            export_config=str(export_path),
+            dest="^local",
+        ),
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+
+    configure_actions._handle_configure_actions(context, hooks)
+
+    assert export_path.read_text(encoding="utf-8") == (
+        "config:\n  security:\n    privateKey: secret\n"
+    )
+    assert stat.S_IMODE(export_path.stat().st_mode) == (
+        configure_actions.PRIVATE_CONFIG_FILE_MODE
+    )
 
 
 @pytest.mark.unit

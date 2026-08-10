@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextvars
 import enum
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ SETURL_STABILITY_MAX_ATTEMPTS = 3
 SETURL_STABILITY_WINDOW_SECONDS = 1.5
 SETURL_RECONNECT_WAIT_SECONDS = 10.0
 SETURL_STABILITY_POLL_SECONDS = 0.1
+PRIVATE_CONFIG_FILE_MODE: int = 0o600
 CONFIGURE_DIRECT_SETTINGS_HEADER = (
     "Applying direct configuration values "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -1410,8 +1412,24 @@ def _handle_configure_actions(
         return
 
     try:
-        with open(args.export_config, "w", encoding="utf-8") as output_file:
-            output_file.write(config_text)
+        descriptor = os.open(
+            args.export_config,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            PRIVATE_CONFIG_FILE_MODE,
+        )
+        try:
+            # ``os.open(..., mode=...)`` does not alter an existing file's mode.
+            # Tighten it before writing because exports may contain private and
+            # administrative keys.
+            fchmod = getattr(os, "fchmod", None)
+            if callable(fchmod):
+                fchmod(descriptor, PRIVATE_CONFIG_FILE_MODE)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output_file:
+                descriptor = -1
+                output_file.write(config_text)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
     except OSError as exc:
         _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
     hooks.cli_print(f"Exported configuration to {args.export_config}")
