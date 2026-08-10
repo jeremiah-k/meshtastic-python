@@ -20,7 +20,6 @@ from ..protobuf import (
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import fromPSK
-
 from ._node_legacy_support import (
     _decode_channel_set_from_url,
     _get_mock_call_arg,
@@ -945,6 +944,7 @@ def test_channel_lookup_helpers_return_none_when_no_match(
     assert anode.getDisabledChannel() is None
     assert anode._get_admin_channel_index() == 0
 
+
 @pytest.mark.unit
 def test_fixup_channels_truncates_and_reindexes_to_limit(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -961,6 +961,7 @@ def test_fixup_channels_truncates_and_reindexes_to_limit(
     assert len(anode.channels) == CHANNEL_LIMIT
     assert [ch.index for ch in anode.channels] == list(range(CHANNEL_LIMIT))
 
+
 @pytest.mark.unit
 def test_fill_channels_handles_none_and_pads_to_limit(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -976,6 +977,7 @@ def test_fill_channels_handles_none_and_pads_to_limit(
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode.channels[-1].role == Channel.Role.DISABLED
+
 
 @pytest.mark.unit
 def test_onResponseRequestChannel_routing_paths(
@@ -1006,6 +1008,7 @@ def test_onResponseRequestChannel_routing_paths(
     assert anode._channel_response_runtime.has_channel_request_failed() is False
     assert anode.partialChannels == [channel]
     anode._request_channel.assert_not_called()
+
 
 @pytest.mark.unit
 def test_onResponseRequestChannel_handles_partial_and_final_channel(
@@ -1042,6 +1045,7 @@ def test_onResponseRequestChannel_handles_partial_and_final_channel(
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
 
+
 @pytest.mark.unit
 def test_get_channels_with_hash_handles_missing_fields(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -1060,6 +1064,7 @@ def test_get_channels_with_hash_handles_missing_fields(
     assert entries[0]["hash"] is not None
     assert entries[1]["hash"] is None
 
+
 @pytest.mark.unit
 def test_fixup_channels_returns_immediately_when_channels_none(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -1071,6 +1076,7 @@ def test_fixup_channels_returns_immediately_when_channels_none(
     anode._fixup_channels()
 
     assert anode.channels is None
+
 
 @pytest.mark.unit
 def test_getURL_requests_lora_when_local_config_empty(
@@ -1105,3 +1111,45 @@ def test_getURL_requests_lora_when_local_config_empty(
     channel_set = _decode_channel_set_from_url(url)
     assert len(channel_set.settings) == 1
     assert channel_set.settings[0].name == "primary"
+
+
+@pytest.mark.unit
+def test_invalidate_channel_cache_clears_state_under_owner_lock() -> None:
+    """Node cache invalidation should clear both channel caches while holding its lock."""
+    events: list[str] = []
+
+    class LockProbe:
+        """Record the lock lifetime around cache mutations."""
+
+        active: bool = False
+
+        def __enter__(self) -> None:
+            self.active = True
+            events.append("enter")
+
+        def __exit__(self, *_args: object) -> None:
+            events.append("exit")
+            self.active = False
+
+    class CacheOwnerProbe(Node):
+        """Assert cache assignments occur while the owner lock is active."""
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name in {"channels", "partialChannels"} and getattr(
+                self, "_assert_locked_cache_writes", False
+            ):
+                assert cast(LockProbe, self._channels_lock).active
+                events.append(name)
+            object.__setattr__(self, name, value)
+
+    node = cast(Any, object.__new__(CacheOwnerProbe))
+    node._channels_lock = LockProbe()
+    node.channels = [Channel(index=0, role=Channel.Role.PRIMARY)]
+    node.partialChannels = [Channel(index=1, role=Channel.Role.SECONDARY)]
+    node._assert_locked_cache_writes = True
+
+    Node._invalidate_channel_cache(node)
+
+    assert events == ["enter", "channels", "partialChannels", "exit"]
+    assert node.channels is None
+    assert node.partialChannels == []

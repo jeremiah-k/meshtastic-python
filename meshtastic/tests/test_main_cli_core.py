@@ -238,6 +238,42 @@ def test_main_list_fields_includes_all_descriptor_fields(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_rejects_repeated_configure_before_connecting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Repeated configure documents must fail instead of silently ignoring one."""
+    first = tmp_path / "first.yaml"
+    second = tmp_path / "second.yaml"
+    first.write_text("owner: first\n", encoding="utf-8")
+    second.write_text("owner: second\n", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "meshtastic",
+            "--configure",
+            str(first),
+            "--configure",
+            str(second),
+        ],
+    )
+    serial_factory = MagicMock()
+
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", serial_factory),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+
+    assert exc_info.value.code == 2
+    assert "--configure may be specified only once" in capsys.readouterr().err
+    serial_factory.assert_not_called()
+
+
+@pytest.mark.unit
 def test_support_info_alias_delegates_to_supportInfo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

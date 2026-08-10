@@ -1,11 +1,18 @@
 """Focused CLI validation tests for channel and node-list options."""
 
+import argparse
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
 from meshtastic.__main__ import main
+from meshtastic.cli.channel_contact_actions import (
+    ChannelContactHooks,
+    _handle_channel_delete,
+)
+from meshtastic.cli.context import ActionOutcome, CliContext
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.tcp_interface import TCPInterface
 
 
@@ -176,3 +183,37 @@ def test_nodes_show_fields_accepts_schema_field_without_node_database(
     interface.showNodes.assert_called_once_with(
         True, ["environmentMetrics.temperature"]
     )
+
+
+@pytest.mark.unit
+def test_channel_delete_fails_closed_if_exit_seam_returns() -> None:
+    """A missing channel index must never fall through to deletion after exit."""
+    interface = create_autospec(MeshInterface, instance=True)
+    context = CliContext(
+        interface=interface,
+        args=argparse.Namespace(ch_del=True, dest="^local"),
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+    cli_exit = MagicMock()
+    hooks = ChannelContactHooks(
+        cli_exit=cli_exit,
+        cli_print=MagicMock(),
+        get_channel_index=MagicMock(return_value=None),
+        set_channel_index=MagicMock(),
+        resolve_pref=MagicMock(),
+        set_pref=MagicMock(),
+        fatal_preference_value_errors=MagicMock(),
+        preference_value_error=ValueError,
+        print_channel_field_choices=MagicMock(),
+        is_local_destination=MagicMock(),
+        modem_preset_shorthands=(),
+    )
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        _handle_channel_delete(context, hooks)
+
+    cli_exit.assert_called_once_with(
+        "Warning: Need to specify '--ch-index' for '--ch-del'.", 1
+    )
+    interface.getNode.assert_not_called()

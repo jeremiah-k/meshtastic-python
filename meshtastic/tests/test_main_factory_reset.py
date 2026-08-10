@@ -492,3 +492,24 @@ def test_post_factory_reset_ready_probe_logs_final_close_failure(
         main_module._post_factory_reset_ready_probe(cast(Any, iface))
 
     assert "Factory reset: final serial close failed" in caplog.text
+
+
+@pytest.mark.unit
+def test_local_factory_reset_rejects_invalid_timeout_before_send() -> None:
+    """Invalid reset timeout input must fail before the destructive request is sent."""
+    iface = SimpleNamespace(_acknowledgment=Acknowledgment())
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(return_value=SimpleNamespace(id=123)),
+    )
+
+    with pytest.raises(
+        ValueError, match="factory reset acceptance timeout must be positive"
+    ):
+        main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=0,
+        )
+
+    reset_node.factoryReset.assert_not_called()

@@ -523,7 +523,7 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
             timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
             meshtastic_bin=meshtastic_bin,
         )
-        assert "Phase 1 complete." in configure_output
+        assert "Direct configuration values applied." in configure_output
         _wait_for_host_ready(
             HOST_B,
             meshtastic_bin,
@@ -861,7 +861,7 @@ def test_meshtasticd_multinode_large_channel_url_replace_all_over_tcp(
             timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
             meshtastic_bin=meshtastic_bin,
         )
-        assert "Phase 1 complete." in configure_output
+        assert "Direct configuration values applied." in configure_output
         _wait_for_host_ready(
             HOST_B,
             meshtastic_bin,

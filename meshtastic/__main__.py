@@ -8,7 +8,6 @@ import argparse
 import binascii
 import contextlib
 import contextvars
-import enum
 import getpass
 import importlib
 import logging
@@ -16,25 +15,35 @@ import os
 import platform
 import sys
 import textwrap
-import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
-from typing import Any, NoReturn, Protocol, cast
+from typing import Any, NoReturn, Protocol
 
-import yaml
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
 import meshtastic.cli.config_io as cli_config_io
+import meshtastic.cli.channel_contact_actions as cli_channel_contact_actions
+import meshtastic.cli.configure_actions as cli_configure_actions
+import meshtastic.cli.device_actions as cli_device_actions
+import meshtastic.cli.dispatch as cli_dispatch
+import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.runtime as cli_runtime
+from meshtastic.cli.context import ActionOutcome, CliContext
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import mt_config, remote_hardware
-from meshtastic._core_constants import BROADCAST_ADDR, LOCAL_ADDR
+# COMPAT_STABLE_SHIM: LOCAL_ADDR remains importable from meshtastic.__main__.
+# pylint: disable=unused-import
+from meshtastic._core_constants import (
+    BROADCAST_ADDR,
+    LOCAL_ADDR,  # noqa: F401
+)
+# pylint: enable=unused-import
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
@@ -63,8 +72,7 @@ from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compat
     parse_modem_preset_name as _parse_modem_preset_name,
 )
 from meshtastic.configure_verify import (
-    _verify_channel_url_against_state,
-    _verify_requested_fields,
+    _verify_channel_url_against_state,  # noqa: F401 - legacy __main__ compatibility export
 )
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
@@ -77,7 +85,7 @@ from meshtastic.lockdown import (
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime import node_data
 from meshtastic.protobuf import (
-    admin_pb2,
+    admin_pb2,  # noqa: F401 - legacy __main__ compatibility export
     channel_pb2,
     config_pb2,
     localonly_pb2,
@@ -213,53 +221,47 @@ BITFIELD_ENUMS = {
 # ==============================================================================
 
 # Delay after applying configuration changes (owner, channel, etc.)
-CONFIG_APPLY_DELAY_SECONDS = 0.5
-CONFIG_WRITE_PACE_SECONDS = 0.1
+CONFIG_APPLY_DELAY_SECONDS = cli_configure_actions.CONFIG_APPLY_DELAY_SECONDS
+CONFIG_WRITE_PACE_SECONDS = cli_configure_actions.CONFIG_WRITE_PACE_SECONDS
 """Short inter-write cadence that drains transport queues without stretching transactions."""
 
 # Delay after setURL operations, which write up to 8 channel snapshots
 # plus LoRa config; the device needs extra time to commit all changes
 # before accepting further admin messages.
-CONFIG_SETURL_DELAY_SECONDS = 2.0
+CONFIG_SETURL_DELAY_SECONDS = cli_configure_actions.CONFIG_SETURL_DELAY_SECONDS
 
-CONFIG_COMMIT_SETTLE_SECONDS = 1.0
+CONFIG_COMMIT_SETTLE_SECONDS = cli_configure_actions.CONFIG_COMMIT_SETTLE_SECONDS
 """Settle delay after commitSettingsTransaction before assuming the session may end."""
 
-CONFIG_RECONNECT_WAIT_SECONDS = 15.0
+CONFIG_RECONNECT_WAIT_SECONDS = cli_configure_actions.CONFIG_RECONNECT_WAIT_SECONDS
 """Maximum time to wait for device reconnect after a reboot-capable configure commit."""
 
-SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
-"""Timeout for post-setURL transport stability before opening Phase 2 writes."""
+SETURL_STABILITY_TIMEOUT_SECONDS = (
+    cli_configure_actions.SETURL_STABILITY_TIMEOUT_SECONDS
+)
+"""Timeout for post-setURL transport stability before transactional writes."""
 
-FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
+FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = (
+    cli_device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
+)
 """Timeout for post-reset reconnect probe inside factory-reset command."""
 
-FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = (
+    cli_device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
+)
 """Maximum time to observe a local reset ACK/NAK or reboot disconnect."""
 
-FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = 0.05
+FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = (
+    cli_device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
+)
 """Polling interval while waiting for local reset command acceptance."""
 
-CONFIGURE_PHASE1_HEADER = (
-    "Phase 1: Applying direct configuration "
-    "(channel URL updates may trigger reconnect/reboot)..."
+CONFIGURE_DIRECT_SETTINGS_HEADER = (
+    cli_configure_actions.CONFIGURE_DIRECT_SETTINGS_HEADER
 )
-"""Printed once when --configure starts applying Phase 1 settings."""
+"""Printed once when --configure starts applying non-transactional values."""
 
-_ALLOWED_CONFIGURE_KEYS = frozenset(
-    {
-        "owner",
-        "owner_short",
-        "ownerShort",
-        "channel_url",
-        "channelUrl",
-        "canned_messages",
-        "ringtone",
-        "location",
-        "config",
-        "module_config",
-    }
-)
+_ALLOWED_CONFIGURE_KEYS = cli_configure_actions.ALLOWED_CONFIGURE_KEYS
 
 # Delay between GPIO watch iterations
 GPIO_WATCH_INTERVAL_SECONDS = 1.0
@@ -272,9 +274,9 @@ GPIO_READ_MAX_POLLS = 10
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
 
 # OTA CLI timing and retry delay
-OTA_REBOOT_WAIT_SECONDS: float = 5.0
-OTA_RETRY_DELAY_SECONDS: float = 2.0
-OTA_MAX_RETRIES: int = 5
+OTA_REBOOT_WAIT_SECONDS = cli_device_actions.OTA_REBOOT_WAIT_SECONDS
+OTA_RETRY_DELAY_SECONDS = cli_device_actions.OTA_RETRY_DELAY_SECONDS
+OTA_MAX_RETRIES = cli_device_actions.OTA_MAX_RETRIES
 
 # Keep-alive sleep interval for main loop (effectively infinite wait)
 """Sleep duration for the CLI main loop when listening on non-serial interfaces."""
@@ -390,11 +392,22 @@ def supportInfo() -> None:
     print("Please add the output from the command: meshtastic --info")
 
 
-class _ConfigureReconnectResult(enum.Enum):
-    RECONNECT_FAILED = "reconnect_failed"
-    CONFIG_RELOAD_FAILED = "config_reload_failed"
-    VERIFICATION_INCOMPLETE = "verification_incomplete"
-    VERIFIED = "verified"
+_ConfigureReconnectResult = cli_configure_actions.ConfigureReconnectResult
+
+
+def _configure_hooks() -> cli_configure_actions.ConfigureHooks:
+    """Build configure dependencies from current entrypoint compatibility seams."""
+    return cli_configure_actions.ConfigureHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        traverse_config=traverseConfig,
+        preflight_mode=_CONFIGURE_PREFLIGHT_MODE,
+        is_local_destination=_is_local_destination,
+        post_seturl_stability_check=_post_seturl_stability_check,
+        post_configure_reconnect_and_verify=_post_configure_reconnect_and_verify,
+        channel_url_matches_current_device_state=_channel_url_matches_current_device_state,
+        pace_configure_write=_pace_configure_write,
+    )
 
 
 def _post_configure_reconnect_and_verify(
@@ -406,211 +419,27 @@ def _post_configure_reconnect_and_verify(
     verify_config_fields: dict[str, dict[str, Any]] | None = None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
-    """Reconnect after a configure commit, reload config, and verify values.
-
-    After ``commitSettingsTransaction()``, the firmware may reboot the device.
-    This helper:
-
-    1. Waits for the interface to disconnect and reconnect within *timeout*.
-    2. Calls ``waitForConfig()`` to reload the device configuration.
-    3. If any verification targets were provided (channel URL, config fields,
-       or module config fields), performs value-aware comparison of the
-       explicitly requested settings against what the device reports.
-
-    Returns a _ConfigureReconnectResult indicating the outcome.
-    """
-    deadline = time.monotonic() + timeout
-
-    disconnect_window = 2.0
-    logger.debug(
-        "Waiting up to %.1fs for device disconnect (reboot indication)...",
-        disconnect_window,
+    """Compatibility wrapper for configure reconnect verification."""
+    return cli_configure_actions._post_configure_reconnect_and_verify(
+        interface,
+        timeout=timeout,
+        node_dest=node_dest,
+        verify_channel_url=verify_channel_url,
+        verify_config_fields=verify_config_fields,
+        verify_module_config_fields=verify_module_config_fields,
+        verify_channel_url_against_state=_verify_channel_url_against_state,
     )
-    disconnect_deadline = time.monotonic() + disconnect_window
-    disconnected = False
-    while time.monotonic() < disconnect_deadline:
-        if not interface.isConnected.is_set():
-            disconnected = True
-            logger.info("Device disconnected (reboot indication received).")
-            break
-        time.sleep(0.2)
-
-    if not disconnected:
-        logger.debug(
-            "No disconnect detected within %.1fs; device may not require reboot.",
-            disconnect_window,
-        )
-
-    reconnect_deadline = deadline
-    if disconnected:
-        logger.debug(
-            "Waiting up to %.1fs for device reconnect...",
-            reconnect_deadline - time.monotonic(),
-        )
-    while time.monotonic() < reconnect_deadline:
-        if interface.isConnected.is_set():
-            logger.info("Device reconnected.")
-            break
-        time.sleep(0.2)
-
-    if not interface.isConnected.is_set():
-        logger.warning(
-            "Device did not reconnect within %.1fs after configure commit. "
-            "Configuration may still be applying.",
-            timeout,
-        )
-        return _ConfigureReconnectResult.RECONNECT_FAILED
-
-    try:
-        interface.waitForConfig()
-        logger.info("Device config reloaded after reboot.")
-    except Exception:
-        logger.warning(
-            "Device reconnected but config reload failed; "
-            "configuration may still be applying.",
-            exc_info=True,
-        )
-        return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
-
-    has_verification = (
-        verify_channel_url or verify_config_fields or verify_module_config_fields
-    )
-    if not has_verification:
-        return _ConfigureReconnectResult.VERIFIED
-
-    if not disconnected:
-        try:
-            _refresh_no_disconnect_verify_state(
-                interface.getNode(node_dest),
-                verify_channel_url=verify_channel_url,
-                verify_config_fields=verify_config_fields,
-                verify_module_config_fields=verify_module_config_fields,
-            )
-            interface.waitForConfig()
-            logger.debug(
-                "No disconnect observed; touched config/channel state refreshed before verification."
-            )
-        except Exception:
-            logger.warning(
-                "No-disconnect verify refresh failed while reloading config.",
-                exc_info=True,
-            )
-            return _ConfigureReconnectResult.CONFIG_RELOAD_FAILED
-
-    try:
-        result = _verify_post_reconnect_config(
-            interface,
-            node_dest,
-            verify_channel_url=verify_channel_url,
-            verify_config_fields=verify_config_fields,
-            verify_module_config_fields=verify_module_config_fields,
-        )
-    except Exception:
-        logger.warning(
-            "Post-reconnect verification failed unexpectedly.",
-            exc_info=True,
-        )
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    return result
 
 
 def _post_seturl_stability_check(
     interface: MeshInterface,
     *,
-    timeout: float = 15.0,
+    timeout: float = cli_configure_actions.SETURL_STABILITY_TIMEOUT_SECONDS,
 ) -> bool:
-    _MAX_STABILITY_ATTEMPTS = 3
-    _STABILITY_WINDOW_SECONDS = 1.5
-    _RECONNECT_WAIT_SECONDS = 10.0
-
-    deadline = time.monotonic() + timeout
-
-    is_connected_event = getattr(interface, "isConnected", None)
-
-    def _event_is_set() -> bool:
-        return bool(
-            is_connected_event is not None
-            and hasattr(is_connected_event, "is_set")
-            and is_connected_event.is_set()
-        )
-
-    def _event_wait(timeout_seconds: float) -> bool:
-        return bool(
-            is_connected_event is not None
-            and hasattr(is_connected_event, "wait")
-            and is_connected_event.wait(timeout_seconds)
-        )
-
-    def _trigger_reconnect() -> bool:
-        reconnect = getattr(interface, "_attempt_reconnect", None)
-        if callable(reconnect):
-            try:
-                if reconnect():
-                    return _event_is_set()
-            except Exception:
-                logger.debug(
-                    "post-setURL reconnect hook failed.",
-                    exc_info=True,
-                )
-        connect = getattr(interface, "connect", None)
-        if callable(connect):
-            try:
-                connect()
-            except Exception:
-                logger.debug(
-                    "post-setURL connect() trigger failed.",
-                    exc_info=True,
-                )
-        return _event_is_set()
-
-    for _attempt in range(_MAX_STABILITY_ATTEMPTS):
-        if time.monotonic() >= deadline:
-            return False
-
-        if not _event_is_set():
-            _trigger_reconnect()
-            remaining = deadline - time.monotonic()
-            if remaining > 0:
-                _event_wait(min(_RECONNECT_WAIT_SECONDS, remaining))
-
-        if not _event_is_set():
-            logger.warning(
-                "Transport not connected after setURL (attempt %d/%d)",
-                _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
-            )
-            continue
-
-        stability_end = time.monotonic() + _STABILITY_WINDOW_SECONDS
-        stable = True
-        while time.monotonic() < stability_end:
-            if not _event_is_set():
-                stable = False
-                break
-            time.sleep(0.1)
-
-        if not stable:
-            logger.warning(
-                "Transport dropped during stability window (attempt %d/%d)",
-                _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
-            )
-            continue
-
-        try:
-            interface.waitForConfig()
-            return True
-        except Exception:
-            logger.warning(
-                "Config reload failed after setURL (attempt %d/%d)",
-                _attempt + 1,
-                _MAX_STABILITY_ATTEMPTS,
-                exc_info=True,
-            )
-            continue
-
-    return False
+    """Compatibility wrapper for post-SetURL transport stabilization."""
+    return cli_configure_actions._post_seturl_stability_check(
+        interface, timeout=timeout
+    )
 
 
 def _send_local_factory_reset_and_wait(
@@ -619,262 +448,39 @@ def _send_local_factory_reset_and_wait(
     full: bool,
     timeout: float | None = None,
 ) -> mesh_pb2.MeshPacket | None:
-    """Send a local factory reset and wait for ACK/NAK or reboot transport loss.
-
-    Firmware 2.7 can execute the reset and schedule its reboot without forwarding
-    the resulting routing ACK to PhoneAPI after the reset clears the channel
-    table.  Firmware 2.8 normally forwards the ACK.  For this destructive local
-    operation, a transport interruption observed *after* the request was queued
-    is therefore also evidence that firmware accepted the command.
-
-    Explicit routing errors and a deadline with neither signal remain hard
-    failures.  The caller still reconnects and verifies the post-reset state.
-    """
-    reset_interface = reset_node.iface
-    disconnect_observed = threading.Event()
-    request_queued = threading.Event()
-
-    def _on_connection_lost(interface: MeshInterface) -> None:
-        if request_queued.is_set() and interface is reset_interface:
-            disconnect_observed.set()
-
-    acknowledgment = getattr(reset_interface, "_acknowledgment", None)
-    reset_acknowledgment = getattr(acknowledgment, "reset", None)
-    if callable(reset_acknowledgment):
-        # A stale compatibility flag from an earlier command must never satisfy
-        # this destructive request's acceptance wait.
-        reset_acknowledgment()
-
-    pub.subscribe(_on_connection_lost, "meshtastic.connection.lost")
-    request: mesh_pb2.MeshPacket | None = None
-    request_id: int | None = None
-    try:
-        request = reset_node.factoryReset(full=full)
-        if request is None:
-            return None
-
-        raw_request_id = getattr(request, "id", None)
-        if isinstance(raw_request_id, int) and not isinstance(raw_request_id, bool):
-            request_id = raw_request_id if raw_request_id > 0 else None
-        request_queued.set()
-
-        # Snapshot the active transport only after sendData returned a concrete
-        # packet.  A stale disconnect or reconnect that happened before the send
-        # completed cannot prove this reset was accepted.
-        missing_transport = object()
-        socket_after_send = getattr(reset_interface, "socket", missing_transport)
-        stream_after_send = getattr(reset_interface, "stream", missing_transport)
-
-        acceptance_timeout = (
-            FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
-            if timeout is None
-            else float(timeout)
-        )
-        if acceptance_timeout <= 0:
-            raise ValueError("factory reset acceptance timeout must be positive")
-
-        wait_for_request_ack = getattr(reset_interface, "_wait_for_request_ack", None)
-        raise_wait_error = getattr(
-            reset_interface, "_raise_wait_error_if_present", None
-        )
-        scoped_wait_available = (
-            request_id is not None
-            and callable(wait_for_request_ack)
-            and callable(raise_wait_error)
-        )
-
-        _cli_print("Waiting for factory reset acknowledgment or reboot disconnect")
-        deadline = time.monotonic() + acceptance_timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-
-            if (
-                scoped_wait_available
-                and callable(wait_for_request_ack)
-                and callable(raise_wait_error)
-            ):
-                completed = wait_for_request_ack(
-                    "receivedNak",
-                    request_id,
-                    timeout_seconds=min(
-                        FACTORY_RESET_ACCEPTANCE_POLL_SECONDS,
-                        remaining,
-                    ),
-                )
-                if completed:
-                    # Request-scoped wait state distinguishes a successful ACK
-                    # from an explicit routing error.  The legacy receivedNak
-                    # attribute is only a completion latch and is not itself
-                    # evidence of rejection.
-                    raise_wait_error("receivedNak", request_id=request_id)
-                    return request
-            else:
-                # Compatibility fallback for minimal/legacy interfaces without
-                # request-scoped wait helpers.  Check actual ACK kinds before the
-                # shared receivedNak completion flag because implicit ACK handling
-                # can set both in older runtimes.
-                if callable(raise_wait_error):
-                    raise_wait_error("receivedNak", request_id=request_id)
-                received_ack = bool(getattr(acknowledgment, "receivedAck", False))
-                received_implicit_ack = bool(
-                    getattr(acknowledgment, "receivedImplAck", False)
-                )
-                if received_ack or received_implicit_ack:
-                    return request
-                if bool(getattr(acknowledgment, "receivedNak", False)):
-                    raise reset_interface.MeshInterfaceError(
-                        "Factory reset request was rejected by the device"
-                    )
-                time.sleep(
-                    min(
-                        FACTORY_RESET_ACCEPTANCE_POLL_SECONDS,
-                        remaining,
-                    )
-                )
-
-            connected_event = getattr(reset_interface, "isConnected", None)
-            connected = True
-            is_set = getattr(connected_event, "is_set", None)
-            if callable(is_set):
-                connected = bool(is_set())
-
-            current_socket = getattr(reset_interface, "socket", missing_transport)
-            current_stream = getattr(reset_interface, "stream", missing_transport)
-            socket_replaced = (
-                socket_after_send is not missing_transport
-                and current_socket is not socket_after_send
-            )
-            stream_replaced = (
-                stream_after_send is not missing_transport
-                and current_stream is not stream_after_send
-            )
-            if (
-                disconnect_observed.is_set()
-                or not connected
-                or socket_replaced
-                or stream_replaced
-            ):
-                # Check request-scoped errors one final time so an explicit NAK
-                # wins over a nearly simultaneous transport loss.
-                if callable(raise_wait_error):
-                    raise_wait_error("receivedNak", request_id=request_id)
-                logger.info(
-                    "Device transport changed after local factory reset request; "
-                    "treating reboot as command acceptance."
-                )
-                return request
-
-        if callable(raise_wait_error):
-            raise_wait_error("receivedNak", request_id=request_id)
-        raise reset_interface.MeshInterfaceError(
-            "Timed out waiting for a factory reset acknowledgment or reboot disconnect"
-        )
-    finally:
-        retire_wait = getattr(reset_interface, "_retire_wait_request", None)
-        if callable(retire_wait) and request_id is not None:
-            retire_wait("receivedNak", request_id=request_id)
-        if callable(reset_acknowledgment):
-            reset_acknowledgment()
-        try:
-            pub.unsubscribe(_on_connection_lost, "meshtastic.connection.lost")
-        except Exception:
-            logger.debug(
-                "Factory reset: failed to remove connection-loss observer.",
-                exc_info=True,
-            )
-
-    return None
+    """Compatibility wrapper for the canonical device reset helper."""
+    return cli_device_actions._send_local_factory_reset_and_wait(
+        reset_node, full=full, timeout=timeout, cli_print=_cli_print
+    )
 
 
 @contextlib.contextmanager
 def _temporary_instance_attributes(
     instance: Any, overrides: dict[str, Any]
 ) -> Iterator[None]:
-    """Temporarily override instance attributes and restore their exact prior state."""
-    missing = object()
-    instance_values = vars(instance)
-    previous_values = {name: instance_values.get(name, missing) for name in overrides}
-    try:
-        for name, value in overrides.items():
-            setattr(instance, name, value)
+    """Compatibility wrapper for temporary instance attribute overrides."""
+    with cli_device_actions._temporary_instance_attributes(instance, overrides):
         yield
-    finally:
-        for name, previous in previous_values.items():
-            if previous is missing:
-                with contextlib.suppress(AttributeError):
-                    delattr(instance, name)
-            else:
-                setattr(instance, name, previous)
 
 
 def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
-    """Close, briefly probe serial readiness, then release the port for the next command."""
-    if not isinstance(interface, meshtastic.serial_interface.SerialInterface):
-        return
-
-    logger.debug("Factory reset: closing serial interface to release port.")
-    try:
-        interface.close()
-    except Exception:
-        logger.debug(
-            "Factory reset: initial serial close failed.",
-            exc_info=True,
-        )
-
-    logger.debug(
-        "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
-        FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
-    )
-    probe_overrides = {
-        "_connect_wait_timeout_seconds": FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
-        "_connect_retry_budget_seconds": FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
-        "_suppress_connect_failure_logging": True,
-    }
-    probe_start = time.monotonic()
-    with _temporary_instance_attributes(interface, probe_overrides):
-        try:
-            interface.connect()
-            logger.debug(
-                "Factory reset: reconnect probe succeeded in %.2fs.",
-                time.monotonic() - probe_start,
-            )
-        except Exception as exc:
-            logger.info(
-                "Factory reset accepted; device is still rebooting after %.1fs "
-                "and the next command will reconnect normally (%s).",
-                time.monotonic() - probe_start,
-                exc,
-            )
-    try:
-        interface.close()
-    except Exception:
-        logger.debug(
-            "Factory reset: final serial close failed.",
-            exc_info=True,
-        )
+    """Compatibility wrapper for the canonical factory-reset readiness probe."""
+    cli_device_actions._post_factory_reset_ready_probe(interface)
 
 
 def _validate_non_empty_mapping_sections(
-    *,
-    top_level_key: str,
-    section_mapping: dict[str, Any],
+    *, top_level_key: str, section_mapping: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
-    """Validate that each section payload is a mapping.
+    """Compatibility wrapper for configure section mapping validation.
 
-    Empty mappings (e.g., ``audio: {}``) are allowed — they represent
-    protobuf default values and are emitted by ``--export-config``.
+    The legacy helper name is intentionally retained for external callers even
+    though empty mappings are valid protobuf-default section payloads.
     """
-    validated_sections: dict[str, dict[str, Any]] = {}
-    for section_name, section_value in section_mapping.items():
-        if not isinstance(section_value, dict):
-            _cli_exit(
-                f"ERROR: '{top_level_key}.{section_name}' must be a non-empty mapping, got "
-                f"{type(section_value).__name__}"
-            )
-        validated_sections[section_name] = section_value
-    return validated_sections
+    return cli_configure_actions._validate_mapping_sections(
+        _configure_hooks(),
+        top_level_key=top_level_key,
+        section_mapping=section_mapping,
+    )
 
 
 def _preflight_configure_sections(
@@ -883,37 +489,13 @@ def _preflight_configure_sections(
     config_sections: dict[str, dict[str, Any]],
     module_config_sections: dict[str, dict[str, Any]],
 ) -> None:
-    """Validate configuration values on protobuf copies before device mutation."""
-    roots = (
-        ("config", target_node.localConfig, config_sections),
-        ("module_config", target_node.moduleConfig, module_config_sections),
+    """Compatibility wrapper for configure preflight validation."""
+    cli_configure_actions._preflight_configure_sections(
+        _configure_hooks(),
+        target_node,
+        config_sections=config_sections,
+        module_config_sections=module_config_sections,
     )
-    token = _CONFIGURE_PREFLIGHT_MODE.set(True)
-    try:
-        for top_level_key, source_message, sections in roots:
-            if not sections:
-                continue
-            candidate = type(source_message)()
-            candidate.CopyFrom(source_message)
-            for section, section_values in sections.items():
-                failed_fields: list[str] = []
-                applied = traverseConfig(
-                    section,
-                    section_values,
-                    candidate,
-                    failed_fields=failed_fields,
-                )
-                if applied:
-                    continue
-                field_suffix = (
-                    f" Invalid field: {failed_fields[0]}." if failed_fields else ""
-                )
-                _cli_exit(
-                    f"Failed to apply {top_level_key} section {section!r} "
-                    f"due to structural errors.{field_suffix}"
-                )
-    finally:
-        _CONFIGURE_PREFLIGHT_MODE.reset(token)
 
 
 def _refresh_no_disconnect_verify_state(
@@ -923,74 +505,29 @@ def _refresh_no_disconnect_verify_state(
     verify_config_fields: dict[str, dict[str, Any]] | None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None,
 ) -> None:
-    """Invalidate touched cached state and request fresh values for Phase 3 verification."""
-    request_config = getattr(target_node, "requestConfig", None)
-
-    for section_name in verify_config_fields or {}:
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(
-            section_snake
-        )
-        if field_desc is None:
-            logger.warning(
-                "Skipping config refresh for unknown section %r.",
-                section_name,
-            )
-            continue
-        target_node.localConfig.ClearField(section_snake)
-        if callable(request_config):
-            request_config(field_desc)
-
-    for section_name in verify_module_config_fields or {}:
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        field_desc = target_node.moduleConfig.DESCRIPTOR.fields_by_name.get(
-            section_snake
-        )
-        if field_desc is None:
-            logger.warning(
-                "Skipping module_config refresh for unknown section %r.",
-                section_name,
-            )
-            continue
-        target_node.moduleConfig.ClearField(section_snake)
-        if callable(request_config):
-            request_config(field_desc)
-
-    if verify_channel_url:
-        target_node.channels = None
-        target_node.partialChannels = []
-        request_channels = getattr(target_node, "requestChannels", None)
-        if callable(request_channels):
-            request_channels(0)
+    """Compatibility wrapper for touched-state refresh before verification."""
+    cli_configure_actions._refresh_no_disconnect_verify_state(
+        target_node,
+        verify_channel_url=verify_channel_url,
+        verify_config_fields=verify_config_fields,
+        verify_module_config_fields=verify_module_config_fields,
+    )
 
 
 def _channel_url_matches_current_device_state(
-    target_node: Any,
-    requested_channel_url: str,
+    target_node: Any, requested_channel_url: str
 ) -> bool:
-    """Return True when requested channel URL already matches loaded device state."""
-    local_config = getattr(target_node, "localConfig", None)
-    has_field = getattr(local_config, "HasField", None)
-    if local_config is None or not callable(has_field) or not has_field("lora"):
-        return False
-    return _verify_channel_url_against_state(
+    """Compatibility wrapper for channel URL equality checks."""
+    return cli_configure_actions._channel_url_matches_current_device_state(
+        target_node,
         requested_channel_url,
-        device_channels=getattr(target_node, "channels", None),
-        device_lora_config=local_config.lora,
-        emit_warnings=False,
+        verify_channel_url_against_state=_verify_channel_url_against_state,
     )
 
 
 def _flatten_leaf_paths(prefix: str, mapping: dict[str, Any]) -> list[str]:
-    """Recursively flatten a nested mapping into dotted leaf paths."""
-    paths: list[str] = []
-    for key, value in mapping.items():
-        dotted = f"{prefix}.{key}"
-        if isinstance(value, dict) and value:
-            paths.extend(_flatten_leaf_paths(dotted, value))
-        else:
-            paths.append(dotted)
-    return paths
+    """Compatibility wrapper for configure verification path flattening."""
+    return cli_configure_actions._flatten_leaf_paths(prefix, mapping)
 
 
 def _verify_config_sections(
@@ -999,33 +536,10 @@ def _verify_config_sections(
     label: str,
     verified_fields: list[str] | None = None,
 ) -> bool:
-    for section_name, yaml_values in config_fields.items():
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        if not proto_config.HasField(section_snake):
-            logger.warning(
-                "%s section %r not present after reload.",
-                label,
-                section_name,
-            )
-            return False
-        proto_section = getattr(proto_config, section_snake)
-        mismatches = _verify_requested_fields(yaml_values, proto_section, section_name)
-        if mismatches:
-            logger.warning(
-                "%s section %r field mismatches: %s",
-                label,
-                section_name,
-                ", ".join(mismatches),
-            )
-            return False
-        if verified_fields is not None:
-            verified_fields.extend(_flatten_leaf_paths(section_snake, yaml_values))
-        logger.debug(
-            "%s section %r verified (all requested field values match).",
-            label,
-            section_name,
-        )
-    return True
+    """Compatibility wrapper for protobuf section verification."""
+    return cli_configure_actions._verify_config_sections(
+        config_fields, proto_config, label, verified_fields=verified_fields
+    )
 
 
 def _verify_post_reconnect_config(
@@ -1036,58 +550,15 @@ def _verify_post_reconnect_config(
     verify_config_fields: dict[str, dict[str, Any]] | None = None,
     verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
 ) -> _ConfigureReconnectResult:
-    if not interface.isConnected.is_set():
-        logger.warning("Post-reconnect verification skipped: transport disconnected.")
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    target_node = interface.getNode(node_dest)
-    verified_fields: list[str] = []
-
-    if verify_channel_url:
-        local_config = getattr(target_node, "localConfig", None)
-        has_field = getattr(local_config, "HasField", None)
-        device_lora_config = (
-            local_config.lora
-            if local_config is not None and callable(has_field) and has_field("lora")
-            else None
-        )
-        if not _verify_channel_url_against_state(
-            verify_channel_url,
-            device_channels=getattr(target_node, "channels", None),
-            device_lora_config=device_lora_config,
-        ):
-            logger.warning(
-                "Channel URL verification: device state does not match requested URL."
-            )
-            return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-        verified_fields.append("channel_url")
-
-    if verify_config_fields and not _verify_config_sections(
-        verify_config_fields,
-        target_node.localConfig,
-        "Config",
-        verified_fields=verified_fields,
-    ):
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if verify_module_config_fields and not _verify_config_sections(
-        verify_module_config_fields,
-        target_node.moduleConfig,
-        "Module config",
-        verified_fields=verified_fields,
-    ):
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if not interface.isConnected.is_set():
-        logger.warning(
-            "Post-reconnect verification did not complete: transport disconnected."
-        )
-        return _ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if verified_fields:
-        logger.info("Verified: %s", ", ".join(verified_fields))
-
-    return _ConfigureReconnectResult.VERIFIED
+    """Compatibility wrapper for post-reconnect value verification."""
+    return cli_configure_actions._verify_post_reconnect_config(
+        interface,
+        node_dest,
+        verify_channel_url=verify_channel_url,
+        verify_config_fields=verify_config_fields,
+        verify_module_config_fields=verify_module_config_fields,
+        verify_channel_url_against_state=_verify_channel_url_against_state,
+    )
 
 
 # COMPAT_STABLE_SHIM: historical snake_case helper name.
@@ -1827,56 +1298,15 @@ def _handle_ota_update(
     args: Any,
     getNode_kwargs: dict[str, Any],
 ) -> None:
-    """Initiate a Wi-Fi OTA update for the directly connected local node.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        TCP interface connected to the target node.
-    args : Any
-        CLI arguments containing the OTA update path and destination.
-    getNode_kwargs : dict[str, Any]
-        Additional arguments for retrieving the local node.
-    """
-    if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-        _cli_exit(
-            "Error: OTA update currently requires a TCP connection to the node (use --host)."
-        )
-    if not _is_local_destination(interface, args.dest):
-        _cli_exit(
-            "Error: OTA update only supports the directly connected local node; omit --dest or use --dest ^local."
-        )
-    ota_dest = LOCAL_ADDR
-
-    try:
-        ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
-    except meshtastic.ota.OTAError as e:
-        _cli_exit(f"OTA update failed: {e}")
-
-    _cli_print(f"Triggering OTA update on {interface.hostname}...")
-    interface.getNode(ota_dest, requestChannels=False, **getNode_kwargs).startOTA(
-        mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
+    """Compatibility wrapper for the canonical Wi-Fi OTA action."""
+    cli_device_actions._handle_ota_update(
+        interface,
+        args,
+        getNode_kwargs,
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        is_local_destination=_is_local_destination,
     )
-
-    _cli_print("Waiting for device to reboot into OTA mode...")
-    time.sleep(OTA_REBOOT_WAIT_SECONDS)
-
-    retries = OTA_MAX_RETRIES
-    while retries > 0:
-        try:
-            ota.update()
-            break
-
-        except meshtastic.ota.OTATransportError as e:
-            retries -= 1
-            if retries == 0:
-                _cli_exit(f"OTA update failed: {e}")
-
-            time.sleep(OTA_RETRY_DELAY_SECONDS)
-        except meshtastic.ota.OTAError as e:
-            _cli_exit(f"OTA update failed: {e}")
-
-    _cli_print("\nOTA update completed successfully!")
 
 
 def _print_set_field_choices(node: Any, pref_names: Sequence[str]) -> None:
@@ -1943,8 +1373,7 @@ def _format_set_preflight_exception(pref_name: str, exc: Exception) -> str:
         return str(exc)
     if _is_secret_pref(pref_name):
         return (
-            f"{pref_name}: invalid value {_REDACTED_PREF_VALUE} "
-            f"({type(exc).__name__})"
+            f"{pref_name}: invalid value {_REDACTED_PREF_VALUE} ({type(exc).__name__})"
         )
     return f"{pref_name}: {exc}"
 
@@ -2134,8 +1563,7 @@ def _handle_set_command(
         except (TypeError, ValueError, OverflowError, binascii.Error) as exc:
             detail = _format_set_preflight_exception(normalized_pref_name, exc)
             _cli_exit(
-                "ERROR: --set apply diverged after successful preflight:\n"
-                f"  - {detail}"
+                f"ERROR: --set apply diverged after successful preflight:\n  - {detail}"
             )
         if not found:
             _cli_exit(
@@ -2157,359 +1585,27 @@ def _handle_set_command(
 
 
 def _pace_configure_write(
-    remaining_writes: int,
-    *,
-    sleep_fn: Callable[[float], None] = time.sleep,
+    remaining_writes: int, *, sleep_fn: Callable[[float], None] = time.sleep
 ) -> None:
-    """Yield briefly between section writes while keeping transactions short."""
-    if remaining_writes > 0:
-        sleep_fn(CONFIG_WRITE_PACE_SECONDS)
+    """Compatibility wrapper for configure write pacing."""
+    cli_configure_actions._pace_configure_write(remaining_writes, sleep_fn=sleep_fn)
 
 
 def _apply_configure_channel_url(
-    target_node: Any,
-    raw_channel_url: Any,
-    *,
-    config_key: str,
+    target_node: Any, raw_channel_url: Any, *, config_key: str
 ) -> bool:
-    """Validate and apply one configured channel URL without exposing it."""
-    if not isinstance(raw_channel_url, str):
-        _cli_exit(f"ERROR: {config_key} must be a string.")
-    requested_channel_url = raw_channel_url.strip()
-    if not requested_channel_url:
-        _cli_exit(f"ERROR: {config_key} must not be blank.")
-
-    if _channel_url_matches_current_device_state(target_node, requested_channel_url):
-        _cli_print("Channel url already matches device state; skipping apply.")
-        logger.info("Skipping setURL apply because channel URL already matches.")
-        return False
-
-    _cli_print("Setting channel url to <redacted>")
-    target_node.setURL(requested_channel_url)
-    time.sleep(CONFIG_SETURL_DELAY_SECONDS)
-    return True
+    """Compatibility wrapper for configure channel URL application."""
+    return cli_configure_actions._apply_configure_channel_url(
+        _configure_hooks(), target_node, raw_channel_url, config_key=config_key
+    )
 
 
 def _handle_configure_command(
-    interface: MeshInterface,
-    args: Any,
-    getNode_kwargs: dict[str, Any],
-) -> tuple[bool, bool]:
-    try:
-        with open(args.configure[0], encoding="utf8") as file:
-            raw_text = file.read()
-        configuration = yaml.safe_load(raw_text)
-    except (yaml.YAMLError, UnicodeDecodeError) as exc:
-        _cli_exit(f"ERROR: Failed to parse YAML configuration: {exc}")
-
-    if configuration is None:
-        _cli_exit("ERROR: YAML configuration file is empty")
-    if not isinstance(configuration, dict):
-        _cli_exit(
-            f"ERROR: YAML configuration must be a mapping/dictionary, got {type(configuration).__name__}"
-        )
-    if not configuration:
-        _cli_exit("ERROR: Configuration file is empty; nothing to configure.")
-    _unknown_keys = set(configuration.keys()) - _ALLOWED_CONFIGURE_KEYS
-    if _unknown_keys:
-        _cli_exit(
-            f"ERROR: Unknown top-level key(s) in YAML: {', '.join(sorted(_unknown_keys))}"
-        )
-
-    if "channel_url" in configuration and "channelUrl" in configuration:
-        _cli_exit(
-            "ERROR: Cannot specify both 'channel_url' and 'channelUrl' in the same configuration file; use one."
-        )
-    if "owner_short" in configuration and "ownerShort" in configuration:
-        _cli_exit(
-            "ERROR: Cannot specify both 'owner_short' and 'ownerShort' in the same configuration file; use one."
-        )
-
-    # Pre-validate config/module_config shapes before any Phase-1 mutations.
-    validated_config_sections: dict[str, dict[str, Any]] = {}
-    validated_module_config_sections: dict[str, dict[str, Any]] = {}
-    if "config" in configuration:
-        _cfg_val = configuration["config"]
-        if not isinstance(_cfg_val, dict) or not _cfg_val:
-            _cli_exit(
-                f"ERROR: 'config' must be a non-empty mapping, got "
-                f"{type(_cfg_val).__name__}{' (empty)' if isinstance(_cfg_val, dict) else ''}"
-            )
-        validated_config_sections = _validate_non_empty_mapping_sections(
-            top_level_key="config",
-            section_mapping=_cfg_val,
-        )
-    if "module_config" in configuration:
-        _mcfg_val = configuration["module_config"]
-        if not isinstance(_mcfg_val, dict) or not _mcfg_val:
-            _cli_exit(
-                f"ERROR: 'module_config' must be a non-empty mapping, got "
-                f"{type(_mcfg_val).__name__}{' (empty)' if isinstance(_mcfg_val, dict) else ''}"
-            )
-        validated_module_config_sections = _validate_non_empty_mapping_sections(
-            top_level_key="module_config",
-            section_mapping=_mcfg_val,
-        )
-
-    target_node = interface.getNode(args.dest, False, **getNode_kwargs)
-    if validated_config_sections or validated_module_config_sections:
-        _preflight_configure_sections(
-            target_node,
-            config_sections=validated_config_sections,
-            module_config_sections=validated_module_config_sections,
-        )
-
-    phase1_started = False
-    phase1_may_reconnect = False
-    seturl_executed = False
-
-    if "owner" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_name = str(configuration["owner"]).strip()
-        if not owner_name:
-            _cli_exit(
-                "ERROR: Long Name cannot be empty or contain only whitespace characters"
-            )
-        _cli_print(f"Setting device owner to {owner_name}")
-        target_node.setOwner(long_name=owner_name)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "owner_short" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_short_name = str(configuration["owner_short"]).strip()
-        if not owner_short_name:
-            _cli_exit(
-                "ERROR: Short Name cannot be empty or contain only whitespace characters"
-            )
-        _cli_print(f"Setting device owner short to {owner_short_name}")
-        target_node.setOwner(long_name=None, short_name=owner_short_name)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "ownerShort" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        owner_short_name = str(configuration["ownerShort"]).strip()
-        if not owner_short_name:
-            _cli_exit(
-                "ERROR: Short Name cannot be empty or contain only whitespace characters"
-            )
-        _cli_print(f"Setting device owner short to {owner_short_name}")
-        target_node.setOwner(long_name=None, short_name=owner_short_name)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "location" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        _loc = configuration["location"]
-        if not isinstance(_loc, dict) or not _loc:
-            _cli_exit(
-                "location must be a non-empty mapping with lat, lon, and optional alt"
-            )
-        _allowed_loc_keys = {"lat", "lon", "alt"}
-        _unknown_loc_keys = set(_loc.keys()) - _allowed_loc_keys
-        if _unknown_loc_keys:
-            _cli_exit(
-                f"location contains unknown keys: {', '.join(sorted(_unknown_loc_keys))}. "
-                f"Allowed: lat, lon, alt"
-            )
-        if "lat" not in _loc or "lon" not in _loc:
-            _cli_exit("location requires both lat and lon")
-        try:
-            lat = float(_loc["lat"])
-        except (ValueError, TypeError):
-            _cli_exit(f"location.lat must be a number, got: {_loc['lat']!r}")
-        try:
-            lon = float(_loc["lon"])
-        except (ValueError, TypeError):
-            _cli_exit(f"location.lon must be a number, got: {_loc['lon']!r}")
-        alt = 0
-        if "alt" in _loc:
-            try:
-                alt = int(_loc["alt"])
-            except (ValueError, TypeError):
-                _cli_exit(f"location.alt must be an integer, got: {_loc['alt']!r}")
-            _cli_print(f"Fixing altitude at {alt} meters")
-        _cli_print(f"Fixing latitude at {lat} degrees")
-        _cli_print(f"Fixing longitude at {lon} degrees")
-        _cli_print("Setting device position")
-        target_node.setFixedPosition(lat, lon, alt)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "canned_messages" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        _cli_print(
-            f"Setting canned message messages to {configuration['canned_messages']}",
-        )
-        target_node.set_canned_message(configuration["canned_messages"])
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if "ringtone" in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        _cli_print(f"Setting ringtone to {configuration['ringtone']}")
-        target_node.set_ringtone(configuration["ringtone"])
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    channel_url_key = "channel_url" if "channel_url" in configuration else "channelUrl"
-    if channel_url_key in configuration:
-        if not phase1_started:
-            _cli_print(CONFIGURE_PHASE1_HEADER)
-            phase1_started = True
-        seturl_executed = _apply_configure_channel_url(
-            target_node,
-            configuration[channel_url_key],
-            config_key=channel_url_key,
-        )
-        phase1_may_reconnect = seturl_executed
-
-    if phase1_started:
-        _cli_print("Phase 1 complete.")
-
-    settings_transaction_started = False
-    has_valid_config_section = bool(
-        validated_config_sections or validated_module_config_sections
-    )
-    if seturl_executed and has_valid_config_section:
-        if _is_local_destination(interface, args.dest):
-            if not _post_seturl_stability_check(
-                interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
-            ):
-                _cli_exit(
-                    "ERROR: channel_url applied, but transport did not stabilize "
-                    "for additional configuration writes; aborting before Phase 2."
-                )
-        else:
-            _cli_exit(
-                "ERROR: Combining channel_url with additional configuration "
-                "writes is not supported for remote nodes. Apply channel_url "
-                "and configuration in separate operations."
-            )
-    if has_valid_config_section:
-        _cli_print(
-            "Phase 2: Applying configuration transaction (may trigger device reboot)..."
-        )
-        target_node.beginSettingsTransaction()
-        settings_transaction_started = True
-
-    remaining_config_writes = len(validated_config_sections) + len(
-        validated_module_config_sections
-    )
-
-    if validated_config_sections:
-        localConfig = target_node.localConfig
-        for section, section_values in validated_config_sections.items():
-            failed_config_fields: list[str] = []
-            applied = traverseConfig(
-                section,
-                section_values,
-                localConfig,
-                failed_fields=failed_config_fields,
-            )
-            if failed_config_fields:
-                logger.warning(
-                    "Skipped %d unknown field(s) in config section %s: %s",
-                    len(failed_config_fields),
-                    section,
-                    ", ".join(repr(f) for f in failed_config_fields),
-                )
-            if not applied:
-                _cli_exit(
-                    f"Failed to apply config section {section!r} due to structural errors."
-                )
-            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
-            remaining_config_writes -= 1
-            _pace_configure_write(remaining_config_writes)
-
-    if validated_module_config_sections:
-        moduleConfig = target_node.moduleConfig
-        for section, section_values in validated_module_config_sections.items():
-            failed_module_fields: list[str] = []
-            applied = traverseConfig(
-                section,
-                section_values,
-                moduleConfig,
-                failed_fields=failed_module_fields,
-            )
-            if failed_module_fields:
-                logger.warning(
-                    "Skipped %d unknown field(s) in module_config section %s: %s",
-                    len(failed_module_fields),
-                    section,
-                    ", ".join(repr(f) for f in failed_module_fields),
-                )
-            if not applied:
-                _cli_exit(
-                    f"Failed to apply module_config section {section!r} due to structural errors."
-                )
-            target_node.writeConfig(meshtastic.util.camel_to_snake(section))
-            remaining_config_writes -= 1
-            _pace_configure_write(remaining_config_writes)
-
-    if settings_transaction_started:
-        target_node.commitSettingsTransaction()
-        time.sleep(CONFIG_COMMIT_SETTLE_SECONDS)
-        _cli_print(
-            "Configuration transaction committed. Device may reboot to apply changes."
-        )
-
-    if settings_transaction_started:
-        _verify_channel_url = configuration.get("channel_url") or configuration.get(
-            "channelUrl"
-        )
-        _verify_config_fields = validated_config_sections or None
-        _verify_module_config_fields = validated_module_config_sections or None
-        if _is_local_destination(interface, args.dest):
-            _reconnect_result = _post_configure_reconnect_and_verify(
-                interface,
-                timeout=CONFIG_RECONNECT_WAIT_SECONDS,
-                node_dest=args.dest,
-                verify_channel_url=_verify_channel_url,
-                verify_config_fields=_verify_config_fields,
-                verify_module_config_fields=_verify_module_config_fields,
-            )
-            if _reconnect_result == _ConfigureReconnectResult.VERIFIED:
-                _cli_print(
-                    "Phase 3: Device reconnected and config reloaded. All settings verified."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.VERIFICATION_INCOMPLETE:
-                _cli_print(
-                    "Phase 3: Device reconnected and config reloaded. "
-                    "Could not fully verify applied settings."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.CONFIG_RELOAD_FAILED:
-                _cli_print(
-                    "Phase 3: Device reconnected but config reload failed. "
-                    "Settings may still be applying."
-                )
-            elif _reconnect_result == _ConfigureReconnectResult.RECONNECT_FAILED:
-                _cli_print(
-                    "Phase 3: Device did not reconnect within timeout. "
-                    "Configuration may still be applying."
-                )
-        else:
-            _cli_print(
-                "Phase 3: Reboot/reconnect verification skipped for remote target. "
-                "Local transport state does not confirm remote node reload status."
-            )
-    else:
-        if phase1_may_reconnect:
-            _cli_print(
-                "Configuration applied. Channel URL updates may still trigger reconnect/reboot."
-            )
-        else:
-            _cli_print("Configuration applied (no reboot expected).")
-
-    return settings_transaction_started, (
-        seturl_executed and _is_local_destination(interface, args.dest)
+    interface: MeshInterface, args: Any, getNode_kwargs: dict[str, Any]
+) -> cli_configure_actions._ConfigureCommandResult:
+    """Compatibility wrapper for configure-file transaction execution."""
+    return cli_configure_actions._handle_configure_command(
+        _configure_hooks(), interface, args, getNode_kwargs
     )
 
 
@@ -2538,996 +1634,85 @@ def _validate_cli_show_fields(interface: MeshInterface, show_fields: list[str]) 
         )
 
 
-def onConnected(interface: MeshInterface) -> None:
-    """Execute CLI actions specified by parsed command-line arguments using the provided MeshInterface.
-
-    Performs whichever device or network operations were requested via mt_config.args (for
-    example: updating time or owner, configuring position or channels, sending
-    text/telemetry/position messages, node administration, exporting/importing
-    configuration, reboot/shutdown, starting tunnels or power-monitoring, and related
-    read/write operations). Actions may modify remote devices, start long-running
-    services, wait for acknowledgments, close the interface, or exit the process on
-    fatal errors.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        An established mesh interface used to perform the requested device and network operations.
-
-    Raises
-    ------
-    RuntimeError
-        If `mt_config.args` is not set up before calling this function.
-    """
-    closeNow = False  # Should we drop the connection after we finish?
-    waitForAckNak = (
-        False  # Should we wait for an acknowledgment if we send to a remote node?
+def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
+    """Build connected-action hooks from historical ``__main__`` seams."""
+    device_hooks = cli_device_actions.DeviceActionHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        set_pref=setPref,
+        is_local_destination=_is_local_destination,
+        send_local_factory_reset_and_wait=_send_local_factory_reset_and_wait,
+        post_factory_reset_ready_probe=_post_factory_reset_ready_probe,
+        handle_ota_update=_handle_ota_update,
+        build_lockdown_auth=build_lockdown_auth,
+        read_lockdown_passphrase_file=read_lockdown_passphrase_file,
+        send_lockdown_auth=send_lockdown_auth,
+        validate_lockdown_passphrase=validate_lockdown_passphrase,
     )
-    skip_ack_wait = False  # OTA reboots the node before an ACK can be observed.
+    channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        get_channel_index=lambda: mt_config.channel_index,
+        set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
+        resolve_pref=_resolve_pref,
+        set_pref=setPref,
+        fatal_preference_value_errors=_fatal_preference_value_errors,
+        preference_value_error=_PreferenceValueError,
+        print_channel_field_choices=_print_channel_field_choices,
+        is_local_destination=_is_local_destination,
+        modem_preset_shorthands=_MODEM_PRESET_SHORTHANDS,
+        qr_create=pyqrcode.create if pyqrcode is not None else None,
+    )
+    configure_hooks = cli_configure_actions.ConfigureActionHooks(
+        handle_set_command=_handle_set_command,
+        handle_configure_command=_handle_configure_command,
+        export_config=exportConfig,
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        is_local_destination=_is_local_destination,
+    )
+    service_hooks = cli_messaging_service_actions.MessagingServiceHooks(
+        cli_exit=_cli_exit,
+        cli_print=_cli_print,
+        get_channel_index=lambda: mt_config.channel_index,
+        check_channel=checkChannel,
+        remote_hardware_client=remote_hardware.RemoteHardwareClient,
+        get_pref=getPref,
+        validate_cli_show_fields=_validate_cli_show_fields,
+        newer_version=meshtastic.util.check_if_newer_version,
+        install_upgrade_hint=INSTALL_UPGRADE_HINT,
+        powermon_available=lambda: have_powermon,
+        powermon_error=lambda: powermon_exception,
+        log_set_factory=LogSet,
+        power_stress_factory=PowerStress,
+        get_meter=lambda: meter,
+    )
+    return cli_dispatch.DispatchHooks(
+        cli_print=_cli_print,
+        device=device_hooks,
+        channel_contact=channel_contact_hooks,
+        configure=configure_hooks,
+        services=service_hooks,
+        sleep=time.sleep,
+    )
+
+
+def onConnected(interface: MeshInterface) -> None:
+    """Execute parsed connected CLI actions on an established interface."""
     try:
         args = mt_config.args
         if args is None:
             raise RuntimeError("onConnected called without args being set up")
-
-        # convenient place to store any keyword args we pass to getNode
-        getNode_kwargs = {
-            "requestChannelAttempts": args.channel_fetch_attempts,
-            "timeout": args.timeout,
-        }
-
-        # do not print this line if we are exporting the config
-        if not args.export_config:
-            dev_path = getattr(interface, "devPath", "")
-            if dev_path:
-                tty_name = os.path.basename(dev_path)
-                stable_path = getattr(interface, "_stable_path", None)
-                if stable_path and stable_path != dev_path:
-                    _cli_print(
-                        f"Connected to radio on {tty_name} (stable: {stable_path})"
-                    )
-                else:
-                    _cli_print(f"Connected to radio on {tty_name}")
-            else:
-                _cli_print("Connected to radio")
-
-        if args.set_time is not None:
-            interface.getNode(args.dest, False, **getNode_kwargs).setTime(args.set_time)
-
-        if args.remove_position:
-            closeNow = True
-            waitForAckNak = True
-
-            _cli_print("Removing fixed position and disabling fixed position setting")
-            interface.getNode(args.dest, False, **getNode_kwargs).removeFixedPosition()
-        elif args.setlat or args.setlon or args.setalt:
-            closeNow = True
-            waitForAckNak = True
-
-            alt = 0
-            lat = 0.0
-            lon = 0.0
-            if args.setalt:
-                alt = int(args.setalt)
-                _cli_print(f"Fixing altitude at {alt} meters")
-            if args.setlat:
-                try:
-                    lat = int(args.setlat)
-                except ValueError:
-                    lat = float(args.setlat)
-                _cli_print(f"Fixing latitude at {lat} degrees")
-            if args.setlon:
-                try:
-                    lon = int(args.setlon)
-                except ValueError:
-                    lon = float(args.setlon)
-                _cli_print(f"Fixing longitude at {lon} degrees")
-
-            _cli_print("Setting device position and enabling fixed position setting")
-            # can include lat/long/alt etc: latitude = 37.5, longitude = -122.1
-            interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
-                lat, lon, alt
-            )
-
-        if args.set_owner or args.set_owner_short or args.set_is_unmessageable:
-            closeNow = True
-            waitForAckNak = True
-
-            long_name = args.set_owner.strip() if args.set_owner else None
-            short_name = args.set_owner_short.strip() if args.set_owner_short else None
-
-            if long_name is not None and not long_name:
-                _cli_exit(
-                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
-                )
-
-            if short_name is not None and not short_name:
-                _cli_exit(
-                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                )
-
-            if long_name and short_name:
-                _cli_print(
-                    f"Setting device owner to {long_name} and short name to {short_name}"
-                )
-            elif long_name:
-                _cli_print(f"Setting device owner to {long_name}")
-            elif short_name:
-                _cli_print(f"Setting device owner short to {short_name}")
-
-            unmessagable = None
-            if args.set_is_unmessageable is not None:
-                unmessagable = (
-                    meshtastic.util.fromStr(args.set_is_unmessageable)
-                    if isinstance(args.set_is_unmessageable, str)
-                    else args.set_is_unmessageable
-                )
-                _cli_print(f"Setting device owner is_unmessageable to {unmessagable}")
-
-            interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                long_name=long_name, short_name=short_name, is_unmessagable=unmessagable
-            )
-
-        if args.set_canned_message:
-            closeNow = True
-            waitForAckNak = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            if node.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-                _cli_print(
-                    f"Setting canned plugin message to {args.set_canned_message}"
-                )
-                node.set_canned_message(args.set_canned_message)
-            else:
-                logger.warning(
-                    "Canned Message module is excluded by firmware; skipping set."
-                )
-
-        if args.set_ringtone:
-            closeNow = True
-            waitForAckNak = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            if node.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-                _cli_print(f"Setting ringtone to {args.set_ringtone}")
-                node.set_ringtone(args.set_ringtone)
-            else:
-                logger.warning(
-                    "External Notification is excluded by firmware; skipping ringtone set."
-                )
-
-        if args.pos_fields:
-            # If --pos-fields invoked with args, set position fields
-            closeNow = True
-            positionConfig = interface.getNode(
-                args.dest, **getNode_kwargs
-            ).localConfig.position
-            allFields = 0
-
-            try:
-                for field in args.pos_fields:
-                    v_field = positionConfig.PositionFlags.Value(field)
-                    allFields |= v_field
-
-            except ValueError:
-                print("ERROR: supported position fields are:")
-                print(positionConfig.PositionFlags.keys())
-                print(
-                    "If no fields are specified, will read and display current value."
-                )
-
-            else:
-                _cli_print(f"Setting position fields to {allFields}")
-                setPref(positionConfig, "position_flags", f"{allFields:d}")
-                _cli_print("Writing modified preferences to device")
-                interface.getNode(args.dest, **getNode_kwargs).writeConfig("position")
-
-        elif args.pos_fields is not None:
-            # If --pos-fields invoked without args, read and display current value
-            closeNow = True
-            positionConfig = interface.getNode(
-                args.dest, **getNode_kwargs
-            ).localConfig.position
-
-            fieldNames = []
-            for bit in positionConfig.PositionFlags.values():
-                if positionConfig.position_flags & bit:
-                    fieldNames.append(positionConfig.PositionFlags.Name(bit))
-            print(" ".join(fieldNames))
-
-        if args.set_ham:
-            ham_id = args.set_ham.strip()
-            if not ham_id:
-                _cli_exit(
-                    "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
-                )
-            closeNow = True
-            _cli_print(f"Setting Ham ID to {ham_id} and turning off encryption")
-            interface.getNode(args.dest, **getNode_kwargs).setOwner(
-                ham_id, is_licensed=True
-            )
-            # Must turn off encryption on primary channel
-            interface.getNode(
-                args.dest, **getNode_kwargs
-            ).turnOffEncryptionOnPrimaryChannel()
-
-        if args.reboot:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).reboot()
-
-        if args.reboot_ota:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).rebootOTA()
-
-        if args.ota_update:
-            closeNow = True
-            skip_ack_wait = True
-            _handle_ota_update(interface, args, getNode_kwargs)
-            return
-
-        if args.enter_dfu:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).enterDFUMode()
-
-        if args.shutdown:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
-            interface.getNode(args.dest, False, **getNode_kwargs).shutdown()
-
-        if args.device_metadata:
-            closeNow = True
-            interface.getNode(args.dest, False, **getNode_kwargs).getMetadata()
-
-        if args.begin_edit:
-            closeNow = True
-            interface.getNode(
-                args.dest, False, **getNode_kwargs
-            ).beginSettingsTransaction()
-
-        if args.commit_edit:
-            closeNow = True
-            interface.getNode(
-                args.dest, False, **getNode_kwargs
-            ).commitSettingsTransaction()
-
-        if args.factory_reset or args.factory_reset_device:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True
-
-            full = bool(args.factory_reset_device)
-            reset_node = interface.getNode(args.dest, False, **getNode_kwargs)
-            is_local_reset = _is_local_destination(interface, args.dest)
-            if is_local_reset:
-                _send_local_factory_reset_and_wait(
-                    reset_node,
-                    full=full,
-                )
-            else:
-                # Remote Node.factoryReset() owns its ACK wait.
-                reset_node.factoryReset(full=full)
-            # Guard the isinstance check: SerialInterface may be a mock or not resolve in tests.
-            _serial_interface_cls = getattr(
-                meshtastic.serial_interface, "SerialInterface", None
-            )
-            if (
-                full
-                and _is_local_destination(interface, args.dest)
-                and isinstance(_serial_interface_cls, type)
-                and isinstance(interface, _serial_interface_cls)
-            ):
-                _post_factory_reset_ready_probe(interface)
-
-        if args.remove_node:
-            closeNow = True
-            waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeNode(
-                args.remove_node
-            )
-
-        if args.set_favorite_node:
-            closeNow = True
-            waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).setFavorite(
-                args.set_favorite_node
-            )
-
-        if args.remove_favorite_node:
-            closeNow = True
-            waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeFavorite(
-                args.remove_favorite_node
-            )
-
-        if args.set_ignored_node:
-            closeNow = True
-            waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).setIgnored(
-                args.set_ignored_node
-            )
-
-        if args.remove_ignored_node:
-            closeNow = True
-            waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeIgnored(
-                args.remove_ignored_node
-            )
-
-        if args.reset_nodedb:
-            closeNow = True
-            waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).resetNodeDb()
-
-        if args.add_contact:
-            closeNow = True
-            waitForAckNak = True
-            skip_ack_wait = True  # addContactURL() owns the remote ACK wait
-            interface.getNode(args.dest, False, **getNode_kwargs).addContactURL(
-                args.add_contact
-            )
-
-        if args.sendtext:
-            closeNow = True
-            channelIndex = mt_config.channel_index or 0
-            if checkChannel(interface, channelIndex):
-                _cli_print(
-                    f"Sending text message {args.sendtext} to {args.dest} on channelIndex:{channelIndex}"
-                    f" {'using PRIVATE_APP port' if args.private else ''}"
-                )
-                interface.sendText(
-                    args.sendtext,
-                    args.dest,
-                    wantAck=True,
-                    channelIndex=channelIndex,
-                    onResponse=interface.getNode(
-                        args.dest, False, **getNode_kwargs
-                    ).onAckNak,
-                    portNum=(
-                        portnums_pb2.PortNum.PRIVATE_APP
-                        if args.private
-                        else portnums_pb2.PortNum.TEXT_MESSAGE_APP
-                    ),
-                )
-            else:
-                _cli_exit(
-                    f"Warning: {channelIndex} is not a valid channel. Channel must not be DISABLED."
-                )
-
-        if args.traceroute:
-            loraConfig = interface.localNode.localConfig.lora
-            hopLimit = loraConfig.hop_limit
-            dest = str(args.traceroute)
-            channelIndex = mt_config.channel_index or 0
-            if checkChannel(interface, channelIndex):
-                _cli_print(
-                    f"Sending traceroute request to {dest} on channelIndex:{channelIndex} (this could take a while)"
-                )
-                interface.sendTraceRoute(dest, hopLimit, channelIndex=channelIndex)
-
-        if args.request_telemetry:
-            if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
-            else:
-                channelIndex = mt_config.channel_index or 0
-                if checkChannel(interface, channelIndex):
-                    telemMap = {
-                        "device": "device_metrics",
-                        "environment": "environment_metrics",
-                        "air_quality": "air_quality_metrics",
-                        "airquality": "air_quality_metrics",
-                        "power": "power_metrics",
-                        "localstats": "local_stats",
-                        "local_stats": "local_stats",
-                    }
-                    telemType = telemMap.get(args.request_telemetry, "device_metrics")
-                    _cli_print(
-                        f"Sending {telemType} telemetry request to {args.dest} on channelIndex:{channelIndex} (this could take a while)"
-                    )
-                    interface.sendTelemetry(
-                        destinationId=args.dest,
-                        wantResponse=True,
-                        channelIndex=channelIndex,
-                        telemetryType=telemType,
-                    )
-
-        if args.request_position:
-            if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
-            else:
-                channelIndex = mt_config.channel_index or 0
-                if checkChannel(interface, channelIndex):
-                    _cli_print(
-                        f"Sending position request to {args.dest} on channelIndex:{channelIndex} (this could take a while)"
-                    )
-                    interface.sendPosition(
-                        destinationId=args.dest,
-                        wantResponse=True,
-                        channelIndex=channelIndex,
-                    )
-
-        if args.gpio_wrb or args.gpio_rd or args.gpio_watch:
-            if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
-            else:
-                rhc = remote_hardware.RemoteHardwareClient(interface)
-
-                if args.gpio_wrb:
-                    bitmask = 0
-                    bitval = 0
-                    for wrpair in args.gpio_wrb or []:
-                        bitmask |= 1 << int(wrpair[0])
-                        bitval |= int(wrpair[1]) << int(wrpair[0])
-                    _cli_print(
-                        f"Writing GPIO mask 0x{bitmask:x} with value 0x{bitval:x} to {args.dest}"
-                    )
-                    rhc.writeGPIOs(args.dest, bitmask, bitval)
-                    closeNow = True
-
-                if args.gpio_rd:
-                    bitmask = int(args.gpio_rd, 16)
-                    _cli_print(f"Reading GPIO mask 0x{bitmask:x} from {args.dest}")
-                    interface.mask = bitmask
-                    rhc.readGPIOs(args.dest, bitmask, None)
-                    # wait up to X seconds for a response
-                    for _ in range(GPIO_READ_MAX_POLLS):
-                        time.sleep(GPIO_READ_POLL_INTERVAL_SECONDS)
-                        if interface.gotResponse:
-                            break
-                    logger.debug("end of gpio_rd")
-
-                if args.gpio_watch:
-                    bitmask = int(args.gpio_watch, 16)
-                    _cli_print(
-                        f"Watching GPIO mask 0x{bitmask:x} from {args.dest}. Press ctrl-c to exit"
-                    )
-                    while True:
-                        rhc.watchGPIOs(args.dest, bitmask)
-                        time.sleep(GPIO_WATCH_INTERVAL_SECONDS)
-
-        # handle settings
-        if args.set:
-            closeNow = True
-            waitForAckNak = True
-            _handle_set_command(interface, args, getNode_kwargs)
-
-        if args.configure:
-            closeNow = True
-            waitForAckNak = True
-            _settings_transaction_started, _phase1_channel_url_applied = (
-                _handle_configure_command(interface, args, getNode_kwargs)
-            )
-            if _settings_transaction_started or _phase1_channel_url_applied:
-                waitForAckNak = False
-                skip_ack_wait = True
-
-        if args.export_config:
-            if args.dest != BROADCAST_ADDR:
-                print("Exporting configuration of remote nodes is not supported.")
-                return
-
-            closeNow = True
-            config_txt = exportConfig(interface)
-
-            if args.export_config == "-":
-                # Output to stdout (preserves legacy use of `> file.yaml`)
-                print(config_txt)
-            else:
-                try:
-                    with open(args.export_config, "w", encoding="utf-8") as f:
-                        f.write(config_txt)
-                    _cli_print(f"Exported configuration to {args.export_config}")
-                except Exception as e:
-                    _cli_exit(f"ERROR: Failed to write config file: {e}")
-
-        if args.ch_set_url:
-            closeNow = True
-            interface.getNode(args.dest, **getNode_kwargs).setURL(
-                args.ch_set_url, addOnly=False
-            )
-
-        # handle changing channels
-
-        if args.ch_add_url:
-            closeNow = True
-            interface.getNode(args.dest, **getNode_kwargs).setURL(
-                args.ch_add_url, addOnly=True
-            )
-
-        if args.ch_add:
-            ch_add_idx = mt_config.channel_index
-            if ch_add_idx is not None:
-                # Since we set the channel index after adding a channel, don't allow --ch-index
-                _cli_exit(
-                    "Warning: --ch-add chooses the next free channel index automatically; "
-                    "remove --ch-index and retry. Use --ch-set, --ch-del, --ch-enable, "
-                    "or --ch-disable when targeting a specific index."
-                )
-            closeNow = True
-            if len(args.ch_add) > 10:
-                _cli_exit("Warning: Channel name must be shorter. Channel not added.")
-            n = interface.getNode(args.dest, **getNode_kwargs)
-            ch = n.getChannelByName(args.ch_add)
-            if ch:
-                _cli_exit(
-                    f"Warning: This node already has a '{args.ch_add}' channel. No changes were made."
-                )
-            else:
-                # get the first channel that is disabled (i.e., available)
-                ch = n.getDisabledChannel()
-                if not ch:
-                    _cli_exit("Warning: No free channels were found")
-                chs = channel_pb2.ChannelSettings()
-                chs.psk = meshtastic.util.genPSK256()
-                chs.name = args.ch_add
-                ch.settings.CopyFrom(chs)
-                ch.role = channel_pb2.Channel.Role.SECONDARY
-                _cli_print("Writing modified channels to device")
-                n.writeChannel(ch.index)
-                _cli_print(
-                    f"Setting newly-added channel's {ch.index} as '--ch-index' for further modifications"
-                )
-                mt_config.channel_index = ch.index
-
-        if args.ch_del:
-            closeNow = True
-
-            ch_del_idx = mt_config.channel_index
-            if ch_del_idx is None:
-                _cli_exit("Warning: Need to specify '--ch-index' for '--ch-del'.", 1)
-            else:
-                if ch_del_idx == 0:
-                    _cli_exit("Warning: Cannot delete primary channel.", 1)
-                else:
-                    _cli_print(f"Deleting channel {ch_del_idx}")
-                    interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
-                        ch_del_idx
-                    )
-
-        def _set_simple_config(
-            modem_preset: config_pb2.Config.LoRaConfig.ModemPreset.ValueType,
-        ) -> None:
-            """Set and persist the LORA modem preset on the device's primary channel.
-
-            If the configured channel is not the primary channel, the function exits
-            with a warning and does not change device state. When applied, the modem
-            preset is written into the node's local LORA configuration and
-            persisted to the device.
-
-            Parameters
-            ----------
-            modem_preset : int | EnumValue
-                Modem preset identifier to apply (numeric index or enum value understood by firmware).
-            """
-            channelIndex = mt_config.channel_index
-            if channelIndex is not None and channelIndex > 0:
-                _cli_exit("Warning: Cannot set modem preset for non-primary channel", 1)
-            # Overwrite modem_preset
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            if len(node.localConfig.ListFields()) == 0:
-                lora_descriptor = node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
-                if lora_descriptor is None:
-                    _cli_exit(
-                        "The active protobuf schema does not provide LoRa configuration",
-                        1,
-                    )
-                node.requestConfig(lora_descriptor)
-            node.localConfig.lora.modem_preset = modem_preset
-            node.writeConfig("lora")
-
-        # Resolve the final modem preset across historical shorthands (later
-        # wins) and the schema-driven --ch-preset, then write exactly once.
-        preset_val = None
-        for _, destination, preset_name, _ in _MODEM_PRESET_SHORTHANDS:
-            if getattr(args, destination, False):
-                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(preset_name)
-
-        generic_preset_name = getattr(args, "ch_preset", None)
-        if generic_preset_name is not None:
-            # Accept integer enum values from programmatic callers; CLI always
-            # produces a string via _parse_modem_preset_name.
-            if isinstance(generic_preset_name, int):
-                # Validate by round-tripping through the name so bad integers
-                # fail with a clear error instead of silently corrupting config.
-                config_pb2.Config.LoRaConfig.ModemPreset.Name(
-                    generic_preset_name  # type: ignore[arg-type]
-                )
-                preset_val = generic_preset_name  # type: ignore[assignment]
-            else:
-                preset_val = config_pb2.Config.LoRaConfig.ModemPreset.Value(
-                    generic_preset_name
-                )
-
-        if preset_val is not None:
-            _set_simple_config(preset_val)
-
-        if args.ch_set or args.ch_enable or args.ch_disable:
-            closeNow = True
-
-            _idx: int | None = mt_config.channel_index
-            if _idx is None:
-                _cli_exit("Warning: Need to specify '--ch-index'.", 1)
-            # _idx is now narrowed to int due to NoReturn from _cli_exit
-            node = interface.getNode(args.dest, **getNode_kwargs)
-            channels = node.channels
-            if channels is None:
-                _cli_exit("Warning: Device channels are not available.", 1)
-            # Reject negative indices explicitly (security fix)
-            if _idx < 0:
-                _cli_exit(
-                    f"Warning: Channel index {_idx} is out of range.",
-                    1,
-                )
-            # Try to access channel - IndexError catches out-of-range positive indices
-            # TypeError handles case where channels is not indexable (e.g., mocked in tests)
-            try:
-                ch = channels[_idx]
-            except (IndexError, TypeError):
-                _cli_exit(
-                    f"Warning: Channel index {_idx} is out of range.",
-                    1,
-                )
-
-            enable: bool = True  # default to enable
-            if args.ch_enable or args.ch_disable:
-                _cli_print(
-                    "Warning: --ch-enable and --ch-disable can produce noncontiguous channels, "
-                    "which can cause errors in some clients. Whenever possible, use --ch-add and --ch-del instead."
-                )
-                if _idx == 0:
-                    _cli_exit("Warning: Cannot enable/disable PRIMARY channel.")
-
-                enable = True  # default to enable
-                if args.ch_enable:
-                    enable = True
-                if args.ch_disable:
-                    enable = False
-
-            # Validate channel settings on a copy so a later invalid entry cannot
-            # leave earlier values partially mutated in the local cache.
-            pending_settings = type(ch.settings)()
-            pending_settings.CopyFrom(ch.settings)
-            channel_update_valid = True
-            for pref in args.ch_set or []:
-                if pref[0] == "psk":
-                    try:
-                        pending_settings.psk = meshtastic.util.fromPSK(pref[1])
-                    except ValueError as exc:
-                        _cli_exit(f"Invalid channel PSK: {exc}", 1)
-                else:
-                    if not _resolve_pref(pending_settings, pref[0]):
-                        _print_channel_field_choices(pending_settings, pref[0])
-                        channel_update_valid = False
-                        continue
-                    try:
-                        with _fatal_preference_value_errors():
-                            found = setPref(pending_settings, pref[0], pref[1])
-                    except _PreferenceValueError as exc:
-                        _cli_exit(str(exc), 1)
-                    if not found:
-                        _cli_exit(f"Invalid value for channel setting {pref[0]}.", 1)
-
-                enable = True  # If we set any pref, assume the user wants to enable the channel
-
-            if channel_update_valid:
-                if args.ch_set:
-                    ch.settings.CopyFrom(pending_settings)
-
-                if enable:
-                    ch.role = (
-                        channel_pb2.Channel.Role.PRIMARY
-                        if (_idx == 0)
-                        else channel_pb2.Channel.Role.SECONDARY
-                    )
-                else:
-                    ch.role = channel_pb2.Channel.Role.DISABLED
-
-                _cli_print("Writing modified channels to device")
-                node.writeChannel(_idx)
-            else:
-                _cli_exit(
-                    "Warning: Unknown channel setting name. No changes were made.",
-                    1,
-                )
-
-        if args.get_canned_message:
-            closeNow = True
-            print("")
-            messages = interface.getNode(
-                args.dest, **getNode_kwargs
-            ).get_canned_message()
-            print(f"canned_plugin_message:{messages}")
-
-        if args.get_ringtone:
-            closeNow = True
-            print("")
-            ringtone = interface.getNode(args.dest, **getNode_kwargs).get_ringtone()
-            print(f"ringtone:{ringtone}")
-
-        if args.show_region_presets:
-            closeNow = True
-            if not _is_local_destination(interface, args.dest):
-                print(
-                    "Region/preset capabilities are available only from the local node."
-                )
-            elif not interface.regionPresets:
-                print(
-                    "This firmware did not provide usable region/preset compatibility metadata; "
-                    "preset choices remain unconstrained."
-                )
-            else:
-                for region, info in sorted(interface.regionPresets.items()):
-                    try:
-                        region_name = config_pb2.Config.LoRaConfig.RegionCode.Name(
-                            cast(Any, region)
-                        )
-                    except ValueError:
-                        region_name = f"REGION_{region}"
-                    preset_names = []
-                    for value in info.presets:
-                        try:
-                            preset_names.append(
-                                config_pb2.Config.LoRaConfig.ModemPreset.Name(
-                                    cast(Any, value)
-                                )
-                            )
-                        except ValueError:
-                            preset_names.append(f"PRESET_{value}")
-                    try:
-                        default_name = config_pb2.Config.LoRaConfig.ModemPreset.Name(
-                            cast(Any, info.default_preset)
-                        )
-                    except ValueError:
-                        default_name = f"PRESET_{info.default_preset}"
-                    license_note = " licensed-only" if info.licensed_only else ""
-                    print(
-                        f"{region_name}: default={default_name}{license_note}; "
-                        f"presets={','.join(preset_names)}"
-                    )
-
-        lockdown_action = next(
-            (
-                name
-                for name, enabled in (
-                    ("provision", args.lockdown_provision),
-                    ("unlock", args.lockdown_unlock),
-                    ("lock-now", args.lockdown_lock_now),
-                    ("disable", args.lockdown_disable),
-                )
-                if enabled
-            ),
-            None,
+        context = CliContext(
+            interface=interface,
+            args=args,
+            get_node_kwargs={
+                "requestChannelAttempts": args.channel_fetch_attempts,
+                "timeout": args.timeout,
+            },
+            outcome=ActionOutcome(),
         )
-        if lockdown_action is not None:
-            closeNow = True
-            if not _is_local_destination(interface, args.dest):
-                _cli_exit(
-                    "Lockdown commands apply only to the directly connected local node."
-                )
-            if (
-                lockdown_action in {"provision", "lock-now", "disable"}
-                and not args.lockdown_yes
-            ):
-                confirmation = (
-                    input(f"Type 'yes' to confirm lockdown {lockdown_action}: ")
-                    .strip()
-                    .casefold()
-                )
-                if confirmation != "yes":
-                    _cli_exit("Aborted.")
-            try:
-                passphrase = b""
-                if lockdown_action != "lock-now":
-                    if args.lockdown_passphrase_file:
-                        passphrase = read_lockdown_passphrase_file(
-                            args.lockdown_passphrase_file
-                        )
-                    elif args.lockdown_passphrase is not None:
-                        if not args.insecure_lockdown_passphrase_on_command_line:
-                            _cli_exit(
-                                "--lockdown-passphrase requires "
-                                "--insecure-lockdown-passphrase-on-command-line; "
-                                "prefer an operator-only file or interactive entry."
-                            )
-                        passphrase = validate_lockdown_passphrase(
-                            args.lockdown_passphrase.encode("utf-8")
-                        )
-                    else:
-                        entered = getpass.getpass("Lockdown passphrase: ")
-                        if lockdown_action == "provision":
-                            confirmed = getpass.getpass(
-                                "Lockdown passphrase (confirm): "
-                            )
-                            if entered != confirmed:
-                                _cli_exit("Lockdown passphrases do not match.")
-                        passphrase = validate_lockdown_passphrase(
-                            entered.encode("utf-8")
-                        )
-                auth = build_lockdown_auth(
-                    passphrase,
-                    boots_remaining=args.lockdown_boots,
-                    valid_until_epoch=args.lockdown_valid_until,
-                    max_session_seconds=args.lockdown_max_session_seconds,
-                    lock_now=lockdown_action == "lock-now",
-                    disable=lockdown_action == "disable",
-                )
-            except (OSError, ValueError) as exc:
-                _cli_exit(f"Invalid lockdown options: {exc}")
-            try:
-                status = send_lockdown_auth(
-                    interface,
-                    auth,
-                    timeout=args.lockdown_wait,
-                    allow_reboot_without_status=lockdown_action == "lock-now",
-                )
-            except (TimeoutError, ValueError, RuntimeError) as exc:
-                _cli_exit(f"Lockdown command failed: {exc}")
-            if status is None:
-                print("Lockdown command accepted; device may already be rebooting.")
-            else:
-                try:
-                    state_name = mesh_pb2.LockdownStatus.State.Name(status.state)
-                except ValueError:
-                    state_name = f"STATE_{status.state}"
-                print(f"Lockdown status: {state_name}")
-                if status.backoff_seconds:
-                    print(f"Retry backoff: {status.backoff_seconds}s")
-                if status.state == mesh_pb2.LockdownStatus.UNLOCK_FAILED:
-                    _cli_exit("Lockdown authentication failed.")
-
-        if args.info:
-            print("")
-            # If we aren't trying to talk to our local node, don't show it
-            if args.dest == BROADCAST_ADDR:
-                interface.showInfo()
-                print("")
-                interface.getNode(args.dest, **getNode_kwargs).showInfo()
-                closeNow = True
-                print("")
-                pypi_version = meshtastic.util.check_if_newer_version()
-                if pypi_version:
-                    print(
-                        f"*** A newer version v{pypi_version} is available!"
-                        f' Consider running "{INSTALL_UPGRADE_HINT}" ***\n'
-                    )
-            else:
-                print("Showing info of remote node is not supported.")
-                print(
-                    "Use the '--get' command for a specific configuration (e.g. 'lora') instead."
-                )
-
-        if args.get:
-            closeNow = True
-            node = interface.getNode(args.dest, False, **getNode_kwargs)
-            found = False
-            for pref in args.get:
-                found = getPref(node, pref[0])
-
-            if found:
-                _cli_print("Completed getting preferences")
-
-        if args.nodes:
-            closeNow = True
-            if args.dest != BROADCAST_ADDR:
-                print("Showing node list of a remote node is not supported.")
-                return
-            if args.show_fields:
-                _validate_cli_show_fields(interface, args.show_fields)
-            interface.showNodes(True, args.show_fields)
-
-        if args.show_fields and not args.nodes:
-            print("--show-fields can only be used with --nodes")
-            return
-
-        if args.qr or args.qr_all:
-            closeNow = True
-            url = interface.getNode(args.dest, True, **getNode_kwargs).getURL(
-                includeAll=args.qr_all
-            )
-            if args.qr_all:
-                urldesc = "Complete URL (includes all channels)"
-            else:
-                urldesc = "Primary channel URL"
-            print(f"{urldesc}: {url}")
-            if pyqrcode is not None:
-                qr = pyqrcode.create(url)
-                print(qr.terminal())
-            else:
-                print("Install pyqrcode to view a QR code printed to terminal.")
-
-        if args.contact_qr:
-            closeNow = True
-            url = interface.localNode.getContactURL(
-                args.contact_qr,
-                should_ignore=args.contact_ignore,
-                manually_verified=args.contact_verified,
-            )
-            print(f"Contact URL: {url}")
-            if pyqrcode is not None:
-                qr = pyqrcode.create(url)
-                print(qr.terminal())
-            else:
-                print("Install pyqrcode to view a QR code printed to terminal.")
-
-        log_set: Any = None
-        # we need to keep a reference to the logset so it doesn't get GCed early
-
-        if args.slog or args.power_stress:
-            if have_powermon:
-                global meter  # pylint: disable=global-variable-not-assigned
-                if args.slog:
-                    if LogSet is None:
-                        _cli_exit(
-                            "LogSet is required for --slog but not available. "
-                            "The powermon module loaded incompletely."
-                        )
-                    log_set = LogSet(
-                        interface, args.slog if args.slog != "default" else None, meter
-                    )
-
-                if args.power_stress:
-                    if PowerStress is None:
-                        _cli_exit(
-                            "PowerStress is required for --power-stress but not available. "
-                            "The powermon module loaded incompletely."
-                        )
-                    stress = PowerStress(interface)
-                    stress.run()
-                    closeNow = True  # exit immediately after stress test
-            else:
-                _cli_exit(
-                    "The powermon module could not be loaded. "
-                    "You may need to run `poetry install --with powermon`. "
-                    f"Import Error was: {powermon_exception}"
-                )
-
-        if args.listen:
-            closeNow = False
-
-        have_tunnel = platform.system() == "Linux"
-        if have_tunnel and args.tunnel:
-            if args.dest != BROADCAST_ADDR:
-                _cli_exit("A tunnel can only be created using the local node.", 1)
-            # Even if others said we could close, stay open if the user asked for a tunnel
-            closeNow = False
-            if interface.noProto:
-                logger.warning("Not starting Tunnel - disabled by noProto")
-            else:
-                from . import tunnel  # pylint: disable=C0415
-
-                if args.tunnel_net:
-                    tunnel.Tunnel(interface, subnet=args.tunnel_net)
-                else:
-                    tunnel.Tunnel(interface)
-
-        if not skip_ack_wait and (
-            args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak)
-        ):
-            _cli_print(
-                "Waiting for an acknowledgment from remote node (this could take a while)"
-            )
-            interface.getNode(args.dest, False, **getNode_kwargs).iface.waitForAckNak()
-
-        if args.wait_to_disconnect:
-            _cli_print(
-                f"Waiting {args.wait_to_disconnect} seconds before disconnecting"
-            )
-            time.sleep(int(args.wait_to_disconnect))
-
-        # if the user didn't ask for serial debugging output, we might want to exit after we've done our operation
-        if (not args.seriallog) and closeNow:
-            try:
-                interface.close()
-            except Exception:
-                logger.debug("Error during interface close", exc_info=True)
-
-        # Close any structured logs after we've done all of our API operations
-        if log_set:
-            log_set.close()
-
+        cli_dispatch._dispatch_connected(context, _build_connected_dispatch_hooks())
     except Exception as ex:
         logger.exception("Unhandled exception in onConnected: %s", ex)
         _cli_exit(f"Aborting due to: {ex}", 1)
@@ -3786,6 +1971,9 @@ def common() -> None:
         if args.list_fields:
             printAvailableConfigFields()
             return
+
+        if args.configure and len(args.configure) != 1:
+            parser.error("--configure may be specified only once per invocation")
 
         # Early validation for owner names before attempting device connection
         if args.set_owner is not None:

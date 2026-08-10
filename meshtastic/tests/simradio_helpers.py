@@ -214,29 +214,29 @@ def _classify_cli_operation(arguments: Sequence[str]) -> str:
     forms, then read-only allowlist, then idempotent-mutation allowlist.
     Unknown operations default to ``non_idempotent``.
     """
-    # Phase 1: explicit destructive flags
+    # direct writes: explicit destructive flags
     for argument in arguments:
         if argument in _DESTRUCTIVE_ARGUMENTS:
             return "non_idempotent"
 
-    # Phase 2: semantic --set with destructive field values
+    # Semantic --set operations with destructive field values are non-idempotent.
     for i, argument in enumerate(arguments):
         if argument == "--set" and i + 1 < len(arguments):
             field = arguments[i + 1].split(".")[0]
             if field in _DESTRUCTIVE_SET_VALUES:
                 return "non_idempotent"
 
-    # Phase 3: explicit read-only flags
+    # Explicit read-only flags
     for argument in arguments:
         if argument in _READ_ONLY_ARGUMENTS:
             return "read_only"
 
-    # Phase 4: explicit idempotent-mutation flags
+    # Explicit idempotent-mutation flags take precedence.
     for argument in arguments:
         if argument in _IDEMPOTENT_ARGUMENTS:
             return "idempotent_mutation"
 
-    # Phase 5: default conservative — assume non-idempotent
+    # Conservative fallback: assume unclassified mutations are non-idempotent.
     return "non_idempotent"
 
 

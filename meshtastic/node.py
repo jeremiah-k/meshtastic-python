@@ -511,6 +511,12 @@ class Node:  # pylint: disable=too-many-instance-attributes
         """
         self._channel_request_runtime.requestChannels(starting_index=startingIndex)
 
+    def _invalidate_channel_cache(self) -> None:
+        """Clear cached channel state under the channel-state owner lock."""
+        with self._channels_lock:
+            self.channels = None
+            self.partialChannels = []
+
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """Process an admin response for a settings request and update the node's config objects.
 
