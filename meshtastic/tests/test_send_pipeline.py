@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
+from meshtastic.mesh_interface_runtime.ports import _SendPipelinePort
 from meshtastic.mesh_interface_runtime.request_wait import (
     WAIT_ATTR_NAK,
     WAIT_ATTR_POSITION,
@@ -79,7 +80,7 @@ def mock_interface() -> MagicMock:
 @pytest.fixture
 def send_pipeline(mock_interface: MagicMock) -> SendPipeline:
     """Create a SendPipeline instance with mocked interface."""
-    return SendPipeline(mock_interface)
+    return SendPipeline(_SendPipelinePort(mock_interface))
 
 
 class TestModuleLevelConstants:
@@ -249,9 +250,9 @@ class TestSendPipelineInit:
     @pytest.mark.unit
     def test_send_pipeline_init(self, mock_interface: MagicMock) -> None:
         """Test SendPipeline initialization."""
-        pipeline = SendPipeline(mock_interface)
+        pipeline = SendPipeline(_SendPipelinePort(mock_interface))
 
-        assert pipeline._interface is mock_interface
+        assert pipeline._port.facade is mock_interface
 
 
 class TestSendPipelineProperties:
@@ -450,7 +451,7 @@ class TestSendDataWithWait:
                 """Serialize the protobuf message."""
                 return b"serialized protobuf"
 
-        with patch.object(send_pipeline._interface, "_send_packet") as mock_send_packet:
+        with patch.object(send_pipeline._port.facade, "_send_packet") as mock_send_packet:
             mock_send_packet.return_value = MagicMock()
             send_pipeline._send_data_with_wait(
                 MockProtobuf(),
@@ -468,7 +469,7 @@ class TestSendDataWithWait:
         big_data = b"x" * (mesh_pb2.Constants.DATA_PAYLOAD_LEN + 1)
 
         with pytest.raises(
-            send_pipeline._interface.MeshInterfaceError, match="too big"
+            send_pipeline._port.facade.MeshInterfaceError, match="too big"
         ):
             send_pipeline._send_data_with_wait(
                 big_data,
@@ -495,7 +496,7 @@ class TestSendDataWithWait:
         """Test that _send_data_with_wait registers response handler."""
         callback = MagicMock()
 
-        with patch.object(send_pipeline._interface, "_send_packet") as mock_send_packet:
+        with patch.object(send_pipeline._port.facade, "_send_packet") as mock_send_packet:
             with patch.object(
                 send_pipeline, "_add_response_handler"
             ) as mock_add_handler:
@@ -721,7 +722,7 @@ class TestOnResponsePosition:
         ) as mock_flow:
             send_pipeline.onResponsePosition(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
+        mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
 
 class TestSendPosition:
@@ -763,7 +764,7 @@ class TestOnResponseTraceRoute:
         ) as mock_flow:
             send_pipeline.onResponseTraceRoute(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
+        mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
 
 class TestSendTraceRoute:
@@ -778,7 +779,7 @@ class TestSendTraceRoute:
             send_pipeline.sendTraceRoute("!1234abcd", hopLimit=3, channelIndex=0)
 
         mock_flow.assert_called_once_with(
-            send_pipeline._interface, "!1234abcd", 3, channelIndex=0
+            send_pipeline._port.facade, "!1234abcd", 3, channelIndex=0
         )
 
     @pytest.mark.unit
@@ -793,7 +794,7 @@ class TestSendTraceRoute:
 
         assert result is mock_flow.return_value
         mock_flow.assert_called_once_with(
-            send_pipeline._interface, "!1234abcd", 3, channelIndex=1
+            send_pipeline._port.facade, "!1234abcd", 3, channelIndex=1
         )
 
 
@@ -828,7 +829,7 @@ class TestOnResponseTelemetry:
         ) as mock_flow:
             send_pipeline.onResponseTelemetry(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
+        mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
 
 class TestOnResponseWaypoint:
@@ -844,7 +845,7 @@ class TestOnResponseWaypoint:
         ) as mock_flow:
             send_pipeline.onResponseWaypoint(packet)
 
-        mock_flow.assert_called_once_with(send_pipeline._interface, packet)
+        mock_flow.assert_called_once_with(send_pipeline._port.facade, packet)
 
 
 class TestSendWaypoint:

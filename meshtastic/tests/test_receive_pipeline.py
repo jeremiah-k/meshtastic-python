@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.mesh_interface_runtime.ports import _ReceivePipelinePort
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
     DECODE_FAILED_PREFIX,
     LOCAL_CONFIG_FROM_RADIO_FIELDS,
@@ -51,7 +52,7 @@ def mock_interface() -> MagicMock:
 @pytest.fixture
 def receive_pipeline(mock_interface: MagicMock) -> ReceivePipeline:
     """Create a ReceivePipeline instance with mocked interface."""
-    return ReceivePipeline(mock_interface)
+    return ReceivePipeline(_ReceivePipelinePort(mock_interface))
 
 
 class TestModuleLevelConstants:
@@ -185,9 +186,9 @@ class TestReceivePipelineInit:
     @pytest.mark.unit
     def test_receive_pipeline_init(self, mock_interface: MagicMock) -> None:
         """Test ReceivePipeline initialization."""
-        pipeline = ReceivePipeline(mock_interface)
+        pipeline = ReceivePipeline(_ReceivePipelinePort(mock_interface))
 
-        assert pipeline._interface is mock_interface
+        assert pipeline._port.facade is mock_interface
         assert pipeline._from_radio_dispatch_map_cache is None
 
 
@@ -1268,7 +1269,7 @@ class TestInvokePacketOnReceive:
         receive_pipeline._invoke_packet_on_receive(packet_context)
 
         callback.assert_called_once_with(
-            receive_pipeline._interface, packet_context.packet_dict
+            receive_pipeline._port.facade, packet_context.packet_dict
         )
 
     @pytest.mark.unit

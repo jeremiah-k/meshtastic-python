@@ -11,6 +11,7 @@ import pytest
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.mesh_interface_runtime.ports import _NodeViewPort
 from meshtastic.mesh_interface_runtime.node_view import (
     NodeView,
     _normalize_json_serializable,
@@ -39,7 +40,7 @@ def mock_interface() -> MagicMock:
 @pytest.fixture
 def node_view(mock_interface: MagicMock) -> NodeView:
     """Create a NodeView instance with mocked interface."""
-    return NodeView(mock_interface)
+    return NodeView(_NodeViewPort(mock_interface))
 
 
 class TestTimeAgo:
@@ -116,9 +117,9 @@ class TestNodeViewInit:
     @pytest.mark.unit
     def test_node_view_init(self, mock_interface: MagicMock) -> None:
         """Test NodeView initialization."""
-        view = NodeView(mock_interface)
+        view = NodeView(_NodeViewPort(mock_interface))
 
-        assert view._interface is mock_interface
+        assert view._port.facade is mock_interface
 
 
 class TestNodeViewProperties:

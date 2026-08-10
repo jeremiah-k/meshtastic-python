@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 import threading
-from typing import IO, TYPE_CHECKING, Any, TypeAlias
+from typing import IO, Any, TypeAlias
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -26,9 +26,7 @@ from meshtastic.util import (
 )
 
 from . import node_data, node_presentation
-
-if TYPE_CHECKING:
-    from meshtastic.mesh_interface import MeshInterface
+from .ports import _NodeViewPort
 
 JSONValue: TypeAlias = (
     None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
@@ -90,48 +88,48 @@ class NodeView:
     """Node accessor and presentation methods for MeshInterface.
 
     This class provides node lookup, node DB helpers, and presentation/display
-    methods (showInfo, showNodes). It delegates to the parent MeshInterface for
-    shared state.
+    methods (showInfo, showNodes). Shared interface state is accessed through a
+    narrow internal capability port.
     """
 
-    def __init__(self, interface: "MeshInterface") -> None:
-        """Initialize NodeView with a parent MeshInterface.
+    def __init__(self, port: _NodeViewPort) -> None:
+        """Initialize the node view with its interface capability port.
 
         Parameters
         ----------
-        interface : MeshInterface
-            The parent MeshInterface instance.
+        port : _NodeViewPort
+            Narrow access to node state and facade compatibility seams.
         """
-        self._interface = interface
+        self._port = port
 
     @property
     def _node_db_lock(self) -> threading.RLock:
-        return self._interface._node_db_lock
+        return self._port.node_db_lock
 
     @property
     def localNode(self) -> meshtastic.node.Node:
         """Return the local node for this interface."""
-        return self._interface.localNode
+        return self._port.local_node
 
     @property
     def nodes(self) -> dict[str, dict[str, Any]] | None:
         """Return the node info dictionary, or None if not initialized."""
-        return self._interface.nodes
+        return self._port.nodes
 
     @property
     def nodesByNum(self) -> dict[int, dict[str, Any]] | None:
         """Return the node-number-to-info dictionary, or None if not initialized."""
-        return self._interface.nodesByNum
+        return self._port.nodes_by_num
 
     @property
     def myInfo(self) -> mesh_pb2.MyNodeInfo | None:
         """Return the MyNodeInfo for this interface, or None."""
-        return self._interface.myInfo
+        return self._port.my_info
 
     @property
     def metadata(self) -> mesh_pb2.DeviceMetadata | None:
         """Return device metadata, or None if not yet received."""
-        return self._interface.metadata
+        return self._port.metadata
 
     def _print_log_line(self, line: str) -> None:
         """Print a formatted device log line to the configured debug output.
@@ -141,8 +139,8 @@ class NodeView:
         line : str
             The raw log text to print.
         """
-        interface = self._interface
-        if print_color is not None and interface.debugOut == sys.stdout:
+        debug_out = self._port.debug_out
+        if print_color is not None and debug_out == sys.stdout:
             if "DEBUG" in line:
                 print_color.print(line, color="cyan")
             elif "INFO" in line:
@@ -153,10 +151,10 @@ class NodeView:
                 print_color.print(line, color="red")
             else:
                 print_color.print(line)
-        elif callable(interface.debugOut):
-            interface.debugOut(line)
-        elif interface.debugOut is not None and hasattr(interface.debugOut, "write"):
-            interface.debugOut.write(line + "\n")
+        elif callable(debug_out):
+            debug_out(line)
+        elif debug_out is not None and hasattr(debug_out, "write"):
+            debug_out.write(line + "\n")
 
     def _handle_log_line(self, line: str) -> None:
         """Publish a device log line to the "meshtastic.log.line" topic, normalizing any trailing newline.
@@ -169,7 +167,7 @@ class NodeView:
         if line.endswith("\n"):
             line = line[:-1]
 
-        pub.sendMessage("meshtastic.log.line", line=line, interface=self._interface)
+        pub.sendMessage("meshtastic.log.line", line=line, interface=self._port.facade)
 
     def _handle_log_record(self, record: mesh_pb2.LogRecord) -> None:
         """Process a protobuf LogRecord by extracting its message text and handling it as a device log line.
@@ -408,14 +406,13 @@ class NodeView:
         MeshInterfaceError
             If channel retrieval repeatedly fails or times out.
         """
-        MeshInterface = self._interface.__class__
         if nodeId in (LOCAL_ADDR, BROADCAST_ADDR):
             return self.localNode
         n = meshtastic.node.Node(
-            self._interface,
+            self._port.facade,
             nodeId,
             timeout=timeout,
-            noProto=getattr(self._interface, "noProto", False),
+            noProto=self._port.no_proto,
         )
         if requestChannels:
             logger.debug("About to requestChannels")
@@ -429,7 +426,7 @@ class NodeView:
                     if new_index != last_index:
                         retries_left = requestChannelAttempts - 1
                     if retries_left <= 0:
-                        raise MeshInterface.MeshInterfaceError(
+                        raise self._port.error_type(
                             "Error: Timed out waiting for channels, giving up"
                         )
                     logger.warning(
@@ -515,8 +512,6 @@ class NodeView:
         str | None
             The canned message text, or `None` if there is no local node or no canned message configured.
         """
-        if getattr(self, "_interface", None) is None:
-            return None
         node = self.localNode
         if node is not None:
             return node.get_canned_message()
@@ -530,8 +525,6 @@ class NodeView:
         str | None
             The ringtone name or identifier as a string, or None if the local node or ringtone is unavailable.
         """
-        if getattr(self, "_interface", None) is None:
-            return None
         node = self.localNode
         if node is not None:
             return node.get_ringtone()
@@ -622,15 +615,14 @@ class NodeView:
         MeshInterface.MeshInterfaceError
             If nodeNum is the broadcast node number or if the node database has not been initialized.
         """
-        MeshInterface = self._interface.__class__
         if nodeNum == BROADCAST_NUM:
-            raise MeshInterface.MeshInterfaceError(
+            raise self._port.error_type(
                 "Can not create/find nodenum by the broadcast num"
             )
 
         with self._node_db_lock:
             if self.nodesByNum is None:
-                raise MeshInterface.MeshInterfaceError("Node database not initialized")
+                raise self._port.error_type("Node database not initialized")
 
             if nodeNum in self.nodesByNum:
                 return self.nodesByNum[nodeNum]

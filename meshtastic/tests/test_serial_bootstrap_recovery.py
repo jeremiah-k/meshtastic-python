@@ -8,6 +8,7 @@ import pytest
 from google.protobuf.message import DecodeError
 
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.mesh_interface_runtime.ports import _ReceivePipelinePort
 from meshtastic.mesh_interface_runtime.receive_pipeline import ReceivePipeline
 from meshtastic.serial_interface import (
     SERIAL_BOOTSTRAP_DECODE_ERROR_REASON,
@@ -20,7 +21,7 @@ from meshtastic.stream_interface import StreamInterface
 @pytest.mark.unit
 def test_receive_pipeline_records_malformed_bootstrap_frame() -> None:
     with MeshInterface(noProto=True) as interface:
-        pipeline = ReceivePipeline(interface)
+        pipeline = ReceivePipeline(_ReceivePipelinePort(interface))
 
         with pytest.raises(DecodeError):
             pipeline._parse_from_radio_bytes(b"\x80")  # noqa: SLF001
@@ -36,7 +37,7 @@ def test_receive_pipeline_honors_instance_bootstrap_error_recorder(
     with MeshInterface(noProto=True) as interface:
         recorder = MagicMock(return_value=3)
         monkeypatch.setattr(interface, "_record_bootstrap_decode_error", recorder)
-        pipeline = ReceivePipeline(interface)
+        pipeline = ReceivePipeline(_ReceivePipelinePort(interface))
 
         with pytest.raises(DecodeError):
             pipeline._parse_from_radio_bytes(b"\x80")  # noqa: SLF001

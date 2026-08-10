@@ -33,6 +33,11 @@ from meshtastic.mesh_interface_runtime.flows import (
     TelemetryType,
 )
 from meshtastic.mesh_interface_runtime.node_view import NodeView
+from meshtastic.mesh_interface_runtime.ports import (
+    _NodeViewPort,
+    _ReceivePipelinePort,
+    _SendPipelinePort,
+)
 from meshtastic.mesh_interface_runtime.queue_send import (
     QUEUE_WAIT_TIMEOUT_SECONDS,
     QueueWaitError,
@@ -418,9 +423,9 @@ class MeshInterface:  # pylint: disable=R0902
         self._from_radio_dispatch_map_cache: (
             dict[str, Callable[[_FromRadioContext], list[_PublicationIntent]]] | None
         ) = None
-        self._receive_pipeline = ReceivePipeline(self)
-        self._send_pipeline = SendPipeline(self)
-        self._node_view = NodeView(self)
+        self._receive_pipeline = ReceivePipeline(_ReceivePipelinePort(self))
+        self._send_pipeline = SendPipeline(_SendPipelinePort(self))
+        self._node_view = NodeView(_NodeViewPort(self))
 
         # We could have just not passed in debugOut to MeshInterface, and instead told consumers to subscribe to
         # the meshtastic.log.line publish instead.  Alas though changing that now would be a breaking API change
