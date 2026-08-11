@@ -8,7 +8,7 @@ in the mesh, including methods for localConfig, moduleConfig, and channels manag
 import logging
 import sys
 import threading
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, NoReturn, Sequence, TypeVar, cast
 from google.protobuf.descriptor import FieldDescriptor
 
 from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
@@ -20,6 +20,7 @@ from meshtastic.node_runtime.channel_presentation_runtime import (
     _NodeChannelPresentationRuntime,
 )
 from meshtastic.node_runtime.channel_request_runtime import _NodeChannelRequestRuntime
+from meshtastic.node_runtime.channel_state import _ChannelLock, _NodeChannelState
 from meshtastic.node_runtime.admin_wait import (
     _send_admin_with_ack_scope,
     _wait_for_admin_ack,
@@ -109,6 +110,8 @@ class Node:  # pylint: disable=too-many-instance-attributes
     Includes methods for localConfig, moduleConfig and channels
     """
 
+    _channel_state_bootstrap_lock: ClassVar[_ChannelLock] = threading.Lock()
+
     def __init__(
         self,
         iface: "MeshInterface",
@@ -133,10 +136,8 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self.nodeNum = toNodeNum(nodeNum) if isinstance(nodeNum, str) else nodeNum
         self.localConfig = localonly_pb2.LocalConfig()
         self.moduleConfig = localonly_pb2.LocalModuleConfig()
-        self.channels: list[channel_pb2.Channel] | None = None
-        self._channels_lock = threading.RLock()
+        self._channel_state = _NodeChannelState()
         self._timeout = Timeout(maxSecs=timeout)
-        self.partialChannels: list[channel_pb2.Channel] = []
         self.noProto = noProto
         self.cannedPluginMessage: str | None = None
         self.cannedPluginMessageMessages: str | None = None
@@ -148,25 +149,28 @@ class Node:  # pylint: disable=too-many-instance-attributes
         self._metadata_stdout_event: threading.Event | None = None
         self._admin_session_runtime = _NodeAdminSessionRuntime(self)
         self._admin_transport_runtime = _NodeAdminTransportRuntime(self)
-        self._channel_lookup_runtime = _NodeChannelLookupRuntime(self)
-        self._channel_normalization_runtime = _NodeChannelNormalizationRuntime(self)
-        self._channel_export_runtime = _NodeChannelExportRuntime(self)
+        self._channel_lookup_runtime = _NodeChannelLookupRuntime(self._channel_state)
+        self._channel_normalization_runtime = _NodeChannelNormalizationRuntime(
+            self._channel_state
+        )
+        self._channel_export_runtime = _NodeChannelExportRuntime(
+            self, channel_state=self._channel_state
+        )
         self._channel_request_runtime = _NodeChannelRequestRuntime(
-            self,
-            normalization_runtime=self._channel_normalization_runtime,
+            self, channel_state=self._channel_state
         )
         self._channel_presentation_runtime = _NodeChannelPresentationRuntime(
             self,
+            channel_state=self._channel_state,
             export_runtime=self._channel_export_runtime,
         )
         self._contact_runtime = contact_runtime._NodeContactRuntime(self)
         self._channel_write_runtime = _NodeChannelWriteRuntime(
-            self,
-            admin_session_runtime=self._admin_session_runtime,
-            admin_transport_runtime=self._admin_transport_runtime,
+            self, channel_state=self._channel_state
         )
         self._delete_channel_runtime = _NodeDeleteChannelRuntime(
             self,
+            channel_state=self._channel_state,
             channel_write_runtime=self._channel_write_runtime,
         )
         self._ack_nak_runtime = _NodeAckNakRuntime(self)
@@ -196,6 +200,68 @@ class Node:  # pylint: disable=too-many-instance-attributes
             None
         )
         self._lazy_init_lock = threading.RLock()
+
+    def _get_channel_state(self) -> _NodeChannelState:
+        """Return the channel-state owner, migrating legacy raw instance fields."""
+        channel_state = cast(
+            _NodeChannelState | None, self.__dict__.get("_channel_state")
+        )
+        if channel_state is not None:
+            return channel_state
+
+        with self._channel_state_bootstrap_lock:
+            channel_state = cast(
+                _NodeChannelState | None, self.__dict__.get("_channel_state")
+            )
+            if channel_state is not None:
+                return channel_state
+
+            missing = object()
+            legacy_channels = self.__dict__.pop("channels", missing)
+            legacy_partial_channels = self.__dict__.pop("partialChannels", missing)
+            legacy_lock = self.__dict__.pop("_channels_lock", missing)
+            channel_state = _NodeChannelState()
+            if legacy_lock is not missing:
+                channel_state._replace_lock(legacy_lock)  # noqa: SLF001
+            if legacy_channels is not missing:
+                channel_state.channels = legacy_channels
+            if legacy_partial_channels is not missing:
+                channel_state.partial_channels = legacy_partial_channels
+            object.__setattr__(self, "_channel_state", channel_state)
+        return channel_state
+
+    channels: list[channel_pb2.Channel] | None
+    partialChannels: list[channel_pb2.Channel]  # noqa: N815 - public compatibility
+
+    def __getattr__(self, name: str) -> Any:
+        """Resolve historical channel-cache instance attributes through the owner."""
+        if name == "_channel_state":
+            return self._get_channel_state()
+        if name == "channels":
+            return self._get_channel_state().channels
+        if name == "partialChannels":
+            return self._get_channel_state().partial_channels
+        raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Route historical channel-cache assignments through the state owner."""
+        if name == "channels":
+            self._get_channel_state().channels = value
+            return
+        if name == "partialChannels":
+            self._get_channel_state().partial_channels = value
+            return
+        object.__setattr__(self, name, value)
+
+    @property
+    def _channels_lock(self) -> _ChannelLock:
+        """Return the compatibility lock backed by the channel-state owner."""
+        return self._get_channel_state().lock
+
+    @_channels_lock.setter
+    def _channels_lock(self, value: _ChannelLock) -> None:
+        """Replace the compatibility lock for legacy instrumentation tests."""
+        self._get_channel_state()._replace_lock(value)  # noqa: SLF001
 
     @property
     def _content_cache_store(self) -> "_NodeContentCacheStore":
@@ -269,7 +335,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
                     )
 
                     self._channel_response_runtime_cache = _NodeChannelResponseRuntime(
-                        self
+                        self, channel_state=self._get_channel_state()
                     )
         return self._channel_response_runtime_cache
 
@@ -513,9 +579,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
 
     def _invalidate_channel_cache(self) -> None:
         """Clear cached channel state under the channel-state owner lock."""
-        with self._channels_lock:
-            self.channels = None
-            self.partialChannels = []
+        self._get_channel_state().invalidate()
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """Process an admin response for a settings request and update the node's config objects.
@@ -884,9 +948,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
             If channels or configuration are not loaded, the URL is invalid or
             contains no settings, or no free channel slot is available when adding.
         """
-        with self._channels_lock:
-            if self.channels is None:
-                self._raise_interface_error("Config or channels not loaded")
+        channel_state = self._get_channel_state()
+        if not channel_state.has_channels():
+            self._raise_interface_error("Config or channels not loaded")
         parsed_input = _SetUrlParser._parse(
             url,
             raise_interface_error=self._raise_interface_error,
@@ -894,6 +958,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         transaction = _SetUrlTransactionCoordinator(
             self,
             parsed_input=parsed_input,
+            channel_state=channel_state,
         )
         if addOnly:
             transaction._apply_add_only()  # noqa: SLF001

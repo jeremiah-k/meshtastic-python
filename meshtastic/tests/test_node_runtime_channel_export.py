@@ -4,7 +4,6 @@
 
 import base64
 import logging
-import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +11,8 @@ import pytest
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
 from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
+
+from ._node_channel_state_test_support import _attach_channel_state
 
 EXPORT_URL_PREFIX = "https://meshtastic.org/e/#"
 
@@ -36,10 +37,11 @@ def mock_node() -> MagicMock:
             "waitForConfig",
             "_write_channel_snapshot",
             "partialChannels",
+            "_test_channel_state",
         ]
     )
-    node._channels_lock = threading.RLock()
-    node.channels = []
+    channel_state = _attach_channel_state(node)
+    channel_state.channels = []
     node.localConfig = localonly_pb2.LocalConfig()
     node._raise_interface_error = MagicMock(side_effect=Exception)
     node.requestConfig = MagicMock()
@@ -63,7 +65,9 @@ def export_runtime(mock_node: MagicMock) -> _NodeChannelExportRuntime:
     _NodeChannelExportRuntime
         The runtime instance under test.
     """
-    return _NodeChannelExportRuntime(mock_node)
+    return _NodeChannelExportRuntime(
+        mock_node, channel_state=mock_node._test_channel_state
+    )
 
 
 def _make_channel(
@@ -572,5 +576,55 @@ def test_turn_off_encryption_on_primary_channel_index_not_found(
         export_runtime._turn_off_encryption_on_primary_channel()
 
     assert "invalidating local channel cache" in caplog.text
+    assert mock_node.channels is None
+    assert mock_node.partialChannels == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("mutation", "expected_warning"),
+    [
+        ("replace-slot", "primary slot object changed concurrently"),
+        ("mutate-slot", "primary slot content changed concurrently"),
+        ("remove-index", "local channel index 0 is unavailable"),
+    ],
+)
+def test_turn_off_encryption_invalidates_in_place_concurrent_cache_changes(
+    export_runtime: _NodeChannelExportRuntime,
+    mock_node: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+    mutation: str,
+    expected_warning: str,
+) -> None:
+    """Successful writes must not commit over concurrent in-place cache changes."""
+    primary = _make_channel(
+        0, channel_pb2.Channel.Role.PRIMARY, name="primary", psk=b"\x01"
+    )
+    channels = [primary]
+    mock_node.channels = channels
+    mock_node.partialChannels = ["SENTINEL"]
+
+    def mutate_cache(_channel: channel_pb2.Channel) -> None:
+        if mutation == "replace-slot":
+            replacement = channel_pb2.Channel()
+            replacement.CopyFrom(primary)
+            channels[0] = replacement
+        elif mutation == "mutate-slot":
+            primary.settings.name = "concurrent-update"
+        else:
+            channels[:] = [
+                _make_channel(
+                    5,
+                    channel_pb2.Channel.Role.SECONDARY,
+                    name="different-index",
+                )
+            ]
+
+    mock_node._write_channel_snapshot.side_effect = mutate_cache
+
+    with caplog.at_level(logging.WARNING):
+        export_runtime._turn_off_encryption_on_primary_channel()
+
+    assert expected_warning in caplog.text
     assert mock_node.channels is None
     assert mock_node.partialChannels == []

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2
 from meshtastic.util import Timeout
 
-from .channel_normalization_runtime import _NodeChannelNormalizationRuntime
+from .channel_state import _NodeChannelState
 from .shared import MAX_CHANNELS
 
 if TYPE_CHECKING:
@@ -63,17 +63,19 @@ class _ChannelRequestCompletionProbe:
     """Expose channel-request completion as a boolean wait target."""
 
     def __init__(
-        self, *, node: "Node", channel_response_runtime: _HasChannelRequestFailed | None
+        self,
+        *,
+        channel_state: _NodeChannelState,
+        channel_response_runtime: _HasChannelRequestFailed | None,
     ) -> None:
-        self._node = node
+        self._channel_state = channel_state
         self._channel_response_runtime = channel_response_runtime
 
     @property
     def is_set(self) -> bool:
         """Return True once channels are loaded or the request has terminally failed."""
-        with self._node._channels_lock:  # noqa: SLF001
-            if self._node.channels is not None:
-                return True
+        if self._channel_state.has_channels():
+            return True
         has_channel_request_failed = _get_channel_request_failed_fn(
             self._channel_response_runtime
         )
@@ -89,21 +91,14 @@ class _NodeChannelRequestRuntime:
         self,
         node: "Node",
         *,
-        normalization_runtime: _NodeChannelNormalizationRuntime,
+        channel_state: _NodeChannelState,
     ) -> None:
         self._node = node
-        self._normalization_runtime = normalization_runtime
+        self._channel_state = channel_state
 
     def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """Set channels from sequence with copy + normalization semantics."""
-        with self._node._channels_lock:  # noqa: SLF001
-            copied_channels: list[channel_pb2.Channel] = []
-            for source_channel in channels:
-                copied_channel = channel_pb2.Channel()
-                copied_channel.CopyFrom(source_channel)
-                copied_channels.append(copied_channel)
-            self._node.channels = copied_channels
-            self._normalization_runtime._fixup_channels_locked()
+        self._channel_state.replace_with_copies(channels)
 
     def set_channels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """COMPAT_STABLE_SHIM: Silent alias for setChannels."""
@@ -120,9 +115,7 @@ class _NodeChannelRequestRuntime:
             )
             return
         if starting_index == 0:
-            with self._node._channels_lock:  # noqa: SLF001
-                self._node.channels = None
-                self._node.partialChannels = []
+            self._channel_state.reset_for_download()
         self.requestChannel(starting_index)
 
     def request_channels(self, *, starting_index: int = 0) -> None:
@@ -145,7 +138,7 @@ class _NodeChannelRequestRuntime:
             )
             if callable(has_channel_request_failed):
                 probe = _ChannelRequestCompletionProbe(
-                    node=self._node,
+                    channel_state=self._channel_state,
                     channel_response_runtime=channel_response_runtime,
                 )
                 completed = self._node._timeout.waitForSet(  # noqa: SLF001
@@ -154,9 +147,8 @@ class _NodeChannelRequestRuntime:
                 )
                 if not completed:
                     return False
-                with self._node._channels_lock:  # noqa: SLF001
-                    if self._node.channels is not None:
-                        return True
+                if self._channel_state.has_channels():
+                    return True
                 return not bool(has_channel_request_failed())
             return self._node._timeout.waitForSet(  # noqa: SLF001
                 self._node,

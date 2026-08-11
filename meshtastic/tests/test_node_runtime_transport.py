@@ -27,6 +27,8 @@ from meshtastic.node_runtime.transport_runtime import (
 from meshtastic.protobuf import admin_pb2, channel_pb2, mesh_pb2, portnums_pb2
 from meshtastic.util import Acknowledgment
 
+from ._node_channel_state_test_support import _attach_channel_state
+
 
 # Sentinel exception for testing error paths (avoid bare Exception in tests)
 class _SentinelError(Exception):
@@ -88,6 +90,7 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
             "_send_admin",
             "ensureSessionKey",
             "_channels_lock",
+            "_test_channel_state",
             "channels",
             "partialChannels",
             "_raise_interface_error",
@@ -103,9 +106,10 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
     node.requestConfig = MagicMock()
     node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())
     node.ensureSessionKey = MagicMock()
-    node._channels_lock = threading.RLock()
-    node.channels = None
-    node.partialChannels = []
+    channel_state = _attach_channel_state(node)
+    channel_state._replace_lock(threading.RLock())
+    channel_state.channels = None
+    channel_state.partial_channels = []
     node._raise_interface_error = MagicMock(
         side_effect=_SentinelError("interface error")
     )
@@ -142,6 +146,7 @@ def mock_remote_node(mock_iface: MagicMock) -> MagicMock:
             "_send_admin",
             "ensureSessionKey",
             "_channels_lock",
+            "_test_channel_state",
             "channels",
             "partialChannels",
             "_raise_interface_error",
@@ -155,9 +160,10 @@ def mock_remote_node(mock_iface: MagicMock) -> MagicMock:
     node.requestConfig = MagicMock()
     node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())
     node.ensureSessionKey = MagicMock()
-    node._channels_lock = threading.RLock()
-    node.channels = None
-    node.partialChannels = []
+    channel_state = _attach_channel_state(node)
+    channel_state._replace_lock(threading.RLock())
+    channel_state.channels = None
+    channel_state.partial_channels = []
     node._raise_interface_error = MagicMock(
         side_effect=_SentinelError("interface error")
     )
@@ -335,12 +341,8 @@ class TestNodeChannelWriteRuntime:
         _NodeChannelWriteRuntime
             A channel write runtime instance.
         """
-        session_runtime = _NodeAdminSessionRuntime(mock_local_node)
-        transport_runtime = _NodeAdminTransportRuntime(mock_local_node)
         return _NodeChannelWriteRuntime(
-            mock_local_node,
-            admin_session_runtime=session_runtime,
-            admin_transport_runtime=transport_runtime,
+            mock_local_node, channel_state=mock_local_node._test_channel_state
         )
 
     @pytest.mark.unit
@@ -450,15 +452,13 @@ class TestNodeDeleteChannelRuntime:
         _NodeDeleteChannelRuntime
             A delete channel runtime instance.
         """
-        session_runtime = _NodeAdminSessionRuntime(mock_local_node)
-        transport_runtime = _NodeAdminTransportRuntime(mock_local_node)
         channel_write_runtime = _NodeChannelWriteRuntime(
-            mock_local_node,
-            admin_session_runtime=session_runtime,
-            admin_transport_runtime=transport_runtime,
+            mock_local_node, channel_state=mock_local_node._test_channel_state
         )
         return _NodeDeleteChannelRuntime(
-            mock_local_node, channel_write_runtime=channel_write_runtime
+            mock_local_node,
+            channel_state=mock_local_node._test_channel_state,
+            channel_write_runtime=channel_write_runtime,
         )
 
     @pytest.mark.unit
@@ -591,15 +591,13 @@ class TestNodeDeleteChannelRuntime:
         mock_remote_node.channels = channels
 
         # Create runtime for remote node
-        session_runtime = _NodeAdminSessionRuntime(mock_remote_node)
-        transport_runtime = _NodeAdminTransportRuntime(mock_remote_node)
         channel_write_runtime = _NodeChannelWriteRuntime(
-            mock_remote_node,
-            admin_session_runtime=session_runtime,
-            admin_transport_runtime=transport_runtime,
+            mock_remote_node, channel_state=mock_remote_node._test_channel_state
         )
         delete_runtime = _NodeDeleteChannelRuntime(
-            mock_remote_node, channel_write_runtime=channel_write_runtime
+            mock_remote_node,
+            channel_state=mock_remote_node._test_channel_state,
+            channel_write_runtime=channel_write_runtime,
         )
 
         with mock_remote_node._channels_lock:
@@ -656,6 +654,9 @@ class TestNodeDeleteChannelRuntime:
             channels.append(ch)
 
         mock_local_node.channels = channels
+        mock_local_node.partialChannels = [
+            channel_pb2.Channel(index=7, role=channel_pb2.Channel.Role.SECONDARY)
+        ]
 
         # Patch _write_channel_snapshot to avoid actual I/O
         with patch.object(
@@ -667,6 +668,7 @@ class TestNodeDeleteChannelRuntime:
         assert mock_local_node.channels is not None
         # Channel 1 should now be DISABLED (shifted from index 2)
         assert mock_local_node.channels[1].role == channel_pb2.Channel.Role.DISABLED
+        assert mock_local_node.partialChannels == []
 
     @pytest.mark.unit
     def test_delete_channel_switches_admin_index_after_slot_rewrite(
@@ -727,9 +729,72 @@ class TestNodeDeleteChannelRuntime:
             -1,
         )
         assert pre_delete_idx >= 0, "pre_delete_admin write should exist"
-        assert (
-            post_delete_idx > pre_delete_idx
-        ), "post_delete_admin should appear after pre_delete_admin"
+        assert post_delete_idx > pre_delete_idx, (
+            "post_delete_admin should appear after pre_delete_admin"
+        )
+
+    @pytest.mark.unit
+    def test_delete_channel_releases_state_lock_before_device_writes(
+        self,
+        delete_channel_runtime: _NodeDeleteChannelRuntime,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """Device writes must not hold the lock needed by inbound channel responses."""
+        state = mock_local_node._test_channel_state
+        channels = [
+            channel_pb2.Channel(
+                index=index,
+                role=(
+                    channel_pb2.Channel.Role.PRIMARY
+                    if index == 0
+                    else channel_pb2.Channel.Role.SECONDARY
+                    if index == 1
+                    else channel_pb2.Channel.Role.DISABLED
+                ),
+            )
+            for index in range(MAX_CHANNELS)
+        ]
+        state.channels = channels
+
+        class _LockProbe:
+            def __init__(self) -> None:
+                self._lock = threading.RLock()
+                self.depth = 0
+
+            @property
+            def active(self) -> bool:
+                return self.depth > 0
+
+            def __enter__(self) -> "_LockProbe":
+                self._lock.acquire()
+                self.depth += 1
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                self.depth -= 1
+                self._lock.release()
+
+        state_lock = _LockProbe()
+        mutation_lock = _LockProbe()
+        state._replace_lock(state_lock)  # noqa: SLF001
+        state._replace_mutation_lock(mutation_lock)  # noqa: SLF001
+        observed_write_lock_states: list[tuple[bool, bool]] = []
+
+        def _record_write_lock_state(*_args: Any, **_kwargs: Any) -> None:
+            observed_write_lock_states.append((state_lock.active, mutation_lock.active))
+
+        with patch.object(
+            delete_channel_runtime._channel_write_runtime,
+            "_write_channel_snapshot",
+            side_effect=_record_write_lock_state,
+        ):
+            delete_channel_runtime._delete_channel(1)
+
+        assert len(observed_write_lock_states) == 1
+        assert all(
+            not state_active and rewrite_active
+            for state_active, rewrite_active in observed_write_lock_states
+        )
 
     @pytest.mark.unit
     def test_delete_channel_handles_cache_unavailable(
@@ -809,6 +874,45 @@ class TestNodeDeleteChannelRuntime:
             delete_channel_runtime._delete_channel(1)
 
         assert "Channel cache changed during delete rewrite" in caplog.text
+        assert mock_local_node.channels is None
+        assert mock_local_node.partialChannels == []
+
+    @pytest.mark.unit
+    def test_delete_channel_invalidates_in_place_cache_mutation(
+        self,
+        delete_channel_runtime: _NodeDeleteChannelRuntime,
+        mock_local_node: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A same-list mutation during rewrites should fail the fingerprint guard."""
+        channels = []
+        for index in range(MAX_CHANNELS):
+            channel = channel_pb2.Channel(index=index)
+            channel.role = (
+                channel_pb2.Channel.Role.PRIMARY
+                if index == 0
+                else channel_pb2.Channel.Role.SECONDARY
+                if index == 1
+                else channel_pb2.Channel.Role.DISABLED
+            )
+            channels.append(channel)
+        mock_local_node.channels = channels
+        mock_local_node.partialChannels = [channel_pb2.Channel(index=7)]
+
+        def mutate_cache(*_args: Any, **_kwargs: Any) -> None:
+            channels[0].settings.name = "concurrent-update"
+
+        with (
+            caplog.at_level(logging.WARNING),
+            patch.object(
+                delete_channel_runtime._channel_write_runtime,
+                "_write_channel_snapshot",
+                side_effect=mutate_cache,
+            ),
+        ):
+            delete_channel_runtime._delete_channel(1)
+
+        assert "Channel fingerprint mismatch" in caplog.text
         assert mock_local_node.channels is None
         assert mock_local_node.partialChannels == []
 

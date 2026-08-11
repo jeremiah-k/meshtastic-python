@@ -44,6 +44,7 @@ class TestSetUrlReplacePlanner:
             mock_local_node,
             parsed_input=parsed_input,
             admin_context=admin_context,
+            channel_state=mock_local_node._test_channel_state,
         )
 
         plan = planner.build_plan()
@@ -80,6 +81,7 @@ class TestSetUrlReplacePlanner:
             mock_local_node,
             parsed_input=parsed_input,
             admin_context=admin_context,
+            channel_state=mock_local_node._test_channel_state,
         )
 
         with caplog.at_level(logging.WARNING):
@@ -120,6 +122,7 @@ class TestSetUrlReplacePlanner:
             mock_local_node,
             parsed_input=parsed_input,
             admin_context=admin_context,
+            channel_state=mock_local_node._test_channel_state,
         )
 
         with pytest.raises(ValueError, match="multiple channels named 'admin'"):

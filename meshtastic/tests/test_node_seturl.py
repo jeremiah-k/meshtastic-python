@@ -5,7 +5,7 @@ import logging
 import re
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pytest import LogCaptureFixture
@@ -838,13 +838,13 @@ def test_setURL_replace_disables_channels_omitted_from_url(
 
 
 @pytest.mark.unit
-def test_setURL_replace_raises_if_channels_disappear_during_assignment(
+def test_setURL_replace_rejects_channel_cache_loss_before_writes(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """SetURL replace-path should recheck channels before assignment in each loop iteration."""
+    """Replace-all should reject channel-cache loss before starting device writes."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
     anode.channels = [Channel(index=0, role=Channel.Role.DISABLED)]
-    # The third acquisition is the per-entry replace assignment recheck.
+    # Drop the cache when execution validates the plan against current state.
     channels_lock = _DropChannelsOnEnterCountLock(anode, trigger_enter=3)
     anode._channels_lock = channels_lock  # type: ignore[assignment]
 
@@ -854,12 +854,17 @@ def test_setURL_replace_raises_if_channels_disappear_during_assignment(
     setting.psk = b"\x01"
     url = _encode_channel_set_to_url(channel_set)
 
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError,
-        match="Channel write for index 0 was not started",
+    with (
+        patch.object(anode, "_write_channel_snapshot") as write_channel,
+        pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="Channel cache changed before replace-all write; aborting transaction",
+        ),
     ):
         anode.setURL(url, addOnly=False)
-    assert channels_lock.enters == 4
+
+    write_channel.assert_not_called()
+    assert anode.channels is None
 
 
 @pytest.mark.unit
@@ -940,6 +945,7 @@ def test_setURL_replace_rechecks_channels_before_length_calculation(
         anode.setURL(_encode_channel_set_to_url(channel_set))
     assert channels_lock.enters == 2
 
+
 @pytest.mark.unit
 def test_setURL_raises_when_channels_not_loaded(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -950,6 +956,7 @@ def test_setURL_raises_when_channels_not_loaded(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
     ):
         anode.setURL("")
+
 
 @pytest.mark.unit
 def test_setURL_ignores_channels_over_device_limit(

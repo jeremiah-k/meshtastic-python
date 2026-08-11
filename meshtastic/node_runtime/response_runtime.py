@@ -7,6 +7,7 @@ from meshtastic.node_runtime.admin_wait import (
     _mark_admin_wait_acknowledged_for_packet,
     _record_admin_wait_error_for_packet,
 )
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.shared import ERROR_REASON_NONE, MAX_CHANNELS
 from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 from meshtastic.util import stripnl
@@ -224,8 +225,9 @@ class _NodeMetadataResponseRuntime:
 class _NodeChannelResponseRuntime:
     """Owns channel-response routing/error handling, sequencing, and final installation."""
 
-    def __init__(self, node: "Node") -> None:
+    def __init__(self, node: "Node", *, channel_state: _NodeChannelState) -> None:
         self._node = node
+        self._channel_state = channel_state
         self._pending_channel_request_index: int | None = None
         self._pending_channel_retry_count = 0
         self._channel_request_failed = False
@@ -417,17 +419,12 @@ class _NodeChannelResponseRuntime:
         if self._should_skip_channel_response(channel_response):
             return
 
-        with self._node._channels_lock:  # noqa: SLF001
-            if any(
-                existing.index == channel_response.index
-                for existing in self._node.partialChannels
-            ):
-                logger.debug(
-                    "Ignoring duplicate channel response index=%s.",
-                    channel_response.index,
-                )
-                return
-            self._node.partialChannels.append(channel_response)
+        if not self._channel_state.append_partial_if_new(channel_response):
+            logger.debug(
+                "Ignoring duplicate channel response index=%s.",
+                channel_response.index,
+            )
+            return
         self._node._timeout.reset()  # We made forward progress
         safe_role = (
             channel_pb2.Channel.Role.Name(channel_response.role)
@@ -447,9 +444,7 @@ class _NodeChannelResponseRuntime:
 
         if index >= MAX_CHANNELS - 1:
             logger.debug("Finished downloading channels")
-            with self._node._channels_lock:  # noqa: SLF001
-                self._node.channels = list(self._node.partialChannels)
-                self._node._fixup_channels_locked()  # noqa: SLF001
+            self._channel_state.install_partial_channels()
             self._pending_channel_request_index = None
             self._pending_channel_retry_count = 0
             return

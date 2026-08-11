@@ -425,7 +425,7 @@ def test_waitForConfig_timeout(
     assert result is False
     wait_call = anode._timeout.waitForSet.call_args
     assert wait_call.kwargs["attrs"] == ("is_set",)
-    assert getattr(wait_call.args[0], "_node", None) is anode
+    assert getattr(wait_call.args[0], "_channel_state", None) is anode._channel_state
 
 
 @pytest.mark.unit
@@ -1117,6 +1117,7 @@ def test_getURL_requests_lora_when_local_config_empty(
 def test_invalidate_channel_cache_clears_state_under_owner_lock() -> None:
     """Node cache invalidation should clear both channel caches while holding its lock."""
     events: list[str] = []
+    state_at_exit: list[tuple[list[Channel] | None, list[Channel]]] = []
 
     class LockProbe:
         """Record the lock lifetime around cache mutations."""
@@ -1128,28 +1129,21 @@ def test_invalidate_channel_cache_clears_state_under_owner_lock() -> None:
             events.append("enter")
 
         def __exit__(self, *_args: object) -> None:
+            state_at_exit.append((node.channels, list(node.partialChannels)))
             events.append("exit")
             self.active = False
 
-    class CacheOwnerProbe(Node):
-        """Assert cache assignments occur while the owner lock is active."""
-
-        def __setattr__(self, name: str, value: Any) -> None:
-            if name in {"channels", "partialChannels"} and getattr(
-                self, "_assert_locked_cache_writes", False
-            ):
-                assert cast(LockProbe, self._channels_lock).active
-                events.append(name)
-            object.__setattr__(self, name, value)
-
-    node = cast(Any, object.__new__(CacheOwnerProbe))
-    node._channels_lock = LockProbe()
+    node = cast(Any, object.__new__(Node))
+    lock_probe = LockProbe()
+    node._channels_lock = lock_probe
+    assert node._channels_lock is lock_probe
+    assert node._get_channel_state().lock is lock_probe
     node.channels = [Channel(index=0, role=Channel.Role.PRIMARY)]
     node.partialChannels = [Channel(index=1, role=Channel.Role.SECONDARY)]
-    node._assert_locked_cache_writes = True
 
     Node._invalidate_channel_cache(node)
 
-    assert events == ["enter", "channels", "partialChannels", "exit"]
+    assert events == ["enter", "exit"]
+    assert state_at_exit == [(None, [])]
     assert node.channels is None
     assert node.partialChannels == []

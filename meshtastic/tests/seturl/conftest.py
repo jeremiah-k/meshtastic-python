@@ -4,11 +4,13 @@
 import base64
 import threading
 from collections.abc import Callable
+from types import TracebackType
 from typing import NoReturn
 from unittest.mock import MagicMock
 
 import pytest
 
+from meshtastic.tests._node_channel_state_test_support import _attach_channel_state
 from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlCacheManager,
     _SetUrlExecutionEngine,
@@ -18,6 +20,36 @@ from meshtastic.protobuf import (
     channel_pb2,
     localonly_pb2,
 )
+
+
+class _LockProbe:
+    """Instrument a reentrant lock so tests can assert its acquisition scope."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self.depth = 0
+
+    @property
+    def active(self) -> bool:
+        """Return whether the current test scope holds the lock."""
+        return self.depth > 0
+
+    def __enter__(self) -> "_LockProbe":
+        """Acquire the underlying lock and record the acquisition depth."""
+        self._lock.acquire()
+        self.depth += 1
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Record release and relinquish the underlying lock."""
+        del exc_type, exc_value, traceback
+        self.depth -= 1
+        self._lock.release()
 
 
 def _make_raise_error_side_effect() -> Callable[[str], NoReturn]:
@@ -137,6 +169,7 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
             "iface",
             "noProto",
             "_channels_lock",
+            "_test_channel_state",
             "channels",
             "partialChannels",
             "localConfig",
@@ -153,9 +186,10 @@ def mock_local_node(mock_iface: MagicMock) -> MagicMock:
     node.nodeNum = 1234567890
     node.iface = mock_iface
     node.noProto = False
-    node._channels_lock = threading.RLock()
-    node.channels = None
-    node.partialChannels = []
+    channel_state = _attach_channel_state(node)
+    channel_state._replace_lock(threading.RLock())
+    channel_state.channels = None
+    channel_state.partial_channels = []
     node.localConfig = localonly_pb2.LocalConfig()
     node._raise_interface_error = MagicMock(side_effect=Exception("interface error"))
     node._write_channel_snapshot = MagicMock()
@@ -184,7 +218,9 @@ def cache_manager(mock_local_node: MagicMock) -> _SetUrlCacheManager:
     _SetUrlCacheManager
         The cache manager instance under test.
     """
-    return _SetUrlCacheManager(mock_local_node)
+    return _SetUrlCacheManager(
+        mock_local_node, channel_state=mock_local_node._test_channel_state
+    )
 
 
 @pytest.fixture
@@ -205,7 +241,11 @@ def execution_engine(
     _SetUrlExecutionEngine
         The execution engine instance under test.
     """
-    return _SetUrlExecutionEngine(mock_local_node, cache_manager=cache_manager)
+    return _SetUrlExecutionEngine(
+        mock_local_node,
+        channel_state=mock_local_node._test_channel_state,
+        cache_manager=cache_manager,
+    )
 
 
 @pytest.fixture
@@ -259,6 +299,7 @@ def mock_local_node_with_reconnect(
             "iface",
             "noProto",
             "_channels_lock",
+            "_test_channel_state",
             "channels",
             "partialChannels",
             "localConfig",
@@ -275,9 +316,10 @@ def mock_local_node_with_reconnect(
     node.nodeNum = 1234567890
     node.iface = mock_iface_with_reconnect
     node.noProto = False
-    node._channels_lock = threading.RLock()
-    node.channels = None
-    node.partialChannels = []
+    channel_state = _attach_channel_state(node)
+    channel_state._replace_lock(threading.RLock())
+    channel_state.channels = None
+    channel_state.partial_channels = []
     node.localConfig = localonly_pb2.LocalConfig()
     node._raise_interface_error = MagicMock(side_effect=Exception("interface error"))
     node._write_channel_snapshot = MagicMock()

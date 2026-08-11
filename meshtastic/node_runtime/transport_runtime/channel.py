@@ -8,14 +8,13 @@ from meshtastic.node_runtime.admin_wait import (
     _send_admin_with_ack_scope,
     _wait_for_admin_ack,
 )
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
 )
 from meshtastic.node_runtime.shared import (
     isNamedAdminChannelName as _isNamedAdminChannelName,
 )
-from meshtastic.node_runtime.transport_runtime.admin import _NodeAdminTransportRuntime
-from meshtastic.node_runtime.transport_runtime.session import _NodeAdminSessionRuntime
 from meshtastic.protobuf import admin_pb2, channel_pb2
 
 if TYPE_CHECKING:
@@ -38,12 +37,10 @@ class _NodeChannelWriteRuntime:
         self,
         node: "Node",
         *,
-        admin_session_runtime: _NodeAdminSessionRuntime,
-        admin_transport_runtime: _NodeAdminTransportRuntime,
+        channel_state: _NodeChannelState,
     ) -> None:
         self._node = node
-        self._admin_session_runtime = admin_session_runtime
-        self._admin_transport_runtime = admin_transport_runtime
+        self._channel_state = channel_state
 
     def _write_channel_snapshot(
         self,
@@ -93,22 +90,25 @@ class _NodeChannelWriteRuntime:
         self, channel_index: int, *, admin_index: int | None = None
     ) -> None:
         """Validate and write one channel by index using snapshot semantics."""
-        with self._node._channels_lock:
-            channels = self._node.channels
-            if channels is None:
-                self._node._raise_interface_error("Error: No channels have been read")
-            if len(channels) == 0:
-                self._node._raise_interface_error("Error: Channels list is empty")
-            if channel_index < 0 or channel_index >= len(channels):
-                self._node._raise_interface_error(
-                    f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
-                )
-            channel_snapshot = channel_pb2.Channel()
-            channel_snapshot.CopyFrom(channels[channel_index])
-        self._write_channel_snapshot(
-            channel_snapshot,
-            admin_index=admin_index,
-        )
+        with self._channel_state.mutation_lock:
+            with self._channel_state.lock:
+                channels = self._channel_state.channels
+                if channels is None:
+                    self._node._raise_interface_error(
+                        "Error: No channels have been read"
+                    )
+                if len(channels) == 0:
+                    self._node._raise_interface_error("Error: Channels list is empty")
+                if channel_index < 0 or channel_index >= len(channels):
+                    self._node._raise_interface_error(
+                        f"Channel index {channel_index} out of range (0-{len(channels) - 1})"
+                    )
+                channel_snapshot = channel_pb2.Channel()
+                channel_snapshot.CopyFrom(channels[channel_index])
+            self._write_channel_snapshot(
+                channel_snapshot,
+                admin_index=admin_index,
+            )
 
 
 @dataclass(frozen=True)
@@ -131,9 +131,11 @@ class _NodeDeleteChannelRuntime:
         self,
         node: "Node",
         *,
+        channel_state: _NodeChannelState,
         channel_write_runtime: _NodeChannelWriteRuntime,
     ) -> None:
         self._node = node
+        self._channel_state = channel_state
         self._channel_write_runtime = channel_write_runtime
 
     @staticmethod
@@ -185,9 +187,9 @@ class _NodeDeleteChannelRuntime:
     def _build_rewrite_plan(self, channel_index: int) -> _DeleteChannelRewritePlan:
         """Build delete/rewrite plan with pre/post admin indexes.
 
-        Caller must hold self._node._channels_lock.
+        Caller must hold the channel-state owner lock.
         """
-        channels = self._node.channels
+        channels = self._channel_state.channels
         if channels is None:
             self._node._raise_interface_error("Error: No channels have been read")
         if len(channels) == 0:
@@ -284,46 +286,54 @@ class _NodeDeleteChannelRuntime:
                 admin_index_for_write = plan.post_delete_admin_index
 
     def _delete_channel(self, channel_index: int) -> None:
-        """Delete one channel and execute ordered rewrite plan.
+        """Delete one channel and execute its ordered rewrite plan.
 
-        The entire delete operation is serialized under the channels lock to prevent
-        concurrent in-place mutations from racing with the delete/rewrite sequence.
+        The per-node mutation lock serializes delete with every other channel
+        transaction. Planning and cache commits use the channel-state lock, but
+        device writes and remote ACK waits run outside that state lock. Inbound
+        channel responses therefore remain free to reach request correlation while a
+        rewrite is in flight. Post-write identity and fingerprint checks detect
+        concurrent cache changes before committing the staged result.
         """
-        with self._node._channels_lock:
-            rewrite_plan = self._build_rewrite_plan(channel_index)
+        with self._channel_state.mutation_lock:
+            with self._channel_state.lock:
+                rewrite_plan = self._build_rewrite_plan(channel_index)
+
             try:
                 self._execute_rewrite_plan(rewrite_plan)
             except Exception:
-                self._node.channels = None
-                self._node.partialChannels = []
+                self._channel_state.invalidate()
                 raise
-            current_channels = self._node.channels
-            if current_channels is None:
-                logger.warning(
-                    "Channel cache became unavailable during delete rewrite; skipping staged cache commit."
-                )
-                self._node.partialChannels = []
-                return
-            if current_channels is not rewrite_plan.original_channels_ref:
-                logger.warning(
-                    "Channel cache changed during delete rewrite; invalidating local channel cache."
-                )
-                self._node.channels = None
-                self._node.partialChannels = []
-                return
-            if (
-                _channels_fingerprint(current_channels)
-                != rewrite_plan.original_channels_fingerprint
-            ):
-                logger.warning(
-                    "Channel fingerprint mismatch after delete rewrite; invalidating local channel cache."
-                )
-                self._node.channels = None
-                self._node.partialChannels = []
-                return
-            current_channels.clear()
-            for staged_channel in rewrite_plan.staged_channels:
-                channel_copy = channel_pb2.Channel()
-                channel_copy.CopyFrom(staged_channel)
-                current_channels.append(channel_copy)
-            self._node._fixup_channels_locked()
+
+            with self._channel_state.lock:
+                current_channels = self._channel_state.channels
+                if current_channels is None:
+                    logger.warning(
+                        "Channel cache became unavailable during delete rewrite; skipping staged cache commit."
+                    )
+                    self._channel_state.partial_channels = []
+                    return
+                if current_channels is not rewrite_plan.original_channels_ref:
+                    logger.warning(
+                        "Channel cache changed during delete rewrite; invalidating local channel cache."
+                    )
+                    self._channel_state.channels = None
+                    self._channel_state.partial_channels = []
+                    return
+                if (
+                    _channels_fingerprint(current_channels)
+                    != rewrite_plan.original_channels_fingerprint
+                ):
+                    logger.warning(
+                        "Channel fingerprint mismatch after delete rewrite; invalidating local channel cache."
+                    )
+                    self._channel_state.channels = None
+                    self._channel_state.partial_channels = []
+                    return
+                current_channels.clear()
+                for staged_channel in rewrite_plan.staged_channels:
+                    channel_copy = channel_pb2.Channel()
+                    channel_copy.CopyFrom(staged_channel)
+                    current_channels.append(channel_copy)
+                self._channel_state._normalize_locked()  # noqa: SLF001
+                self._channel_state.partial_channels = []

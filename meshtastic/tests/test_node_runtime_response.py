@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ._node_channel_state_test_support import _attach_channel_state
 from ..node_runtime.response_runtime import (
     _NodeChannelResponseRuntime,
     _NodeMetadataResponseRuntime,
@@ -51,17 +52,15 @@ def mock_node_for_channel() -> MagicMock:
             "partialChannels",
             "channels",
             "_request_channel",
-            "_fixup_channels_locked",
+            "_test_channel_state",
         ]
     )
     node._timeout = MagicMock()
     node._timeout.expireTime = time.time() + 300
     node._timeout.reset = MagicMock()
-    node._channels_lock = threading.Lock()
-    node.partialChannels = []
-    node.channels = None
+    channel_state = _attach_channel_state(node)
+    channel_state._replace_lock(threading.RLock())
     node._request_channel = MagicMock()
-    node._fixup_channels_locked = MagicMock()
     return node
 
 
@@ -430,7 +429,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with missing decoded should return early."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         packet: dict[str, Any] = {"decoded": None}
 
         with caplog.at_level(logging.WARNING):
@@ -443,7 +444,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with routing error should retry in-flight request."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         runtime.mark_channel_request_sent(3)
         packet: dict[str, Any] = {
             "decoded": {
@@ -465,7 +468,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with routing success should wait for ADMIN_APP payload."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
 
         packet: dict[str, Any] = {
             "decoded": {
@@ -488,7 +493,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with admin message should append to partialChannels."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         runtime.mark_channel_request_sent(0)
 
         raw = admin_pb2.AdminMessage()
@@ -516,7 +523,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with last channel index should finalize channels."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         runtime.mark_channel_request_sent(7)
 
         # MAX_CHANNELS is 8, so index 7 (the 8th channel) should finalize
@@ -533,31 +542,27 @@ class TestNodeChannelResponseRuntime:
             }
         }
 
-        lock_held_during_fixup = False
-
-        def fixup_side_effect() -> None:
-            nonlocal lock_held_during_fixup
-            lock_held_during_fixup = mock_node_for_channel._channels_lock.locked()
-
-        mock_node_for_channel._fixup_channels_locked.side_effect = fixup_side_effect
-
         with caplog.at_level(logging.DEBUG):
             runtime.handle_channel_response(packet)
 
         assert "Finished downloading channels" in caplog.text
-        mock_node_for_channel._fixup_channels_locked.assert_called_once()
-        assert lock_held_during_fixup is True
         assert mock_node_for_channel.channels is not None
-        assert len(mock_node_for_channel.channels) == 1
-        assert mock_node_for_channel.channels[0].index == 7
+        assert len(mock_node_for_channel.channels) == 8
+        assert mock_node_for_channel.channels[0].index == 0
         assert mock_node_for_channel.channels[0].settings.name == "ch8"
+        assert all(
+            channel.index == index
+            for index, channel in enumerate(mock_node_for_channel.channels)
+        )
 
     @pytest.mark.unit
     def test_handle_channel_response_non_last_channel_requests_next(
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with non-last channel should request next channel."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         runtime.mark_channel_request_sent(3)
 
         raw = admin_pb2.AdminMessage()
@@ -583,7 +588,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Late duplicate channel response after successful retry should not restart installation."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         runtime.mark_channel_request_sent(0)
 
         raw = admin_pb2.AdminMessage()
@@ -618,7 +625,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with missing admin should log warning."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         packet: dict[str, Any] = {
             "decoded": {
                 "portnum": "ADMIN_APP",
@@ -635,7 +644,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Handle channel response with missing admin.raw should log warning."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         packet: dict[str, Any] = {
             "decoded": {
                 "portnum": "ADMIN_APP",
@@ -653,7 +664,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock
     ) -> None:
         """_handle_routing_response should return False for non-ROUTING_APP portnum."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         decoded: dict[str, Any] = {
             "portnum": "ADMIN_APP",
             "routing": {"errorReason": "NONE"},
@@ -668,7 +681,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_handle_routing_response should guard malformed routing payloads."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         decoded: dict[str, Any] = {
             "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
         }
@@ -686,7 +701,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """_handle_routing_response should wait for ADMIN_APP payload on routing success."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
 
         decoded: dict[str, Any] = {
             "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
@@ -708,7 +725,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Routing errors without a pending index should set terminal channel-failure state."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         decoded: dict[str, Any] = {
             "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
             "routing": {"errorReason": "NO_RESPONSE"},
@@ -727,7 +746,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Routing retry should mark failure if the retry send is skipped."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         runtime.mark_channel_request_sent(4)
         mock_node_for_channel._request_channel.return_value = None
         decoded: dict[str, Any] = {
@@ -747,7 +768,9 @@ class TestNodeChannelResponseRuntime:
         self, mock_node_for_channel: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Persistent routing failures should stop retrying after the configured retry limit."""
-        runtime = _NodeChannelResponseRuntime(mock_node_for_channel)
+        runtime = _NodeChannelResponseRuntime(
+            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+        )
         runtime.mark_channel_request_sent(2)
         decoded: dict[str, Any] = {
             "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),

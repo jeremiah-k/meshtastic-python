@@ -12,11 +12,16 @@ from meshtastic.node_runtime.seturl.execution import _ReplaceAllStage
 from meshtastic.node_runtime.seturl.planner import _SetUrlReplacePlanner
 from meshtastic.node_runtime.seturl_runtime import (
     _compute_remaining_channel_writes,
+    _SetUrlAddOnlyExecutionState,
+    _SetUrlAddOnlyPlan,
+    _SetUrlAdminContext,
     _SetUrlParsedInput,
+    _SetUrlReplaceExecutionState,
+    _SetUrlReplacePlan,
     _SetUrlTransactionCoordinator,
 )
 from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
-from meshtastic.tests.seturl.conftest import _make_channel
+from meshtastic.tests.seturl.conftest import _LockProbe, _make_channel
 
 
 def _make_reload_mock(
@@ -56,7 +61,11 @@ class TestSetUrlTransactionCoordinator:
         )
 
         with pytest.raises(ValueError, match="Interface localNode not initialized"):
-            _SetUrlTransactionCoordinator(mock_local_node, parsed_input=parsed_input)
+            _SetUrlTransactionCoordinator(
+                mock_local_node,
+                parsed_input=parsed_input,
+                channel_state=mock_local_node._test_channel_state,
+            )
 
     @pytest.mark.unit
     def test_init_creates_components(self, mock_local_node: MagicMock) -> None:
@@ -71,7 +80,9 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node, parsed_input=parsed_input
+            mock_local_node,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node._test_channel_state,
         )
 
         assert coordinator._cache_manager is not None
@@ -94,7 +105,9 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node, parsed_input=parsed_input
+            mock_local_node,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node._test_channel_state,
         )
 
         assert coordinator._admin_context.admin_index_for_write == 1
@@ -125,10 +138,18 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node, parsed_input=parsed_input
+            mock_local_node,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node._test_channel_state,
         )
 
-        def _failing_execute(*, parsed_input, admin_context, plan, state):
+        def _failing_execute(
+            *,
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlAddOnlyPlan,
+            state: _SetUrlAddOnlyExecutionState,
+        ) -> None:
             state.written_indices.append(1)
             state.lora_write_started = True
             raise RuntimeError("simulated write timeout")
@@ -164,10 +185,18 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node, parsed_input=parsed_input
+            mock_local_node,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node._test_channel_state,
         )
 
-        def _failing_execute(*, parsed_input, admin_context, plan, state):
+        def _failing_execute(
+            *,
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlAddOnlyPlan,
+            state: _SetUrlAddOnlyExecutionState,
+        ) -> None:
             state.written_indices.append(1)
             state.lora_write_started = False
             raise RuntimeError("simulated write timeout")
@@ -179,6 +208,41 @@ class TestSetUrlTransactionCoordinator:
 
         assert mock_local_node.channels is None
         assert mock_local_node.localConfig.lora.hop_limit == 5
+
+    @pytest.mark.unit
+    def test_add_only_holds_shared_mutation_lock_during_execution(
+        self, mock_local_node: MagicMock
+    ) -> None:
+        """Add-only planning, device writes, and cache commit share one lock."""
+        mock_local_node.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "primary"),
+            _make_channel(1, channel_pb2.Channel.Role.DISABLED),
+        ]
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "new"
+        settings.psk = b"\x01"
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+        channel_state = mock_local_node._test_channel_state
+        mutation_lock = _LockProbe()
+        channel_state._replace_mutation_lock(mutation_lock)  # noqa: SLF001
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node,
+            parsed_input=parsed_input,
+            channel_state=channel_state,
+        )
+
+        def _execute_while_locked(**_kwargs: Any) -> None:
+            assert mutation_lock.active
+
+        coordinator._execution_engine.executeAddOnly = _execute_while_locked  # type: ignore[method-assign]
+
+        coordinator._apply_add_only()
+
+        assert mutation_lock.active is False
 
     @pytest.mark.unit
     def test_replace_all_resumes_and_finds_convergence(
@@ -201,20 +265,22 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         call_count = 0
 
         def _failing_then_check(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -222,6 +288,15 @@ class TestSetUrlTransactionCoordinator:
                 raise RuntimeError("simulated transport disconnect")
 
         coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
+        lock = _LockProbe()
+        mock_local_node_with_reconnect._test_channel_state._replace_lock(lock)
+
+        def _compute_while_locked(
+            actual_channels: list[channel_pb2.Channel],
+            desired_channels: dict[int, channel_pb2.Channel],
+        ) -> set[int]:
+            assert lock.active
+            return _compute_remaining_channel_writes(actual_channels, desired_channels)
 
         with (
             patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"),
@@ -230,8 +305,13 @@ class TestSetUrlTransactionCoordinator:
                 "_bounded_config_reload",
                 _make_reload_mock(mock_local_node_with_reconnect, [desired_ch]),
             ),
+            patch(
+                "meshtastic.node_runtime.seturl.coordinator._compute_remaining_channel_writes",
+                side_effect=_compute_while_locked,
+            ) as compute_remaining,
         ):
             coordinator._apply_replace_all()
+        compute_remaining.assert_called_once()
         assert call_count == 1
 
     @pytest.mark.unit
@@ -260,20 +340,22 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         call_count = 0
 
         def _first_fails_second_succeeds(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -301,6 +383,56 @@ class TestSetUrlTransactionCoordinator:
         assert call_count == 2
 
     @pytest.mark.unit
+    def test_replace_all_holds_shared_mutation_lock_across_resume_attempts(
+        self, mock_local_node_with_reconnect: MagicMock
+    ) -> None:
+        """Reconnect recovery must remain inside the original mutation transaction."""
+        mock_local_node_with_reconnect.channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old", b"\x02")
+        ]
+        channel_set = apponly_pb2.ChannelSet()
+        settings = channel_set.settings.add()
+        settings.name = "new"
+        settings.psk = b"\x01"
+        parsed_input = _SetUrlParsedInput(
+            channel_set=channel_set,
+            has_lora_update=False,
+        )
+        channel_state = mock_local_node_with_reconnect._test_channel_state
+        mutation_lock = _LockProbe()
+        channel_state._replace_mutation_lock(mutation_lock)  # noqa: SLF001
+        coordinator = _SetUrlTransactionCoordinator(
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=channel_state,
+        )
+        execution_lock_states: list[bool] = []
+
+        def _fail_then_succeed(**_kwargs: Any) -> None:
+            execution_lock_states.append(mutation_lock.active)
+            if len(execution_lock_states) == 1:
+                raise RuntimeError("simulated disconnect")
+
+        def _recover_while_locked(
+            _plan: _SetUrlReplacePlan,
+            failure_stage: _ReplaceAllStage | None = None,
+        ) -> tuple[set[int], bool]:
+            del failure_stage
+            assert mutation_lock.active
+            mock_local_node_with_reconnect.channels = [
+                _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old", b"\x02")
+            ]
+            return {0}, False
+
+        coordinator._execution_engine.executeReplaceAll = _fail_then_succeed  # type: ignore[method-assign]
+        coordinator._reconnect_and_compute_remaining = _recover_while_locked  # type: ignore[assignment]
+
+        coordinator._apply_replace_all()
+
+        assert execution_lock_states == [True, True]
+        assert mutation_lock.active is False
+
+    @pytest.mark.unit
     def test_replace_all_resumes_when_no_channels_converged_yet(
         self, mock_local_node_with_reconnect: MagicMock
     ) -> None:
@@ -319,7 +451,9 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         call_count = 0
@@ -327,13 +461,13 @@ class TestSetUrlTransactionCoordinator:
 
         def _first_fails_second_succeeds(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             nonlocal call_count
             call_count += 1
             observed_skip_sets.append(skip_channel_indices)
@@ -376,18 +510,20 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         def _always_fail(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             state.written_channel_indices = []
             raise RuntimeError("persistent failure")
 
@@ -396,10 +532,10 @@ class TestSetUrlTransactionCoordinator:
         # Simulate time passage so that config reload timeout is reached quickly
         monotonic_time = [0.0]
 
-        def _mock_monotonic():
+        def _mock_monotonic() -> float:
             return monotonic_time[0]
 
-        def _mock_sleep(duration):
+        def _mock_sleep(duration: float) -> None:
             monotonic_time[0] += duration
 
         with (
@@ -437,18 +573,20 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         def _fail_once(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             raise RuntimeError("transport disconnect")
 
         coordinator._execution_engine.executeReplaceAll = _fail_once  # type: ignore[method-assign]
@@ -481,20 +619,22 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         call_count = 0
 
         def _fail_at_lora(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -506,7 +646,7 @@ class TestSetUrlTransactionCoordinator:
 
         sleep_durations: list[float] = []
 
-        def _track_sleep(duration):
+        def _track_sleep(duration: float) -> None:
             sleep_durations.append(duration)
 
         with (
@@ -546,7 +686,9 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         call_count = 0
@@ -556,13 +698,13 @@ class TestSetUrlTransactionCoordinator:
 
         def _failing_then_check(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -571,7 +713,7 @@ class TestSetUrlTransactionCoordinator:
 
         coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
 
-        def _connect_with_recovery():
+        def _connect_with_recovery() -> None:
             nonlocal connect_call_count
             connect_call_count += 1
             if connect_call_count >= 1:
@@ -579,7 +721,7 @@ class TestSetUrlTransactionCoordinator:
 
         iface.connect = MagicMock(side_effect=_connect_with_recovery)
 
-        def _sleep_with_flap(duration):
+        def _sleep_with_flap(duration: float) -> None:
             nonlocal sleep_call_count
             sleep_call_count += 1
             if sleep_call_count == 1:
@@ -621,18 +763,20 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         def _always_fail(
             *,
-            parsed_input,
-            admin_context,
-            plan,
-            state,
-            skip_channel_indices=None,
-            skip_lora=False,
-        ):
+            parsed_input: _SetUrlParsedInput,
+            admin_context: _SetUrlAdminContext,
+            plan: _SetUrlReplacePlan,
+            state: _SetUrlReplaceExecutionState,
+            skip_channel_indices: set[int] | None = None,
+            skip_lora: bool = False,
+        ) -> None:
             state.written_channel_indices = []
             raise RuntimeError("persistent failure")
 
@@ -640,7 +784,7 @@ class TestSetUrlTransactionCoordinator:
 
         sleep_call_count = 0
 
-        def _flap_sleep(duration):
+        def _flap_sleep(duration: float) -> None:
             nonlocal sleep_call_count
             sleep_call_count += 1
             mock_local_node_with_reconnect.iface.isConnected.clear()
@@ -672,7 +816,9 @@ class TestSetUrlTransactionCoordinator:
         )
 
         coordinator = _SetUrlTransactionCoordinator(
-            mock_local_node_with_reconnect, parsed_input=parsed_input
+            mock_local_node_with_reconnect,
+            parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         mock_local_node_with_reconnect.channels = [
@@ -682,6 +828,7 @@ class TestSetUrlTransactionCoordinator:
             mock_local_node_with_reconnect,
             parsed_input=parsed_input,
             admin_context=coordinator._admin_context,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         ).build_plan()
 
         mock_local_node_with_reconnect.channels = None
@@ -690,10 +837,10 @@ class TestSetUrlTransactionCoordinator:
 
         monotonic_time = [0.0]
 
-        def _mock_monotonic():
+        def _mock_monotonic() -> float:
             return monotonic_time[0]
 
-        def _mock_sleep(duration):
+        def _mock_sleep(duration: float) -> None:
             monotonic_time[0] += duration
 
         with (
@@ -727,6 +874,7 @@ class TestSetUrlTransactionCoordinator:
         coordinator = _SetUrlTransactionCoordinator(
             mock_local_node_with_reconnect,
             parsed_input=parsed_input,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         )
 
         mock_local_node_with_reconnect.channels = [
@@ -736,6 +884,7 @@ class TestSetUrlTransactionCoordinator:
             mock_local_node_with_reconnect,
             parsed_input=parsed_input,
             admin_context=coordinator._admin_context,
+            channel_state=mock_local_node_with_reconnect._test_channel_state,
         ).build_plan()
 
         mock_local_node_with_reconnect.iface.isConnected = None

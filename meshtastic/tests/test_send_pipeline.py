@@ -1157,6 +1157,7 @@ class TestWaitForConfig:
         from meshtastic.node_runtime.channel_request_runtime import (
             _NodeChannelRequestRuntime,
         )
+        from meshtastic.node_runtime.channel_state import _NodeChannelState
 
         mock_node = MagicMock()
         desc = MagicMock()
@@ -1164,9 +1165,8 @@ class TestWaitForConfig:
         mock_node.localConfig = MagicMock()
         mock_node.localConfig.DESCRIPTOR = desc
 
-        mock_norm = MagicMock()
         real_runtime = _NodeChannelRequestRuntime(
-            mock_node, normalization_runtime=mock_norm
+            mock_node, channel_state=_NodeChannelState()
         )
 
         mock_interface._timeout.waitForSet.return_value = True
