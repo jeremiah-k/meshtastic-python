@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class _NodeOwnerProfileRuntime:
-    """Owns setOwner validation/truncation/message-build and send orchestration."""
+    """Owns owner-profile validation, truncation, message build, and sending."""
 
     def __init__(
         self,
@@ -32,7 +32,7 @@ class _NodeOwnerProfileRuntime:
         self._node = node
         self._admin_command_runtime = admin_command_runtime
 
-    def setOwner(
+    def set_owner(
         self,
         *,
         long_name: str | None = None,
@@ -40,7 +40,7 @@ class _NodeOwnerProfileRuntime:
         is_licensed: bool = False,
         is_unmessagable: bool | None = None,
     ) -> mesh_pb2.MeshPacket | None:
-        """Apply setOwner validation/truncation and send policy.
+        """Apply owner-profile validation, truncation, and send policy.
 
         Parameters
         ----------
@@ -101,4 +101,4 @@ class _NodeOwnerProfileRuntime:
             "p.set_owner.is_unmessagable:%s",
             message.set_owner.is_unmessagable,
         )
-        return self._admin_command_runtime.sendOwnerMessage(message)
+        return self._admin_command_runtime.send_owner_message(message)

@@ -57,7 +57,7 @@ class TestSetUrlExecutionEngine:
 
         state = _SetUrlAddOnlyExecutionState()
 
-        execution_engine.executeAddOnly(
+        execution_engine.execute_add_only(
             parsed_input=parsed_input,
             admin_context=admin_context,
             plan=plan,
@@ -104,7 +104,7 @@ class TestSetUrlExecutionEngine:
 
         state = _SetUrlAddOnlyExecutionState()
 
-        execution_engine.executeAddOnly(
+        execution_engine.execute_add_only(
             parsed_input=parsed_input,
             admin_context=admin_context,
             plan=plan,
@@ -154,7 +154,7 @@ class TestSetUrlExecutionEngine:
         )
 
         with pytest.raises(ValueError, match="LoRa config update was not started"):
-            execution_engine.executeAddOnly(
+            execution_engine.execute_add_only(
                 parsed_input=parsed_input,
                 admin_context=admin_context,
                 plan=plan,
@@ -217,7 +217,7 @@ class TestSetUrlExecutionEngine:
             "meshtastic.node_runtime.seturl.execution._channels_fingerprint",
             side_effect=_fingerprint_while_locked,
         ):
-            execution_engine.executeReplaceAll(
+            execution_engine.execute_replace_all(
                 parsed_input=parsed_input,
                 admin_context=admin_context,
                 plan=plan,
@@ -271,7 +271,7 @@ class TestSetUrlExecutionEngine:
             ValueError,
             match="Channel cache changed during replace-all cache update",
         ):
-            execution_engine.executeReplaceAll(
+            execution_engine.execute_replace_all(
                 parsed_input=parsed_input,
                 admin_context=admin_context,
                 plan=plan,
@@ -322,7 +322,7 @@ class TestSetUrlExecutionEngine:
         )
 
         with pytest.raises(ValueError, match="LoRa config update was not started"):
-            execution_engine.executeReplaceAll(
+            execution_engine.execute_replace_all(
                 parsed_input=parsed_input,
                 admin_context=admin_context,
                 plan=plan,
@@ -365,7 +365,7 @@ class TestSetUrlExecutionEngine:
         mock_local_node.ensureSessionKey = MagicMock()
         mock_local_node._send_admin = MagicMock(return_value=mesh_pb2.MeshPacket())
 
-        execution_engine.executeReplaceAll(
+        execution_engine.execute_replace_all(
             parsed_input=parsed_input,
             admin_context=admin_context,
             plan=plan,
@@ -431,7 +431,7 @@ class TestSetUrlExecutionEngine:
 
         state = _SetUrlReplaceExecutionState()
 
-        execution_engine.executeReplaceAll(
+        execution_engine.execute_replace_all(
             parsed_input=parsed_input,
             admin_context=admin_context,
             plan=plan,
@@ -480,7 +480,7 @@ class TestSetUrlExecutionEngine:
         )
         state = _SetUrlReplaceExecutionState()
 
-        execution_engine.executeReplaceAll(
+        execution_engine.execute_replace_all(
             parsed_input=parsed_input,
             admin_context=admin_context,
             plan=plan,
@@ -532,7 +532,7 @@ class TestSetUrlExecutionEngine:
         )
 
         state = _SetUrlReplaceExecutionState()
-        execution_engine.executeReplaceAll(
+        execution_engine.execute_replace_all(
             parsed_input=parsed_input,
             admin_context=admin_context,
             plan=plan,

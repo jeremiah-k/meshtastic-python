@@ -96,17 +96,13 @@ class _NodeChannelExportRuntime:
         encoded = base64.urlsafe_b64encode(serialized_channel_set).decode("ascii")
         return encoded.rstrip("=")
 
-    def getUrl(self, *, includeAll: bool = True) -> str:
-        """Build channel URL export with preserved includeAll and LoRa semantics."""
+    def get_url(self, *, include_all: bool = True) -> str:
+        """Build a channel URL while preserving LoRa export semantics."""
         channels_snapshot = self._snapshot_channels()
         encoded = self._build_and_encode_channel_set(
-            channels_snapshot, include_all=includeAll
+            channels_snapshot, include_all=include_all
         )
         return f"https://meshtastic.org/e/#{encoded}"
-
-    def get_url(self, *, include_all: bool = True) -> str:
-        """COMPAT_STABLE_SHIM: Alias for getUrl."""
-        return self.getUrl(includeAll=include_all)
 
     def _get_url_from_snapshot(
         self,
@@ -124,8 +120,8 @@ class _NodeChannelExportRuntime:
         )
         return f"https://meshtastic.org/e/#{encoded}"
 
-    def getChannelsWithHash(self) -> list[dict[str, Any]]:
-        """Return index/role/name/hash descriptors for current channel snapshot."""
+    def get_channels_with_hash(self) -> list[dict[str, Any]]:
+        """Return index/role/name/hash descriptors for the current channels."""
         result: list[dict[str, Any]] = []
         channels_snapshot = self._snapshot_channels()
         if channels_snapshot:
@@ -152,10 +148,6 @@ class _NodeChannelExportRuntime:
                     }
                 )
         return result
-
-    def get_channels_with_hash(self) -> list[dict[str, Any]]:
-        """COMPAT_STABLE_SHIM: Alias for getChannelsWithHash."""
-        return self.getChannelsWithHash()
 
     def _turn_off_encryption_on_primary_channel(self) -> None:
         """Disable primary-channel encryption and persist updated channel state."""

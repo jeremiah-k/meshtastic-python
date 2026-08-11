@@ -41,7 +41,7 @@ admin channel topology and need extra settle time."""
 class _ReplaceAllStage(enum.Enum):
     """Stage of a replace-all write sequence.
 
-    Tracks which phase of ``executeReplaceAll`` is currently in progress
+    Tracks which step of ``execute_replace_all`` is currently in progress
     so that error reporting can identify the exact failure point and a
     future reconnect-aware wrapper can decide whether resume is safe.
     """
@@ -171,7 +171,7 @@ class _SetUrlExecutionEngine:
             expected_channels_fingerprint=expected_channels_fingerprint,
         )
 
-    def executeAddOnly(
+    def execute_add_only(
         self,
         *,
         parsed_input: _SetUrlParsedInput,
@@ -213,7 +213,7 @@ class _SetUrlExecutionEngine:
             )
             state.written_indices.append(staged_channel.index)
 
-    def executeReplaceAll(
+    def execute_replace_all(
         self,
         *,
         parsed_input: _SetUrlParsedInput,

@@ -32,7 +32,7 @@ class _NodeSettingsRuntime:
         self._node = node
         self._message_builder = message_builder
 
-    def requestConfig(
+    def request_config(
         self,
         config_type: int | FieldDescriptor,
         *,
@@ -94,7 +94,7 @@ class _NodeSettingsRuntime:
             "Request config from the device before writing."
         )
 
-    def writeConfig(self, config_name: str) -> None:
+    def write_config(self, config_name: str) -> None:
         """Send one settings write with preserved callback selection."""
         self._message_builder.validate_config_name(config_name)
         self._validate_write_configs_loaded(config_name)

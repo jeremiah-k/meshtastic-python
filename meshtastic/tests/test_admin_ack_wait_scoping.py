@@ -358,7 +358,7 @@ def test_settings_response_marks_scoped_request_completion() -> None:
         }
     }
 
-    _NodeSettingsResponseRuntime(node).handleSettingsResponse(packet)  # type: ignore[arg-type]
+    _NodeSettingsResponseRuntime(node).handle_settings_response(packet)  # type: ignore[arg-type]
 
     assert iface._acknowledgment.receivedAck is True
     iface._mark_wait_acknowledged.assert_called_once_with(
@@ -374,7 +374,7 @@ def test_settings_routing_error_records_scoped_request_failure() -> None:
     iface, node = _settings_doubles(616)
     packet = {"decoded": {"routing": {"errorReason": "NO_RESPONSE"}}}
 
-    _NodeSettingsResponseRuntime(node).handleSettingsResponse(packet)  # type: ignore[arg-type]
+    _NodeSettingsResponseRuntime(node).handle_settings_response(packet)  # type: ignore[arg-type]
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [
@@ -493,7 +493,7 @@ def test_metadata_response_marks_scoped_request_completion() -> None:
         }
     }
 
-    _NodeMetadataResponseRuntime(node).handleMetadataResponse(packet)  # type: ignore[arg-type]
+    _NodeMetadataResponseRuntime(node).handle_metadata_response(packet)  # type: ignore[arg-type]
 
     assert iface._acknowledgment.receivedAck is True
     iface._mark_wait_acknowledged.assert_called_once_with(
@@ -560,7 +560,7 @@ def test_malformed_metadata_response_records_request_scoped_failure(
         _signal_metadata_stdout_event=MagicMock(),
     )
 
-    _NodeMetadataResponseRuntime(cast(Any, node)).handleMetadataResponse(packet)
+    _NodeMetadataResponseRuntime(cast(Any, node)).handle_metadata_response(packet)
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [
@@ -753,7 +753,7 @@ def test_settings_response_missing_expected_field_records_scoped_failure() -> No
         }
     }
 
-    _NodeSettingsResponseRuntime(node).handleSettingsResponse(packet)  # type: ignore[arg-type]
+    _NodeSettingsResponseRuntime(node).handle_settings_response(packet)  # type: ignore[arg-type]
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [

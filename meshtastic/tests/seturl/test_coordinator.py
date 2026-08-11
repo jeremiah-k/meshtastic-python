@@ -154,7 +154,7 @@ class TestSetUrlTransactionCoordinator:
             state.lora_write_started = True
             raise RuntimeError("simulated write timeout")
 
-        coordinator._execution_engine.executeAddOnly = _failing_execute  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_add_only = _failing_execute  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="simulated write timeout"):
             coordinator._apply_add_only()
@@ -201,7 +201,7 @@ class TestSetUrlTransactionCoordinator:
             state.lora_write_started = False
             raise RuntimeError("simulated write timeout")
 
-        coordinator._execution_engine.executeAddOnly = _failing_execute  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_add_only = _failing_execute  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="simulated write timeout"):
             coordinator._apply_add_only()
@@ -238,7 +238,7 @@ class TestSetUrlTransactionCoordinator:
         def _execute_while_locked(**_kwargs: Any) -> None:
             assert mutation_lock.active
 
-        coordinator._execution_engine.executeAddOnly = _execute_while_locked  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_add_only = _execute_while_locked  # type: ignore[method-assign]
 
         coordinator._apply_add_only()
 
@@ -287,7 +287,7 @@ class TestSetUrlTransactionCoordinator:
                 state.written_channel_indices.append(0)
                 raise RuntimeError("simulated transport disconnect")
 
-        coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _failing_then_check  # type: ignore[method-assign]
         lock = _LockProbe()
         mock_local_node_with_reconnect._test_channel_state._replace_lock(lock)
 
@@ -365,7 +365,7 @@ class TestSetUrlTransactionCoordinator:
             assert 0 in skip_channel_indices
             assert 1 not in skip_channel_indices
 
-        coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _first_fails_second_succeeds  # type: ignore[method-assign]
 
         restored_channels = [
             desired_0,
@@ -424,7 +424,7 @@ class TestSetUrlTransactionCoordinator:
             ]
             return {0}, False
 
-        coordinator._execution_engine.executeReplaceAll = _fail_then_succeed  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _fail_then_succeed  # type: ignore[method-assign]
         coordinator._reconnect_and_compute_remaining = _recover_while_locked  # type: ignore[assignment]
 
         coordinator._apply_replace_all()
@@ -475,7 +475,7 @@ class TestSetUrlTransactionCoordinator:
                 raise RuntimeError("simulated disconnect before writes")
             assert skip_channel_indices == set()
 
-        coordinator._execution_engine.executeReplaceAll = _first_fails_second_succeeds  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _first_fails_second_succeeds  # type: ignore[method-assign]
 
         with (
             patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"),
@@ -527,7 +527,7 @@ class TestSetUrlTransactionCoordinator:
             state.written_channel_indices = []
             raise RuntimeError("persistent failure")
 
-        coordinator._execution_engine.executeReplaceAll = _always_fail  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _always_fail  # type: ignore[method-assign]
 
         # Simulate time passage so that config reload timeout is reached quickly
         monotonic_time = [0.0]
@@ -589,7 +589,7 @@ class TestSetUrlTransactionCoordinator:
         ) -> None:
             raise RuntimeError("transport disconnect")
 
-        coordinator._execution_engine.executeReplaceAll = _fail_once  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _fail_once  # type: ignore[method-assign]
 
         with (
             patch("meshtastic.node_runtime.seturl.coordinator.time.sleep"),
@@ -642,7 +642,7 @@ class TestSetUrlTransactionCoordinator:
                 state.stage = _ReplaceAllStage.LORA_CONFIG
                 raise RuntimeError("simulated LoRa-stage disconnect")
 
-        coordinator._execution_engine.executeReplaceAll = _fail_at_lora  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _fail_at_lora  # type: ignore[method-assign]
 
         sleep_durations: list[float] = []
 
@@ -711,7 +711,7 @@ class TestSetUrlTransactionCoordinator:
                 state.written_channel_indices.append(0)
                 raise RuntimeError("simulated transport disconnect")
 
-        coordinator._execution_engine.executeReplaceAll = _failing_then_check  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _failing_then_check  # type: ignore[method-assign]
 
         def _connect_with_recovery() -> None:
             nonlocal connect_call_count
@@ -780,7 +780,7 @@ class TestSetUrlTransactionCoordinator:
             state.written_channel_indices = []
             raise RuntimeError("persistent failure")
 
-        coordinator._execution_engine.executeReplaceAll = _always_fail  # type: ignore[method-assign]
+        coordinator._execution_engine.execute_replace_all = _always_fail  # type: ignore[method-assign]
 
         sleep_call_count = 0
 

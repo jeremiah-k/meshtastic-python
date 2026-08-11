@@ -3,9 +3,7 @@
 from collections.abc import Callable
 
 from meshtastic.node_runtime.channel_state import _NodeChannelState
-from meshtastic.node_runtime.shared import (
-    isNamedAdminChannelName as _isNamedAdminChannelName,
-)
+from meshtastic.node_runtime.shared import _is_named_admin_channel_name
 from meshtastic.protobuf import channel_pb2
 
 
@@ -43,7 +41,7 @@ class _NodeChannelLookupRuntime:
 
     def _get_named_admin_channel_index(self) -> int | None:
         """Return index of explicitly named ``admin`` channel, if present."""
-        predicate: Callable[[str], bool] = _isNamedAdminChannelName
+        predicate: Callable[[str], bool] = _is_named_admin_channel_name
         return self._channel_state.named_admin_index(is_named_admin=predicate)
 
     def _get_admin_channel_index(self) -> int:

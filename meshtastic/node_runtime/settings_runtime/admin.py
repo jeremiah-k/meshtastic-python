@@ -53,7 +53,7 @@ class _NodeAdminCommandRuntime:
             _wait_for_admin_ack(self._node, request)
         return request
 
-    def sendOwnerMessage(
+    def send_owner_message(
         self, message: admin_pb2.AdminMessage
     ) -> mesh_pb2.MeshPacket | None:
         """Send set_owner message with historical session and remote-ACK behavior."""
@@ -63,7 +63,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def exitSimulator(self) -> mesh_pb2.MeshPacket | None:
+    def exit_simulator(self) -> mesh_pb2.MeshPacket | None:
         """Send exit-simulator admin command."""
         message = admin_pb2.AdminMessage()
         message.exit_simulator = True
@@ -85,7 +85,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def beginSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
+    def begin_settings_transaction(self) -> mesh_pb2.MeshPacket | None:
         """Send begin-edit-settings command."""
         message = admin_pb2.AdminMessage()
         message.begin_edit_settings = True
@@ -96,7 +96,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
+    def commit_settings_transaction(self) -> mesh_pb2.MeshPacket | None:
         """Send commit-edit-settings command."""
         message = admin_pb2.AdminMessage()
         message.commit_edit_settings = True
@@ -107,7 +107,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def rebootOta(self, secs: int) -> mesh_pb2.MeshPacket | None:
+    def reboot_ota(self, secs: int) -> mesh_pb2.MeshPacket | None:
         """Send reboot-to-OTA command."""
         message = admin_pb2.AdminMessage()
         message.reboot_ota_seconds = secs
@@ -144,7 +144,7 @@ class _NodeAdminCommandRuntime:
             raise ValueError("Conflicting OTA hash arguments provided")
         return hash_values.pop()
 
-    def startOta(
+    def start_ota(
         self,
         mode: int | None = None,
         ota_file_hash: bytes | None = None,
@@ -189,10 +189,8 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=False,
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for startOta
-    start_ota = startOta
 
-    def enterDfuMode(self) -> mesh_pb2.MeshPacket | None:
+    def enter_dfu_mode(self) -> mesh_pb2.MeshPacket | None:
         """Send enter-DFU-mode command."""
         message = admin_pb2.AdminMessage()
         message.enter_dfu_mode_request = True
@@ -203,8 +201,6 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for enterDfuMode
-    enter_dfu_mode = enterDfuMode
 
     def shutdown(self, secs: int) -> mesh_pb2.MeshPacket | None:
         """Send shutdown command with delayed shutdown seconds."""
@@ -217,7 +213,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def factoryReset(self, *, full: bool) -> mesh_pb2.MeshPacket | None:
+    def factory_reset(self, *, full: bool) -> mesh_pb2.MeshPacket | None:
         """Send factory-reset command, preserving full/config split behavior."""
         message = admin_pb2.AdminMessage()
         if full:
@@ -249,8 +245,6 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for factoryReset
-    factory_reset = factoryReset
 
     def _send_node_id_command(
         self,
@@ -268,7 +262,7 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-    def removeNode(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    def remove_node(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-by-nodenum command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -277,10 +271,8 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for removeNode
-    remove_node = removeNode
 
-    def setFavorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    def set_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send set-favorite command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -289,10 +281,8 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for setFavorite
-    set_favorite = setFavorite
 
-    def removeFavorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    def remove_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-favorite command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -301,10 +291,8 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for removeFavorite
-    remove_favorite = removeFavorite
 
-    def setIgnored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    def set_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send set-ignored command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -313,10 +301,8 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for setIgnored
-    set_ignored = setIgnored
 
-    def removeIgnored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
+    def remove_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-ignored command."""
         return self._send_node_id_command(
             node_id=node_id,
@@ -325,10 +311,8 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-    # COMPAT_STABLE_SHIM: snake_case alias for removeIgnored
-    remove_ignored = removeIgnored
 
-    def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
+    def reset_node_db(self) -> mesh_pb2.MeshPacket | None:
         """Send NodeDB reset command."""
         message = admin_pb2.AdminMessage()
         message.nodedb_reset = True
@@ -338,6 +322,3 @@ class _NodeAdminCommandRuntime:
             ensure_session_key=True,
             use_remote_ack_callback=True,
         )
-
-    # COMPAT_STABLE_SHIM: snake_case alias for resetNodeDb
-    reset_node_db = resetNodeDb

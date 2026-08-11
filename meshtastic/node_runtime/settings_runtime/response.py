@@ -95,7 +95,7 @@ class _NodeSettingsResponseRuntime:
         )
         return None
 
-    def handleSettingsResponse(self, packet: dict[str, Any]) -> None:
+    def handle_settings_response(self, packet: dict[str, Any]) -> None:
         """Process one settings response packet with preserved ACK/NAK semantics."""
         logger.debug("handleSettingsResponse() response received")
         decoded = packet.get("decoded")

@@ -480,7 +480,7 @@ class _SetUrlTransactionCoordinator:
         )
         execution_state = _SetUrlAddOnlyExecutionState()
         try:
-            self._execution_engine.executeAddOnly(
+            self._execution_engine.execute_add_only(
                 parsed_input=self._parsed_input,
                 admin_context=self._admin_context,
                 plan=plan,
@@ -549,7 +549,7 @@ class _SetUrlTransactionCoordinator:
             execution_state = _SetUrlReplaceExecutionState()
             resume_skip_channel_indices = skip_channel_indices if attempt > 0 else None
             try:
-                self._execution_engine.executeReplaceAll(
+                self._execution_engine.execute_replace_all(
                     parsed_input=self._parsed_input,
                     admin_context=self._admin_context,
                     plan=plan,

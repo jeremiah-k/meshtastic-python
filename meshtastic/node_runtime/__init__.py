@@ -17,8 +17,6 @@ from .shared import (
     MAX_SHORT_NAME_LEN,
     METADATA_STDOUT_COMPAT_WAIT_SECONDS,
     NAMED_ADMIN_CHANNEL_NAME,
-    isNamedAdminChannelName,
-    orderedAdminIndexes,
 )
 
 __all__ = [
@@ -32,6 +30,4 @@ __all__ = [
     "MAX_SHORT_NAME_LEN",
     "METADATA_STDOUT_COMPAT_WAIT_SECONDS",
     "NAMED_ADMIN_CHANNEL_NAME",
-    "isNamedAdminChannelName",
-    "orderedAdminIndexes",
 ]
