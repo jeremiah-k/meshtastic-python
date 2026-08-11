@@ -1,5 +1,8 @@
 """Lifecycle-oriented BLE facade exports and compatibility surface."""
 
+# Underscore imports remain qualified-name monkeypatch targets, not star exports.
+# pylint: disable=unused-import
+
 from meshtastic.interfaces.ble.gating import (  # noqa: F401  # COMPAT_STABLE_SHIM: module-level monkeypatch target
     _is_currently_connected_elsewhere,
 )

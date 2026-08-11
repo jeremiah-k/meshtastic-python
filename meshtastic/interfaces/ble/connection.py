@@ -523,7 +523,8 @@ class ClientManager:
     def _connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
         """Connect the provided BLEClient and ensure its GATT services are populated.
 
-        If the client's discovered services are not available immediately after connecting, service discovery will be requested so characteristics and services are usable.
+        If the client's discovered services are not available immediately after connecting, service discovery will be
+        requested so characteristics and services are usable.
 
         Parameters
         ----------
@@ -591,7 +592,8 @@ class ClientManager:
     ) -> None:
         """Schedule asynchronous close of a previous BLE client when replacing it.
 
-        If `old_client` is provided and is a different object than `new_client`, schedules `_safe_close_client(old_client)` to run in a background daemon thread so the caller is not blocked.
+        If `old_client` is provided and is a different object than `new_client`, schedules
+        `_safe_close_client(old_client)` to run in a background daemon thread so the caller is not blocked.
 
         Parameters
         ----------
@@ -785,7 +787,8 @@ class ConnectionOrchestrator:
         state_lock: RLock,
         thread_coordinator: ThreadCoordinator,
     ) -> None:
-        """Coordinate BLE connection orchestration by wiring together the interface, validators, client lifecycle manager, discovery manager, and synchronization primitives.
+        """Coordinate BLE connection orchestration by wiring together the interface, validators, client lifecycle manager,
+        discovery manager, and synchronization primitives.
 
         Parameters
         ----------
@@ -1302,7 +1305,8 @@ class ConnectionOrchestrator:
             # "cannot verify" rather than a hard mismatch to avoid disconnecting
             # valid sessions solely due to missing metadata.
             logger.debug(
-                "Cannot enforce explicit-address verification for target %s because the connected peer address is unavailable; proceeding in compatibility mode.",
+                "Cannot enforce explicit-address verification for target %s because the connected peer address is "
+                "unavailable; proceeding in compatibility mode.",
                 requested_key,
             )
             return
@@ -1857,7 +1861,8 @@ class ConnectionOrchestrator:
         *,
         emit_connected_side_effects: bool = True,
     ) -> None:
-        """Finalize a successful BLE connection by registering notification handlers, validating the client and orchestrator state, transitioning to CONNECTED, and invoking post-connection callbacks.
+        """Finalize a successful BLE connection by registering notification handlers, validating the client and
+        orchestrator state, transitioning to CONNECTED, and invoking post-connection callbacks.
 
         Parameters
         ----------
@@ -1944,7 +1949,8 @@ class ConnectionOrchestrator:
     def _transition_failure_to_disconnected(self, error_context: str) -> None:
         """Perform a best-effort state correction after a connection failure.
 
-        Attempts to transition the connection state to ERROR and then to DISCONNECTED; if a transition is rejected, logs a warning and forces DISCONNECTED as a final fallback.
+        Attempts to transition the connection state to ERROR and then to DISCONNECTED; if a transition is rejected, logs
+        a warning and forces DISCONNECTED as a final fallback.
 
         Parameters
         ----------
@@ -1988,7 +1994,8 @@ class ConnectionOrchestrator:
         connect_timeout: float | None = None,
         emit_connected_side_effects: bool = True,
     ) -> BLEClient:
-        """Establish a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalize notification registration and lifecycle callbacks.
+        """Establish a BLE connection to a device, attempting a direct connect when an explicit address is provided and
+        falling back to discovery when needed, then finalize notification registration and lifecycle callbacks.
 
         Parameters
         ----------

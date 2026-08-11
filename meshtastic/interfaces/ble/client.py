@@ -97,6 +97,10 @@ class BLEClient:
         async-to-thread synchronization.
     """
 
+    address: str | None
+    bleak_client: BleakRootClient | None
+    _closed: bool
+
     # Class-level fallback so callers using __new__ still get the right exception type
     class BLEError(Exception):
         """An exception class for BLE errors in the client."""
@@ -142,7 +146,8 @@ class BLEClient:
         log_if_no_address: bool = True,
         **kwargs: Any,
     ) -> None:
-        """Initialize the BLEClient, set up its error-handling and runner infrastructure, and optionally create a Bleak client bound to the given address.
+        """Initialize the BLEClient, set up its error-handling and runner infrastructure, and optionally create a Bleak
+        client bound to the given address.
 
         Parameters
         ----------
@@ -574,7 +579,6 @@ class BLEClient:
         except NotImplementedError as exc:
             raise self.BLEError(unsupported_error) from exc
         self._sync_address_from_bleak()
-        return None
 
     def _run_optional_management_method(
         self,
@@ -655,7 +659,6 @@ class BLEClient:
             unsupported_error=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
             call_kwargs=kwargs,
         )
-        return None
 
     def unpair(
         self, *, await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT
@@ -685,7 +688,6 @@ class BLEClient:
             not_initialized_error=BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
             unsupported_error=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
         )
-        return None
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:
         """Connect to the remote BLE device.
@@ -853,7 +855,8 @@ class BLEClient:
     def _get_services(self, **_kwargs: Any) -> Any:
         """Return the underlying Bleak client's discovered GATT services collection.
 
-        Keyword arguments are accepted for caller convenience but ignored. The returned object exposes discovered GATT services and their characteristics (as provided by Bleak).
+        Keyword arguments are accepted for caller convenience but ignored. The returned object exposes discovered GATT
+        services and their characteristics (as provided by Bleak).
 
         Parameters
         ----------
@@ -912,7 +915,7 @@ class BLEClient:
         def _refresh_services(error_msg: str) -> Any:
             """Refresh services via _get_services() and fallback property read."""
             services = self._error_handler_safe_execute(
-                lambda: self._get_services(),
+                self._get_services,
                 error_msg=error_msg,
                 reraise=False,
             )
@@ -949,12 +952,14 @@ class BLEClient:
     ) -> None:
         """Subscribe to notifications for a GATT characteristic.
 
-        Registers a notification callback for the connected device's characteristic and waits up to `timeout` seconds for the registration to complete.
+        Registers a notification callback for the connected device's characteristic and waits up to `timeout` seconds
+        for the registration to complete.
 
         Parameters
         ----------
         *args : Any
-            Positional arguments forwarded to the underlying notification registration (typically the characteristic UUID or handle followed by a callback to receive byte payloads).
+            Positional arguments forwarded to the underlying notification registration (typically the characteristic
+            UUID or handle followed by a callback to receive byte payloads).
         timeout : float | None
             Maximum seconds to wait for the operation to complete; if `None`, wait indefinitely. (Default value = None)
         **kwargs : Any
