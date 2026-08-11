@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, NoReturn, cast
 from bleak import BleakClient as BleakRootClient
 
 from meshtastic.interfaces.ble.compat_adapter import (
+    _load_runtime_module,
     _get_declared_callable,
     _resolve_declared_member,
 )
@@ -1137,8 +1138,9 @@ class BLELifecycleService:
         """
         # Support lifecycle_service module monkeypatches in compatibility tests;
         # fall back to the canonical gating import when no override is present.
-        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
-
+        lifecycle_service_mod = _load_runtime_module(
+            "meshtastic.interfaces.ble.lifecycle_service"
+        )
         connected_elsewhere = getattr(
             lifecycle_service_mod,
             "_is_currently_connected_elsewhere",

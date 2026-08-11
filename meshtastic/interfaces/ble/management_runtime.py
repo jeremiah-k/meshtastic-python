@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
+    _load_runtime_module,
     _get_declared_callable,
     _get_declared_member,
 )
@@ -296,9 +297,13 @@ class BLEManagementCommandHandler:
             if isinstance(instance_dict, dict) and method_name in instance_dict:
                 return _invoke_override()
             try:
-                from meshtastic.interfaces.ble.interface import BLEInterface
-
-                base_method = inspect.getattr_static(BLEInterface, method_name, None)
+                interface_module = _load_runtime_module(
+                    "meshtastic.interfaces.ble.interface"
+                )
+                ble_interface_type = interface_module.BLEInterface
+                base_method = inspect.getattr_static(
+                    ble_interface_type, method_name, None
+                )
                 class_method = inspect.getattr_static(
                     type(self._iface), method_name, None
                 )

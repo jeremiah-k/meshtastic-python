@@ -9,6 +9,7 @@ from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
+    _load_runtime_module,
     _get_declared_callable,
     _get_declared_lock,
     _get_declared_member,
@@ -26,12 +27,11 @@ class BLEReceiveRecoveryService:
 
     @staticmethod
     def _controller_class() -> type["BLEReceiveRecoveryController"]:
-        """Resolve the receive controller class with a local import."""
-        from meshtastic.interfaces.ble.receive_service import (
-            BLEReceiveRecoveryController,
+        """Resolve the receive controller class lazily across the compat cycle."""
+        receive_module = _load_runtime_module(
+            "meshtastic.interfaces.ble.receive_service"
         )
-
-        return BLEReceiveRecoveryController
+        return cast(type["BLEReceiveRecoveryController"], receive_module.BLEReceiveRecoveryController)
 
     @staticmethod
     def _is_controller_like(

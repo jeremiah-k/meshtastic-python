@@ -9,6 +9,8 @@ are represented.
 from __future__ import annotations
 
 import inspect
+from importlib import import_module
+from types import ModuleType
 from collections.abc import Callable, Iterator
 from typing import Any, TypeVar, cast
 
@@ -16,6 +18,15 @@ from meshtastic.interfaces.ble.ports import _LockPort
 
 T = TypeVar("T")
 _MISSING = object()
+
+
+def _load_runtime_module(module_name: str) -> ModuleType:
+    """Load a runtime dependency lazily to preserve circular-import boundaries.
+
+    Lazy resolution is intentional for BLE compatibility modules because tests and
+    downstream integrations may monkeypatch module-level shims after import.
+    """
+    return import_module(module_name)
 
 
 def _get_declared_member(
