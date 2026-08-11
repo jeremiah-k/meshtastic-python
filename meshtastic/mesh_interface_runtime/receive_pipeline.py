@@ -26,8 +26,13 @@ from meshtastic.protobuf import (
 from meshtastic.region_presets import decode_region_preset_map
 from meshtastic.util import stripnl
 
+from .ports import _ReceivePipelinePort
+from .queue_send import _QueueSendRuntime
+from .request_wait import _RequestWaitRuntime
+
+
 if TYPE_CHECKING:
-    from meshtastic.mesh_interface import MeshInterface
+    from meshtastic.node import Node
 
 logger = logging.getLogger(__name__)
 
@@ -132,15 +137,15 @@ class ReceivePipeline:
     normalization, dispatch, and publication of inbound packets.
     """
 
-    def __init__(self, interface: "MeshInterface") -> None:
-        """Initialize the receive pipeline with a parent MeshInterface.
+    def __init__(self, port: _ReceivePipelinePort) -> None:
+        """Initialize the receive pipeline with its interface capability port.
 
         Parameters
         ----------
-        interface : MeshInterface
-            The parent MeshInterface instance providing access to interface state.
+        port : _ReceivePipelinePort
+            Narrow access to receive-side interface state and compatibility seams.
         """
-        self._interface = interface
+        self._port = port
         self._from_radio_dispatch_map_cache: (
             dict[str, Callable[[_FromRadioContext], list[_PublicationIntent]]] | None
         ) = None
@@ -148,47 +153,47 @@ class ReceivePipeline:
     @property
     def _node_db_lock(self) -> threading.RLock:
         """Return the node database lock from the parent interface."""
-        return self._interface._node_db_lock
+        return self._port.node_db_lock
 
     @property
-    def _request_wait_runtime(self) -> Any:
+    def _request_wait_runtime(self) -> _RequestWaitRuntime:
         """Return the request wait runtime from the parent interface."""
-        return self._interface._request_wait_runtime
+        return self._port.request_wait_runtime
 
     @property
-    def _queue_send_runtime(self) -> Any:
+    def _queue_send_runtime(self) -> _QueueSendRuntime:
         """Return the queue send runtime from the parent interface."""
-        return self._interface._queue_send_runtime
+        return self._port.queue_send_runtime
 
     @property
     def configId(self) -> int | None:
         """Return the config ID from the parent interface."""
-        return self._interface.configId
+        return self._port.config_id
 
     @property
-    def localNode(self) -> Any:
+    def localNode(self) -> "Node":
         """Return the local node from the parent interface."""
-        return self._interface.localNode
+        return self._port.local_node
 
     @property
     def myInfo(self) -> mesh_pb2.MyNodeInfo | None:
         """Return the myInfo from the parent interface."""
-        return self._interface.myInfo
+        return self._port.my_info
 
     @property
     def metadata(self) -> mesh_pb2.DeviceMetadata | None:
         """Return the device metadata from the parent interface."""
-        return self._interface.metadata
+        return self._port.metadata
 
     @property
     def nodes(self) -> dict[str, dict[str, Any]] | None:
         """Return the nodes dictionary from the parent interface."""
-        return self._interface.nodes
+        return self._port.nodes
 
     @property
     def nodesByNum(self) -> dict[int, dict[str, Any]] | None:
         """Return the nodes by number dictionary from the parent interface."""
-        return self._interface.nodesByNum
+        return self._port.nodes_by_num
 
     def _handle_from_radio(self, fromRadioBytes: bytes) -> None:
         """Handle a raw FromRadio payload using parse -> normalize -> dispatch -> publish phases."""
@@ -210,14 +215,7 @@ class ReceivePipeline:
         try:
             from_radio.ParseFromString(from_radio_bytes)
         except protobuf_message.DecodeError:
-            recorder_name = "_record_bootstrap_decode_error"
-            has_recorder = recorder_name in vars(self._interface) or hasattr(
-                type(self._interface), recorder_name
-            )
-            record_error = (
-                getattr(self._interface, recorder_name, None) if has_recorder else None
-            )
-            bootstrap_error_count = record_error() if callable(record_error) else 0
+            bootstrap_error_count = self._port.record_bootstrap_decode_error()
             if bootstrap_error_count:
                 logger.warning(
                     "Discarding malformed FromRadio frame during connection bootstrap "
@@ -306,8 +304,7 @@ class ReceivePipeline:
         with self._node_db_lock:
             my_info = mesh_pb2.MyNodeInfo()
             my_info.CopyFrom(from_radio.my_info)
-            self._interface.myInfo = my_info
-            self._interface.localNode.nodeNum = my_info.my_node_num
+            self._port.set_my_info(my_info)
         logger.debug("Received myinfo: %s", stripnl(from_radio.my_info))
         return []
 
@@ -319,7 +316,7 @@ class ReceivePipeline:
         with self._node_db_lock:
             metadata = mesh_pb2.DeviceMetadata()
             metadata.CopyFrom(from_radio.metadata)
-            self._interface.metadata = metadata
+            self._port.set_metadata(metadata)
         logger.debug("Received device metadata: %s", stripnl(from_radio.metadata))
         return []
 
@@ -331,8 +328,7 @@ class ReceivePipeline:
         raw_map.CopyFrom(context.message.region_presets)
         decoded = decode_region_preset_map(raw_map)
         with self._node_db_lock:
-            self._interface.regionPresetMap = raw_map
-            self._interface.regionPresets = decoded
+            self._port.set_region_presets(raw_map, decoded)
         logger.debug(
             "Received LoRa region preset compatibility map: %d region(s)",
             len(decoded),
@@ -352,7 +348,7 @@ class ReceivePipeline:
         status = mesh_pb2.LockdownStatus()
         status.CopyFrom(context.message.lockdown_status)
         with self._node_db_lock:
-            self._interface.lockdownStatus = status
+            self._port.set_lockdown_status(status)
         return [self._publication_intent(LOCKDOWN_STATUS_TOPIC, status=status)]
 
     def _handle_from_radio_node_info(
@@ -457,8 +453,7 @@ class ReceivePipeline:
         self, _context: _FromRadioContext
     ) -> list[_PublicationIntent]:
         """Handle reboot notifications by disconnecting and restarting config flow."""
-        self._interface._disconnected()
-        self._interface._start_config()
+        self._port.restart_config_after_reboot()
         return []
 
     def _handle_from_radio_config_update(
@@ -532,7 +527,7 @@ class ReceivePipeline:
         payload_snapshot = dict(payload)
 
         def publish_work() -> None:
-            pub.sendMessage(topic, interface=self._interface, **payload_snapshot)
+            pub.sendMessage(topic, interface=self._port.facade, **payload_snapshot)
 
         publishingThread.queueWork(publish_work)
 
@@ -547,13 +542,13 @@ class ReceivePipeline:
     def _get_or_create_by_num(self, nodeNum: int) -> dict[str, Any]:
         """Retrieve the node record for a numeric node ID, creating a minimal placeholder if none exists."""
         if nodeNum == BROADCAST_NUM:
-            raise self._interface.MeshInterfaceError(
+            raise self._port.error_type(
                 "Can not create/find nodenum by the broadcast num"
             )
 
         with self._node_db_lock:
             if self.nodesByNum is None:
-                raise self._interface.MeshInterfaceError(
+                raise self._port.error_type(
                     "Node database not initialized"
                 )
 
@@ -575,18 +570,17 @@ class ReceivePipeline:
     def _handle_channel(self, channel: channel_pb2.Channel) -> None:
         """Record a received local channel descriptor for later configuration."""
         with self._node_db_lock:
-            self._interface._localChannels.append(channel)
+            self._port.append_local_channel(channel)
 
     def _handle_log_record(self, record: mesh_pb2.LogRecord) -> None:
         """Process a protobuf LogRecord by extracting its message text."""
-        self._interface._handle_log_line(record.message)
+        self._port.handle_log_line(record.message)
 
     def _handle_config_complete(self) -> None:
         """Finalize initial configuration by applying collected local channels."""
         with self._node_db_lock:
-            local_channels = list(self._interface._localChannels)
-        self._interface.localNode.setChannels(local_channels)
-        self._interface._connected()
+            local_channels = self._port.local_channels_snapshot()
+        self._port.complete_config(local_channels)
 
     def _handle_queue_status_from_radio(
         self, queueStatus: mesh_pb2.QueueStatus
@@ -797,8 +791,8 @@ class ReceivePipeline:
         if packet_context.on_receive_callback is None:
             return
         try:
-            packet_context.on_receive_callback(
-                self._interface, packet_context.packet_dict
+            self._port.invoke_receive_callback(
+                packet_context.on_receive_callback, packet_context.packet_dict
             )
         except Exception:
             logger.exception(
@@ -819,5 +813,5 @@ class ReceivePipeline:
             skip_response_callback_for_decode_failure=(
                 packet_context.skip_response_callback_for_decode_failure
             ),
-            extract_request_id=self._interface._extract_request_id_from_packet,
+            extract_request_id=self._port.extract_request_id,
         )

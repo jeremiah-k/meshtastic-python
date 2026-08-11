@@ -19,6 +19,7 @@ from meshtastic import (
     DECODE_ERROR_KEY,
 )
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.mesh_interface_runtime.ports import _ReceivePipelinePort
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
     DECODE_FAILED_PREFIX,
     ReceivePipeline,
@@ -90,7 +91,7 @@ def ack_runtime(mock_node: MagicMock) -> _NodeAckNakRuntime:
 @pytest.fixture
 def receive_pipeline(mock_interface_with_ack: MagicMock) -> ReceivePipeline:
     """Create a ReceivePipeline instance."""
-    return ReceivePipeline(mock_interface_with_ack)
+    return ReceivePipeline(_ReceivePipelinePort(mock_interface_with_ack))
 
 
 # =============================================================================

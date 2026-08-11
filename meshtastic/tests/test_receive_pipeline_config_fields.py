@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 from google.protobuf.descriptor import Descriptor
 
+from meshtastic.mesh_interface_runtime.ports import _ReceivePipelinePort
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
     LOCAL_CONFIG_FROM_RADIO_FIELDS,
     MODULE_CONFIG_FROM_RADIO_FIELDS,
@@ -49,7 +50,7 @@ def _pipeline_with_local_node() -> tuple[ReceivePipeline, SimpleNamespace]:
         _node_db_lock=threading.RLock(),
         localNode=local_node,
     )
-    return ReceivePipeline(interface), local_node  # type: ignore[arg-type]
+    return ReceivePipeline(_ReceivePipelinePort(interface)), local_node  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
