@@ -137,7 +137,7 @@ class TestNodeViewProperties:
         self, node_view: NodeView, mock_interface: MagicMock
     ) -> None:
         """Test localNode property."""
-        assert node_view.localNode is mock_interface.localNode
+        assert node_view.local_node is mock_interface.localNode
 
     @pytest.mark.unit
     def test_nodes_property(
@@ -155,7 +155,7 @@ class TestNodeViewProperties:
         """Test nodesByNum property."""
         nodes_by_num = {1234: {"num": 1234}}
         mock_interface.nodesByNum = nodes_by_num
-        assert node_view.nodesByNum is nodes_by_num
+        assert node_view.nodes_by_num is nodes_by_num
 
     @pytest.mark.unit
     def test_my_info_property(
@@ -164,7 +164,7 @@ class TestNodeViewProperties:
         """Test myInfo property."""
         my_info = mesh_pb2.MyNodeInfo()
         mock_interface.myInfo = my_info
-        assert node_view.myInfo is my_info
+        assert node_view.my_info is my_info
 
     @pytest.mark.unit
     def test_metadata_property(
@@ -273,7 +273,7 @@ class TestShowInfo:
         mock_interface.nodes = {}
 
         output = StringIO()
-        result = node_view.showInfo(file=output)
+        result = node_view.show_info(file=output)
 
         assert "Owner:" in result
         assert "Nodes in mesh:" in result
@@ -296,7 +296,7 @@ class TestShowInfo:
         }
 
         output = StringIO()
-        result = node_view.showInfo(file=output)
+        result = node_view.show_info(file=output)
 
         assert "!1234" in result
         assert "Test Node" in result
@@ -320,7 +320,7 @@ class TestBuildTableData:
             with patch(
                 "meshtastic.mesh_interface_runtime.node_view.node_presentation"
             ) as mock_presentation:
-                mock_node_data.extractNodeFieldValue.return_value = "extracted_value"
+                mock_node_data.extract_node_field_value.return_value = "extracted_value"
                 mock_presentation._format_node_field.return_value = "formatted_value"
                 mock_presentation._get_human_readable_column_label.return_value = (
                     "Human Label"
@@ -365,7 +365,7 @@ class TestShowNodes:
 
         with patch.object(node_view, "_render_node_table") as mock_render:
             mock_render.return_value = "Empty Table"
-            result = node_view.showNodes()
+            result = node_view.show_nodes()
 
         assert result == "Empty Table"
 
@@ -385,15 +385,15 @@ class TestShowNodes:
                 ) as mock_node_data:
                     mock_build.return_value = [{"N": 1, "Name": "Test Node"}]
                     mock_render.return_value = "Rendered Table"
-                    mock_node_data.filterNodes.return_value = [
+                    mock_node_data.filter_nodes.return_value = [
                         mock_interface.nodesByNum[1234]
                     ]
-                    mock_node_data.sortNodes.return_value = [
+                    mock_node_data.sort_nodes.return_value = [
                         mock_interface.nodesByNum[1234]
                     ]
-                    mock_node_data.getDefaultShowFields.return_value = ["N", "Name"]
+                    mock_node_data.get_default_show_fields.return_value = ["N", "Name"]
 
-                    result = node_view.showNodes()
+                    result = node_view.show_nodes()
 
         assert result == "Rendered Table"
 
@@ -406,7 +406,7 @@ class TestGetNode:
         self, node_view: NodeView, mock_interface: MagicMock
     ) -> None:
         """Test getting node for local address."""
-        result = node_view.getNode(LOCAL_ADDR)
+        result = node_view.get_node(LOCAL_ADDR)
 
         assert result is mock_interface.localNode
 
@@ -415,7 +415,7 @@ class TestGetNode:
         self, node_view: NodeView, mock_interface: MagicMock
     ) -> None:
         """Test getting node for broadcast address."""
-        result = node_view.getNode(BROADCAST_ADDR)
+        result = node_view.get_node(BROADCAST_ADDR)
 
         assert result is mock_interface.localNode
 
@@ -429,7 +429,7 @@ class TestGetNode:
             mock_node_class.return_value = mock_node
             mock_node.waitForConfig.return_value = True
 
-            result = node_view.getNode("!1234abcd", requestChannels=False)
+            result = node_view.get_node("!1234abcd", requestChannels=False)
 
         assert result is mock_node
 
@@ -447,7 +447,7 @@ class TestGetMyNodeInfo:
         mock_interface.myInfo = my_info
         mock_interface.nodesByNum = {12345: {"num": 12345, "user": {"id": "!1234"}}}
 
-        result = node_view.getMyNodeInfo()
+        result = node_view.get_my_node_info()
 
         assert result is not None
         assert result["num"] == 12345
@@ -459,7 +459,7 @@ class TestGetMyNodeInfo:
         """Test getting my node info when myInfo is None."""
         mock_interface.myInfo = None
 
-        result = node_view.getMyNodeInfo()
+        result = node_view.get_my_node_info()
 
         assert result is None
 
@@ -478,7 +478,7 @@ class TestGetMyUser:
             12345: {"num": 12345, "user": {"id": "!1234", "longName": "Test User"}}
         }
 
-        result = node_view.getMyUser()
+        result = node_view.get_my_user()
 
         assert result is not None
         assert result["longName"] == "Test User"
@@ -490,7 +490,7 @@ class TestGetMyUser:
         """Test getting my user when no node info."""
         mock_interface.myInfo = None
 
-        result = node_view.getMyUser()
+        result = node_view.get_my_user()
 
         assert result is None
 
@@ -512,7 +512,7 @@ class TestGetLongName:
             }
         }
 
-        result = node_view.getLongName()
+        result = node_view.get_long_name()
 
         assert result == "Test User Long Name"
 
@@ -523,7 +523,7 @@ class TestGetLongName:
         """Test getting long name when no user info."""
         mock_interface.myInfo = None
 
-        result = node_view.getLongName()
+        result = node_view.get_long_name()
 
         assert result is None
 
@@ -542,7 +542,7 @@ class TestGetShortName:
             12345: {"num": 12345, "user": {"id": "!1234", "shortName": "TU"}}
         }
 
-        result = node_view.getShortName()
+        result = node_view.get_short_name()
 
         assert result == "TU"
 
@@ -553,7 +553,7 @@ class TestGetShortName:
         """Test getting short name when no user info."""
         mock_interface.myInfo = None
 
-        result = node_view.getShortName()
+        result = node_view.get_short_name()
 
         assert result is None
 
@@ -573,7 +573,7 @@ class TestGetPublicKey:
             12345: {"num": 12345, "user": {"id": "!1234", "publicKey": public_key}}
         }
 
-        result = node_view.getPublicKey()
+        result = node_view.get_public_key()
 
         assert result == public_key
 
@@ -584,7 +584,7 @@ class TestGetPublicKey:
         """Test getting public key when no user info."""
         mock_interface.myInfo = None
 
-        result = node_view.getPublicKey()
+        result = node_view.get_public_key()
 
         assert result is None
 
@@ -599,7 +599,7 @@ class TestGetCannedMessage:
         """Test that getCannedMessage delegates to localNode."""
         mock_interface.localNode.get_canned_message.return_value = "Canned message text"
 
-        result = node_view.getCannedMessage()
+        result = node_view.get_canned_message()
 
         assert result == "Canned message text"
         mock_interface.localNode.get_canned_message.assert_called_once()
@@ -615,7 +615,7 @@ class TestGetRingtone:
         """Test that getRingtone delegates to localNode."""
         mock_interface.localNode.get_ringtone.return_value = "Ringtone melody"
 
-        result = node_view.getRingtone()
+        result = node_view.get_ringtone()
 
         assert result == "Ringtone melody"
         mock_interface.localNode.get_ringtone.assert_called_once()

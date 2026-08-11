@@ -7,7 +7,7 @@ from meshtastic.mesh_interface_runtime import node_data
 
 @pytest.mark.unit
 def test_known_field_paths_include_node_and_telemetry_schema() -> None:
-    fields = set(node_data.getKnownFieldPaths())
+    fields = set(node_data.get_known_field_paths())
 
     assert "user.id" in fields
     assert "position.latitude" in fields
@@ -19,7 +19,7 @@ def test_known_field_paths_include_node_and_telemetry_schema() -> None:
 @pytest.mark.unit
 def test_known_field_paths_include_observed_extension_fields() -> None:
     fields = set(
-        node_data.getKnownFieldPaths(
+        node_data.get_known_field_paths(
             [{"num": 1, "vendorExtension": {"sampleValue": 7}}]
         )
     )

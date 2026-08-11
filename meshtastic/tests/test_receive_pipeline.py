@@ -226,16 +226,16 @@ class TestReceivePipelineProperties:
         self, receive_pipeline: ReceivePipeline, mock_interface: MagicMock
     ) -> None:
         """Test configId property."""
-        assert receive_pipeline.configId == 123
+        assert receive_pipeline.config_id == 123
         mock_interface.configId = 456
-        assert receive_pipeline.configId == 456
+        assert receive_pipeline.config_id == 456
 
     @pytest.mark.unit
     def test_local_node_property(
         self, receive_pipeline: ReceivePipeline, mock_interface: MagicMock
     ) -> None:
         """Test localNode property."""
-        assert receive_pipeline.localNode is mock_interface.localNode
+        assert receive_pipeline.local_node is mock_interface.localNode
 
     @pytest.mark.unit
     def test_my_info_property(
@@ -244,7 +244,7 @@ class TestReceivePipelineProperties:
         """Test myInfo property."""
         my_info = mesh_pb2.MyNodeInfo()
         mock_interface.myInfo = my_info
-        assert receive_pipeline.myInfo is my_info
+        assert receive_pipeline.my_info is my_info
 
     @pytest.mark.unit
     def test_metadata_property(
@@ -271,7 +271,7 @@ class TestReceivePipelineProperties:
         """Test nodesByNum property."""
         nodes_by_num = {1234: {"num": 1234}}
         mock_interface.nodesByNum = nodes_by_num
-        assert receive_pipeline.nodesByNum is nodes_by_num
+        assert receive_pipeline.nodes_by_num is nodes_by_num
 
 
 class TestParseFromRadioBytes:

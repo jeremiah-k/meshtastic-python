@@ -7,7 +7,7 @@ from google.protobuf.descriptor import Descriptor
 from meshtastic.protobuf import mesh_pb2, telemetry_pb2
 
 
-def extractNodeFieldValue(node_dict: dict[str, Any], field_path: str) -> Any:
+def extract_node_field_value(node_dict: dict[str, Any], field_path: str) -> Any:
     """Retrieve a nested value from a dictionary using a dotted key path.
 
     Parameters
@@ -61,12 +61,12 @@ DEFAULT_SHOW_FIELDS: list[str] = [
 ]
 
 
-def getDefaultShowFields() -> list[str]:
+def get_default_show_fields() -> list[str]:
     """Return the default list of fields to display in showNodes output."""
     return DEFAULT_SHOW_FIELDS.copy()
 
 
-def filterNodes(
+def filter_nodes(
     nodes: list[dict[str, Any]],
     include_self: bool,
     local_node_num: int,
@@ -92,7 +92,7 @@ def filterNodes(
     return [node for node in nodes if node.get("num") != local_node_num]
 
 
-def sortNodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def sort_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Sort nodes by lastHeard timestamp in descending order.
 
     Parameters
@@ -126,7 +126,7 @@ def _descriptor_field_paths(descriptor: Descriptor, prefix: str = "") -> set[str
     return paths
 
 
-def getKnownFieldPaths(nodes: list[dict[str, Any]] | None = None) -> list[str]:
+def get_known_field_paths(nodes: list[dict[str, Any]] | None = None) -> list[str]:
     """Return known CLI node-table field paths from schema plus observed node data."""
     paths: set[str] = set(DEFAULT_SHOW_FIELDS)
     paths.update(_descriptor_field_paths(mesh_pb2.NodeInfo.DESCRIPTOR))

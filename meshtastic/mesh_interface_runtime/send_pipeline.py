@@ -17,11 +17,11 @@ from meshtastic.mesh_interface_runtime.flows import (
     _on_response_traceroute,
     _on_response_waypoint,
     _request_traceroute,
-    deleteWaypoint,
-    sendPosition,
-    sendTelemetry,
-    sendTraceroute,
-    sendWaypoint,
+    delete_waypoint,
+    send_position,
+    send_telemetry,
+    send_traceroute,
+    send_waypoint,
 )
 from meshtastic.mesh_interface_runtime.ports import _SendPipelinePort
 from meshtastic.mesh_interface_runtime.queue_send import _QueueSendRuntime
@@ -168,13 +168,13 @@ class SendPipeline:
         return self._port.queue_send_runtime
 
     @property
-    def localNode(self) -> "Node":
+    def local_node(self) -> "Node":
         """Return the local node from the parent interface."""
         return self._port.local_node
 
     @property
-    def myInfo(self) -> mesh_pb2.MyNodeInfo | None:
-        """Return the myInfo from the parent interface."""
+    def my_info(self) -> mesh_pb2.MyNodeInfo | None:
+        """Return the my_info from the parent interface."""
         return self._port.my_info
 
     @property
@@ -183,18 +183,18 @@ class SendPipeline:
         return self._port.nodes
 
     @property
-    def nodesByNum(self) -> dict[int, dict[str, Any]] | None:
+    def nodes_by_num(self) -> dict[int, dict[str, Any]] | None:
         """Return the nodes by number dictionary from the parent interface."""
         return self._port.nodes_by_num
 
     @property
-    def configId(self) -> int | None:
+    def config_id(self) -> int | None:
         """Return the config ID from the parent interface."""
         return self._port.config_id
 
     @property
-    def noProto(self) -> bool:
-        """Return the noProto flag from the parent interface."""
+    def no_proto(self) -> bool:
+        """Return the no_proto flag from the parent interface."""
         return self._port.no_proto
 
     @property
@@ -208,7 +208,7 @@ class SendPipeline:
         return self._port.timeout
 
     # pylint: disable=too-many-positional-arguments
-    def sendText(
+    def send_text(
         self,
         text: str,
         destinationId: int | str = BROADCAST_ADDR,
@@ -221,7 +221,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send UTF-8 text to a node (or broadcast) and return the transmitted MeshPacket."""
-        return self.sendData(
+        return self.send_data(
             text.encode("utf-8"),
             destinationId,
             portNum=portNum,
@@ -234,7 +234,7 @@ class SendPipeline:
         )
 
     # pylint: disable=too-many-positional-arguments
-    def sendAlert(
+    def send_alert(
         self,
         text: str,
         destinationId: int | str = BROADCAST_ADDR,
@@ -243,7 +243,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a high-priority alert text to a node."""
-        return self.sendData(
+        return self.send_data(
             text.encode("utf-8"),
             destinationId,
             portNum=portnums_pb2.PortNum.ALERT_APP,
@@ -255,7 +255,7 @@ class SendPipeline:
             hopLimit=hopLimit,
         )
 
-    def sendMqttClientProxyMessage(self, topic: str, data: bytes) -> None:
+    def send_mqtt_client_proxy_message(self, topic: str, data: bytes) -> None:
         """Send an MQTT client-proxy message through the radio."""
         prox = mesh_pb2.MqttClientProxyMessage()
         prox.topic = topic
@@ -265,7 +265,7 @@ class SendPipeline:
         self._send_to_radio(toRadio)
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
-    def sendData(
+    def send_data(
         self,
         data: PayloadData,
         destinationId: int | str = BROADCAST_ADDR,
@@ -504,12 +504,12 @@ class SendPipeline:
             request_id=request_id,
         )
 
-    def onResponsePosition(self, p: dict[str, Any]) -> None:
+    def on_response_position(self, p: dict[str, Any]) -> None:
         """Process a position response packet and emit a concise human-readable summary."""
         _on_response_position(self._port.facade, p)
 
     # pylint: disable=too-many-positional-arguments
-    def sendPosition(
+    def send_position(
         self,
         latitude: float = 0.0,
         longitude: float = 0.0,
@@ -521,7 +521,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send the device's position to a specific node or to broadcast."""
-        return sendPosition(
+        return send_position(
             self._port.facade,
             latitude=latitude,
             longitude=longitude,
@@ -533,20 +533,20 @@ class SendPipeline:
             hopLimit=hopLimit,
         )
 
-    def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
+    def on_response_trace_route(self, p: dict[str, Any]) -> None:
         """Emit human-readable traceroute results from a RouteDiscovery payload."""
         _on_response_traceroute(self._port.facade, p)
 
     # pylint: disable=too-many-positional-arguments
-    def sendTraceRoute(
+    def send_trace_route(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
     ) -> None:
         """Initiate a traceroute request toward a destination node and wait for responses."""
-        return sendTraceroute(
+        return send_traceroute(
             self._port.facade, dest, hopLimit, channelIndex=channelIndex
         )
 
-    def requestTraceRoute(
+    def request_trace_route(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
     ) -> TraceRouteResult:
         """Initiate a traceroute request and return its structured response."""
@@ -554,7 +554,7 @@ class SendPipeline:
             self._port.facade, dest, hopLimit, channelIndex=channelIndex
         )
 
-    def sendTelemetry(
+    def send_telemetry(
         self,
         destinationId: int | str = BROADCAST_ADDR,
         wantResponse: bool = False,
@@ -563,7 +563,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> None:
         """Send a telemetry message to a node or broadcast and optionally wait for a telemetry response."""
-        return sendTelemetry(
+        return send_telemetry(
             self._port.facade,
             destinationId=destinationId,
             wantResponse=wantResponse,
@@ -572,16 +572,16 @@ class SendPipeline:
             hopLimit=hopLimit,
         )
 
-    def onResponseTelemetry(self, p: dict[str, Any]) -> None:
+    def on_response_telemetry(self, p: dict[str, Any]) -> None:
         """Handle an incoming telemetry response."""
         _on_response_telemetry(self._port.facade, p)
 
-    def onResponseWaypoint(self, p: dict[str, Any]) -> None:
+    def on_response_waypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet."""
         _on_response_waypoint(self._port.facade, p)
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
-    def sendWaypoint(
+    def send_waypoint(
         self,
         name: str,
         description: str,
@@ -597,7 +597,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a waypoint to a node or broadcast."""
-        return sendWaypoint(
+        return send_waypoint(
             self._port.facade,
             name=name,
             description=description,
@@ -614,7 +614,7 @@ class SendPipeline:
         )
 
     # pylint: disable=too-many-positional-arguments
-    def deleteWaypoint(
+    def delete_waypoint(
         self,
         waypoint_id: int,
         destinationId: int | str = BROADCAST_ADDR,
@@ -624,7 +624,7 @@ class SendPipeline:
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Delete a waypoint by sending a Waypoint message with expire=0 to a destination."""
-        return deleteWaypoint(
+        return delete_waypoint(
             self._port.facade,
             waypointId=waypoint_id,
             destinationId=destinationId,
@@ -663,7 +663,7 @@ class SendPipeline:
     ) -> mesh_pb2.MeshPacket:
         """Send a MeshPacket to a specific node or broadcast."""
         with self._node_db_lock:
-            my_node_num = self.myInfo.my_node_num if self.myInfo is not None else None
+            my_node_num = self.my_info.my_node_num if self.my_info is not None else None
 
         if my_node_num is not None and destinationId != my_node_num:
             self._port.wait_connected()
@@ -722,7 +722,7 @@ class SendPipeline:
             meshPacket.hop_limit = hopLimit
         else:
             with self._node_db_lock:
-                local_node = self.localNode
+                local_node = self.local_node
                 if local_node is None or local_node.localConfig is None:
                     default_hop_limit = DEFAULT_HOP_LIMIT  # Sensible default
                 else:
@@ -739,7 +739,7 @@ class SendPipeline:
             meshPacket.id = self._port.generate_packet_id()
 
         toRadio.packet.CopyFrom(meshPacket)
-        if self.noProto:
+        if self.no_proto:
             logger.warning(
                 "Not sending packet because protocol use is disabled by noProto"
             )
@@ -748,33 +748,12 @@ class SendPipeline:
             self._port.send_to_radio(toRadio)
         return meshPacket
 
-    # pylint: disable=too-many-positional-arguments
-    def _sendPacket(
-        self,
-        meshPacket: mesh_pb2.MeshPacket,
-        destinationId: int | str = BROADCAST_ADDR,
-        wantAck: bool = False,
-        hopLimit: int | None = None,
-        pkiEncrypted: bool | None = False,
-        publicKey: bytes | None = None,
-    ) -> mesh_pb2.MeshPacket:
-        """Backward-compatible alias for `_send_packet`."""
-        # COMPAT_STABLE_SHIM
-        return self._send_packet(
-            meshPacket=meshPacket,
-            destinationId=destinationId,
-            wantAck=wantAck,
-            hopLimit=hopLimit,
-            pkiEncrypted=pkiEncrypted,
-            publicKey=publicKey,
-        )
-
-    def waitForConfig(self) -> None:
+    def wait_for_config(self) -> None:
         """Block until the radio configuration and the local node's configuration are available."""
         success = (
             self._port.wait_for_initial_config()
-            and self.localNode.waitForConfig()
-            and self.localNode._channel_request_runtime._timeout_for_field(
+            and self.local_node.waitForConfig()
+            and self.local_node._channel_request_runtime._timeout_for_field(
                 "lora", LORA_CONFIG_WAIT_SECONDS
             )
         )
@@ -795,14 +774,14 @@ class SendPipeline:
         finally:
             self._retire_wait_request(WAIT_ATTR_NAK, request_id=request_id)
 
-    def waitForAckNak(self) -> None:
+    def wait_for_ack_nak(self) -> None:
         """Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out."""
         success = self._timeout.waitForAckNak(self._acknowledgment)
         self._raise_wait_error_if_present(WAIT_ATTR_NAK)
         if not success:
             raise self._port.error_type("Timed out waiting for an acknowledgment")
 
-    def waitForTraceRoute(
+    def wait_for_trace_route(
         self, waitFactor: float, request_id: int | None = None
     ) -> None:
         """Wait for trace route completion using the configured timeout."""
@@ -825,7 +804,7 @@ class SendPipeline:
         finally:
             self._retire_wait_request(WAIT_ATTR_TRACEROUTE, request_id=request_id)
 
-    def waitForTelemetry(self, request_id: int | None = None) -> None:
+    def wait_for_telemetry(self, request_id: int | None = None) -> None:
         """Wait for a telemetry response or until the configured timeout elapses."""
         try:
             if request_id is None:
@@ -844,7 +823,7 @@ class SendPipeline:
         finally:
             self._retire_wait_request(WAIT_ATTR_TELEMETRY, request_id=request_id)
 
-    def waitForPosition(self, request_id: int | None = None) -> None:
+    def wait_for_position(self, request_id: int | None = None) -> None:
         """Block until a position acknowledgment is received."""
         try:
             if request_id is None:
@@ -861,7 +840,7 @@ class SendPipeline:
         finally:
             self._retire_wait_request(WAIT_ATTR_POSITION, request_id=request_id)
 
-    def waitForWaypoint(self, request_id: int | None = None) -> None:
+    def wait_for_waypoint(self, request_id: int | None = None) -> None:
         """Block until a waypoint acknowledgment is received."""
         try:
             if request_id is None:
@@ -880,7 +859,7 @@ class SendPipeline:
 
     def _send_to_radio(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Queue and transmit a ToRadio protobuf to the radio device."""
-        if self.noProto:
+        if self.no_proto:
             logger.warning(
                 "Not sending packet because protocol use is disabled by noProto"
             )
@@ -902,7 +881,7 @@ class SendPipeline:
         m.disconnect = True
         self._send_to_radio(m)
 
-    def sendHeartbeat(self) -> None:
+    def send_heartbeat(self) -> None:
         """Send a heartbeat message to the radio to indicate the interface is alive."""
         p = mesh_pb2.ToRadio()
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())

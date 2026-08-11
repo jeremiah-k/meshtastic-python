@@ -662,7 +662,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         Delegates to self.node_view.showInfo().
         """
-        return self._node_view.showInfo(file)
+        return self._node_view.show_info(file)
 
     def showNodes(
         self, includeSelf: bool = True, showFields: list[str] | None = None
@@ -671,7 +671,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         Delegates to self.node_view.showNodes().
         """
-        return self._node_view.showNodes(includeSelf, showFields)
+        return self._node_view.show_nodes(includeSelf, showFields)
 
     def getNode(
         self,
@@ -684,7 +684,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         Delegates to self.node_view.getNode().
         """
-        return self._node_view.getNode(
+        return self._node_view.get_node(
             nodeId, requestChannels, requestChannelAttempts, timeout
         )
 
@@ -730,7 +730,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The packet that was sent; its `id` field will be populated and can be used to track acknowledgments or naks.
         """
-        return self._send_pipeline.sendText(
+        return self._send_pipeline.send_text(
             text,
             destinationId=destinationId,
             wantAck=wantAck,
@@ -771,7 +771,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The sent mesh packet with its `id` populated.
         """
-        return self._send_pipeline.sendAlert(
+        return self._send_pipeline.send_alert(
             text,
             destinationId=destinationId,
             onResponse=onResponse,
@@ -789,7 +789,7 @@ class MeshInterface:  # pylint: disable=R0902
         data : bytes
             MQTT payload to forward.
         """
-        self._send_pipeline.sendMqttClientProxyMessage(topic, data)
+        self._send_pipeline.send_mqtt_client_proxy_message(topic, data)
 
     def sendData(  # pylint: disable=R0913,too-many-positional-arguments
         self,
@@ -850,7 +850,7 @@ class MeshInterface:  # pylint: disable=R0902
         `_send_data_with_wait()` and is not part of the public `sendData()`
         contract.
         """
-        return self._send_pipeline.sendData(
+        return self._send_pipeline.send_data(
             data,
             destinationId=destinationId,
             portNum=portNum,
@@ -998,7 +998,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The sent packet with its `id` populated.
         """
-        return self._send_pipeline.sendPosition(
+        return self._send_pipeline.send_position(
             latitude=latitude,
             longitude=longitude,
             altitude=altitude,
@@ -1159,7 +1159,7 @@ class MeshInterface:  # pylint: disable=R0902
             the nested `decoded["routing"]["errorReason"]` may be present.
 
         """
-        self._send_pipeline.onResponsePosition(p)
+        self._send_pipeline.on_response_position(p)
 
     def sendTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
@@ -1184,7 +1184,7 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterfaceError
             If waiting for traceroute responses times out or the operation fails.
         """
-        self._send_pipeline.sendTraceRoute(dest, hopLimit, channelIndex=channelIndex)
+        self._send_pipeline.send_trace_route(dest, hopLimit, channelIndex=channelIndex)
 
     def requestTraceRoute(
         self, dest: int | str, hopLimit: int, channelIndex: int = 0
@@ -1210,7 +1210,7 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterfaceError
             If the request fails, times out, or returns an invalid payload.
         """
-        return self._send_pipeline.requestTraceRoute(
+        return self._send_pipeline.request_trace_route(
             dest, hopLimit, channelIndex=channelIndex
         )
 
@@ -1222,7 +1222,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             The traceroute response packet.
         """
-        self._send_pipeline.onResponseTraceRoute(p)
+        self._send_pipeline.on_response_trace_route(p)
 
     # pylint: disable=too-many-positional-arguments
     def sendTelemetry(
@@ -1250,7 +1250,7 @@ class MeshInterface:  # pylint: disable=R0902
         hopLimit : int | None
             Optional hop limit override for the outgoing packet. (Default value = None)
         """
-        self._send_pipeline.sendTelemetry(
+        self._send_pipeline.send_telemetry(
             destinationId=destinationId,
             wantResponse=wantResponse,
             channelIndex=channelIndex,
@@ -1266,7 +1266,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             Decoded packet dictionary produced by _handle_packet_from_radio.
         """
-        self._send_pipeline.onResponseTelemetry(p)
+        self._send_pipeline.on_response_telemetry(p)
 
     def onResponseWaypoint(self, p: dict[str, Any]) -> None:
         """Handle a waypoint response or routing error contained in a received packet.
@@ -1276,7 +1276,7 @@ class MeshInterface:  # pylint: disable=R0902
         p : dict[str, Any]
             Packet dictionary containing a 'decoded' mapping.
         """
-        self._send_pipeline.onResponseWaypoint(p)
+        self._send_pipeline.on_response_waypoint(p)
 
     def sendWaypoint(  # pylint: disable=R0913,too-many-positional-arguments
         self,
@@ -1327,7 +1327,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The MeshPacket that was sent; its `id` is populated for tracking.
         """
-        return self._send_pipeline.sendWaypoint(
+        return self._send_pipeline.send_waypoint(
             name=name,
             description=description,
             icon=icon,
@@ -1374,7 +1374,7 @@ class MeshInterface:  # pylint: disable=R0902
         mesh_pb2.MeshPacket
             The MeshPacket that was sent; its `id` field is populated and can be used to track acknowledgements.
         """
-        return self._send_pipeline.deleteWaypoint(
+        return self._send_pipeline.delete_waypoint(
             waypoint_id=waypoint_id,
             destinationId=destinationId,
             wantAck=wantAck,
@@ -1391,7 +1391,7 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterface.MeshInterfaceError
             If the configuration is not received before the interface timeout.
         """
-        self._send_pipeline.waitForConfig()
+        self._send_pipeline.wait_for_config()
 
     def _wait_for_ack_nak(self, request_id: int) -> None:
         """Wait for the ACK/NAK correlated to one internal request id."""
@@ -1405,14 +1405,14 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterface.MeshInterfaceError
             If waiting times out before an ACK/NAK is received.
         """
-        self._send_pipeline.waitForAckNak()
+        self._send_pipeline.wait_for_ack_nak()
 
     def waitForTraceRoute(
         self, waitFactor: float, request_id: int | None = None
     ) -> None:
         """Wait for trace route completion using the configured timeout.
 
-        Delegates to self._send_pipeline.waitForTraceRoute().
+        Delegates to self._send_pipeline.wait_for_trace_route().
 
         Parameters
         ----------
@@ -1427,12 +1427,12 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterface.MeshInterfaceError
             If the wait times out before a traceroute response is received.
         """
-        self._send_pipeline.waitForTraceRoute(waitFactor, request_id=request_id)
+        self._send_pipeline.wait_for_trace_route(waitFactor, request_id=request_id)
 
     def waitForTelemetry(self, request_id: int | None = None) -> None:
         """Wait for a telemetry response or until the configured timeout elapses.
 
-        Delegates to self._send_pipeline.waitForTelemetry().
+        Delegates to self._send_pipeline.wait_for_telemetry().
 
         Parameters
         ----------
@@ -1445,12 +1445,12 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterface.MeshInterfaceError
             If a telemetry response is not received before the configured timeout.
         """
-        self._send_pipeline.waitForTelemetry(request_id=request_id)
+        self._send_pipeline.wait_for_telemetry(request_id=request_id)
 
     def waitForPosition(self, request_id: int | None = None) -> None:
         """Block until a position acknowledgment is received.
 
-        Delegates to self._send_pipeline.waitForPosition().
+        Delegates to self._send_pipeline.wait_for_position().
 
         Parameters
         ----------
@@ -1463,12 +1463,12 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterface.MeshInterfaceError
             If waiting for the position times out.
         """
-        self._send_pipeline.waitForPosition(request_id=request_id)
+        self._send_pipeline.wait_for_position(request_id=request_id)
 
     def waitForWaypoint(self, request_id: int | None = None) -> None:
         """Block until a waypoint acknowledgment is received.
 
-        Delegates to self._send_pipeline.waitForWaypoint().
+        Delegates to self._send_pipeline.wait_for_waypoint().
 
         Parameters
         ----------
@@ -1481,56 +1481,56 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterface.MeshInterfaceError
             If the wait times out before a waypoint acknowledgment is received.
         """
-        self._send_pipeline.waitForWaypoint(request_id=request_id)
+        self._send_pipeline.wait_for_waypoint(request_id=request_id)
 
     def getMyNodeInfo(self) -> dict[str, Any] | None:
         """Get the stored node-info dictionary for the local node.
 
         Delegates to self.node_view.getMyNodeInfo().
         """
-        return self._node_view.getMyNodeInfo()
+        return self._node_view.get_my_node_info()
 
     def getMyUser(self) -> dict[str, Any] | None:
         """Get the user information for the local node.
 
         Delegates to self.node_view.getMyUser().
         """
-        return self._node_view.getMyUser()
+        return self._node_view.get_my_user()
 
     def getLongName(self) -> str | None:
         """Get the local user's configured long name.
 
         Delegates to self.node_view.getLongName().
         """
-        return self._node_view.getLongName()
+        return self._node_view.get_long_name()
 
     def getShortName(self) -> str | None:
         """Get the local node user's short name.
 
         Delegates to self.node_view.getShortName().
         """
-        return self._node_view.getShortName()
+        return self._node_view.get_short_name()
 
     def getPublicKey(self) -> bytes | None:
         """Return the local node's public key if available.
 
         Delegates to self.node_view.getPublicKey().
         """
-        return self._node_view.getPublicKey()
+        return self._node_view.get_public_key()
 
     def getCannedMessage(self) -> str | None:
         """Retrieve the canned (predefined) message configured for the local node.
 
         Delegates to self.node_view.getCannedMessage().
         """
-        return self._node_view.getCannedMessage()
+        return self._node_view.get_canned_message()
 
     def getRingtone(self) -> str | None:
         """Get the local node's ringtone name or identifier.
 
         Delegates to self.node_view.getRingtone().
         """
-        return self._node_view.getRingtone()
+        return self._node_view.get_ringtone()
 
     def _connection_timeout_override(
         self, attribute_name: str, default: float | None = None

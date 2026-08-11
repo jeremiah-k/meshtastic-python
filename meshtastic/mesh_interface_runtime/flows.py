@@ -105,7 +105,7 @@ def _on_response_position(interface: "MeshInterface", p: dict[str, Any]) -> None
 
 
 # pylint: disable=too-many-positional-arguments
-def sendPosition(
+def send_position(
     interface: "MeshInterface",
     latitude: float = 0.0,
     longitude: float = 0.0,
@@ -331,7 +331,7 @@ def _send_traceroute(
     return result
 
 
-def sendTraceroute(
+def send_traceroute(
     interface: "MeshInterface",
     dest: int | str,
     hopLimit: int,
@@ -444,7 +444,7 @@ def _on_response_telemetry(interface: "MeshInterface", p: dict[str, Any]) -> Non
 
 
 # pylint: disable=too-many-positional-arguments
-def sendTelemetry(
+def send_telemetry(
     interface: "MeshInterface",
     destinationId: int | str = BROADCAST_ADDR,
     wantResponse: bool = False,
@@ -569,7 +569,7 @@ def _on_response_waypoint(interface: "MeshInterface", p: dict[str, Any]) -> None
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-def sendWaypoint(
+def send_waypoint(
     interface: "MeshInterface",
     name: str,
     description: str,
@@ -640,7 +640,7 @@ def sendWaypoint(
 
 
 # pylint: disable=too-many-positional-arguments
-def deleteWaypoint(
+def delete_waypoint(
     interface: "MeshInterface",
     waypointId: int,
     destinationId: int | str = BROADCAST_ADDR,

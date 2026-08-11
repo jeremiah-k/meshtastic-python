@@ -166,18 +166,18 @@ class ReceivePipeline:
         return self._port.queue_send_runtime
 
     @property
-    def configId(self) -> int | None:
+    def config_id(self) -> int | None:
         """Return the config ID from the parent interface."""
         return self._port.config_id
 
     @property
-    def localNode(self) -> "Node":
+    def local_node(self) -> "Node":
         """Return the local node from the parent interface."""
         return self._port.local_node
 
     @property
-    def myInfo(self) -> mesh_pb2.MyNodeInfo | None:
-        """Return the myInfo from the parent interface."""
+    def my_info(self) -> mesh_pb2.MyNodeInfo | None:
+        """Return the my_info from the parent interface."""
         return self._port.my_info
 
     @property
@@ -191,7 +191,7 @@ class ReceivePipeline:
         return self._port.nodes
 
     @property
-    def nodesByNum(self) -> dict[int, dict[str, Any]] | None:
+    def nodes_by_num(self) -> dict[int, dict[str, Any]] | None:
         """Return the nodes by number dictionary from the parent interface."""
         return self._port.nodes_by_num
 
@@ -246,7 +246,7 @@ class ReceivePipeline:
         """Normalize parsed FromRadio data for dispatch and mutation handlers."""
         logger.debug("Received from radio: %s", from_radio)
         with self._node_db_lock:
-            config_id = self.configId
+            config_id = self.config_id
         return _FromRadioContext(
             message=from_radio,
             message_dict=_LazyMessageDict(from_radio),
@@ -473,7 +473,7 @@ class ReceivePipeline:
         """Apply all present localConfig fields from inbound config payload."""
         applied = False
         source_fields = config.DESCRIPTOR.fields_by_name
-        target_fields = self.localNode.localConfig.DESCRIPTOR.fields_by_name
+        target_fields = self.local_node.localConfig.DESCRIPTOR.fields_by_name
         for field_name in LOCAL_CONFIG_FROM_RADIO_FIELDS:
             if field_name not in source_fields:
                 continue
@@ -484,7 +484,7 @@ class ReceivePipeline:
                 )
                 continue
             if config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid LOCAL_CONFIG_FROM_RADIO_FIELDS
-                getattr(self.localNode.localConfig, field_name).CopyFrom(
+                getattr(self.local_node.localConfig, field_name).CopyFrom(
                     getattr(config, field_name)
                 )
                 applied = True
@@ -496,7 +496,7 @@ class ReceivePipeline:
         """Apply all present moduleConfig fields from inbound moduleConfig payload."""
         applied = False
         source_fields = module_config.DESCRIPTOR.fields_by_name
-        target_fields = self.localNode.moduleConfig.DESCRIPTOR.fields_by_name
+        target_fields = self.local_node.moduleConfig.DESCRIPTOR.fields_by_name
         for field_name in MODULE_CONFIG_FROM_RADIO_FIELDS:
             if field_name not in source_fields:
                 continue
@@ -507,7 +507,7 @@ class ReceivePipeline:
                 )
                 continue
             if module_config.HasField(field_name):  # type: ignore[arg-type]  # field_name is from known-valid MODULE_CONFIG_FROM_RADIO_FIELDS
-                getattr(self.localNode.moduleConfig, field_name).CopyFrom(
+                getattr(self.local_node.moduleConfig, field_name).CopyFrom(
                     getattr(module_config, field_name)
                 )
                 applied = True
@@ -547,13 +547,13 @@ class ReceivePipeline:
             )
 
         with self._node_db_lock:
-            if self.nodesByNum is None:
+            if self.nodes_by_num is None:
                 raise self._port.error_type(
                     "Node database not initialized"
                 )
 
-            if nodeNum in self.nodesByNum:
-                return self.nodesByNum[nodeNum]
+            if nodeNum in self.nodes_by_num:
+                return self.nodes_by_num[nodeNum]
             presumptive_id = f"!{nodeNum:08x}"
             n = {
                 "num": nodeNum,
@@ -564,7 +564,7 @@ class ReceivePipeline:
                     "hwModel": "UNSET",
                 },
             }
-            self.nodesByNum[nodeNum] = n
+            self.nodes_by_num[nodeNum] = n
             return n
 
     def _handle_channel(self, channel: channel_pb2.Channel) -> None:
@@ -687,7 +687,7 @@ class ReceivePipeline:
             return BROADCAST_ADDR if isDest else "Unknown"
 
         with self._node_db_lock:
-            nodes = self.nodesByNum
+            nodes = self.nodes_by_num
             if nodes is None:
                 logger.debug(
                     "Node database not initialized while resolving node id for %s", num

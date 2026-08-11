@@ -1615,7 +1615,7 @@ def _validate_cli_show_fields(interface: MeshInterface, show_fields: list[str]) 
     observed_nodes = (
         list(nodes_by_num.values()) if isinstance(nodes_by_num, dict) else []
     )
-    available = node_data.getKnownFieldPaths(observed_nodes)
+    available = node_data.get_known_field_paths(observed_nodes)
     available_set = set(available)
     invalid = [field for field in show_fields if field not in available_set]
     if invalid:
