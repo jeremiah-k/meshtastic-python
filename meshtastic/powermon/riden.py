@@ -3,10 +3,12 @@
 import logging
 import math
 import time
+from contextlib import suppress
 from datetime import datetime
 from typing import Any, Final, cast
 
 import riden
+import serial  # type: ignore[import-untyped]
 
 from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR
 from .power_supply import PowerError, PowerSupply
@@ -18,6 +20,20 @@ DEFAULT_RIDEN_BAUDRATE: Final[int] = 115200
 DEFAULT_RIDEN_ADDRESS: Final[int] = 1
 
 Riden = cast(type[Any], riden.Riden)  # type: ignore[attr-defined]
+
+
+def _close_riden_transport(device: object) -> None:
+    """Best-effort close of a Riden Modbus master and serial transport."""
+    master = getattr(device, "master", None)
+    close_master = getattr(master, "close", None)
+    if callable(close_master):
+        with suppress(Exception):
+            close_master()
+
+    serial_handle = getattr(device, "serial", None)
+    if serial_handle is not None:
+        with suppress(Exception):
+            serial_handle.close()
 
 
 class RidenPowerSupply(PowerSupply):
@@ -33,24 +49,45 @@ class RidenPowerSupply(PowerSupply):
         portName : str, optional
             The serial port path of the power supply. Defaults to ``"/dev/ttyUSB0"``.
         """
-        self.r = r = Riden(
-            port=portName,
-            baudrate=DEFAULT_RIDEN_BAUDRATE,
-            address=DEFAULT_RIDEN_ADDRESS,
+        serial_handle = serial.Serial(
+            port=portName, baudrate=DEFAULT_RIDEN_BAUDRATE
         )
-        logging.info(
-            "Connected to Riden power supply: model %s, sn %s, firmware %s. Date/time updated.",
-            r.type,
-            r.sn,
-            r.fw,
-        )
-        r.set_date_time(datetime.now())
-        # Keep base init after port open so timing/voltage state is available.
-        super().__init__()
-        self.prevWattHour = self._get_raw_watt_hour()
-        # COMPAT_STABLE_SHIM: retained for callers that inspect legacy running sample state.
-        self.nowWattHour = self.prevWattHour
-        self.prevPowerTime = time.monotonic()
+        try:
+            self.r = r = Riden(
+                port=portName,
+                baudrate=DEFAULT_RIDEN_BAUDRATE,
+                address=DEFAULT_RIDEN_ADDRESS,
+                serial=serial_handle,
+            )
+        except BaseException:
+            with suppress(Exception):
+                serial_handle.close()
+            raise
+
+        try:
+            logging.info(
+                "Connected to Riden power supply: model %s, sn %s, firmware %s. Date/time updated.",
+                r.type,
+                r.sn,
+                r.fw,
+            )
+            r.set_date_time(datetime.now())
+            # Keep base init after port open so timing/voltage state is available.
+            super().__init__()
+            self.prevWattHour = self._get_raw_watt_hour()
+            # COMPAT_STABLE_SHIM: retained for callers that inspect legacy running sample state.
+            self.nowWattHour = self.prevWattHour
+            self.prevPowerTime = time.monotonic()
+        except BaseException:
+            _close_riden_transport(r)
+            raise
+
+    def close(self) -> None:
+        """Close the Modbus/serial transport without changing output power state."""
+        if getattr(self, "_closed", False):
+            return
+        _close_riden_transport(self.r)
+        super().close()
 
     def setMaxCurrent(self, i: float) -> None:
         """Set the maximum current the supply will provide."""

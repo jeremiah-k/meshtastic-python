@@ -54,9 +54,17 @@ class PowerMeter:
     def __init__(self) -> None:
         """Initialize the PowerMeter object."""
         self.prevPowerTime = time.monotonic()
+        self._closed: bool = False
 
     def close(self) -> None:
-        """Close the power meter."""
+        """Mark the power meter closed.
+
+        Concrete hardware backends should release transport resources before
+        delegating here. The base implementation remains intentionally light so
+        compatibility subclasses that do not own external resources continue to
+        work unchanged.
+        """
+        self._closed = True
 
     def getAverageCurrentMA(self) -> float:
         """Return average current of last measurement in mA (since last call to this method).

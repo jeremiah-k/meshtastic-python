@@ -170,3 +170,68 @@ def test_get_raw_watt_hour_legacy_alias_delegates(
 
     assert pps._getRawWattHour() == pytest.approx(7.25)
     pps._get_raw_watt_hour.assert_called_once()
+
+
+@pytest.mark.unit
+def test_close_closes_modbus_master_and_serial_once(
+    riden_stub: RidenPowerSupply,
+) -> None:
+    """Close should release transport resources idempotently without powering off."""
+    pps = riden_stub
+    device = cast(MagicMock, pps.r)
+    device.master = MagicMock()
+    device.serial = MagicMock()
+    pps._closed = False
+
+    pps.close()
+    pps.close()
+
+    device.master.close.assert_called_once_with()
+    device.serial.close.assert_called_once_with()
+    device.set_output.assert_not_called()
+    assert pps._closed is True
+
+
+@pytest.mark.unit
+def test_constructor_closes_transport_when_post_open_initialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Constructor failures after opening Riden transport must release it."""
+    serial_handle = MagicMock()
+    device = MagicMock()
+    device.type = "RD6006"
+    device.sn = "1234"
+    device.fw = 1
+    device.master = MagicMock()
+    device.serial = serial_handle
+    device.set_date_time.side_effect = RuntimeError("clock failed")
+    monkeypatch.setattr(
+        "meshtastic.powermon.riden.serial.Serial", MagicMock(return_value=serial_handle)
+    )
+    monkeypatch.setattr("meshtastic.powermon.riden.Riden", MagicMock(return_value=device))
+
+    with pytest.raises(RuntimeError, match="clock failed"):
+        RidenPowerSupply("COM9")
+
+    device.master.close.assert_called_once_with()
+    serial_handle.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_constructor_closes_serial_when_riden_initialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failures inside the third-party Riden constructor must not leak serial."""
+    serial_handle = MagicMock()
+    serial_factory = MagicMock(return_value=serial_handle)
+    monkeypatch.setattr("meshtastic.powermon.riden.serial.Serial", serial_factory)
+    monkeypatch.setattr(
+        "meshtastic.powermon.riden.Riden",
+        MagicMock(side_effect=RuntimeError("riden init failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="riden init failed"):
+        RidenPowerSupply("COM9")
+
+    serial_factory.assert_called_once_with(port="COM9", baudrate=115200)
+    serial_handle.close.assert_called_once_with()

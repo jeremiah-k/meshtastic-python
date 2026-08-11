@@ -1790,21 +1790,98 @@ def exportConfig(interface: MeshInterface) -> str:
 export_config = exportConfig
 
 
+def _close_power_meter_quietly(candidate: Any) -> None:
+    """Best-effort close used while rolling back meter construction/configuration."""
+    close_method = getattr(candidate, "close", None)
+    if callable(close_method):
+        try:
+            close_method()
+        except Exception:
+            logger.debug("Power meter cleanup failed", exc_info=True)
+
+
+def _validated_power_voltage(args: argparse.Namespace) -> float:
+    """Validate power-related CLI arguments before opening hardware."""
+    voltage = 0.0
+    if args.power_voltage is not None:
+        if not any(
+            (
+                args.power_riden,
+                args.power_ppk2_meter,
+                args.power_ppk2_supply,
+                args.power_sim,
+            )
+        ):
+            _cli_exit(
+                "--power-voltage requires one of --power-riden, --power-ppk2-meter, --power-ppk2-supply, or --power-sim"
+            )
+        try:
+            voltage = float(args.power_voltage)
+        except ValueError:
+            _cli_exit("--power-voltage must be a number")
+        if not MIN_SUPPLY_VOLTAGE_V <= voltage <= MAX_SUPPLY_VOLTAGE_V:
+            _cli_exit(
+                f"Voltage must be between {MIN_SUPPLY_VOLTAGE_V}V and {MAX_SUPPLY_VOLTAGE_V}V"
+            )
+
+    if (args.power_ppk2_supply or args.power_ppk2_meter) and voltage <= 0:
+        _cli_exit("Voltage must be specified for PPK2")
+    return voltage
+
+
+def _build_power_meter(args: argparse.Namespace, voltage: float) -> Any:
+    """Construct and configure one power meter transactionally."""
+    candidate: Any = None
+    try:
+        if args.power_riden:
+            riden_factory = RidenPowerSupply
+            if riden_factory is None:
+                _cli_exit("The Riden power meter backend is unavailable")
+            candidate = riden_factory(args.power_riden)
+        elif args.power_ppk2_supply or args.power_ppk2_meter:
+            ppk2_factory = PPK2PowerSupply
+            if ppk2_factory is None:
+                _cli_exit("The PPK2 power meter backend is unavailable")
+            candidate = ppk2_factory()
+            candidate.setVoltage(voltage)
+            candidate.setIsSupply(args.power_ppk2_supply)
+        elif args.power_sim:
+            sim_factory = SimPowerSupply
+            if sim_factory is None:
+                _cli_exit("The simulated power meter backend is unavailable")
+            candidate = sim_factory()
+
+        if candidate is None:
+            _cli_exit("A power meter backend must be selected")
+
+        if voltage:
+            logger.info("Setting power supply to %s volts", voltage)
+            candidate.setVoltage(voltage)
+            candidate.powerOn()
+            if args.power_wait:
+                input("Powered on, press enter to continue...")
+            else:
+                logger.info("Powered-on, waiting for device to boot")
+                time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
+        return candidate
+    except BaseException:
+        if candidate is not None:
+            _close_power_meter_quietly(candidate)
+        raise
+
+
 def _create_power_meter() -> None:
     """Initialize and configure the global power meter from parsed CLI arguments.
 
-    Validates an optional voltage (must be between MIN_SUPPLY_VOLTAGE_V and MAX_SUPPLY_VOLTAGE_V), instantiates the
-    selected power meter implementation based on power-related CLI flags, assigns it to the
-    module-global `meter`, and, if a voltage is provided, sets the meter voltage and
-    powers it on. When powering on, optionally waits for user confirmation or sleeps
-    briefly depending on the CLI power-wait flag.
+    Validation is performed before opening hardware. A newly-created meter is
+    fully configured before replacing the historical module-global ``meter``;
+    failures close the partial meter and preserve the previous global instance.
 
     Raises
     ------
     RuntimeError
-        if mt_config.args is not initialized.
+        If ``mt_config.args`` is not initialized.
     """
-
     global meter  # pylint: disable=global-statement
     args = mt_config.args
     if args is None:
@@ -1818,53 +1895,12 @@ def _create_power_meter() -> None:
             "You may need to run `poetry install --with powermon`. "
             f"Import Error was: {powermon_exception}"
         )
-    if RidenPowerSupply is None or PPK2PowerSupply is None or SimPowerSupply is None:
-        _cli_exit(
-            "The powermon module loaded incompletely and required meter classes are "
-            "unavailable."
-        )
-
-    # If the user specified a voltage, make sure it is valid AND a backend is selected
-    v = 0.0
-    if args.power_voltage is not None:
-        if not any(
-            (
-                args.power_riden,
-                args.power_ppk2_meter,
-                args.power_ppk2_supply,
-                args.power_sim,
-            )
-        ):
-            _cli_exit(
-                "--power-voltage requires one of --power-riden, --power-ppk2-meter, --power-ppk2-supply, or --power-sim"
-            )
-        v = float(args.power_voltage)
-        if v < MIN_SUPPLY_VOLTAGE_V or v > MAX_SUPPLY_VOLTAGE_V:
-            _cli_exit(
-                f"Voltage must be between {MIN_SUPPLY_VOLTAGE_V}V and {MAX_SUPPLY_VOLTAGE_V}V"
-            )
-    if args.power_riden:
-        meter = RidenPowerSupply(args.power_riden)
-    elif args.power_ppk2_supply or args.power_ppk2_meter:
-        meter = PPK2PowerSupply()
-        if v <= 0:
-            _cli_exit("Voltage must be specified for PPK2")
-        meter.setVoltage(
-            v
-        )  # PPK2 requires setting voltage before selecting supply mode
-        meter.setIsSupply(args.power_ppk2_supply)
-    elif args.power_sim:
-        meter = SimPowerSupply()
-
-    if meter and v:
-        logger.info("Setting power supply to %s volts", v)
-        meter.setVoltage(v)
-        meter.powerOn()
-        if args.power_wait:
-            input("Powered on, press enter to continue...")
-        else:
-            logger.info("Powered-on, waiting for device to boot")
-            time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
+    voltage = _validated_power_voltage(args)
+    replacement = _build_power_meter(args, voltage)
+    previous = meter
+    meter = replacement
+    if previous is not None and previous is not replacement:
+        _close_power_meter_quietly(previous)
 
 
 def _power_meter_requested(args: argparse.Namespace) -> bool:
