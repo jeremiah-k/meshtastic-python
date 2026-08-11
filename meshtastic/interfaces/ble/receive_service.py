@@ -804,42 +804,42 @@ class BLEReceiveRecoveryController:
     ) -> tuple[bool, bool]:
         """Handle one payload-read attempt and classify loop control flow."""
         iface = self._iface
+        should_continue = False
+        fatal = False
         try:
-            if not self._read_and_handle_payload(
+            should_continue = not self._read_and_handle_payload(
                 client,
                 poll_without_notify=poll_without_notify,
-            ):
-                return True, False
-            return False, False
+            )
         except (BleakDBusError, BleakGATTProtocolError) as exc:
-            if self.handle_read_loop_disconnect(repr(exc), client):
-                return True, False
-            return True, True
+            should_continue = True
+            fatal = not self.handle_read_loop_disconnect(repr(exc), client)
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             raise
         except (BleakError, BLEClient.BLEError) as exc:
             try:
                 self.handle_transient_read_error(exc)
-                return False, False
             except iface.BLEError:
                 logger.error("Fatal BLE read error after retries: %s", exc)
                 if not self._is_connection_closing():
                     self._close_after_fatal_read()
-                return True, True
+                should_continue = True
+                fatal = True
         except (RuntimeError, OSError) as exc:
             logger.error("Fatal error in BLE receive thread: %s", exc)
             if not self._is_connection_closing():
                 self._close_after_fatal_read()
-            return True, True
+            should_continue = True
+            fatal = True
         except Exception as exc:  # noqa: BLE001  # pragma: no cover
             _log_ble_failure(
                 _BLEFailureDisposition.RETRYABLE,
                 "Unexpected error in BLE read loop",
                 level=logging.ERROR,
             )
-            if self.handle_read_loop_disconnect(repr(exc), client):
-                return True, False
-            return True, True
+            should_continue = True
+            fatal = not self.handle_read_loop_disconnect(repr(exc), client)
+        return should_continue, fatal
 
     def _run_receive_cycle(
         self,

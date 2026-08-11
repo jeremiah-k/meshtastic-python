@@ -234,7 +234,9 @@ class BLEReceiveLifecycleCoordinator:
         thread_ident, _ = _thread_start_probe(thread)
         return isinstance(thread_ident, int) and thread_ident == threading.get_ident()
 
-    def _check_receive_start_conditions(
+    # Early exits preserve snapshot/revalidation semantics across lock release points.
+    def _check_receive_start_conditions(  # pylint: disable=too-many-return-statements
+
         self,
         *,
         name: str,

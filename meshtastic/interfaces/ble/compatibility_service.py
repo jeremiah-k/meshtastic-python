@@ -316,26 +316,27 @@ class BLECompatibilityEventService:
             except Exception:  # noqa: BLE001 - enqueue path is best effort
                 alive_result = False
             thread_is_alive = alive_result if isinstance(alive_result, bool) else False
-            if thread_is_alive is False:
-                return False
+        if thread_is_alive is False:
+            return False
+
+        queued = False
         if prefer_non_blocking:
             if put_nowait_callback is not None:
                 try:
                     put_nowait_callback(callback)
-                    return True
+                    queued = True
                 except Full:
-                    return False
-            return False
-        if queue_work_callback is not None:
+                    pass
+        elif queue_work_callback is not None:
             queue_work_callback(callback)
-            return True
-        if put_nowait_callback is not None:
+            queued = True
+        elif put_nowait_callback is not None:
             try:
                 put_nowait_callback(callback)
-                return True
+                queued = True
             except Full:
-                return False
-        return False
+                pass
+        return queued
 
     @staticmethod
     def wait_for_disconnect_notifications(

@@ -143,21 +143,25 @@ def _is_blank_or_malformed_address_like(address: str | None) -> bool:
         return True
     if _HEX_MAC_COLON_RE.fullmatch(stripped_address):
         return False
+
     normalized_address = sanitize_address(stripped_address)
-    if (
+    normalized_is_mac = (
         normalized_address is not None
         and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(normalized_address) is not None
-    ):
+    )
+    if normalized_is_mac:
         return False
-    if (
-        normalized_address is None
-        and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is not None
-    ):
-        return True
-    if ":" not in stripped_address and all(
-        char in HEX_DIGITS for char in stripped_address
-    ):
-        return _is_no_colon_hex_malformed(stripped_address)
+
+    stripped_is_plain_hex = all(char in HEX_DIGITS for char in stripped_address)
+    if ":" not in stripped_address and stripped_is_plain_hex:
+        normalized_missing_but_plain_mac = (
+            normalized_address is None
+            and _HEX_MAC_NO_SEPARATOR_RE.fullmatch(stripped_address) is not None
+        )
+        return normalized_missing_but_plain_mac or _is_no_colon_hex_malformed(
+            stripped_address
+        )
+
     # Treat colon-containing identifiers as malformed only when they look
     # like hex/MAC text but fail strict MAC validation.
     return all(char == ":" or char in HEX_DIGITS for char in stripped_address)
