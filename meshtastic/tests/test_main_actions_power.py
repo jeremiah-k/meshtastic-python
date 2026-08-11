@@ -1952,3 +1952,32 @@ def test_create_power_meter_replaces_and_closes_previous_meter(
 
     assert main_module.meter is replacement
     previous.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_release_session_power_meter_closes_and_clears_matching_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invocation meter cleanup should release hardware and clear the legacy alias."""
+    active_meter = MagicMock()
+    monkeypatch.setattr(main_module, "meter", active_meter)
+
+    main_module._release_session_power_meter(active_meter)
+
+    active_meter.close.assert_called_once_with()
+    assert main_module.meter is None
+
+
+@pytest.mark.unit
+def test_release_session_power_meter_does_not_clear_replacement_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Late cleanup must not erase a meter installed by a newer invocation."""
+    old_meter = MagicMock()
+    replacement = MagicMock()
+    monkeypatch.setattr(main_module, "meter", replacement)
+
+    main_module._release_session_power_meter(old_meter)
+
+    old_meter.close.assert_called_once_with()
+    assert main_module.meter is replacement

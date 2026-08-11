@@ -12,6 +12,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
+from meshtastic.cli.session_resources import (
+    CliSessionResources,
+    SessionCleanup,
+    get_current_session_resources,
+)
+
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
 
@@ -94,12 +100,32 @@ class CliContext:
         Keyword arguments historically forwarded to ``MeshInterface.getNode``.
     outcome : ActionOutcome
         Mutable lifecycle outcome accumulated across compatible actions.
+    session_resources : CliSessionResources | None
+        Invocation owner for resources that must survive successful action dispatch.
     """
 
     interface: MeshInterface
     args: argparse.Namespace
     get_node_kwargs: dict[str, Any]
     outcome: ActionOutcome = field(default_factory=ActionOutcome)
+    session_resources: CliSessionResources | None = field(
+        default_factory=get_current_session_resources
+    )
+
+    def retain_failure_cleanup(
+        self, cleanup: Callable[[], None]
+    ) -> SessionCleanup | None:
+        """Transfer one armed rollback cleanup to invocation ownership.
+
+        When no invocation resource owner is active, the callback stays in the
+        historical failure-cleanup list so direct ``onConnected()`` callers keep
+        their existing lifecycle behavior.
+        """
+        if self.session_resources is None:
+            return None
+        lease = self.session_resources.register_cleanup(cleanup)
+        self.outcome.failure_cleanup_callbacks.remove(cleanup)
+        return lease
 
     @property
     def destination(self) -> str:

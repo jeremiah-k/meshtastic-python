@@ -11,6 +11,7 @@ from typing import Any
 
 from meshtastic._core_constants import BROADCAST_ADDR
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
+from meshtastic.cli.session_resources import SessionCleanup
 from meshtastic.protobuf import portnums_pb2
 
 logger = logging.getLogger(__name__)
@@ -397,6 +398,7 @@ def _start_tunnel(context: CliContext, hooks: MessagingServiceHooks) -> None:
         tunnel_instance = tunnel.Tunnel(context.interface)
     context.outcome.close_now = False
     context.outcome.failure_cleanup_callbacks.append(tunnel_instance.close)
+    context.retain_failure_cleanup(tunnel_instance.close)
 
 
 def _handle_long_running_services(
@@ -407,6 +409,7 @@ def _handle_long_running_services(
     interface = context.interface
 
     log_set_close: Callable[[], None] | None = None
+    log_set_session_cleanup: SessionCleanup | None = None
     if args.slog or args.power_stress:
         if not hooks.powermon_available():
             _terminate_cli(
@@ -431,6 +434,7 @@ def _handle_long_running_services(
             )
             log_set_close = log_set.close
             context.outcome.failure_cleanup_callbacks.append(log_set_close)
+            log_set_session_cleanup = context.retain_failure_cleanup(log_set_close)
             context.outcome.close_now = False
 
         if args.power_stress:
@@ -443,8 +447,11 @@ def _handle_long_running_services(
                 )
             power_stress_factory(interface).run()
             if log_set_close is not None:
-                log_set_close()
-                context.outcome.failure_cleanup_callbacks.remove(log_set_close)
+                if log_set_session_cleanup is not None:
+                    log_set_session_cleanup.run()
+                else:
+                    log_set_close()
+                    context.outcome.failure_cleanup_callbacks.remove(log_set_close)
             context.outcome.close_now = True
 
     if args.listen:

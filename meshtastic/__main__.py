@@ -44,6 +44,7 @@ from meshtastic._core_constants import (
     BROADCAST_ADDR,
 )
 from meshtastic.cli.context import ActionOutcome, CliContext
+from meshtastic.cli.session_resources import CliSessionResources
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
@@ -1948,6 +1949,28 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
         _cli_exit(f"Error: {exc}", 1)
 
 
+def _release_session_power_meter(active_meter: Any) -> None:
+    """Close an invocation-owned meter and clear the legacy global reference."""
+    global meter  # pylint: disable=global-statement
+    _close_power_meter_quietly(active_meter)
+    if meter is active_meter:
+        meter = None
+
+
+def _clear_session_logfile(active_logfile: Any) -> None:
+    """Clear the legacy logfile reference when its owning invocation ends."""
+    if mt_config.logfile is active_logfile:
+        mt_config.logfile = None
+
+
+def _unsubscribe_cli_receive() -> None:
+    """Best-effort removal of the invocation-level receive subscription."""
+    try:
+        pub.unsubscribe(onReceive, "meshtastic.receive")
+    except Exception:
+        logger.debug("Unable to remove CLI receive subscription", exc_info=True)
+
+
 def common() -> None:
     """Configure logging, validate CLI arguments, establish the selected transport.
 
@@ -2040,9 +2063,6 @@ def common() -> None:
         if args.ota_update is not None and not os.path.isfile(args.ota_update):
             _cli_exit(f"Error: OTA firmware file not found: {args.ota_update}")
 
-        if _power_meter_requested(args):
-            _create_power_meter()
-
         if args.ch_index is not None:
             channelIndex = int(args.ch_index)
             mt_config.channel_index = channelIndex
@@ -2074,8 +2094,21 @@ def common() -> None:
                 else:
                     _cli_exit("Test was a success.", 0)
         else:
-            # Use ExitStack to guarantee cleanup on early exits or exceptions
+            # Use one invocation stack to own transports, files, meters, and
+            # long-running services through success, failure, or interruption.
             with contextlib.ExitStack() as stack:
+                session_resources = CliSessionResources(stack)
+                session_resources.activate()
+
+                if _power_meter_requested(args):
+                    _create_power_meter()
+                    active_meter = meter
+                    if active_meter is not None:
+                        session_resources.register_cleanup(
+                            lambda: _release_session_power_meter(active_meter)
+                        )
+
+                mt_config.logfile = None
                 if args.seriallog == "stdout":
                     logfile = sys.stdout
                 elif args.seriallog == "none":
@@ -2085,12 +2118,20 @@ def common() -> None:
                 else:
                     logger.info("Logging serial output to %s", args.seriallog)
                     # Note: using line buffering.
-                    logfile = stack.enter_context(
-                        open(args.seriallog, "w+", buffering=1, encoding="utf8")
+                    logfile = session_resources.enter_context(
+                        # The invocation ExitStack owns this file; Pylint cannot
+                        # infer that ownership transfer through enter_context().
+                        open(  # pylint: disable=consider-using-with
+                            args.seriallog, "w+", buffering=1, encoding="utf8"
+                        )
                     )
                     mt_config.logfile = logfile
+                    session_resources.register_cleanup(
+                        lambda: _clear_session_logfile(logfile)
+                    )
 
                 subscribe()
+                session_resources.register_cleanup(_unsubscribe_cli_receive)
                 if args.ble_scan:
                     logger.debug("BLE scan starting")
                     for x in BLEInterface.scan():
@@ -2100,7 +2141,7 @@ def common() -> None:
                 client: MeshInterface | None = None
                 if args.ble:
                     try:
-                        client = stack.enter_context(
+                        client = session_resources.enter_context(
                             BLEInterface(
                                 args.ble if args.ble != "any" else None,
                                 debugOut=logfile,
@@ -2122,7 +2163,7 @@ def common() -> None:
                             args.host,
                             meshtastic.tcp_interface.DEFAULT_TCP_PORT,
                         )
-                        client = stack.enter_context(
+                        client = session_resources.enter_context(
                             meshtastic.tcp_interface.TCPInterface(
                                 tcp_hostname,
                                 portNumber=tcp_port,
@@ -2142,7 +2183,7 @@ def common() -> None:
                         )
                 else:
                     try:
-                        client = stack.enter_context(
+                        client = session_resources.enter_context(
                             meshtastic.serial_interface.SerialInterface(
                                 args.port,
                                 debugOut=logfile,
@@ -2188,7 +2229,7 @@ def common() -> None:
                             "Serial device unavailable after initialization; falling back to localhost TCP interface."
                         )
                         try:
-                            client = stack.enter_context(
+                            client = session_resources.enter_context(
                                 meshtastic.tcp_interface.TCPInterface(
                                     "localhost",
                                     debugOut=logfile,
