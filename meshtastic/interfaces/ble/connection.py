@@ -777,7 +777,8 @@ class ClientManager:
 class ConnectionOrchestrator:
     """Coordinate discovery, validation, and notification setup for new connections."""
 
-    def __init__(
+    # The orchestrator composes six required internal collaborators explicitly.
+    def __init__(  # pylint: disable=too-many-positional-arguments
         self,
         interface: "BLEInterface",
         validator: ConnectionValidator,
@@ -876,6 +877,7 @@ class ConnectionOrchestrator:
         underscore_member = _get_declared_member(
             target, underscore_name, missing_sentinel
         )
+        resolved_member: object = missing_sentinel
 
         if prefer_instance_type is not None and issubclass(
             type(target), prefer_instance_type
@@ -889,32 +891,33 @@ class ConnectionOrchestrator:
                     raise AttributeError(
                         f"{type(target).__name__}.{public_name} is not callable"
                     )
-                return public_member(*args, **kwargs)
-            return public_member
-
-        if call_member:
+                resolved_member = public_member(*args, **kwargs)
+            else:
+                resolved_member = public_member
+        elif call_member:
             if callable(public_member):
-                return public_member(*args, **kwargs)
-            if callable(underscore_member):
-                return underscore_member(*args, **kwargs)
+                resolved_member = public_member(*args, **kwargs)
+            elif callable(underscore_member):
+                resolved_member = underscore_member(*args, **kwargs)
         else:
-            if public_member is not missing_sentinel:
-                if underscore_attr_type is None or isinstance(
-                    public_member, underscore_attr_type
-                ):
-                    return public_member
-            if underscore_member is not missing_sentinel and (
+            if public_member is not missing_sentinel and (
+                underscore_attr_type is None
+                or isinstance(public_member, underscore_attr_type)
+            ):
+                resolved_member = public_member
+            elif underscore_member is not missing_sentinel and (
                 underscore_attr_type is None
                 or isinstance(underscore_member, underscore_attr_type)
             ):
-                return underscore_member
+                resolved_member = underscore_member
 
+        if resolved_member is not missing_sentinel:
+            return resolved_member
         if default_if_missing is not missing_sentinel:
             return default_if_missing
 
         raise AttributeError(
-            f"{type(target).__name__} is missing supported members "
-            f"'{public_name}'/'{underscore_name}'"
+            f"{type(target).__name__} has neither '{public_name}' nor '{underscore_name}'"
         )
 
     def _validator_validate_connection_request(self) -> None:
@@ -1598,8 +1601,6 @@ class ConnectionOrchestrator:
                             emit_connected_side_effects=emit_connected_side_effects,
                         )
                         return retried_client, False
-                    except BLEAddressMismatchError:
-                        raise
                     except (BleakDBusError, EOFError) as retry_dbus_err:
                         logger.debug(
                             "Direct reconnect after stale BlueZ cleanup failed for %s: %s",

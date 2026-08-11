@@ -443,7 +443,9 @@ class _LifecycleErrorAccess:
             )
 
     @staticmethod
-    def _try_safe_execute_variants(
+    # Signature probing deliberately exits once a compatible execution path has run.
+    def _try_safe_execute_variants(  # pylint: disable=too-many-return-statements
+
         safe_execute: Callable[..., object],
         tracked_func: Callable[[], object],
         *,

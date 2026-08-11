@@ -664,6 +664,22 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             if publish_disconnect:
                 iface._disconnected()
 
+    @staticmethod
+    def _can_commit_connected_publication(
+        *,
+        publish_claimed: bool,
+        snapshot: _OwnershipSnapshot,
+        still_owned: bool,
+        is_closing: bool,
+    ) -> bool:
+        """Return whether a probed connection may commit its publication."""
+        snapshot_valid = (
+            snapshot.still_owned
+            and not snapshot.is_closing
+            and not snapshot.lost_gate_ownership
+        )
+        return publish_claimed and snapshot_valid and still_owned and not is_closing
+
     def _verify_and_publish_connected(
         self,
         connected_client: "BLEClient",
@@ -803,15 +819,12 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     expected_epoch=expected_epoch,
                     enforce_canonical_state=enforce_canonical_state,
                 )
-                if (
-                    publish_claimed
-                    and snapshot.still_owned
-                    and not snapshot.is_closing
-                    and not snapshot.lost_gate_ownership
-                    and still_owned
-                    and not is_closing
-                ):
-                    publish_committed = True
+                publish_committed = self._can_commit_connected_publication(
+                    publish_claimed=publish_claimed,
+                    snapshot=snapshot,
+                    still_owned=still_owned,
+                    is_closing=is_closing,
+                )
             if publish_committed:
                 self._commit_and_publish_connected(
                     connected_client=connected_client,

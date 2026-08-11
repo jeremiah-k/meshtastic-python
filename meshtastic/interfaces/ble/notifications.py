@@ -431,7 +431,9 @@ class BLENotificationDispatcher:
         logger.debug(error_msg)
 
     @staticmethod
-    def invoke_safe_execute_compat(
+    # Signature probing deliberately exits immediately once handler execution is known.
+    def invoke_safe_execute_compat(  # pylint: disable=too-many-return-statements
+
         safe_execute: Callable[..., Any],
         handler_thunk: Callable[[], None],
         *,
@@ -644,7 +646,9 @@ class BLENotificationDispatcher:
                 from_num_handler=from_num_handler,
             )
 
-    def _register_notifications_locked(
+    # Registration is a compatibility state machine; early exits preserve rollback boundaries.
+    def _register_notifications_locked(  # pylint: disable=too-many-return-statements
+
         self,
         iface: "BLEInterface",
         client: BLEClient,

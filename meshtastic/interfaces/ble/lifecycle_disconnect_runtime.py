@@ -180,7 +180,9 @@ class BLEDisconnectLifecycleCoordinator:
             should_schedule_reconnect,
         )
 
-    def _resolve_disconnect_target(
+    # Early exits preserve ownership checks before any disconnect side effects occur.
+    def _resolve_disconnect_target(  # pylint: disable=too-many-return-statements
+
         self,
         source: str,
         client: "BLEClient | None",
