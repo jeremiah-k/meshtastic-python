@@ -36,6 +36,7 @@ from meshtastic.interfaces.ble.reconnection import (
     ThreadCoordinatorMissingMethodError,
 )
 from meshtastic.interfaces.ble.state import BLEStateManager
+from meshtastic.util import DeferredExecution
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
@@ -255,6 +256,25 @@ def test_compatibility_event_service_enqueue_paths() -> None:
         is True
     )
     assert queued_nowait == [callback]
+
+
+def test_nonblocking_enqueue_starts_lazy_publishing_worker() -> None:
+    """The first BLE status callback must activate a lazy publishing executor."""
+    completed = Event()
+    publishing_thread = DeferredExecution._create_lazy("test-ble-publishing")
+
+    try:
+        assert publishing_thread.thread is None
+        assert BLECompatibilityEventService._enqueue_publish_callback(
+            publishing_thread,
+            completed.set,
+            prefer_non_blocking=True,
+        )
+        assert publishing_thread.thread is not None
+        assert completed.wait(timeout=1.0)
+    finally:
+        publishing_thread.stop()
+        publishing_thread.join(timeout=1.0)
 
 
 def test_wait_for_disconnect_notifications_handles_timeout_and_dead_publisher(
