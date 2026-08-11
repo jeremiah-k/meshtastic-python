@@ -24,6 +24,10 @@ Threading model summary
   idempotent and synchronized through the shared state manager lock.
 """
 
+# BLEInterface is the public compatibility facade and composition root for extracted BLE runtimes.
+# pylint: disable=too-many-lines
+
+
 import atexit
 import contextlib
 import math
@@ -131,7 +135,11 @@ from meshtastic.interfaces.ble.session_state import (
     BLESessionState,
     _BLESessionStateCompatMixin,
 )
-from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.state import (
+    BLEStateManager,
+    ConnectionState,
+    _is_canonical_state_manager,
+)
 from meshtastic.interfaces.ble.utils import (
     _is_unexpected_keyword_error,
     _sleep,
@@ -199,7 +207,10 @@ ERROR_CLIENT_MANAGER_MISSING_UPDATE_CLIENT_REFERENCE: str = (
 )
 
 
-class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
+# The facade owns runtime collaborators; mutable session state itself lives in BLESessionState.
+class BLEInterface(  # pylint: disable=too-many-instance-attributes
+    _BLESessionStateCompatMixin, MeshInterface
+):
     """MeshInterface using BLE to connect to Meshtastic devices.
 
     This class provides a complete BLE interface for Meshtastic communication,
@@ -1245,9 +1256,7 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         state_manager = self._state_manager
         lifecycle_owner_is_current: bool | None
         canonical_locked_probe = (
-            type(state_manager)
-            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
-            and state_manager.lock is self._state_lock
+            _is_canonical_state_manager(state_manager, self._state_lock)
         )
         with self._state_lock:
             if self._closed or self._connection_session_epoch != expected_session_epoch:

@@ -1,5 +1,8 @@
 """Lifecycle compatibility shim service for BLE."""
 
+# This module intentionally consolidates the historical lifecycle compatibility surface.
+# pylint: disable=too-many-lines
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from inspect import Parameter, signature

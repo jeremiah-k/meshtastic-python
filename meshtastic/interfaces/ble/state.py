@@ -16,7 +16,7 @@ Lock Ordering Note:
 
 from enum import Enum
 from threading import RLock
-from typing import ClassVar
+from typing import ClassVar, TypeGuard, cast
 
 from meshtastic.interfaces.ble.constants import logger
 
@@ -440,3 +440,16 @@ class BLEStateManager:
             ``True`` when DISCONNECTED is reached (including no-op).
         """
         return self._reset_to_disconnected()
+
+def _is_canonical_state_manager(
+    candidate: object,
+    lock: object,
+) -> TypeGuard[BLEStateManager]:
+    """Return whether ``candidate`` is the exact state owner for ``lock``.
+
+    Compatibility subclasses and test doubles intentionally take slower probe
+    paths; only the concrete manager may use lock-coupled unlocked access.
+    """
+    if type(candidate) is not BLEStateManager:  # pylint: disable=unidiomatic-typecheck
+        return False
+    return cast(BLEStateManager, candidate).lock is lock

@@ -1,5 +1,8 @@
 """BLE connection management and validation."""
 
+# Connection orchestration remains centralized to preserve compatibility probes and retry sequencing.
+# pylint: disable=too-many-lines
+
 import logging
 import math
 import numbers
