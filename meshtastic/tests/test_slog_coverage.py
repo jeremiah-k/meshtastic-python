@@ -585,21 +585,22 @@ def test_power_logger_very_small_interval(
 
 
 @pytest.mark.unit
-def test_power_logger_slow_thread_stop_warning(
-    caplog: pytest.LogCaptureFixture,
+def test_power_logger_hung_thread_leaves_dependencies_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PowerLogger should warn when thread doesn't stop within timeout."""
-    monkeypatch.setattr(slog_module, "FeatherWriter", _FakeWriter)
+    """A hung sampler must leave its dependencies open and surface failure."""
+    writer = MagicMock()
+    monkeypatch.setattr(slog_module, "FeatherWriter", MagicMock(return_value=writer))
     monkeypatch.setattr("meshtastic.slog.slog.threading.Thread", _SlowStopThread)
 
     meter = _make_meter_with_voltage(3.3)
     logger = PowerLogger(meter, "unused-path")
 
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(RuntimeError, match="did not stop within"):
         logger.close()
 
-    assert "did not stop within" in caplog.text
+    meter.close.assert_not_called()
+    writer.close.assert_not_called()
 
 
 @pytest.mark.unit
@@ -607,19 +608,22 @@ def test_power_logger_close_from_logging_thread(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PowerLogger.close() called from logging thread should skip self-join."""
+    """A self-close request must defer cleanup until the sampler exits."""
     monkeypatch.setattr(slog_module, "FeatherWriter", _FakeWriter)
 
     meter = _make_meter_with_voltage(3.3)
     logger = PowerLogger(meter, "unused-path")
 
-    # Mock to make current thread look like the logging thread
-    monkeypatch.setattr(threading, "current_thread", lambda: logger.thread)
+    # Make the caller look like the logging thread only for the close decision.
+    with monkeypatch.context() as context:
+        context.setattr(threading, "current_thread", lambda: logger.thread)
+        with caplog.at_level(logging.DEBUG):
+            logger.close()
 
-    with caplog.at_level(logging.DEBUG):
-        logger.close()
-
-    assert "skipping self-join" in caplog.text
+    assert "deferring dependency cleanup until thread exit" in caplog.text
+    logger.thread.join(timeout=1.0)
+    assert not logger.thread.is_alive()
+    meter.close.assert_called_once_with()
 
 
 @pytest.mark.unit

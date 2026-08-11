@@ -479,3 +479,80 @@ def test_log_set_close_raises_power_close_error_when_slog_close_succeeds(
 
     assert log_set.slog_logger is None
     assert log_set.power_logger is None
+
+
+@pytest.mark.unit
+def test_power_logger_worker_finally_closes_dependencies_after_deferred_close() -> None:
+    """A worker-owned deferred close must release dependencies only after sampling exits."""
+    meter = MagicMock()
+    writer = MagicMock()
+    logger_obj = object.__new__(PowerLogger)
+    logger_obj._p_meter = meter
+    logger_obj.writer = writer
+    logger_obj.interval = 0.001
+    logger_obj._stop_event = threading.Event()
+    logger_obj._sample_warning_count = 0
+    logger_obj._last_sample_warning_monotonic = 0.0
+    logger_obj._dependency_close_lock = threading.Lock()
+    logger_obj._dependencies_closed = False
+    logger_obj._deferred_dependency_close = True
+    logger_obj._background_close_error = None
+    store_current_reading = MagicMock()
+    logger_obj._store_current_reading = (  # type: ignore[method-assign]
+        store_current_reading
+    )
+    logger_obj._stop_event.set()
+
+    logger_obj._logging_thread()
+
+    store_current_reading.assert_not_called()
+    meter.close.assert_called_once_with()
+    writer.close.assert_called_once_with()
+    assert logger_obj._dependencies_closed is True
+
+
+@pytest.mark.unit
+def test_power_logger_close_is_idempotent_after_dependencies_close() -> None:
+    """Repeated close calls must not repeat meter/writer teardown."""
+    meter = MagicMock()
+    writer = MagicMock()
+    logger_obj = object.__new__(PowerLogger)
+    logger_obj._p_meter = meter
+    logger_obj.writer = writer
+    logger_obj._stop_event = threading.Event()
+    logger_obj._dependency_close_lock = threading.Lock()
+    logger_obj._dependencies_closed = False
+    logger_obj._deferred_dependency_close = False
+    logger_obj._background_close_error = None
+    logger_obj.is_logging = True
+    logger_obj.thread = MagicMock()
+    logger_obj.thread.is_alive.return_value = False
+
+    logger_obj.close()
+    logger_obj.close()
+
+    meter.close.assert_called_once_with()
+    writer.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_power_logger_close_reports_deferred_worker_cleanup_error_once() -> None:
+    """A worker-side dependency failure must reach exactly one close caller."""
+    meter = MagicMock()
+    meter.close.side_effect = RuntimeError("meter close failed")
+    writer = MagicMock()
+    logger_obj = object.__new__(PowerLogger)
+    logger_obj._p_meter = meter
+    logger_obj.writer = writer
+    logger_obj._dependency_close_lock = threading.Lock()
+    logger_obj._dependencies_closed = False
+    logger_obj._background_close_error = None
+
+    logger_obj._close_dependencies_after_worker_exit()
+
+    with pytest.raises(RuntimeError, match="meter close failed"):
+        logger_obj.close()
+    logger_obj.close()
+
+    meter.close.assert_called_once_with()
+    writer.close.assert_called_once_with()
