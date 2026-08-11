@@ -20,7 +20,11 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 )
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
-from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.state import (
+    BLEStateManager,
+    ConnectionState,
+    _is_canonical_state_manager,
+)
 from meshtastic.interfaces.ble.utils import (
     sanitize_address,
 )
@@ -86,9 +90,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         """
         state_manager = self._state_manager
         if (
-            type(state_manager)
-            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
-            and state_manager.lock is self._session.lock
+            _is_canonical_state_manager(state_manager, self._session.lock)
         ):
             return BLEStateManager._current_state_unlocked(state_manager)
         return None
@@ -146,9 +148,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         canonical_state_owned = (
             is_closing_getter is None
             and state_connected_getter is None
-            and type(state_manager)
-            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
-            and state_manager.lock is self._session.lock
+            and _is_canonical_state_manager(state_manager, self._session.lock)
         )
         if is_closing_getter is not None:
             result = is_closing_getter()

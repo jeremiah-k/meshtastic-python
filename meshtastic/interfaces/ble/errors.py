@@ -44,7 +44,7 @@ T = TypeVar("T")
 class MeshtasticBLEError(MeshInterface.MeshInterfaceError):
     """Base exception for structured Meshtastic BLE failures."""
 
-    def __init__(
+    def __init__(  # pylint: disable=super-init-not-called,non-parent-init-called
         self,
         message: str,
         *,
@@ -138,7 +138,7 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
 
     _DEFAULT_DBUS_ERROR = "org.bluez.Error.Failed"
 
-    def __init__(
+    def __init__(  # pylint: disable=super-init-not-called
         self,
         message: str,
         *,

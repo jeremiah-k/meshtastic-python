@@ -26,7 +26,11 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
 )
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
-from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.state import (
+    BLEStateManager,
+    ConnectionState,
+    _is_canonical_state_manager,
+)
 from meshtastic.interfaces.ble.utils import (
     _sleep,
     _thread_start_probe,
@@ -207,16 +211,14 @@ class BLEDisconnectLifecycleCoordinator:
         should_reconnect = False
 
         state_manager = _get_declared_member(iface, "_state_manager")
-        canonical_state_manager = (
-            state_manager
-            if type(state_manager)
-            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
-            and state_manager.lock is self._session.lock
+        canonical_state_manager: BLEStateManager | None = None
+        if (
+            _is_canonical_state_manager(state_manager, self._session.lock)
             and current_state_getter is None
             and transition_to_disconnected is None
             and reset_to_disconnected is None
-            else None
-        )
+        ):
+            canonical_state_manager = state_manager
 
         # Compatibility closing probes may execute collaborator code. Shutdown
         # claims ``session.closed`` under this same lock, so combining the

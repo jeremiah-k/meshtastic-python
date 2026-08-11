@@ -648,7 +648,8 @@ class BLECoroutineRunner:
             # Re-acquire lock to check result and update state
             with self._instance_lock:
                 if thread.is_alive():
-                    global _zombie_runner_count
+                    # Internal diagnostics/tests intentionally expose this module counter.
+                    global _zombie_runner_count  # pylint: disable=global-statement
                     with _zombie_lock:
                         _zombie_runner_count += 1
                         current_count = _zombie_runner_count
