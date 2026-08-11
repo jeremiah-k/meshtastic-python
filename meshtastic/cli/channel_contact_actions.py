@@ -11,7 +11,6 @@ import meshtastic.util
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.protobuf import channel_pb2, config_pb2
 
-
 MAX_CHANNEL_NAME_LENGTH: int = 10
 
 

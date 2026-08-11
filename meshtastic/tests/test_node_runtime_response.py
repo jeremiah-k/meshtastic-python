@@ -10,13 +10,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ._node_channel_state_test_support import _attach_channel_state
 from ..node_runtime.response_runtime import (
     _NodeChannelResponseRuntime,
     _NodeMetadataResponseRuntime,
 )
 from ..protobuf import admin_pb2, channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 from ..util import Acknowledgment
+from ._node_channel_state_test_support import _attach_channel_state
 
 
 @pytest.fixture
@@ -430,7 +430,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with missing decoded should return early."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         packet: dict[str, Any] = {"decoded": None}
 
@@ -445,7 +446,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with routing error should retry in-flight request."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         runtime.mark_channel_request_sent(3)
         packet: dict[str, Any] = {
@@ -469,7 +471,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with routing success should wait for ADMIN_APP payload."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
 
         packet: dict[str, Any] = {
@@ -494,7 +497,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with admin message should append to partialChannels."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         runtime.mark_channel_request_sent(0)
 
@@ -524,7 +528,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with last channel index should finalize channels."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         runtime.mark_channel_request_sent(7)
 
@@ -561,7 +566,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with non-last channel should request next channel."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         runtime.mark_channel_request_sent(3)
 
@@ -589,7 +595,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Late duplicate channel response after successful retry should not restart installation."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         runtime.mark_channel_request_sent(0)
 
@@ -626,7 +633,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with missing admin should log warning."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         packet: dict[str, Any] = {
             "decoded": {
@@ -645,7 +653,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Handle channel response with missing admin.raw should log warning."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         packet: dict[str, Any] = {
             "decoded": {
@@ -665,7 +674,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """_handle_routing_response should return False for non-ROUTING_APP portnum."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         decoded: dict[str, Any] = {
             "portnum": "ADMIN_APP",
@@ -682,7 +692,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """_handle_routing_response should guard malformed routing payloads."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         decoded: dict[str, Any] = {
             "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
@@ -702,7 +713,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """_handle_routing_response should wait for ADMIN_APP payload on routing success."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
 
         decoded: dict[str, Any] = {
@@ -726,7 +738,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Routing errors without a pending index should set terminal channel-failure state."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         decoded: dict[str, Any] = {
             "portnum": portnums_pb2.PortNum.Name(portnums_pb2.PortNum.ROUTING_APP),
@@ -747,7 +760,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Routing retry should mark failure if the retry send is skipped."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         runtime.mark_channel_request_sent(4)
         mock_node_for_channel._request_channel.return_value = None
@@ -769,7 +783,8 @@ class TestNodeChannelResponseRuntime:
     ) -> None:
         """Persistent routing failures should stop retrying after the configured retry limit."""
         runtime = _NodeChannelResponseRuntime(
-            mock_node_for_channel, channel_state=mock_node_for_channel._test_channel_state
+            mock_node_for_channel,
+            channel_state=mock_node_for_channel._test_channel_state,
         )
         runtime.mark_channel_request_sent(2)
         decoded: dict[str, Any] = {

@@ -13,8 +13,8 @@ from meshtastic.interfaces.ble.lifecycle_controller_runtime import (
 )
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import (
-    BLESessionState,
     LEGACY_SESSION_STATE_CACHE_ERROR,
+    BLESessionState,
     _LegacyBLESessionStateAdapter,
     _session_state_for,
 )
@@ -202,7 +202,9 @@ def test_legacy_adapter_field_map_matches_session_state_protocol() -> None:
         for field_name in getattr(protocol_base, "__annotations__", {})
     }
 
-    assert set(_LegacyBLESessionStateAdapter._FIELD_MAP) == protocol_fields  # noqa: SLF001
+    assert (
+        set(_LegacyBLESessionStateAdapter._FIELD_MAP) == protocol_fields
+    )  # noqa: SLF001
     assert set(_LegacyBLESessionStateAdapter._FIELD_DEFAULTS) == (  # noqa: SLF001
         protocol_fields - {"lock"}
     )
@@ -445,10 +447,12 @@ def test_receive_lifecycle_uses_explicit_session_pending_markers() -> None:
     def _unexpected_create(**_kwargs: object) -> object:
         raise AssertionError("pending session state should suppress thread creation")
 
-    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
-        name="PendingReceive",
-        reset_recovery=False,
-        create_runtime_thread=_unexpected_create,  # type: ignore[arg-type]
+    created, recovery_attempts = (
+        coordinator._check_receive_start_conditions(  # noqa: SLF001
+            name="PendingReceive",
+            reset_recovery=False,
+            create_runtime_thread=_unexpected_create,  # type: ignore[arg-type]
+        )
     )
 
     assert created is None
@@ -566,12 +570,14 @@ def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock()
         _capture_schedule
     )
 
-    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
-        name="InconclusiveReceive",
-        reset_recovery=False,
-        create_runtime_thread=lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("inconclusive liveness must defer thread creation")
-        ),
+    created, recovery_attempts = (
+        coordinator._check_receive_start_conditions(  # noqa: SLF001
+            name="InconclusiveReceive",
+            reset_recovery=False,
+            create_runtime_thread=lambda **_kwargs: (_ for _ in ()).throw(
+                AssertionError("inconclusive liveness must defer thread creation")
+            ),
+        )
     )
 
     assert created is None
@@ -610,10 +616,12 @@ def test_receive_lifecycle_thread_probes_run_outside_session_lock() -> None:
         name="ReplacementReceive", ident=None, is_alive=lambda: False
     )
 
-    created, recovery_attempts = coordinator._check_receive_start_conditions(  # noqa: SLF001
-        name="ReplacementReceive",
-        reset_recovery=False,
-        create_runtime_thread=lambda **_kwargs: staged,  # type: ignore[return-value]
+    created, recovery_attempts = (
+        coordinator._check_receive_start_conditions(  # noqa: SLF001
+            name="ReplacementReceive",
+            reset_recovery=False,
+            create_runtime_thread=lambda **_kwargs: staged,  # type: ignore[return-value]
+        )
     )
 
     assert created is staged
@@ -1032,7 +1040,12 @@ def test_receive_snapshot_compatibility_probes_run_outside_session_lock() -> Non
         session_state=state,  # type: ignore[arg-type]
     )
 
-    assert controller._snapshot_client_state() == (None, True, False, False)  # noqa: SLF001
+    assert controller._snapshot_client_state() == (
+        None,
+        True,
+        False,
+        False,
+    )  # noqa: SLF001
     assert probe_lock_states == [("connecting", False), ("closing", False)]
 
 

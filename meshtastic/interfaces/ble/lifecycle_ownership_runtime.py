@@ -86,7 +86,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         """
         state_manager = self._state_manager
         if (
-            type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
+            type(state_manager)
+            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
             and state_manager.lock is self._session.lock
         ):
             return BLEStateManager._current_state_unlocked(state_manager)
@@ -145,7 +146,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         canonical_state_owned = (
             is_closing_getter is None
             and state_connected_getter is None
-            and type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
+            and type(state_manager)
+            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
             and state_manager.lock is self._session.lock
         )
         if is_closing_getter is not None:
@@ -226,8 +228,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                 if enforce_canonical_state
                 else None
             )
-            is_closing = probed_is_closing or self._session.closed or (
-                canonical_state == ConnectionState.DISCONNECTING
+            is_closing = (
+                probed_is_closing
+                or self._session.closed
+                or (canonical_state == ConnectionState.DISCONNECTING)
             )
             return False, is_closing
         if not enforce_canonical_state:
@@ -300,8 +304,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         with self._session.lock:
             if self._session.connection_session_epoch != baseline_epoch:
                 canonical_state = self._canonical_connection_state_locked()
-                is_closing = probed_is_closing or self._session.closed or (
-                    canonical_state == ConnectionState.DISCONNECTING
+                is_closing = (
+                    probed_is_closing
+                    or self._session.closed
+                    or (canonical_state == ConnectionState.DISCONNECTING)
                 )
                 return False, is_closing
             return self._revalidate_connected_client_status_locked(
@@ -601,9 +607,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
         # Compatibility probes can execute caller-owned code. Run the probe
         # outside the shared session lock, and avoid it entirely after the
         # terminal closed flag is already authoritative.
-        compatibility_is_closing = (
-            True if session_already_closed else get_is_closing()
-        )
+        compatibility_is_closing = True if session_already_closed else get_is_closing()
         with self._session.lock:
             disconnect_session_epoch = self._session.connection_session_epoch
             inflight_client = self._session.connected_publish_inflight_client
@@ -786,8 +790,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             _raise_invalidated(snapshot)
         publish_committed = False
         if should_publish_connected:
-            probed_owned, probed_is_closing, expected_epoch = self._probe_status_provider(
-                connected_client, get_connected_status_locked
+            probed_owned, probed_is_closing, expected_epoch = (
+                self._probe_status_provider(
+                    connected_client, get_connected_status_locked
+                )
             )
             with self._session.lock:
                 still_owned, is_closing = self._revalidate_status_probe_locked(
@@ -953,8 +959,10 @@ class BLEConnectionOwnershipLifecycleCoordinator:
                     self._session.client_publish_pending = False
                     if publish_completed:
                         self._session.client_replacement_pending = False
-            probed_owned, probed_is_closing, expected_epoch = self._probe_status_provider(
-                connected_client, get_connected_status_locked
+            probed_owned, probed_is_closing, expected_epoch = (
+                self._probe_status_provider(
+                    connected_client, get_connected_status_locked
+                )
             )
             with self._session.lock:
                 still_owned_after, is_closing_after = (
@@ -1027,8 +1035,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
 
         if still_active:
             should_clear_gate_keys = False
-            probed_owned, probed_is_closing, expected_epoch = self._probe_status_provider(
-                connected_client, get_status_locked
+            probed_owned, probed_is_closing, expected_epoch = (
+                self._probe_status_provider(connected_client, get_status_locked)
             )
             with self._session.lock:
                 still_active, is_closing = self._revalidate_status_probe_locked(
@@ -1063,8 +1071,8 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             )
             needs_cleanup = False
             should_clear_gate_keys = False
-            probed_owned, probed_is_closing, expected_epoch = self._probe_status_provider(
-                connected_client, get_status_locked
+            probed_owned, probed_is_closing, expected_epoch = (
+                self._probe_status_provider(connected_client, get_status_locked)
             )
             with self._session.lock:
                 still_active, is_closing = self._revalidate_status_probe_locked(

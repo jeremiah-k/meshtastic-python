@@ -7,8 +7,11 @@ import sys as sys_stdlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable, _get_declared_member)
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _get_declared_member,
+)
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
 from meshtastic.interfaces.ble.management_runtime import (
@@ -119,30 +122,24 @@ class BLEManagementCommandsService:
                         exc_info=True,
                     )
                 else:
-                    if (
-                        resolved is not None
-                        and (
-                            BLEManagementCommandsService._is_handler_like(resolved)
-                            # COMPAT_STABLE_SHIM: preserve iface-owned partial
-                            # handler/proxy doubles used by historical shim paths.
-                            or BLEManagementCommandsService._has_required_handler_entrypoint(
-                                resolved,
-                                expected_method,
-                            )
+                    if resolved is not None and (
+                        BLEManagementCommandsService._is_handler_like(resolved)
+                        # COMPAT_STABLE_SHIM: preserve iface-owned partial
+                        # handler/proxy doubles used by historical shim paths.
+                        or BLEManagementCommandsService._has_required_handler_entrypoint(
+                            resolved,
+                            expected_method,
                         )
                     ):
                         return cast(BLEManagementCommandHandler, resolved)
             direct_handler = _get_declared_member(iface, "_management_command_handler")
-            if (
-                direct_handler is not None
-                and (
-                    BLEManagementCommandsService._is_handler_like(direct_handler)
-                    # COMPAT_STABLE_SHIM: preserve iface-owned partial
-                    # handler/proxy doubles used by historical shim paths.
-                    or BLEManagementCommandsService._has_required_handler_entrypoint(
-                        direct_handler,
-                        expected_method,
-                    )
+            if direct_handler is not None and (
+                BLEManagementCommandsService._is_handler_like(direct_handler)
+                # COMPAT_STABLE_SHIM: preserve iface-owned partial
+                # handler/proxy doubles used by historical shim paths.
+                or BLEManagementCommandsService._has_required_handler_entrypoint(
+                    direct_handler,
+                    expected_method,
                 )
             ):
                 return cast(BLEManagementCommandHandler, direct_handler)

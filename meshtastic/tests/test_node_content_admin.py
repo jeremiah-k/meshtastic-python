@@ -20,11 +20,10 @@ from ..protobuf import (
 )
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..util import Acknowledgment
-
 from ._node_legacy_support import (
-    _TrackingLock,
     _get_mock_call_arg,
     _make_fake_send_admin,
+    _TrackingLock,
 )
 
 CHANNEL_LIMIT = MAX_CHANNELS
@@ -416,6 +415,7 @@ def test_get_canned_message_times_out_without_response(
         r"Timed out waiting for canned message response", caplog.text, re.MULTILINE
     )
 
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("packet", "expected_flags"),
@@ -472,6 +472,7 @@ def test_onAckNak_classifies_ack_nak_variants(
         acknowledgment.receivedImplAck,
     ) == expected_flags
 
+
 @pytest.mark.unit
 def test_send_admin_no_proto_returns_none(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -481,6 +482,7 @@ def test_send_admin_no_proto_returns_none(
     msg = admin_pb2.AdminMessage()
 
     assert anode._send_admin(msg) is None
+
 
 @pytest.mark.unit
 def test_send_admin_uses_session_passkey_and_selected_admin_index(
@@ -506,6 +508,7 @@ def test_send_admin_uses_session_passkey_and_selected_admin_index(
     assert iface.sendData.call_args.kwargs["channelIndex"] == 3
     assert iface.sendData.call_args.kwargs["pkiEncrypted"] is True
 
+
 @pytest.mark.unit
 def test_send_admin_respects_explicit_channel_zero(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -523,6 +526,7 @@ def test_send_admin_respects_explicit_channel_zero(
 
     assert result is packet
     assert iface.sendData.call_args.kwargs["channelIndex"] == 0
+
 
 @pytest.mark.unit
 def test_ensureSessionKey_requests_only_when_missing(

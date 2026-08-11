@@ -418,7 +418,9 @@ class BLEReceiveLifecycleCoordinator:
                         elif not start_failure_confirmed:
                             pending_since = existing_pending_since
                             if not isinstance(pending_since, (float, int)):
-                                self._session.receive_start_pending_since = time.monotonic()
+                                self._session.receive_start_pending_since = (
+                                    time.monotonic()
+                                )
                             self._session.receive_start_pending = True
                             inconclusive_probe_thread = existing
                             logger.debug(
@@ -430,7 +432,10 @@ class BLEReceiveLifecycleCoordinator:
                             self._session.receive_start_pending = False
                             self._session.receive_start_pending_since = None
 
-                if deferred_current_thread is None and inconclusive_probe_thread is None:
+                if (
+                    deferred_current_thread is None
+                    and inconclusive_probe_thread is None
+                ):
                     expected_existing = existing
                     recovery_attempts_before_start = (
                         self._session.receive_recovery_attempts

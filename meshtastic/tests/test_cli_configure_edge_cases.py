@@ -285,9 +285,7 @@ def test_seturl_stability_detects_drop_during_window(
         sleep=lambda _seconds: None,
     )
 
-    assert (
-        configure_actions._post_seturl_stability_check(iface, timeout=100.0) is False
-    )
+    assert configure_actions._post_seturl_stability_check(iface, timeout=100.0) is False
     iface.waitForConfig.assert_not_called()
     assert caplog.text.count("Transport dropped during stability window") == (
         configure_actions.SETURL_STABILITY_MAX_ATTEMPTS
@@ -789,7 +787,9 @@ def test_configure_export_restricts_existing_file_permissions(tmp_path: Path) ->
     hooks = ConfigureActionHooks(
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=(False, False)),
-        export_config=MagicMock(return_value="config:\n  security:\n    privateKey: secret\n"),
+        export_config=MagicMock(
+            return_value="config:\n  security:\n    privateKey: secret\n"
+        ),
         cli_exit=cast(CliExit, _cli_exit),
         cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=True),
@@ -903,9 +903,7 @@ def test_configure_result_reporting_handles_future_verification_result() -> None
 @pytest.mark.unit
 def test_configure_command_result_preserves_two_item_tuple_contract() -> None:
     """Internal ACK metadata must not change the historical two-item result shape."""
-    result = configure_actions._ConfigureCommandResult(
-        False, False, request_sent=False
-    )
+    result = configure_actions._ConfigureCommandResult(False, False, request_sent=False)
 
     assert isinstance(result, tuple)
     assert result == (False, False)
@@ -919,9 +917,7 @@ def test_configure_command_result_preserves_two_item_tuple_contract() -> None:
 def test_configure_noop_does_not_arm_shared_ack_wait() -> None:
     """A confirmed configure no-op must not wait for an acknowledgment never sent."""
     interface = _interface()
-    result = configure_actions._ConfigureCommandResult(
-        False, False, request_sent=False
-    )
+    result = configure_actions._ConfigureCommandResult(False, False, request_sent=False)
     hooks = ConfigureActionHooks(
         handle_set_command=MagicMock(),
         handle_configure_command=MagicMock(return_value=result),
@@ -950,9 +946,7 @@ def test_configure_noop_does_not_arm_shared_ack_wait() -> None:
 def test_set_ack_wait_survives_later_configure_noop() -> None:
     """A configure no-op must not disarm an ACK wait requested by ``--set``."""
     interface = _interface()
-    result = configure_actions._ConfigureCommandResult(
-        False, False, request_sent=False
-    )
+    result = configure_actions._ConfigureCommandResult(False, False, request_sent=False)
     set_command = MagicMock()
     hooks = ConfigureActionHooks(
         handle_set_command=set_command,

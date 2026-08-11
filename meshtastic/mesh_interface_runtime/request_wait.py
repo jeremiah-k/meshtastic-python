@@ -166,7 +166,9 @@ class _RequestWaitRuntime:
     def _prune_stale_response_handlers_locked(self, *, now: float) -> list[int]:
         """Prune expired managed callbacks while the response-state lock is held."""
         response_handlers = self._get_response_handlers()
-        for request_id, managed_handler in list(self._managed_response_handlers.items()):
+        for request_id, managed_handler in list(
+            self._managed_response_handlers.items()
+        ):
             if response_handlers.get(request_id) is not managed_handler:
                 self._clear_managed_response_metadata_locked(request_id)
 
@@ -584,8 +586,11 @@ class _RequestWaitRuntime:
                 managed_handler = self._managed_response_handlers.get(request_id)
                 if managed_handler is not None and candidate is not managed_handler:
                     self._clear_managed_response_metadata_locked(request_id)
-                elif managed_handler is candidate and self._response_handler_is_stale_locked(
-                    request_id, now=time.monotonic()
+                elif (
+                    managed_handler is candidate
+                    and self._response_handler_is_stale_locked(
+                        request_id, now=time.monotonic()
+                    )
                 ):
                     self._remove_response_handler_locked(request_id)
                     return None, False

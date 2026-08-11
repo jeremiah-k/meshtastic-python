@@ -636,6 +636,7 @@ def test_tunnel_starts_with_optional_subnet(
 ) -> None:
     """Eligible tunnel requests should keep the connection open and forward subnet."""
     from meshtastic import tunnel
+
     interface = _interface_double()
     interface.noProto = False
     context = _context(interface, tunnel=True, dest="^all", tunnel_net=subnet)

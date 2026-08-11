@@ -53,7 +53,9 @@ class _NodeMetadataResponseRuntime:
             self._node.iface._acknowledgment.receivedNak = True
             if packet is not None:
                 _record_admin_wait_error_for_packet(
-                    self._node, packet, "Received malformed metadata response (missing routing)."
+                    self._node,
+                    packet,
+                    "Received malformed metadata response (missing routing).",
                 )
             self._node._signal_metadata_stdout_event()
             return True
@@ -171,7 +173,9 @@ class _NodeMetadataResponseRuntime:
             )
             self._node.iface._acknowledgment.receivedNak = True
             _record_admin_wait_error_for_packet(
-                self._node, packet, "Received malformed metadata response (missing decoded)."
+                self._node,
+                packet,
+                "Received malformed metadata response (missing decoded).",
             )
             self._node._signal_metadata_stdout_event()
             return
@@ -188,7 +192,9 @@ class _NodeMetadataResponseRuntime:
             )
             self._node.iface._acknowledgment.receivedNak = True
             _record_admin_wait_error_for_packet(
-                self._node, packet, "Received malformed metadata response (missing admin)."
+                self._node,
+                packet,
+                "Received malformed metadata response (missing admin).",
             )
             self._node._signal_metadata_stdout_event()
             return
@@ -202,7 +208,9 @@ class _NodeMetadataResponseRuntime:
             )
             self._node.iface._acknowledgment.receivedNak = True
             _record_admin_wait_error_for_packet(
-                self._node, packet, "Received malformed metadata response (missing admin.raw)."
+                self._node,
+                packet,
+                "Received malformed metadata response (missing admin.raw).",
             )
             self._node._signal_metadata_stdout_event()
             return

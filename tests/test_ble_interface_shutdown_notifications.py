@@ -22,14 +22,12 @@ from meshtastic.interfaces.ble import (
 )
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-
-
 from tests._ble_interface_core_support import (
     SAFE_EXECUTE_LEGACY_POSITIONAL_MISMATCH_ERROR_MSG,
     SAFE_EXECUTE_UNEXPECTED_ERROR_MSG,
+    _attach_close_monitor,
     _ReconnectTestNotificationManager,
     _ReconnectTestScheduler,
-    _attach_close_monitor,
     pub,
 )
 
@@ -233,9 +231,9 @@ def test_close_clears_ble_threads(monkeypatch: pytest.MonkeyPatch) -> None:
 
         time.sleep(poll_interval)
 
-    assert not lingering, (
-        f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
-    )
+    assert (
+        not lingering
+    ), f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
 
 
 @pytest.mark.parametrize("exc_type", [RuntimeError, OSError])
@@ -293,9 +291,9 @@ def test_receive_thread_specific_exceptions(
     iface._receive_from_radio_impl()
 
     assert "Fatal error in BLE receive thread" in caplog.text
-    assert close_called.is_set(), (
-        f"Expected close() to be called for {exc_type.__name__}"
-    )
+    assert (
+        close_called.is_set()
+    ), f"Expected close() to be called for {exc_type.__name__}"
 
     # Clean up
     iface._want_receive = False
@@ -430,12 +428,12 @@ def test_log_notification_registration(
     registered_uuids = [call[0] for call in client.start_notify_calls]
 
     # Should have registered both log notifications and the critical FROMNUM notification
-    assert LEGACY_LOGRADIO_UUID in registered_uuids, (
-        "Legacy log notification should be registered"
-    )
-    assert LOGRADIO_UUID in registered_uuids, (
-        "Current log notification should be registered"
-    )
+    assert (
+        LEGACY_LOGRADIO_UUID in registered_uuids
+    ), "Legacy log notification should be registered"
+    assert (
+        LOGRADIO_UUID in registered_uuids
+    ), "Current log notification should be registered"
     assert FROMNUM_UUID in registered_uuids, "FROMNUM notification should be registered"
 
     # Verify handlers are correctly associated
@@ -449,15 +447,15 @@ def test_log_notification_registration(
         call for call in client.start_notify_calls if call[0] == FROMNUM_UUID
     )
 
-    assert callable(legacy_call[1]), (
-        "Legacy log notification should register a callable handler"
-    )
-    assert callable(current_call[1]), (
-        "Current log notification should register a callable handler"
-    )
-    assert callable(fromnum_call[1]), (
-        "FROMNUM notification should register a callable handler"
-    )
+    assert callable(
+        legacy_call[1]
+    ), "Legacy log notification should register a callable handler"
+    assert callable(
+        current_call[1]
+    ), "Current log notification should register a callable handler"
+    assert callable(
+        fromnum_call[1]
+    ), "FROMNUM notification should register a callable handler"
 
     iface.close()
 
@@ -774,7 +772,10 @@ def test_register_notifications_keeps_fromnum_during_provisional_connect(
         assert client.stop_notify_calls == []
         assert iface._fromnum_notify_enabled is True
         assert iface._receive_recovery_controller._should_poll_without_notify() is False
-        assert FROMNUM_UUID in iface._notification_dispatcher._started_notify_characteristics
+        assert (
+            FROMNUM_UUID
+            in iface._notification_dispatcher._started_notify_characteristics
+        )
     finally:
         with iface._state_lock:
             iface.client = client
@@ -984,6 +985,7 @@ def test_register_notifications_rolls_back_if_client_disconnects_during_start(
         with iface._state_lock:
             iface.client = client
         iface.close()
+
 
 def test_register_notifications_retries_fromnum_notify_acquired_once(
     monkeypatch: pytest.MonkeyPatch,

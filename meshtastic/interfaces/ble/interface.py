@@ -1237,7 +1237,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         state_manager = self._state_manager
         lifecycle_owner_is_current: bool | None
         canonical_locked_probe = (
-            type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
+            type(state_manager)
+            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
             and state_manager.lock is self._state_lock
         )
         with self._state_lock:
@@ -2777,7 +2778,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         """
         lifecycle_controller = self._get_lifecycle_controller()
         finalize_connection_gates = _resolve_declared_callable(
-            lifecycle_controller, "_finalize_connection_gates", "finalize_connection_gates"
+            lifecycle_controller,
+            "_finalize_connection_gates",
+            "finalize_connection_gates",
         )
         if finalize_connection_gates is not None:
             finalize_connection_gates(
@@ -2802,7 +2805,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         """
         lifecycle_controller = self._get_lifecycle_controller()
         is_owned_connected_client = _resolve_declared_callable(
-            lifecycle_controller, "_is_owned_connected_client", "is_owned_connected_client"
+            lifecycle_controller,
+            "_is_owned_connected_client",
+            "is_owned_connected_client",
         )
         if is_owned_connected_client is not None:
             result = is_owned_connected_client(client)

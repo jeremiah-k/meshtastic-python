@@ -37,10 +37,7 @@ SAFE_EXECUTE_CALLABLE_ONLY_ERROR_MSG = "callable-only failed"
 SAFE_EXECUTE_LEGACY_POSITIONAL_MISMATCH_ERROR_MSG = "legacy positional mismatch"
 
 
-
-def _pin_interface_platform(
-    monkeypatch: pytest.MonkeyPatch, platform: str
-) -> None:
+def _pin_interface_platform(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
     """Replace the BLE interface module's ``sys`` reference with a local platform fake.
 
     Parameters
@@ -114,6 +111,7 @@ def _pin_interface_subprocess_run(
         raising=True,
     )
 
+
 def _pin_trust_environment(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -130,9 +128,7 @@ def _pin_trust_environment(
         callable raises if the subprocess path is unexpectedly reached.
     """
     _pin_interface_platform(monkeypatch, "linux")
-    _pin_interface_shutil_which(
-        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
-    )
+    _pin_interface_shutil_which(monkeypatch, lambda _name: "/usr/bin/bluetoothctl")
     if run is None:
 
         def _unexpected_run(*_args: object, **_kwargs: object) -> None:
@@ -192,8 +188,9 @@ def _make_establish_stub(
     device_key: str | None = None,
     alias_key: str | None = None,
     connection_alias_key: str | None = None,
-    on_call: Callable[[str | None, str | None, str | None, bool, float | None], None]
-    | None = None,
+    on_call: (
+        Callable[[str | None, str | None, str | None, bool, float | None], None] | None
+    ) = None,
 ) -> Callable[..., tuple[Any, str | None, str | None]]:
     """Build an ``_establish_and_update_client`` test stub.
 

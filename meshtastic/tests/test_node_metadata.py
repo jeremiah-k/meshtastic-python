@@ -18,7 +18,6 @@ from ..protobuf import (
     mesh_pb2,
 )
 from ..util import Acknowledgment
-
 from ._node_legacy_support import (
     _MetadataLockProbeIface,
     _TrackingLock,

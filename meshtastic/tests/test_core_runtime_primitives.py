@@ -5,14 +5,13 @@ from __future__ import annotations
 import ast
 import inspect
 import pickle
-from pathlib import Path
 import typing
+from pathlib import Path
 
 import pytest
 
 import meshtastic
 from meshtastic import _core_constants, _protocol_runtime, _publishing, _response_types
-
 
 ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.unit
@@ -79,7 +78,9 @@ def test_public_response_types_are_leaf_module_identities() -> None:
         assert getattr(meshtastic, name) is getattr(_response_types, name), name
 
 
-def test_production_consumers_do_not_reference_moved_primitives_from_package_root() -> None:
+def test_production_consumers_do_not_reference_moved_primitives_from_package_root() -> (
+    None
+):
     """Production internals should consume leaf-owned primitives directly."""
     moved_names = (
         set(_core_constants.__all__)
@@ -184,7 +185,9 @@ def test_public_publishing_thread_is_internal_owner_identity() -> None:
     assert meshtastic.publishingThread is _publishing.publishing_thread
 
 
-def test_production_consumers_do_not_import_publishing_worker_from_package_root() -> None:
+def test_production_consumers_do_not_import_publishing_worker_from_package_root() -> (
+    None
+):
     """Production modules should depend on the internal publishing owner directly."""
     for path in _production_python_modules():
         assert "publishingThread" not in _meshtastic_root_references(path), path

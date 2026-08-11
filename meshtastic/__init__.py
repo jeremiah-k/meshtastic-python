@@ -81,21 +81,15 @@ from meshtastic.util import (
     stripnl,
 )
 
-from . import util
-from ._core_constants import (
-    BROADCAST_ADDR as _BROADCAST_ADDR,
-    BROADCAST_NUM as _BROADCAST_NUM,
-    DECODE_ERROR_KEY as _DECODE_ERROR_KEY,
-    LOCAL_ADDR as _LOCAL_ADDR,
-    NODELESS_WANT_CONFIG_ID as _NODELESS_WANT_CONFIG_ID,
-    OUR_APP_VERSION as _OUR_APP_VERSION,
-)
-from ._response_types import (
-    ResponseCallback as _ResponseCallback,
-    ResponseHandler as _ResponseHandler,
-)
-from . import _protocol_runtime
-from . import _publishing
+from . import _protocol_runtime, _publishing, util
+from ._core_constants import BROADCAST_ADDR as _BROADCAST_ADDR
+from ._core_constants import BROADCAST_NUM as _BROADCAST_NUM
+from ._core_constants import DECODE_ERROR_KEY as _DECODE_ERROR_KEY
+from ._core_constants import LOCAL_ADDR as _LOCAL_ADDR
+from ._core_constants import NODELESS_WANT_CONFIG_ID as _NODELESS_WANT_CONFIG_ID
+from ._core_constants import OUR_APP_VERSION as _OUR_APP_VERSION
+from ._response_types import ResponseCallback as _ResponseCallback
+from ._response_types import ResponseHandler as _ResponseHandler
 from .protobuf import (
     admin_pb2,
     apponly_pb2,

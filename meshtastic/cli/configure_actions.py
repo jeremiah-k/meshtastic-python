@@ -1130,9 +1130,7 @@ def _apply_settings_transaction(
     module_config_sections : dict[str, dict[str, Any]]
         Validated LocalModuleConfig sections.
     """
-    hooks.cli_print(
-        "Applying configuration transaction (may trigger device reboot)..."
-    )
+    hooks.cli_print("Applying configuration transaction (may trigger device reboot)...")
     target_node.beginSettingsTransaction()
     remaining_writes = len(config_sections) + len(module_config_sections)
     commit_attempted = False

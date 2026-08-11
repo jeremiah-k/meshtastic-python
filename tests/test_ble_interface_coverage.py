@@ -1161,7 +1161,9 @@ def test_get_or_create_collaborator_uses_double_checked_locking() -> None:
     assert result1 is result2
 
 
-def test_get_or_create_collaborator_lockless_fallback_converges_racing_callers() -> None:
+def test_get_or_create_collaborator_lockless_fallback_converges_racing_callers() -> (
+    None
+):
     """Partial lockless interfaces must still return one collaborator owner."""
 
     class _PartialInterface:
@@ -1200,7 +1202,9 @@ def test_get_or_create_collaborator_lockless_fallback_converges_racing_callers()
     assert iface._test_collaborator is results[0]
 
 
-def test_notification_registration_compat_state_probe_revalidates_outside_lock() -> None:
+def test_notification_registration_compat_state_probe_revalidates_outside_lock() -> (
+    None
+):
     """Fallback registration probes must release and then revalidate state ownership."""
 
     class _TrackingLock:

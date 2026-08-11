@@ -11,8 +11,8 @@ from meshtastic.node_runtime.admin_wait import (
 from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.shared import (
     MAX_CHANNELS,
+    _is_named_admin_channel_name,
 )
-from meshtastic.node_runtime.shared import _is_named_admin_channel_name
 from meshtastic.protobuf import admin_pb2, channel_pb2
 
 if TYPE_CHECKING:

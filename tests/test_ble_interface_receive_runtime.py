@@ -17,8 +17,6 @@ from bleak.exc import BleakError
 from meshtastic.interfaces.ble import (
     BLEInterface,
 )
-
-
 from tests._ble_interface_core_support import (
     START_FAILED_MSG,
 )

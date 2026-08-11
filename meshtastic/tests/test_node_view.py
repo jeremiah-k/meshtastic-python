@@ -11,12 +11,12 @@ import pytest
 
 from meshtastic import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.mesh_interface_runtime.ports import _NodeViewPort
 from meshtastic.mesh_interface_runtime.node_view import (
     NodeView,
     _normalize_json_serializable,
     _timeago,
 )
+from meshtastic.mesh_interface_runtime.ports import _NodeViewPort
 from meshtastic.protobuf import mesh_pb2
 
 

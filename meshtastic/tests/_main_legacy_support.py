@@ -11,10 +11,9 @@ from typing import Any, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
-
-import meshtastic.__main__ as main_module
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
+import meshtastic.__main__ as main_module
 from meshtastic import mt_config
 from meshtastic.__main__ import main
 from meshtastic.node import Node
@@ -190,6 +189,7 @@ def _make_fake_tcp_interface(
     on_close: Callable[[], None] | None = None,
 ) -> type[object]:
     """Return a configurable TCPInterface test double with context-manager behavior."""
+
     class _FakeTCPInterface:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             self.hostname = "localhost"
@@ -216,7 +216,8 @@ def _build_nested_bytes_test_message() -> Any:
     )
     child = file_proto.message_type.add(name="Child")
     child.field.add(
-        name="payload", number=1,
+        name="payload",
+        number=1,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_BYTES,
     )
@@ -224,41 +225,48 @@ def _build_nested_bytes_test_message() -> Any:
     child_map_entry = container.nested_type.add(name="ChildMapEntry")
     child_map_entry.options.map_entry = True
     child_map_entry.field.add(
-        name="key", number=1,
+        name="key",
+        number=1,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_STRING,
     )
     child_map_entry.field.add(
-        name="value", number=2,
+        name="value",
+        number=2,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
         type_name=".mtjk.tests.nested.Child",
     )
     container.field.add(
-        name="child_map", number=1,
+        name="child_map",
+        number=1,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
         type_name=".mtjk.tests.nested.Container.ChildMapEntry",
     )
     container.field.add(
-        name="children", number=2,
+        name="children",
+        number=2,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
         type_name=".mtjk.tests.nested.Child",
     )
     container.field.add(
-        name="child", number=3,
+        name="child",
+        number=3,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
         type_name=".mtjk.tests.nested.Child",
     )
     container.field.add(
-        name="blobs", number=4,
+        name="blobs",
+        number=4,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_BYTES,
     )
     container.field.add(
-        name="scalar_blob", number=5,
+        name="scalar_blob",
+        number=5,
         label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
         type=descriptor_pb2.FieldDescriptorProto.TYPE_BYTES,
     )

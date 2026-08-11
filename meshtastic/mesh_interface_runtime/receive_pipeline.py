@@ -12,9 +12,9 @@ import google.protobuf.json_format
 from google.protobuf import message as protobuf_message
 from pubsub import pub
 
-from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, DECODE_ERROR_KEY
 from meshtastic._protocol_runtime import protocols
+from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic._topics import LOCKDOWN_STATUS_TOPIC
 from meshtastic.protobuf import (
     channel_pb2,
@@ -29,7 +29,6 @@ from meshtastic.util import stripnl
 from .ports import _ReceivePipelinePort
 from .queue_send import _QueueSendRuntime
 from .request_wait import _RequestWaitRuntime
-
 
 if TYPE_CHECKING:
     from meshtastic.node import Node
@@ -548,9 +547,7 @@ class ReceivePipeline:
 
         with self._node_db_lock:
             if self.nodes_by_num is None:
-                raise self._port.error_type(
-                    "Node database not initialized"
-                )
+                raise self._port.error_type("Node database not initialized")
 
             if nodeNum in self.nodes_by_num:
                 return self.nodes_by_num[nodeNum]

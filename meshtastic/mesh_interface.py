@@ -21,12 +21,12 @@ except ImportError:
 from pubsub import pub
 
 import meshtastic.node
-from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic._core_constants import (
     BROADCAST_ADDR,
     LAST_DISCONNECT_SOURCE_TYPE_ERROR,
     NODELESS_WANT_CONFIG_ID,
 )
+from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic._response_types import ResponseHandler
 from meshtastic.mesh_interface_runtime.flows import (
     DEFAULT_TELEMETRY_TYPE,
@@ -275,9 +275,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _last_disconnect_source(self, value: str | None) -> None:
         if value is not None and not isinstance(value, str):
             raise TypeError(
-                LAST_DISCONNECT_SOURCE_TYPE_ERROR.format(
-                    type_name=type(value).__name__
-                )
+                LAST_DISCONNECT_SOURCE_TYPE_ERROR.format(type_name=type(value).__name__)
             )
         self.__dict__["_last_disconnect_source"] = value
 

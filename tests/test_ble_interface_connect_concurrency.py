@@ -22,8 +22,6 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_INTERFACE_CLOSING,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
-
-
 from tests._ble_interface_core_support import (
     _build_minimal_connect_test_interface,
     _make_establish_stub,
@@ -209,9 +207,9 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(
         connect_thread.join(timeout=12.0)
         disconnect_thread.join(timeout=12.0)
 
-        assert establish_called.is_set(), (
-            "connect() did not run connection establishment"
-        )
+        assert (
+            establish_called.is_set()
+        ), "connect() did not run connection establishment"
         assert not connect_thread.is_alive(), "connect() thread appears deadlocked"
         assert not disconnect_thread.is_alive(), "disconnect thread appears deadlocked"
 

@@ -27,8 +27,6 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_MANAGEMENT_TARGET_CHANGED,
 )
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-
-
 from tests._ble_interface_core_support import (
     _capture_management_wait_event,
     _clear_management_handler,
@@ -501,7 +499,9 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
     def _run_pair() -> None:
         try:
             iface.pair("mesh-node", confirm=True, await_timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             pair_errors.append(exc)
 
     close_done = threading.Event()
@@ -509,7 +509,9 @@ def test_ble_interface_close_waits_for_temporary_pair_operation(
     def _run_close() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()

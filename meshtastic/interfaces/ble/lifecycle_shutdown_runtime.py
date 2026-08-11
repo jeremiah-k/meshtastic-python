@@ -13,8 +13,6 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_member,
 )
-from meshtastic.interfaces.ble.ports import _BLESessionStatePort
-from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
     NOTIFICATION_START_TIMEOUT,
@@ -33,6 +31,8 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleStateAccess,
     _LifecycleThreadAccess,
 )
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _is_unexpected_keyword_error,
@@ -61,7 +61,10 @@ class BLEShutdownLifecycleCoordinator:
     """
 
     def __init__(
-        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+        self,
+        iface: "BLEInterface",
+        *,
+        session_state: _BLESessionStatePort | None = None,
     ) -> None:
         """Bind shutdown ownership to a specific interface.
 

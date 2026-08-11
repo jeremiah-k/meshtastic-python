@@ -33,8 +33,6 @@ from meshtastic.interfaces.ble.notifications import (
     NotificationManager,
 )
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-
-
 from tests._ble_interface_core_support import (
     SAFE_EXECUTE_CALLABLE_ONLY_ERROR_MSG,
     SAFE_EXECUTE_DIFFERENT_TYPE_ERROR_MSG,
@@ -42,9 +40,9 @@ from tests._ble_interface_core_support import (
     SAFE_EXECUTE_KEYWORD_CALL_FAILED_MSG,
     SAFE_EXECUTE_POSITIONAL_MISMATCH_ERROR_MSG,
     SAFE_EXECUTE_UNEXPECTED_ERROR_MSG,
+    _create_ble_device,
     _FakeDiscoveryClient,
     _ImmediateThread,
-    _create_ble_device,
     _make_send_message_recorder,
 )
 

@@ -384,7 +384,9 @@ def test_sendPosition_default_path_delegates_empty_position_payload() -> None:
     sent_packet = mesh_pb2.MeshPacket(id=123)
     with (
         MeshInterface(noProto=True) as iface,
-        patch.object(iface, "_send_data_with_wait", return_value=sent_packet) as send_mock,
+        patch.object(
+            iface, "_send_data_with_wait", return_value=sent_packet
+        ) as send_mock,
     ):
         result = iface.sendPosition()
 
@@ -686,7 +688,6 @@ def test_disconnected_publishes_lost_once_per_connection(
         iface.isConnected.set()
         iface._disconnected()
         assert len(queued_callbacks) == 2
-
 
 
 @pytest.mark.unit

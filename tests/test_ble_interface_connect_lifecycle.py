@@ -19,8 +19,6 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_MANAGEMENT_CONNECTING,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
-
-
 from tests._ble_interface_core_support import (
     _MAX_SPURIOUS_CONNECT_WAIT_CALLS_BEFORE_FAIL,
     _build_minimal_connect_test_interface,

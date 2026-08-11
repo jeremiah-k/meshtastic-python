@@ -3,7 +3,7 @@
 This document is the canonical human-readable policy for compatibility aliases,
 deprecations, and legacy compatibility behaviors in this repository. Runtime
 import guarantees are additionally defined by the machine-readable
-``meshtastic/_runtime_compatibility.json`` manifest consumed by API-baseline tooling.
+`meshtastic/_runtime_compatibility.json` manifest consumed by API-baseline tooling.
 
 If a compatibility symbol is not listed here, or a runtime import guarantee is
 not present in that manifest, do not add or keep it by default.
@@ -59,7 +59,7 @@ implementation details that are NOT part of the public stable API.
 
 ### Documented Runtime Compatibility Exports
 
-The machine-readable manifest ``meshtastic/_runtime_compatibility.json`` is the
+The machine-readable manifest `meshtastic/_runtime_compatibility.json` is the
 source of truth consumed by API-baseline tooling for runtime import guarantees.
 It currently guarantees only:
 

@@ -452,6 +452,8 @@ def test_status_publish_ignores_synthesized_closing_probe(
     )
 
     assert sent == [("meshtastic.connection.status", iface, True)]
+
+
 def test_status_publish_closing_probe_failure_is_best_effort(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -524,6 +526,7 @@ def test_legacy_status_publish_ignores_synthesized_thread_provider(
 
         def __getattr__(self, name: str) -> object:
             if name == "_get_publishing_thread":
+
                 def _synthesized_provider() -> object:
                     self.synthesized_provider_calls += 1
                     raise AssertionError("synthesized provider must be ignored")
@@ -1087,9 +1090,7 @@ def test_utils_remaining_optional_kwarg_and_safe_execute_branches() -> None:
         )
 
     iface_no_hooks = SimpleNamespace(
-        error_handler=SimpleNamespace(
-            safe_execute=None, _safe_execute=None
-        )
+        error_handler=SimpleNamespace(safe_execute=None, _safe_execute=None)
     )
     assert ble_utils._resolve_safe_execute(iface_no_hooks) is None
 

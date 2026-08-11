@@ -24,26 +24,26 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
-import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.channel_contact_actions as cli_channel_contact_actions
+import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.dispatch as cli_dispatch
 import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.runtime as cli_runtime
-from meshtastic.cli.context import ActionOutcome, CliContext
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import mt_config, remote_hardware
+
 # COMPAT_STABLE_SHIM: LOCAL_ADDR remains importable from meshtastic.__main__.
 # pylint: disable=unused-import
+from meshtastic._core_constants import LOCAL_ADDR  # noqa: F401
 from meshtastic._core_constants import (
     BROADCAST_ADDR,
-    LOCAL_ADDR,  # noqa: F401
 )
-# pylint: enable=unused-import
+from meshtastic.cli.context import ActionOutcome, CliContext
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
@@ -71,8 +71,8 @@ from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compat
 from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
     parse_modem_preset_name as _parse_modem_preset_name,
 )
-from meshtastic.configure_verify import (
-    _verify_channel_url_against_state,  # noqa: F401 - legacy __main__ compatibility export
+from meshtastic.configure_verify import (  # noqa: F401 - legacy __main__ compatibility export
+    _verify_channel_url_against_state,
 )
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble import BLEInterface
@@ -84,8 +84,8 @@ from meshtastic.lockdown import (
 )
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime import node_data
-from meshtastic.protobuf import (
-    admin_pb2,  # noqa: F401 - legacy __main__ compatibility export
+from meshtastic.protobuf import (  # noqa: F401 - legacy __main__ compatibility export
+    admin_pb2,
     channel_pb2,
     config_pb2,
     localonly_pb2,
@@ -97,6 +97,9 @@ from meshtastic.version import (
     PROJECT_DISPLAY_NAME,
     get_active_version,
 )
+
+# pylint: enable=unused-import
+
 
 # COMPAT_STABLE_SHIM: Preserve legacy private imports while runtime owns behavior.
 MAIN_LOOP_IDLE_SLEEP_SECONDS = cli_runtime.MAIN_LOOP_IDLE_SLEEP_SECONDS

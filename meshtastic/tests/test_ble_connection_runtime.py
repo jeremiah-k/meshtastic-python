@@ -12,11 +12,11 @@ import pytest
 from bleak.exc import BleakDBusError
 
 from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
     ConnectionOrchestrator,
 )
+from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS
 from meshtastic.interfaces.ble.errors import BLEDBusTransportError, BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 
