@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 
-from meshtastic.interfaces.ble.compat_adapter import _get_declared_callable
+from meshtastic.interfaces.ble.compat_adapter import (
+    _get_declared_callable,
+    _load_runtime_module,
+)
 from meshtastic.interfaces.ble.lifecycle_compat_service import (
     _ORIGINAL_FINALIZE_CONNECTION_GATES,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
@@ -137,8 +140,8 @@ class BLELifecycleController:
     ) -> None:
         """Verify ownership and publish connected side effects."""
         if self._uses_compat_connection_status_overrides():
-            from meshtastic.interfaces.ble import (
-                lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
+            lifecycle_service_mod = _load_runtime_module(
+                "meshtastic.interfaces.ble.lifecycle_service"
             )
 
             if (
@@ -196,8 +199,8 @@ class BLELifecycleController:
         restore_last_connection_request: str | None = None,
     ) -> None:
         """Discard stale connect result for the bound interface."""
-        from meshtastic.interfaces.ble import (
-            lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
+        lifecycle_service_mod = _load_runtime_module(
+            "meshtastic.interfaces.ble.lifecycle_service"
         )
 
         iface = self._iface
@@ -289,8 +292,8 @@ class BLELifecycleController:
 
     def _uses_compat_connection_status_overrides(self) -> bool:
         """Return whether lifecycle service status helpers were monkeypatched."""
-        from meshtastic.interfaces.ble import (
-            lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
+        lifecycle_service_mod = _load_runtime_module(
+            "meshtastic.interfaces.ble.lifecycle_service"
         )
 
         service_get_status = (
@@ -327,8 +330,8 @@ class BLELifecycleController:
     ) -> None:
         """Finalize gate ownership after successful connect."""
         if self._uses_compat_connection_status_overrides():
-            from meshtastic.interfaces.ble import (
-                lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
+            lifecycle_service_mod = _load_runtime_module(
+                "meshtastic.interfaces.ble.lifecycle_service"
             )
 
             lifecycle_service_mod.BLELifecycleService._finalize_connection_gates(
@@ -347,8 +350,8 @@ class BLELifecycleController:
     def _is_owned_connected_client(self, client: "BLEClient") -> bool:
         """Return whether the bound interface still owns the provided client."""
         if self._uses_compat_connection_status_overrides():
-            from meshtastic.interfaces.ble import (
-                lifecycle_service as lifecycle_service_mod,  # pylint: disable=import-outside-toplevel
+            lifecycle_service_mod = _load_runtime_module(
+                "meshtastic.interfaces.ble.lifecycle_service"
             )
 
             return lifecycle_service_mod.BLELifecycleService._is_owned_connected_client(

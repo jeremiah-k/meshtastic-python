@@ -12,6 +12,7 @@ from bleak.exc import BleakDBusError, BleakError, BleakGATTProtocolError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
+    _load_runtime_module,
     _get_declared_callable,
     _get_declared_member,
     _iter_declared_members,
@@ -465,8 +466,9 @@ class BLEReceiveRecoveryController:
                 public_name="close",
             )
             if close_fn is not None:
-                from meshtastic.interfaces.ble import interface as interface_mod
-
+                interface_mod = _load_runtime_module(
+                    "meshtastic.interfaces.ble.interface"
+                )
                 close_fn(
                     management_shutdown_wait_timeout=(
                         interface_mod._MANAGEMENT_SHUTDOWN_WAIT_TIMEOUT_SECONDS
@@ -474,9 +476,10 @@ class BLEReceiveRecoveryController:
                     management_wait_poll_seconds=interface_mod._MANAGEMENT_CONNECT_WAIT_POLL_SECONDS,
                 )
                 return
-        from meshtastic.interfaces.ble import interface as interface_mod
-        from meshtastic.interfaces.ble import lifecycle_service as lifecycle_service_mod
-
+        interface_mod = _load_runtime_module("meshtastic.interfaces.ble.interface")
+        lifecycle_service_mod = _load_runtime_module(
+            "meshtastic.interfaces.ble.lifecycle_service"
+        )
         lifecycle_service_mod.BLELifecycleService._close(
             iface,
             management_shutdown_wait_timeout=(
@@ -1144,9 +1147,10 @@ class BLEReceiveRecoveryController:
 
 
 # COMPAT_STABLE_SHIM: Re-export legacy receive service name for compatibility.
-# Deferred import avoids circular dependency with `receive_compat_service`.
-from meshtastic.interfaces.ble.receive_compat_service import (  # noqa: E402
-    BLEReceiveRecoveryService,
-)
+# Lazy module resolution preserves the receive-service compatibility cycle without
+# a non-top-level import statement.
+BLEReceiveRecoveryService = _load_runtime_module(
+    "meshtastic.interfaces.ble.receive_compat_service"
+).BLEReceiveRecoveryService
 
 __all__ = ["BLEReceiveRecoveryController", "BLEReceiveRecoveryService"]

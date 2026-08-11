@@ -5,6 +5,7 @@ from threading import Event, Thread
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from meshtastic.interfaces.ble.compat_adapter import (
+    _load_runtime_module,
     _get_declared_callable,
     _get_declared_member,
 )
@@ -111,8 +112,7 @@ class BLECompatibilityEventPublisher:
         if self._is_live_publishing_thread(self._last_publishing_thread):
             return self._last_publishing_thread
         self._last_publishing_thread = None
-        from meshtastic import mesh_interface as mesh_iface_module
-
+        mesh_iface_module = _load_runtime_module("meshtastic.mesh_interface")
         fallback_thread = getattr(mesh_iface_module, "publishingThread", None)
         if self._is_live_publishing_thread(fallback_thread):
             self._last_publishing_thread = fallback_thread
@@ -509,8 +509,7 @@ class BLECompatibilityEventService:
         None
             Publication is best-effort; failures are logged and suppressed.
         """
-        from meshtastic import mesh_interface as mesh_iface_module
-
+        mesh_iface_module = _load_runtime_module("meshtastic.mesh_interface")
         mesh_pub: Any = getattr(mesh_iface_module, "pub", None)
         if mesh_pub is None:
             logger.debug("Skipping connection status publish: mesh pub is unavailable")
@@ -649,16 +648,14 @@ class BLECompatibilityEventService:
                         exc_info=True,
                     )
             if resolved_publishing_thread is None:
-                from meshtastic import mesh_interface as mesh_iface_module
-
+                mesh_iface_module = _load_runtime_module("meshtastic.mesh_interface")
                 resolved_publishing_thread = getattr(
                     mesh_iface_module, "publishingThread", None
                 )
         if not BLECompatibilityEventPublisher._is_live_publishing_thread(
             resolved_publishing_thread
         ):
-            from meshtastic import mesh_interface as mesh_iface_module
-
+            mesh_iface_module = _load_runtime_module("meshtastic.mesh_interface")
             fallback_thread = getattr(mesh_iface_module, "publishingThread", None)
             resolved_publishing_thread = (
                 fallback_thread
