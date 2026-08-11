@@ -700,7 +700,8 @@ class BLEShutdownLifecycleCoordinator:
                                 unsubscribe_timeout
                             ):
                                 logger.warning(
-                                    "Skipping legacy notification unsubscribe_all() fallback: close timeout budget is active and the callable does not accept timeout."
+                                    "Skipping legacy notification unsubscribe_all() fallback: close timeout budget is active and the "
+                                    "callable does not accept timeout."
                                 )
                                 return
                             unsubscribe_all(client)
@@ -730,7 +731,8 @@ class BLEShutdownLifecycleCoordinator:
                             client_disconnect_timeout
                         ):
                             logger.warning(
-                                "Skipping legacy BLE client disconnect/close fallback: close timeout budget is active and the callable does not accept timeout."
+                                "Skipping legacy BLE client disconnect/close fallback: close timeout budget is active and the "
+                                "callable does not accept timeout."
                             )
                             return
                         iface._disconnect_and_close_client(client)
@@ -760,7 +762,8 @@ class BLEShutdownLifecycleCoordinator:
                     disconnect_notification_wait_timeout
                 ):
                     logger.warning(
-                        "Skipping legacy disconnect notification wait fallback: close timeout budget is active and the callable does not accept timeout."
+                        "Skipping legacy disconnect notification wait fallback: close timeout budget is active and the "
+                        "callable does not accept timeout."
                     )
                     return
                 iface._wait_for_disconnect_notifications()

@@ -246,7 +246,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> None:
         """Initialize the BLEInterface, configure background threads, and attempt an initial connection to a Meshtastic BLE device.
 
-        If an address or device name is provided, attempt to connect to that device; otherwise discovery may select any available Meshtastic device. Registers an atexit handler to ensure an orderly disconnect on process exit.
+        If an address or device name is provided, attempt to connect to that device; otherwise discovery may select any
+        available Meshtastic device. Registers an atexit handler to ensure an orderly disconnect on process exit.
 
         Parameters
         ----------
@@ -526,7 +527,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> contextlib.ExitStack:
         """Acquire per-address locks in a deterministic order and return an ExitStack that holds them.
 
-        The returned ExitStack contains the acquired per-address lock contexts; keep the stack open (or use it as a context manager) for the duration the locks are required so they remain held and are released when the stack is closed.
+        The returned ExitStack contains the acquired per-address lock contexts; keep the stack open (or use it as a
+        context manager) for the duration the locks are required so they remain held and are released when the stack is
+        closed.
 
         Parameters
         ----------
@@ -587,7 +590,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     def _mark_address_keys_disconnected(self, *keys: str | None) -> None:
         """Mark one or more address registry keys as disconnected.
 
-        Ignores None or empty keys. Updates the global address registry so the interface is no longer recorded as the owner of each provided key; this is performed under the registry and per-address locks to ensure consistent state.
+        Ignores None or empty keys. Updates the global address registry so the interface is no longer recorded as the
+        owner of each provided key; this is performed under the registry and per-address locks to ensure consistent
+        state.
 
         Parameters
         ----------
@@ -899,7 +904,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         Parameters
         ----------
         address : str | None
-            A device address or name to match. Separators (':', '-', '_', and spaces) are ignored when matching. If None, any discovered Meshtastic device may be returned.
+            A device address or name to match. Separators (':', '-', '_', and spaces) are ignored when matching. If
+            None, any discovered Meshtastic device may be returned.
 
         Returns
         -------
@@ -909,7 +915,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         Raises
         ------
         BLEInterface.BLEError
-            If no Meshtastic devices are found, if multiple matching devices are found when an `address` was provided, if the discovery manager is unavailable, or if a synthetic device cannot be created from the provided address.
+            If no Meshtastic devices are found, if multiple matching devices are found when an `address` was provided,
+            if the discovery manager is unavailable, or if a synthetic device cannot be created from the provided
+            address.
         """
 
         target = address or getattr(self, "address", None)
@@ -2090,7 +2098,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
                 raise self.BLEError(ERROR_MANAGEMENT_CONNECTING)
 
     def _should_suppress_duplicate_connect(self, connection_key: str | None) -> bool:
-        """Return whether a connect attempt for the given connection key should be suppressed because an active connection for that key exists on a different interface.
+        """Return whether a connect attempt for the given connection key should be suppressed because an active connection
+        for that key exists on a different interface.
 
         Parameters
         ----------
@@ -2100,7 +2109,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         Returns
         -------
         bool
-            `True` if the connection should be suppressed because the key is connected elsewhere and this interface is not the active connection, `False` otherwise.
+            `True` if the connection should be suppressed because the key is connected elsewhere and this interface is
+            not the active connection, `False` otherwise.
         """
         with self._state_lock:
             is_self_connected = self._state_manager_is_connected()
@@ -2190,7 +2200,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> tuple[BLEClient, str | None, str | None]:
         """Establish a BLE connection through the orchestrator and update the interface's client and address state.
 
-        Establishes a new connection, stores the resulting client and device address under the state lock, updates the last connection request, transfers any previous client references to the new client, and computes address gating keys for the connected device.
+        Establishes a new connection, stores the resulting client and device address under the state lock, updates the
+        last connection request, transfers any previous client references to the new client, and computes address gating
+        keys for the connected device.
 
         Parameters
         ----------
@@ -2763,9 +2775,12 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
         connected_device_key: str | None,
         connection_alias_key: str | None,
     ) -> None:
-        """Finalize post-connection gating by marking the relevant address keys as connected or undoing those marks if the interface closed or the client became stale during the connection process.
+        """Finalize post-connection gating by marking the relevant address keys as connected or undoing those marks if the
+        interface closed or the client became stale during the connection process.
 
-        When the provided client is still the active, connected client, this records the connected device and alias keys and persists the alias key on the interface. If the interface closed or the client is no longer current, any provisional gate marks are removed.
+        When the provided client is still the active, connected client, this records the connected device and alias keys
+        and persists the alias key on the interface. If the interface closed or the client is no longer current, any
+        provisional gate marks are removed.
 
         Parameters
         ----------
@@ -2827,7 +2842,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> BLEClient:
         """Connect to a Meshtastic device over BLE by explicit address or by performing device discovery.
 
-        Attempts to establish and return a connected BLE client for the requested device. If an existing compatible client is already connected, that client is returned. The method uses per-address gating to suppress duplicate concurrent connects and updates the interface's stored address and client reference on success. On failure any client opened during the attempt is closed before the error is propagated.
+        Attempts to establish and return a connected BLE client for the requested device. If an existing compatible
+        client is already connected, that client is returned. The method uses per-address gating to suppress duplicate
+        concurrent connects and updates the interface's stored address and client reference on success. On failure any
+        client opened during the attempt is closed before the error is propagated.
 
         Parameters
         ----------
@@ -3045,7 +3063,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     def _receive_from_radio_impl(self) -> None:
         """Run the main receive loop that reads FROMRADIO packets and delivers them to the packet handler.
 
-        Waits for read or reconnection events, reads payloads from the active BLE client, forwards non-empty payloads to _handle_from_radio, and manages recovery paths (transient retries, disconnect handling, and thread restart) until the interface is closing or the receive loop is stopped.
+        Waits for read or reconnection events, reads payloads from the active BLE client, forwards non-empty payloads to
+        _handle_from_radio, and manages recovery paths (transient retries, disconnect handling, and thread restart)
+        until the interface is closing or the receive loop is stopped.
 
         Raises
         ------
@@ -3074,7 +3094,8 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> bytes | None:
         """Read a non-empty payload from the FROMRADIO characteristic, retrying on repeated empty reads.
 
-        Attempts repeated reads with backoff according to the empty-read policy; if a non-empty payload is read the suppressed-empty-read counter is reset. If all attempts return empty, a throttled warning is emitted.
+        Attempts repeated reads with backoff according to the empty-read policy; if a non-empty payload is read the
+        suppressed-empty-read counter is reset. If all attempts return empty, a throttled warning is emitted.
 
         Parameters
         ----------
@@ -3100,7 +3121,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     ) -> None:
         """Apply the transient-read retry policy for a BLE read error.
 
-        If the policy allows another retry, increments the internal retry counter and sleeps the configured delay to permit a retry. If retries are exhausted, resets the counter and raises BLEInterface.BLEError(ERROR_READING_BLE).
+        If the policy allows another retry, increments the internal retry counter and sleeps the configured delay to
+        permit a retry. If retries are exhausted, resets the counter and raises
+        BLEInterface.BLEError(ERROR_READING_BLE).
 
         Parameters
         ----------
@@ -3117,7 +3140,9 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     def _log_empty_read_warning(self) -> None:
         """Emit a throttled warning when repeated empty FROMRADIO BLE reads are observed.
 
-        If the cooldown period has elapsed, log a warning that an empty read retry limit was exceeded and include how many warnings were suppressed during the last cooldown window; otherwise increment the suppressed-warning counter and log a debug message with the current suppressed count and cooldown duration.
+        If the cooldown period has elapsed, log a warning that an empty read retry limit was exceeded and include how
+        many warnings were suppressed during the last cooldown window; otherwise increment the suppressed-warning
+        counter and log a debug message with the current suppressed count and cooldown duration.
         """
         self._get_receive_recovery_controller().log_empty_read_warning()
 
@@ -3265,7 +3290,10 @@ class BLEInterface(_BLESessionStateCompatMixin, MeshInterface):
     def _wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait up to timeout seconds for the publishing thread to flush pending publish callbacks.
 
-        Requests a flush on the publishing thread and waits for a flush event. If the wait times out and the publishing thread is still alive, a debug message is logged; if the publishing thread is not running when the timeout elapses, the publish queue is drained synchronously on the current thread. Exceptions raised while requesting the flush are caught and logged by the error handler.
+        Requests a flush on the publishing thread and waits for a flush event. If the wait times out and the publishing
+        thread is still alive, a debug message is logged; if the publishing thread is not running when the timeout
+        elapses, the publish queue is drained synchronously on the current thread. Exceptions raised while requesting
+        the flush are caught and logged by the error handler.
 
         Parameters
         ----------

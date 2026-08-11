@@ -155,7 +155,8 @@ def _get_addr_lock(key: str | None) -> RLock:
 def _get_addr_lock_by_key(key: str | None) -> RLock:
     """Get the process-wide reentrant lock for a normalized address key.
 
-    If `key` is None, returns the global registry lock. For per-address locks, ensures a lock exists and increments an internal holder count to prevent premature cleanup.
+    If `key` is None, returns the global registry lock. For per-address locks, ensures a lock exists and increments an
+    internal holder count to prevent premature cleanup.
 
     Parameters
     ----------
@@ -203,7 +204,9 @@ def _maybe_remove_addr_lock_entry(key: str) -> None:
 def _release_addr_lock(key: str | None) -> None:
     """Decrement the holder count for the per-address lock identified by key.
 
-    If key is None, operates on the global registry lock. The input is normalized to a registry key; when the holder count reaches zero and the address is not marked connected, the per-address lock entry may be removed by cleanup logic.
+    If key is None, operates on the global registry lock. The input is normalized to a registry key; when the holder
+    count reaches zero and the address is not marked connected, the per-address lock entry may be removed by cleanup
+    logic.
 
     Parameters
     ----------
@@ -217,7 +220,8 @@ def _release_addr_lock(key: str | None) -> None:
 def _release_addr_lock_by_key(key: str | None) -> None:
     """Decrement the holder count for a normalized address key and remove its lock when unused.
 
-    If `key` is None this is a no-op. Decrements the internal holder count (never below zero); if the count reaches zero and the address is not marked connected, removes the per-address lock and its holder bookkeeping entry.
+    If `key` is None this is a no-op. Decrements the internal holder count (never below zero); if the count reaches zero
+    and the address is not marked connected, removes the per-address lock and its holder bookkeeping entry.
 
     Parameters
     ----------
@@ -235,7 +239,9 @@ def _release_addr_lock_by_key(key: str | None) -> None:
 def _cleanup_addr_lock(key: str | None) -> None:
     """Remove a per-address lock when there are no holders or ownership claims.
 
-    If `key` is None this function does nothing. When `key` is provided, the registry entries for that address (the lock and its holder count) are removed only if the tracked holder count is less than or equal to zero; otherwise the entries are left intact.
+    If `key` is None this function does nothing. When `key` is provided, the registry entries for that address (the lock
+    and its holder count) are removed only if the tracked holder count is less than or equal to zero; otherwise the
+    entries are left intact.
 
     Parameters
     ----------
@@ -286,7 +292,8 @@ def _owner_ref(owner: Any | None) -> weakref.ReferenceType[Any] | None:
 def _owner_connected_state(owner: Any) -> bool | None:
     """Return the connection state reported by an owner via its `_is_connection_connected` attribute.
 
-    If the owner exposes `_is_connection_connected` as a callable, it will be invoked; if it is a boolean, that value is used. If the attribute is missing, not a boolean, or invoking the callable raises an exception, `None` is returned.
+    If the owner exposes `_is_connection_connected` as a callable, it will be invoked; if it is a boolean, that value is
+    used. If the attribute is missing, not a boolean, or invoking the callable raises an exception, `None` is returned.
 
     Parameters
     ----------
@@ -610,7 +617,11 @@ def _mark_connected(addr: str | None, owner: Any | None = None) -> None:
 def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
     """Mark an address as disconnected and clear its connection bookkeeping.
 
-    This normalizes `addr` and is a no-op for `None` or empty addresses. If `owner` is provided, the disconnect is applied only when the recorded live owner matches `owner` (by identity or, when weak references are unavailable, by a stored owner id); otherwise the call is ignored. When applied, the function removes connected-state records for the address and triggers per-address lock cleanup. It does not decrement per-address lock holder counts — callers remain responsible for holder bookkeeping.
+    This normalizes `addr` and is a no-op for `None` or empty addresses. If `owner` is provided, the disconnect is
+    applied only when the recorded live owner matches `owner` (by identity or, when weak references are unavailable, by
+    a stored owner id); otherwise the call is ignored. When applied, the function removes connected-state records for
+    the address and triggers per-address lock cleanup. It does not decrement per-address lock holder counts — callers
+    remain responsible for holder bookkeeping.
 
     Parameters
     ----------
@@ -728,14 +739,17 @@ def _is_currently_connected_elsewhere(
 ) -> bool:
     """Return whether a BLE address is recorded as connected by a different owner.
 
-    Normalizes the provided address via _addr_key; if normalization yields None the function returns False. While checking, stale records are pruned when the recorded owner has been garbage-collected, reports disconnected, or an unowned claim has expired.
+    Normalizes the provided address via _addr_key; if normalization yields None the function returns False. While
+    checking, stale records are pruned when the recorded owner has been garbage-collected, reports disconnected, or an
+    unowned claim has expired.
 
     Parameters
     ----------
     addr : str | None
         BLE address to check; will be normalized via _addr_key.
     owner : Any | None
-        Caller's owner instance; if it matches the recorded owner by identity or recorded id, the address is not considered connected elsewhere. (Default value = None)
+        Caller's owner instance; if it matches the recorded owner by identity or recorded id, the address is not
+        considered connected elsewhere. (Default value = None)
 
     Returns
     -------

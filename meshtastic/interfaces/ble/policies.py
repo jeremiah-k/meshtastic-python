@@ -22,7 +22,7 @@ class _RandomLike(Protocol):
         float
             A value x such that 0.0 <= x < 1.0.
         """
-        ...
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 class ReconnectPolicy:
@@ -278,7 +278,8 @@ class RetryPolicy:
     def _empty_read() -> ReconnectPolicy:
         """Policy configured for retrying empty BLE read responses.
 
-        Uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to BLEConfig.EMPTY_READ_MAX_DELAY, uses a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
+        Uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to BLEConfig.EMPTY_READ_MAX_DELAY, uses
+        a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
 
         Returns
         -------
@@ -300,7 +301,9 @@ class RetryPolicy:
         Returns
         -------
         ReconnectPolicy
-            ReconnectPolicy configured with initial_delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay BLEConfig.TRANSIENT_READ_MAX_DELAY, backoff 1.5, jitter_ratio 0.1, and max_retries from BLEConfig.TRANSIENT_READ_MAX_RETRIES.
+            ReconnectPolicy configured with initial_delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay
+            BLEConfig.TRANSIENT_READ_MAX_DELAY, backoff 1.5, jitter_ratio 0.1, and max_retries from
+            BLEConfig.TRANSIENT_READ_MAX_RETRIES.
         """
         return ReconnectPolicy(
             initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,

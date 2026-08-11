@@ -113,7 +113,8 @@ class ThreadCoordinator:
     ) -> ThreadLike:
         """Create and register a thread configured with the given target and arguments without starting it.
 
-        If the coordinator has already been cleaned up, returns an inert thread that cannot be started and logs a warning. The returned thread is tracked for lifecycle management but is not started by this call.
+        If the coordinator has already been cleaned up, returns an inert thread that cannot be started and logs a
+        warning. The returned thread is tracked for lifecycle management but is not started by this call.
 
         Parameters
         ----------
@@ -155,7 +156,8 @@ class ThreadCoordinator:
     def _create_event(self, name: str) -> Event:
         """Register or retrieve a named Event for coordinator synchronization.
 
-        If an Event with the same name already exists, returns the existing instance without replacing it. This operation is thread-safe and acquires the coordinator's lock.
+        If an Event with the same name already exists, returns the existing instance without replacing it. This
+        operation is thread-safe and acquires the coordinator's lock.
 
         Parameters
         ----------
@@ -174,7 +176,8 @@ class ThreadCoordinator:
         """
         with self._lock:
             if self._cleaned_up:
-                logger.warning(_EVENT_CREATE_AFTER_CLEANUP_ERROR.format(name=name))
+                warning_message = _EVENT_CREATE_AFTER_CLEANUP_ERROR.format(name=name)
+                logger.warning(warning_message)
                 inert_event = Event()
                 inert_event.set()
                 return inert_event
@@ -206,7 +209,9 @@ class ThreadCoordinator:
     def _start_thread(self, thread: ThreadLike) -> None:
         """Start a tracked thread that has not yet been started.
 
-        If the thread is not registered with the coordinator, logs a warning and does nothing. The thread is started outside the coordinator lock; if cleanup occurred while the thread was starting, the coordinator will join the newly started thread to ensure it does not remain detached from shutdown.
+        If the thread is not registered with the coordinator, logs a warning and does nothing. The thread is started
+        outside the coordinator lock; if cleanup occurred while the thread was starting, the coordinator will join the
+        newly started thread to ensure it does not remain detached from shutdown.
 
         Parameters
         ----------
@@ -263,7 +268,8 @@ class ThreadCoordinator:
         Parameters
         ----------
         thread : ThreadLike
-            Thread previously registered with this coordinator; no action is taken if the thread is not tracked, is not alive, or is the calling thread.
+            Thread previously registered with this coordinator; no action is taken if the thread is not tracked, is not
+            alive, or is the calling thread.
         timeout : float | None
             Maximum seconds to wait for the thread to finish; use None to wait indefinitely. (Default value = None)
         """
@@ -439,7 +445,9 @@ class ThreadCoordinator:
     def _cleanup(self) -> None:
         """Perform coordinated shutdown of the coordinator.
 
-        Marks the coordinator as cleaned to prevent new runnable threads, sets all tracked events to wake any waiters, joins all currently live tracked threads except the calling thread (joining each with EVENT_THREAD_JOIN_TIMEOUT), and clears internal thread, event, and pending-start registries.
+        Marks the coordinator as cleaned to prevent new runnable threads, sets all tracked events to wake any waiters,
+        joins all currently live tracked threads except the calling thread (joining each with
+        EVENT_THREAD_JOIN_TIMEOUT), and clears internal thread, event, and pending-start registries.
         """
         with self._lock:
             if self._cleaned_up:

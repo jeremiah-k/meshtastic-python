@@ -123,7 +123,8 @@ class NotificationManager:
     def _cleanup_all(self) -> None:
         """Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
-        Removes every active subscription entry, clears the characteristic-to-callback mapping, and resets the subscription token counter to zero. This operation is performed while holding the manager's internal lock.
+        Removes every active subscription entry, clears the characteristic-to-callback mapping, and resets the
+        subscription token counter to zero. This operation is performed while holding the manager's internal lock.
 
         Returns
         -------
@@ -545,7 +546,8 @@ class BLENotificationDispatcher:
                     _report_handler_failure()
             else:
                 logger.debug(
-                    "safe_execute positional probe raised TypeError for notification handler (%s); skipping callable-only probe to avoid duplicate handler execution.",
+                    "safe_execute positional probe raised TypeError for notification handler (%s); skipping callable-only "
+                    "probe to avoid duplicate handler execution.",
                     error_msg,
                     exc_info=True,
                 )
@@ -558,7 +560,8 @@ class BLENotificationDispatcher:
             Exception
         ) as exc:  # noqa: BLE001 - notification callbacks must stay best effort
             logger.debug(
-                "safe_execute positional probe failed for notification handler (%s): %s; skipping callable-only probe to avoid duplicate handler execution.",
+                "safe_execute positional probe failed for notification handler (%s): %s; skipping callable-only probe "
+                "to avoid duplicate handler execution.",
                 error_msg,
                 exc,
                 exc_info=True,
