@@ -38,6 +38,7 @@ from meshtastic.interfaces.ble.utils import sanitize_address
 
 logger = logging.getLogger("meshtastic.ble")
 
+
 class _BLEAddressRegistry:
     """Own process-wide BLE address claims and per-address lock bookkeeping.
 

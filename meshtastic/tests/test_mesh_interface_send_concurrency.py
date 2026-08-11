@@ -32,14 +32,13 @@ from ..protobuf import (
     portnums_pb2,
     telemetry_pb2,
 )
-
-# TODO
-# from ..config import Config
-
 from ._mesh_interface_legacy_support import (
     _start_wait_thread,
     _wait_for_scoped_wait_registration,
 )
+
+# TODO
+# from ..config import Config
 
 
 @pytest.mark.unit

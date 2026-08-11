@@ -23,12 +23,9 @@ from meshtastic.__main__ import (
     traverseConfig,
 )
 
-# from ..ble_interface import BLEInterface
-
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
 from ..protobuf import config_pb2, localonly_pb2
-
 from ._main_legacy_support import (
     _build_configure_interface,
     _build_export_interface,
@@ -36,6 +33,9 @@ from ._main_legacy_support import (
     _get_config_field,
     _run_main_configure_file,
 )
+
+# from ..ble_interface import BLEInterface
+
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
@@ -51,6 +51,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
         Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
 
 @pytest.mark.unit
 def test_flatten_leaf_paths_flat_dict() -> None:
@@ -576,8 +577,6 @@ def test_prefix_base64_bytes_fields_rejects_invalid_repeated_values() -> None:
 
     with pytest.raises(TypeError, match="repeated bytes field security.admin_key"):
         _prefix_base64_bytes_fields(message, values)
-
-
 
 
 @pytest.mark.unit

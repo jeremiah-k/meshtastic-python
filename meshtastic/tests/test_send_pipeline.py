@@ -451,7 +451,9 @@ class TestSendDataWithWait:
                 """Serialize the protobuf message."""
                 return b"serialized protobuf"
 
-        with patch.object(send_pipeline._port.facade, "_send_packet") as mock_send_packet:
+        with patch.object(
+            send_pipeline._port.facade, "_send_packet"
+        ) as mock_send_packet:
             mock_send_packet.return_value = MagicMock()
             send_pipeline._send_data_with_wait(
                 MockProtobuf(),
@@ -496,7 +498,9 @@ class TestSendDataWithWait:
         """Test that _send_data_with_wait registers response handler."""
         callback = MagicMock()
 
-        with patch.object(send_pipeline._port.facade, "_send_packet") as mock_send_packet:
+        with patch.object(
+            send_pipeline._port.facade, "_send_packet"
+        ) as mock_send_packet:
             with patch.object(
                 send_pipeline, "_add_response_handler"
             ) as mock_add_handler:
@@ -1075,7 +1079,6 @@ class TestSendPacket:
 
         mock_send_to_radio.assert_not_called()
         assert "noProto" in caplog.text
-
 
 
 class TestWaitForConfig:

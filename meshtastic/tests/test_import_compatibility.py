@@ -18,7 +18,6 @@ from types import ModuleType
 import pytest
 
 
-
 @pytest.mark.unit
 class TestCoreModuleImports:
     """Test core Meshtastic module imports that should remain stable."""

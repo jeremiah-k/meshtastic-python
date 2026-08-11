@@ -49,7 +49,9 @@ def test_add_contact_url_preserves_node_module_payload_limit_monkeypatch() -> No
     target = _node_with_contact(0x87654321)
 
     with patch.object(node_module, "_MAX_CONTACT_URL_PAYLOAD", 1):
-        with pytest.raises(MeshInterface.MeshInterfaceError, match="Contact URL fragment too large"):
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError, match="Contact URL fragment too large"
+        ):
             target.addContactURL(url)
 
 

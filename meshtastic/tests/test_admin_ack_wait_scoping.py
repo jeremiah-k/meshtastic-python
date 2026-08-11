@@ -231,7 +231,9 @@ def test_active_wait_scope_query_tracks_registration_and_retirement() -> None:
         assert iface._has_active_wait_request(WAIT_ATTR_NAK, request_id)  # noqa: SLF001
 
         iface._retire_wait_request(WAIT_ATTR_NAK, request_id=request_id)  # noqa: SLF001
-        assert not iface._has_active_wait_request(WAIT_ATTR_NAK, request_id)  # noqa: SLF001
+        assert not iface._has_active_wait_request(
+            WAIT_ATTR_NAK, request_id
+        )  # noqa: SLF001
 
 
 @pytest.mark.unit
@@ -275,12 +277,16 @@ def test_request_scoped_admin_waits_do_not_crosstalk() -> None:
         assert thread_a.is_alive()
         assert thread_b.is_alive()
 
-        iface._mark_wait_acknowledged(WAIT_ATTR_NAK, request_id=request_a)  # noqa: SLF001
+        iface._mark_wait_acknowledged(
+            WAIT_ATTR_NAK, request_id=request_a
+        )  # noqa: SLF001
         _wait_until(lambda: request_a in completed)
         assert request_b not in completed
         assert thread_b.is_alive()
 
-        iface._mark_wait_acknowledged(WAIT_ATTR_NAK, request_id=request_b)  # noqa: SLF001
+        iface._mark_wait_acknowledged(
+            WAIT_ATTR_NAK, request_id=request_b
+        )  # noqa: SLF001
         thread_a.join(timeout=1.0)
         thread_b.join(timeout=1.0)
 
@@ -337,7 +343,9 @@ def test_scoped_admin_nak_only_fails_matching_request() -> None:
         assert not ok_complete.is_set()
         assert ok_thread.is_alive()
 
-        iface._mark_wait_acknowledged(WAIT_ATTR_NAK, request_id=request_ok)  # noqa: SLF001
+        iface._mark_wait_acknowledged(
+            WAIT_ATTR_NAK, request_id=request_ok
+        )  # noqa: SLF001
         ok_thread.join(timeout=1.0)
         assert not ok_thread.is_alive()
         assert ok_complete.is_set()
@@ -435,7 +443,9 @@ def test_fast_admin_ack_is_not_lost_between_send_and_wait(
         ) -> mesh_pb2.MeshPacket:
             observed_active_scope.append(
                 packet.id
-                in iface._active_wait_request_ids.get(WAIT_ATTR_NAK, set())  # noqa: SLF001
+                in iface._active_wait_request_ids.get(
+                    WAIT_ATTR_NAK, set()
+                )  # noqa: SLF001
             )
             remote.onAckNak(
                 {
@@ -459,7 +469,9 @@ def test_fast_admin_ack_is_not_lost_between_send_and_wait(
         assert request is not None
         assert observed_active_scope == [True]
         assert iface._active_wait_request_ids.get(WAIT_ATTR_NAK) is None  # noqa: SLF001
-        assert request.id in iface._retired_wait_request_ids[WAIT_ATTR_NAK]  # noqa: SLF001
+        assert (
+            request.id in iface._retired_wait_request_ids[WAIT_ATTR_NAK]
+        )  # noqa: SLF001
 
 
 @pytest.mark.unit
@@ -564,7 +576,9 @@ def test_malformed_metadata_response_records_request_scoped_failure(
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [
-        call(WAIT_ATTR_NAK, f"Received malformed metadata response ({error_fragment})."),
+        call(
+            WAIT_ATTR_NAK, f"Received malformed metadata response ({error_fragment})."
+        ),
         call(
             WAIT_ATTR_NAK,
             f"Received malformed metadata response ({error_fragment}).",
@@ -707,6 +721,7 @@ def test_admin_wait_error_noops_without_wait_error_hook() -> None:
 @pytest.mark.unit
 def test_admin_sender_signature_probe_handles_uninspectable_callable() -> None:
     """Compatibility send callables with invalid signatures should disable private scoping."""
+
     class _UninspectableCallable:
         @property
         def __signature__(self) -> object:
@@ -736,7 +751,9 @@ def test_request_scoped_admin_wait_timeout_retires_request() -> None:
         assert request_id not in iface._active_wait_request_ids.get(  # noqa: SLF001
             WAIT_ATTR_NAK, set()
         )
-        assert request_id in iface._retired_wait_request_ids[WAIT_ATTR_NAK]  # noqa: SLF001
+        assert (
+            request_id in iface._retired_wait_request_ids[WAIT_ATTR_NAK]
+        )  # noqa: SLF001
 
 
 @pytest.mark.unit
@@ -757,7 +774,9 @@ def test_settings_response_missing_expected_field_records_scoped_failure() -> No
 
     assert iface._acknowledgment.receivedNak is True
     assert iface._set_wait_error.call_args_list == [
-        call(WAIT_ATTR_NAK, "Received settings response without expected field 'device'."),
+        call(
+            WAIT_ATTR_NAK, "Received settings response without expected field 'device'."
+        ),
         call(
             WAIT_ATTR_NAK,
             "Received settings response without expected field 'device'.",

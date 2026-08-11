@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import logging
 import re
-from types import SimpleNamespace
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -177,7 +177,6 @@ class TestBLEManagementCommandsServiceHandlerDetection:
 
         result = BLEManagementCommandsService._is_handler_like(handler)
         assert result is False
-
 
 
 class TestBLEManagementCommandsServiceHandlerResolution:

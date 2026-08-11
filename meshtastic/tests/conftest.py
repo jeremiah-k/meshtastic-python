@@ -20,9 +20,9 @@ from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
+import meshtastic.util as util_module
 from meshtastic import mt_config, publishingThread
 from meshtastic.powermon import power_supply as power_supply_module
-import meshtastic.util as util_module
 from meshtastic.util import DeferredExecution
 
 from ..mesh_interface import MeshInterface

@@ -224,9 +224,7 @@ class _BLESessionStateCompatMixin:
     def _last_disconnect_source(self, value: str | None) -> None:
         if value is not None and not isinstance(value, str):
             raise TypeError(
-                LAST_DISCONNECT_SOURCE_TYPE_ERROR.format(
-                    type_name=type(value).__name__
-                )
+                LAST_DISCONNECT_SOURCE_TYPE_ERROR.format(type_name=type(value).__name__)
             )
         self._get_session_state().last_disconnect_source = value
 
@@ -437,9 +435,7 @@ class _LegacyBLESessionStateAdapter:
 
     def __init__(self, iface: object) -> None:
         object.__setattr__(self, "_iface", iface)
-        object.__setattr__(
-            self, "_fallback_lock", cast(_LockPort, threading.RLock())
-        )
+        object.__setattr__(self, "_fallback_lock", cast(_LockPort, threading.RLock()))
 
     def _resolve_lock(self, mapped: str) -> _LockPort:
         """Return the synchronization owner currently governing legacy state."""

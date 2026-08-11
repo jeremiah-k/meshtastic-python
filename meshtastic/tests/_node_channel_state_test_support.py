@@ -13,17 +13,13 @@ def _attach_channel_state(node: MagicMock) -> _NodeChannelState:
     def _get_channels(_node: object) -> list[channel_pb2.Channel] | None:
         return state.channels
 
-    def _set_channels(
-        _node: object, value: list[channel_pb2.Channel] | None
-    ) -> None:
+    def _set_channels(_node: object, value: list[channel_pb2.Channel] | None) -> None:
         state.channels = value
 
     def _get_partial_channels(_node: object) -> list[channel_pb2.Channel]:
         return state.partial_channels
 
-    def _set_partial_channels(
-        _node: object, value: list[channel_pb2.Channel]
-    ) -> None:
+    def _set_partial_channels(_node: object, value: list[channel_pb2.Channel]) -> None:
         state.partial_channels = value
 
     def _get_channels_lock(_node: object) -> _ChannelLock:

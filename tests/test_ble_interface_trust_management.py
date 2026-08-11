@@ -31,8 +31,6 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_TRUST_INVALID_TIMEOUT,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
-
-
 from tests._ble_interface_core_support import (
     _MAX_SPURIOUS_CLOSE_WAIT_CALLS_BEFORE_FAIL,
     _capture_management_wait_event,
@@ -326,9 +324,7 @@ def test_ble_interface_trust_includes_stdout_and_stderr_in_failure_details(
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
     _pin_interface_platform(monkeypatch, "linux")
-    _pin_interface_shutil_which(
-        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
-    )
+    _pin_interface_shutil_which(monkeypatch, lambda _name: "/usr/bin/bluetoothctl")
     _pin_interface_subprocess_run(
         monkeypatch,
         lambda *_args, **_kwargs: SimpleNamespace(
@@ -362,9 +358,7 @@ def test_ble_interface_trust_truncates_long_subprocess_output(
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
     _pin_interface_platform(monkeypatch, "linux")
-    _pin_interface_shutil_which(
-        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
-    )
+    _pin_interface_shutil_which(monkeypatch, lambda _name: "/usr/bin/bluetoothctl")
     long_output = "long-output-segment " * 200
     _pin_interface_subprocess_run(
         monkeypatch,
@@ -399,9 +393,7 @@ def test_ble_interface_trust_runs_bluetoothctl(
         lambda _address: _create_ble_device("aa bb cc dd ee ff", "Meshtastic"),
     )
     _pin_interface_platform(monkeypatch, "linux")
-    _pin_interface_shutil_which(
-        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
-    )
+    _pin_interface_shutil_which(monkeypatch, lambda _name: "/usr/bin/bluetoothctl")
 
     run_calls: list[tuple[list[str], float]] = []
 
@@ -485,9 +477,7 @@ def test_ble_interface_trust_translates_subprocess_timeout(
     """trust() should translate bluetoothctl timeouts into BLEError."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     _pin_interface_platform(monkeypatch, "linux")
-    _pin_interface_shutil_which(
-        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
-    )
+    _pin_interface_shutil_which(monkeypatch, lambda _name: "/usr/bin/bluetoothctl")
 
     def _raise_timeout(*_args: object, **_kwargs: object) -> SimpleNamespace:
         raise subprocess.TimeoutExpired(
@@ -514,9 +504,7 @@ def test_ble_interface_trust_translates_spawn_failure(
     """trust() should translate subprocess spawn failures into BLEError."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     _pin_interface_platform(monkeypatch, "linux")
-    _pin_interface_shutil_which(
-        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
-    )
+    _pin_interface_shutil_which(monkeypatch, lambda _name: "/usr/bin/bluetoothctl")
 
     def _raise_os_error(*_args: object, **_kwargs: object) -> SimpleNamespace:
         raise OSError("permission denied")
@@ -561,9 +549,7 @@ def test_ble_interface_trust_rejects_closing_interface(
 
     monkeypatch.setattr(iface, "findDevice", _unexpected_find_device)
     _pin_interface_platform(monkeypatch, "linux")
-    _pin_interface_shutil_which(
-        monkeypatch, lambda _name: "/usr/bin/bluetoothctl"
-    )
+    _pin_interface_shutil_which(monkeypatch, lambda _name: "/usr/bin/bluetoothctl")
     _pin_interface_subprocess_run(monkeypatch, _unexpected_run)
 
     try:
@@ -608,14 +594,18 @@ def test_ble_interface_trust_does_not_hold_interface_locks_during_subprocess(
     def _run_trust() -> None:
         try:
             iface.trust(trust_target, timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     def _close_iface() -> None:
         try:
             close_started.set()
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -672,13 +662,17 @@ def test_ble_interface_close_waits_for_explicit_trust_without_active_client(
     def _run_trust() -> None:
         try:
             iface.trust("AA:BB:CC:DD:EE:FF", timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     def _run_close() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1000,7 +994,9 @@ def test_ble_interface_implicit_trust_releases_connect_lock_before_subprocess(
     def _run_trust() -> None:
         try:
             iface.trust(timeout=7.0)
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             trust_errors.append(exc)
 
     trust_thread = threading.Thread(target=_run_trust, daemon=True)
@@ -1036,7 +1032,9 @@ def test_ble_interface_close_serializes_with_management_lock(
         try:
             close_started.set()
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()
@@ -1065,7 +1063,9 @@ def test_ble_interface_close_does_not_wait_for_connect_lock(
     def _close_iface() -> None:
         try:
             iface.close()
-        except Exception as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - failure captured below  # noqa: BLE001 - test captures thread errors
             close_errors.append(exc)
         finally:
             close_done.set()

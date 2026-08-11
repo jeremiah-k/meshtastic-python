@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from meshtastic.tests._node_channel_state_test_support import _attach_channel_state
 from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlCacheManager,
     _SetUrlExecutionEngine,
@@ -20,6 +19,7 @@ from meshtastic.protobuf import (
     channel_pb2,
     localonly_pb2,
 )
+from meshtastic.tests._node_channel_state_test_support import _attach_channel_state
 
 
 class _LockProbe:

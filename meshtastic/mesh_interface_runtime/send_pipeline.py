@@ -38,7 +38,6 @@ from meshtastic.protobuf import mesh_pb2, portnums_pb2
 from meshtastic.traceroute import TraceRouteResult
 from meshtastic.util import Acknowledgment, Timeout, stripnl
 
-
 if TYPE_CHECKING:
     from meshtastic.node import Node
 

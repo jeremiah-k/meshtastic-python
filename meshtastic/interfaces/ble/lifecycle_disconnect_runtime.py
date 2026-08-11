@@ -10,8 +10,6 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_member,
     _resolve_declared_callable,
 )
-from meshtastic.interfaces.ble.ports import _BLESessionStatePort
-from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.constants import (
     READ_TRIGGER_EVENT,
     RECONNECTED_EVENT,
@@ -26,6 +24,8 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleStateAccess,
     _LifecycleThreadAccess,
 )
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (
     _sleep,
@@ -43,7 +43,10 @@ class BLEDisconnectLifecycleCoordinator:
     """Own disconnect orchestration and reconnect scheduling behavior."""
 
     def __init__(
-        self, iface: "BLEInterface", *, session_state: _BLESessionStatePort | None = None
+        self,
+        iface: "BLEInterface",
+        *,
+        session_state: _BLESessionStatePort | None = None,
     ) -> None:
         """Bind disconnect orchestration ownership to a specific interface.
 
@@ -204,7 +207,8 @@ class BLEDisconnectLifecycleCoordinator:
         state_manager = _get_declared_member(iface, "_state_manager")
         canonical_state_manager = (
             state_manager
-            if type(state_manager) is BLEStateManager  # pylint: disable=unidiomatic-typecheck
+            if type(state_manager)
+            is BLEStateManager  # pylint: disable=unidiomatic-typecheck
             and state_manager.lock is self._session.lock
             and current_state_getter is None
             and transition_to_disconnected is None
@@ -228,9 +232,11 @@ class BLEDisconnectLifecycleCoordinator:
             # lock-owned primitive instead.
             current_state = cast(
                 ConnectionState,
-                BLEStateManager._current_state_unlocked(canonical_state_manager)
-                if canonical_state_manager is not None
-                else compatibility_current_state,
+                (
+                    BLEStateManager._current_state_unlocked(canonical_state_manager)
+                    if canonical_state_manager is not None
+                    else compatibility_current_state
+                ),
             )
             current_client = iface.client
             is_closing = compatibility_is_closing or self._session.closed
@@ -355,7 +361,9 @@ class BLEDisconnectLifecycleCoordinator:
                 or getattr(target_client, "address", None)
             )
         elif bleak_client is not None:
-            address = _normalize_disconnect_address(getattr(bleak_client, "address", None))
+            address = _normalize_disconnect_address(
+                getattr(bleak_client, "address", None)
+            )
         elif previous_client is not None:
             address = _normalize_disconnect_address(
                 iface._extract_client_address(previous_client)

@@ -687,8 +687,10 @@ def test_factory_reset_scoped_wait_checks_error_before_return_and_retires_reques
     wait_for_request_ack.assert_called_once()
     wait_args = wait_for_request_ack.call_args
     assert wait_args.args[:2] == ("receivedNak", 73)
-    assert 0 < wait_args.kwargs["timeout_seconds"] <= (
-        device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
+    assert (
+        0
+        < wait_args.kwargs["timeout_seconds"]
+        <= (device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS)
     )
     raise_wait_error.assert_called_once_with("receivedNak", request_id=73)
     retire_wait.assert_called_once_with("receivedNak", request_id=73)

@@ -101,7 +101,9 @@ class TestFixupChannels:
     """Tests for _NodeChannelNormalizationRuntime._fixup_channels()."""
 
     def test_fixup_channels_delegates_to_state_owner(
-        self, channel_state: _NodeChannelState, runtime: _NodeChannelNormalizationRuntime
+        self,
+        channel_state: _NodeChannelState,
+        runtime: _NodeChannelNormalizationRuntime,
     ) -> None:
         """_fixup_channels should let the state owner manage normalization locking."""
         channel_state.normalize = MagicMock()  # type: ignore[method-assign]
@@ -214,7 +216,9 @@ class TestFillChannels:
     """Tests for _NodeChannelNormalizationRuntime._fill_channels()."""
 
     def test_fill_channels_delegates_to_state_owner(
-        self, channel_state: _NodeChannelState, runtime: _NodeChannelNormalizationRuntime
+        self,
+        channel_state: _NodeChannelState,
+        runtime: _NodeChannelNormalizationRuntime,
     ) -> None:
         """_fill_channels should let the state owner manage fill locking."""
         channel_state.fill = MagicMock()  # type: ignore[method-assign]
@@ -258,7 +262,9 @@ class TestIntegration:
             "Truncating channel list" in record.message for record in caplog.records
         )
 
-    def test_fixup_channels_with_partial_list(self, channel_state: _NodeChannelState) -> None:
+    def test_fixup_channels_with_partial_list(
+        self, channel_state: _NodeChannelState
+    ) -> None:
         """Partial channel list should be reindexed and filled."""
         initial_count = 2
         channel_state.channels = []

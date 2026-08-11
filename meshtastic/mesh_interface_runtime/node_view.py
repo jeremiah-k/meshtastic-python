@@ -331,7 +331,9 @@ class NodeView:
 
         # Get node data under lock
         with self._node_db_lock:
-            nodes_snapshot = list(self.nodes_by_num.values()) if self.nodes_by_num else []
+            nodes_snapshot = (
+                list(self.nodes_by_num.values()) if self.nodes_by_num else []
+            )
             local_node_num = self.local_node.nodeNum
 
         if nodes_snapshot:

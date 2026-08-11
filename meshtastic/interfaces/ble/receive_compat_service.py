@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from bleak.exc import BleakError
 
+from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_lock,
     _get_declared_member,
 )
-from meshtastic.interfaces.ble.client import BLEClient
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.coordination import ThreadCoordinator
@@ -90,13 +90,10 @@ class BLEReceiveRecoveryService:
         if candidate is None:
             return None
         resolved = candidate
-        should_invoke_factory = (
-            callable(resolved)
-            and (
-                inspect.isclass(resolved)
-                or not BLEReceiveRecoveryService._is_controller_like(
-                    resolved, required_method
-                )
+        should_invoke_factory = callable(resolved) and (
+            inspect.isclass(resolved)
+            or not BLEReceiveRecoveryService._is_controller_like(
+                resolved, required_method
             )
         )
         if should_invoke_factory:
@@ -113,9 +110,8 @@ class BLEReceiveRecoveryService:
                     resolved = cast(Callable[..., Any], resolved)()
         if inspect.isclass(resolved):
             return None
-        if (
-            resolved is not None
-            and BLEReceiveRecoveryService._is_controller_like(resolved, required_method)
+        if resolved is not None and BLEReceiveRecoveryService._is_controller_like(
+            resolved, required_method
         ):
             return cast("BLEReceiveRecoveryController", resolved)
         return None
@@ -139,7 +135,9 @@ class BLEReceiveRecoveryService:
             Controller bound to ``iface``.
         """
         controller_cls = BLEReceiveRecoveryService._controller_class()
-        get_controller = _get_declared_callable(iface, "_get_receive_recovery_controller")
+        get_controller = _get_declared_callable(
+            iface, "_get_receive_recovery_controller"
+        )
         if get_controller is not None:
             with contextlib.suppress(
                 Exception

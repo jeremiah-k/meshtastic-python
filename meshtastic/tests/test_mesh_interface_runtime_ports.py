@@ -6,10 +6,10 @@ import pytest
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime.ports import (
+    _interface_error_type,
     _NodeViewPort,
     _ReceivePipelinePort,
     _SendPipelinePort,
-    _interface_error_type,
 )
 from meshtastic.protobuf import mesh_pb2
 

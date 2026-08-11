@@ -1,9 +1,9 @@
 """Meshtastic unit tests for __init__.py."""
 
-from collections.abc import Callable
 import copy
 import logging
 import re
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, create_autospec
@@ -12,7 +12,6 @@ import pytest
 import serial as pyserial  # type: ignore[import-untyped]
 
 import meshtastic
-from meshtastic import _protocol_runtime
 from meshtastic import (
     DECODE_ERROR_KEY,
     _on_admin_receive,
@@ -20,6 +19,7 @@ from meshtastic import (
     _on_position_receive,
     _on_telemetry_receive,
     _on_text_receive,
+    _protocol_runtime,
     _receive_info_update,
     mt_config,
 )

@@ -429,6 +429,7 @@ class TestReconnectWorkerCallPolicy:
         with pytest.raises(ReconnectPolicyMissingMethodError):
             worker._call_policy("nonexistent_method")
 
+
 class TestReconnectWorkerShouldAbortReconnect:
     """Tests for abort reconnect decision logic."""
 

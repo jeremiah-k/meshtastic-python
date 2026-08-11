@@ -39,7 +39,6 @@ from ..protobuf import (
 # TODO
 # from ..config import Config
 from ..util import Acknowledgment, Timeout
-
 from ._mesh_interface_legacy_support import (
     _inline_queue_work,
     _install_protocol_stub,
@@ -60,7 +59,6 @@ def _decode_failure_iface_fixture(
     _inline_queue_work(monkeypatch)
     with MeshInterface(noProto=True) as iface:
         yield iface
-
 
 
 @pytest.mark.unit
@@ -1603,7 +1601,6 @@ class TestUnscopedWaitForAckNakOverlappingCommands:
                 "This is unpredictable behavior from unscoped waits."
             )
 
-
     @pytest.mark.unit
     @pytest.mark.usefixtures("reset_mt_config")
     def test_overlapping_admin_commands_nak_race_condition(self) -> None:
@@ -2035,9 +2032,12 @@ def test_response_handler_pruning_preserves_active_scoped_wait() -> None:
         )
         iface._clear_wait_error(WAIT_ATTR_NAK, request_id=502)
         registered_at = iface._request_wait_runtime._response_handler_registered_at[502]
-        assert iface._request_wait_runtime.prune_stale_response_handlers(
-            now=registered_at + RESPONSE_HANDLER_TTL_SECONDS + 1.0
-        ) == []
+        assert (
+            iface._request_wait_runtime.prune_stale_response_handlers(
+                now=registered_at + RESPONSE_HANDLER_TTL_SECONDS + 1.0
+            )
+            == []
+        )
         assert 502 in iface.responseHandlers
 
 
@@ -2070,9 +2070,12 @@ def test_response_handler_pruning_preserves_legacy_unmanaged_entry() -> None:
             callback=MagicMock(), ackPermitted=True
         )
 
-        assert iface._request_wait_runtime.prune_stale_response_handlers(
-            now=time.monotonic() + 10_000.0
-        ) == []
+        assert (
+            iface._request_wait_runtime.prune_stale_response_handlers(
+                now=time.monotonic() + 10_000.0
+            )
+            == []
+        )
         assert 504 in iface.responseHandlers
         assert 504 not in iface._request_wait_runtime._response_handler_registered_at
         assert 504 not in iface._request_wait_runtime._managed_response_handlers
@@ -2130,6 +2133,7 @@ def test_inbound_response_expires_only_its_correlated_stale_handler() -> None:
         assert 509 in iface.responseHandlers
         assert 509 in runtime._response_handler_registered_at
 
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_response_handler_pruning_preserves_legacy_replacement() -> None:
@@ -2141,9 +2145,12 @@ def test_response_handler_pruning_preserves_legacy_replacement() -> None:
         legacy_handler = ResponseHandler(callback=MagicMock(), ackPermitted=True)
         iface.responseHandlers[508] = legacy_handler
 
-        assert runtime.prune_stale_response_handlers(
-            now=registered_at + RESPONSE_HANDLER_TTL_SECONDS + 1.0
-        ) == []
+        assert (
+            runtime.prune_stale_response_handlers(
+                now=registered_at + RESPONSE_HANDLER_TTL_SECONDS + 1.0
+            )
+            == []
+        )
         assert iface.responseHandlers[508] is legacy_handler
         assert 508 not in runtime._response_handler_registered_at
         assert 508 not in runtime._response_matchers

@@ -729,9 +729,9 @@ class TestNodeDeleteChannelRuntime:
             -1,
         )
         assert pre_delete_idx >= 0, "pre_delete_admin write should exist"
-        assert post_delete_idx > pre_delete_idx, (
-            "post_delete_admin should appear after pre_delete_admin"
-        )
+        assert (
+            post_delete_idx > pre_delete_idx
+        ), "post_delete_admin should appear after pre_delete_admin"
 
     @pytest.mark.unit
     def test_delete_channel_releases_state_lock_before_device_writes(
@@ -747,9 +747,11 @@ class TestNodeDeleteChannelRuntime:
                 role=(
                     channel_pb2.Channel.Role.PRIMARY
                     if index == 0
-                    else channel_pb2.Channel.Role.SECONDARY
-                    if index == 1
-                    else channel_pb2.Channel.Role.DISABLED
+                    else (
+                        channel_pb2.Channel.Role.SECONDARY
+                        if index == 1
+                        else channel_pb2.Channel.Role.DISABLED
+                    )
                 ),
             )
             for index in range(MAX_CHANNELS)
@@ -891,9 +893,11 @@ class TestNodeDeleteChannelRuntime:
             channel.role = (
                 channel_pb2.Channel.Role.PRIMARY
                 if index == 0
-                else channel_pb2.Channel.Role.SECONDARY
-                if index == 1
-                else channel_pb2.Channel.Role.DISABLED
+                else (
+                    channel_pb2.Channel.Role.SECONDARY
+                    if index == 1
+                    else channel_pb2.Channel.Role.DISABLED
+                )
             )
             channels.append(channel)
         mock_local_node.channels = channels

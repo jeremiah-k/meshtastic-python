@@ -13,7 +13,9 @@ from google.protobuf.message import Message
 
 import meshtastic.mesh_interface as mesh_interface_module
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.mesh_interface_runtime import receive_pipeline as receive_pipeline_module
+from meshtastic.mesh_interface_runtime import (
+    receive_pipeline as receive_pipeline_module,
+)
 from meshtastic.protobuf import mesh_pb2, portnums_pb2
 
 from .. import ResponseHandler

@@ -39,7 +39,6 @@ from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 
-
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -137,7 +136,9 @@ class BLELifecycleService:
                 )
             )
 
-        get_lifecycle_controller = _get_declared_callable(iface, "_get_lifecycle_controller")
+        get_lifecycle_controller = _get_declared_callable(
+            iface, "_get_lifecycle_controller"
+        )
         if get_lifecycle_controller is not None:
             try:
                 lifecycle_controller = get_lifecycle_controller()
@@ -154,9 +155,8 @@ class BLELifecycleService:
                     "receive_lifecycle_coordinator",
                     "_receive_lifecycle_coordinator",
                 )
-                if (
-                    receive_coordinator is not None
-                    and _matches_receive_candidate(receive_coordinator)
+                if receive_coordinator is not None and _matches_receive_candidate(
+                    receive_coordinator
                 ):
                     return cast(BLEReceiveLifecycleCoordinator, receive_coordinator)
                 if _matches_receive_candidate(lifecycle_controller):
@@ -177,10 +177,7 @@ class BLELifecycleService:
                     "_ble_receive_lifecycle_coordinator",
                     lambda: BLEReceiveLifecycleCoordinator(iface),
                 )
-                if (
-                    coordinator is not None
-                    and _matches_receive_candidate(coordinator)
-                ):
+                if coordinator is not None and _matches_receive_candidate(coordinator):
                     return cast(BLEReceiveLifecycleCoordinator, coordinator)
         return BLEReceiveLifecycleCoordinator(iface)
 

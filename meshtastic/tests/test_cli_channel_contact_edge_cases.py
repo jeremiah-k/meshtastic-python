@@ -108,9 +108,7 @@ def test_channel_add_rejects_name_over_protocol_limit() -> None:
     """Channel names longer than the firmware field limit must fail before lookup."""
     interface = _interface_double()
     hooks = _hooks(get_channel_index=MagicMock(return_value=None))
-    context = _context(
-        interface, ch_add="x" * (actions.MAX_CHANNEL_NAME_LENGTH + 1)
-    )
+    context = _context(interface, ch_add="x" * (actions.MAX_CHANNEL_NAME_LENGTH + 1))
 
     with pytest.raises(SystemExit):
         actions._handle_channel_add(context, hooks)
@@ -196,9 +194,7 @@ def test_add_channel_url_uses_add_only_mode(monkeypatch: pytest.MonkeyPatch) -> 
 
     actions._handle_channel_mutations(context, _hooks())
 
-    node.setURL.assert_called_once_with(
-        "https://example.invalid/#abc", addOnly=True
-    )
+    node.setURL.assert_called_once_with("https://example.invalid/#abc", addOnly=True)
     assert context.outcome.close_now is True
 
 

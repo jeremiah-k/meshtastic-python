@@ -8,16 +8,16 @@ from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
     _get_declared_member,
 )
-from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleStateAccess
-from meshtastic.interfaces.ble.failure_policy import (
-    _BLEFailureDisposition,
-    _log_ble_failure,
-)
 from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
     MAX_DRAIN_ITERATIONS,
     logger,
 )
+from meshtastic.interfaces.ble.failure_policy import (
+    _BLEFailureDisposition,
+    _log_ble_failure,
+)
+from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleStateAccess
 from meshtastic.interfaces.ble.utils import (
     _resolve_safe_execute as _resolve_safe_execute_hook,
 )
@@ -457,10 +457,7 @@ class BLECompatibilityEventService:
 
         queue = getattr(publishing_thread, "queue", None)
         get_nowait = getattr(queue, "get_nowait", None)
-        if (
-            queue is None
-            or not callable(get_nowait)
-        ):
+        if queue is None or not callable(get_nowait):
             return
         iterations = 0
         while not flush_event.is_set():

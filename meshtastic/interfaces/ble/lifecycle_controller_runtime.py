@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 from bleak import BleakClient as BleakRootClient
 
-from meshtastic.interfaces.ble.compat_adapter import (_get_declared_callable)
+from meshtastic.interfaces.ble.compat_adapter import _get_declared_callable
 from meshtastic.interfaces.ble.lifecycle_compat_service import (
     _ORIGINAL_FINALIZE_CONNECTION_GATES,
     _ORIGINAL_GET_CONNECTED_CLIENT_STATUS,
@@ -75,7 +75,9 @@ class BLELifecycleController:
         self._iface = iface
         session = _session_state_for(iface)
         self._receive = BLEReceiveLifecycleCoordinator(iface, session_state=session)
-        self._disconnect = BLEDisconnectLifecycleCoordinator(iface, session_state=session)
+        self._disconnect = BLEDisconnectLifecycleCoordinator(
+            iface, session_state=session
+        )
         self._connection_ownership = BLEConnectionOwnershipLifecycleCoordinator(
             iface, session_state=session
         )

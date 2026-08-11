@@ -189,7 +189,6 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=False,
         )
 
-
     def enter_dfu_mode(self) -> mesh_pb2.MeshPacket | None:
         """Send enter-DFU-mode command."""
         message = admin_pb2.AdminMessage()
@@ -200,7 +199,6 @@ class _NodeAdminCommandRuntime:
             ensure_session_key=True,
             use_remote_ack_callback=True,
         )
-
 
     def shutdown(self, secs: int) -> mesh_pb2.MeshPacket | None:
         """Send shutdown command with delayed shutdown seconds."""
@@ -245,7 +243,6 @@ class _NodeAdminCommandRuntime:
             use_remote_ack_callback=True,
         )
 
-
     def _send_node_id_command(
         self,
         *,
@@ -271,7 +268,6 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-
     def set_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send set-favorite command."""
         return self._send_node_id_command(
@@ -280,7 +276,6 @@ class _NodeAdminCommandRuntime:
                 message, "set_favorite_node", node_num
             ),
         )
-
 
     def remove_favorite(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-favorite command."""
@@ -291,7 +286,6 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-
     def set_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send set-ignored command."""
         return self._send_node_id_command(
@@ -301,7 +295,6 @@ class _NodeAdminCommandRuntime:
             ),
         )
 
-
     def remove_ignored(self, node_id: int | str) -> mesh_pb2.MeshPacket | None:
         """Send remove-ignored command."""
         return self._send_node_id_command(
@@ -310,7 +303,6 @@ class _NodeAdminCommandRuntime:
                 message, "remove_ignored_node", node_num
             ),
         )
-
 
     def reset_node_db(self) -> mesh_pb2.MeshPacket | None:
         """Send NodeDB reset command."""

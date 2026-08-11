@@ -32,7 +32,6 @@ from ..ota import OTAError, OTATransportError
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
-
 from ._main_legacy_support import (
     _build_configure_interface,
     _make_fake_tcp_interface,
@@ -44,6 +43,7 @@ from ._main_legacy_support import (
 
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
 
+
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent external network calls during unit tests in this module.
@@ -54,6 +54,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
         Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -1200,8 +1201,6 @@ def test_main_ota_update_requires_tcp_interface(
     assert excinfo.value.code == 1
 
 
-
-
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ota_update_retries_then_exits(
@@ -1555,7 +1554,9 @@ def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
     sleep_mock = MagicMock()
     time_attrs = vars(main_module.time).copy()
     time_attrs["sleep"] = sleep_mock
-    monkeypatch.setattr(main_module, "time", SimpleNamespace(**time_attrs), raising=True)
+    monkeypatch.setattr(
+        main_module, "time", SimpleNamespace(**time_attrs), raising=True
+    )
 
     _create_power_meter()
 

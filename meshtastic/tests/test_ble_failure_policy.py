@@ -101,7 +101,9 @@ def test_receive_closing_probe_failure_logs_compatibility_fallback(
     )
 
     with caplog.at_level(logging.DEBUG, logger=logger.name):
-        compatibility_is_closing = controller._probe_connection_closing_compat()  # noqa: SLF001
+        compatibility_is_closing = (
+            controller._probe_connection_closing_compat()
+        )  # noqa: SLF001
         with session.lock:
             assert (
                 controller._is_connection_closing_locked(  # noqa: SLF001

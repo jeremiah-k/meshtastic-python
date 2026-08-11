@@ -80,7 +80,6 @@ def _load_runtime_compatibility_import_paths(pkg_dir: Path) -> list[str]:
     return sorted(paths)
 
 
-
 def _annotation_to_str(node: ast.AST | None) -> str:
     if node is None:
         return ""

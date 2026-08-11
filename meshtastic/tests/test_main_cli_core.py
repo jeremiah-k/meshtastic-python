@@ -23,19 +23,20 @@ from meshtastic.__main__ import (
     support_info,
 )
 
-# from ..ble_interface import BLEInterface
-
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
 from ..protobuf import localonly_pb2
 from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
 
+# from ..ble_interface import BLEInterface
+
 
 # from ..remote_hardware import onGPIOreceive
 # from ..config_pb2 import Config
 
 MAIN_LOCAL_ADDR: str = cast(str, main_module.__dict__["LOCAL_ADDR"])
+
 
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -47,6 +48,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
         Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
