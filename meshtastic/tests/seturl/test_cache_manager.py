@@ -138,9 +138,10 @@ class TestSetUrlCacheManager:
 
         staged_channel = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "new")
 
-        cache_manager.apply_replace_channel_write(staged_channel)
+        next_fingerprint = cache_manager.apply_replace_channel_write(staged_channel)
 
         assert mock_local_node.channels[0].settings.name == "new"
+        assert next_fingerprint == _channels_fingerprint(mock_local_node.channels)
 
     @pytest.mark.unit
     def test_apply_replace_channel_write_mismatched_expected_ref_invalidates(

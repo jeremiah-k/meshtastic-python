@@ -6,6 +6,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.execution import (
@@ -63,7 +64,13 @@ settle before we attempt serial reconnect."""
 class _SetUrlTransactionCoordinator:
     """Coordinates setURL transaction planning, execution, and cache policy with fail-fast semantics."""
 
-    def __init__(self, node: "Node", *, parsed_input: _SetUrlParsedInput) -> None:
+    def __init__(
+        self,
+        node: "Node",
+        *,
+        parsed_input: _SetUrlParsedInput,
+        channel_state: _NodeChannelState,
+    ) -> None:
         """Initialize the setURL transaction coordinator.
 
         Parameters
@@ -74,11 +81,15 @@ class _SetUrlTransactionCoordinator:
             Parsed setURL input containing channel set and flags.
         """
         self._node = node
+        self._channel_state = channel_state
         self._parsed_input = parsed_input
         self._admin_context = self._resolve_admin_context()
-        self._cache_manager = _SetUrlCacheManager(node)
+        self._cache_manager = _SetUrlCacheManager(
+            node, channel_state=self._channel_state
+        )
         self._execution_engine = _SetUrlExecutionEngine(
             node,
+            channel_state=self._channel_state,
             cache_manager=self._cache_manager,
         )
 
@@ -89,9 +100,7 @@ class _SetUrlTransactionCoordinator:
             self._node._raise_interface_error(  # noqa: SLF001
                 "Interface localNode not initialized"
             )
-        admin_index_for_write = (
-            admin_write_node._get_admin_channel_index()
-        )  # noqa: SLF001
+        admin_index_for_write = admin_write_node._get_admin_channel_index()  # noqa: SLF001
         named_admin_index_for_write = (
             admin_write_node._get_named_admin_channel_index()  # noqa: SLF001
         )
@@ -244,7 +253,7 @@ class _SetUrlTransactionCoordinator:
                 return False
             if (
                 getattr(iface, "myInfo", None) is not None
-                and self._node.channels is not None
+                and self._channel_state.has_channels()
             ):
                 return True
             time.sleep(0.1)
@@ -306,6 +315,16 @@ class _SetUrlTransactionCoordinator:
         plan: _SetUrlReplacePlan,
         failure_stage: _ReplaceAllStage | None = None,
     ) -> tuple[set[int], bool] | None:
+        """Reconnect, reload state, and identify replace-all work still pending.
+
+        The caller owns the channel-mutation lock for the complete replace
+        transaction. This helper may wait for transport recovery and config
+        reloads, but it never acquires the channel-state lock across those
+        waits; state comparison is performed only after the device is stable.
+
+        Returns ``None`` when bounded reconnect or config reload cannot
+        establish a trustworthy device state.
+        """
         if failure_stage == _ReplaceAllStage.LORA_CONFIG:
             logger.info(
                 "LoRa-stage failure; settling %.1fs before reconnect.",
@@ -381,15 +400,16 @@ class _SetUrlTransactionCoordinator:
                 )
                 continue
 
-            actual_channels = self._node.channels
-            if actual_channels is None:
-                logger.warning(
-                    "Device channels not available after reconnect; cannot resume."
+            with self._channel_state.lock:
+                actual_channels = self._channel_state.channels
+                if actual_channels is None:
+                    logger.warning(
+                        "Device channels not available after reconnect; cannot resume."
+                    )
+                    return None
+                remaining_indices = _compute_remaining_channel_writes(
+                    actual_channels, plan.staged_channels_by_index
                 )
-                return None
-            remaining_indices = _compute_remaining_channel_writes(
-                actual_channels, plan.staged_channels_by_index
-            )
             lora_needed = False
             if self._parsed_input.has_lora_update:
                 actual_lora = self._node.localConfig.lora
@@ -435,10 +455,17 @@ class _SetUrlTransactionCoordinator:
 
     def _apply_add_only(self) -> None:
         """Execute the addOnly setURL transaction pipeline."""
+        with self._channel_state.mutation_lock:
+            self._admin_context = self._resolve_admin_context()
+            self._apply_add_only_locked()
+
+    def _apply_add_only_locked(self) -> None:
+        """Execute addOnly while holding the per-node channel-mutation lock."""
         planner = _SetUrlAddOnlyPlanner(
             self._node,
             parsed_input=self._parsed_input,
             admin_context=self._admin_context,
+            channel_state=self._channel_state,
         )
         plan = planner.build_plan()
         for ignored_name in plan.ignored_channel_names:
@@ -499,10 +526,17 @@ class _SetUrlTransactionCoordinator:
         achieved within the bound, the final error is raised with
         precise reporting of the failure stage.
         """
+        with self._channel_state.mutation_lock:
+            self._admin_context = self._resolve_admin_context()
+            self._apply_replace_all_locked()
+
+    def _apply_replace_all_locked(self) -> None:
+        """Execute replace-all and recovery under the channel-mutation lock."""
         planner = _SetUrlReplacePlanner(
             self._node,
             parsed_input=self._parsed_input,
             admin_context=self._admin_context,
+            channel_state=self._channel_state,
         )
         plan = planner.build_plan()
         skip_channel_indices: set[int] = set()

@@ -1,6 +1,6 @@
 """Tests for _SetUrlExecutionEngine."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,6 +15,7 @@ from meshtastic.node_runtime.seturl_runtime import (
 )
 from meshtastic.protobuf import apponly_pb2, channel_pb2, mesh_pb2
 from meshtastic.tests.seturl.conftest import (
+    _LockProbe,
     _make_channel,
     _make_channel_set_with_lora,
     _make_raise_error_side_effect,
@@ -203,16 +204,84 @@ class TestSetUrlExecutionEngine:
         )
 
         state = _SetUrlReplaceExecutionState()
+        lock = _LockProbe()
+        mock_local_node._test_channel_state._replace_lock(lock)
 
-        execution_engine.executeReplaceAll(
-            parsed_input=parsed_input,
-            admin_context=admin_context,
-            plan=plan,
-            state=state,
-        )
+        def _fingerprint_while_locked(
+            channels: list[channel_pb2.Channel],
+        ) -> tuple[bytes, ...]:
+            assert lock.active
+            return _channels_fingerprint(channels)
+
+        with patch(
+            "meshtastic.node_runtime.seturl.execution._channels_fingerprint",
+            side_effect=_fingerprint_while_locked,
+        ):
+            execution_engine.executeReplaceAll(
+                parsed_input=parsed_input,
+                admin_context=admin_context,
+                plan=plan,
+                state=state,
+            )
 
         mock_local_node._write_channel_snapshot.assert_called()
         assert 0 in state.written_channel_indices
+
+    @pytest.mark.unit
+    def test_execute_replace_all_aborts_on_in_place_mutation_during_write(
+        self,
+        execution_engine: _SetUrlExecutionEngine,
+        mock_local_node: MagicMock,
+    ) -> None:
+        """A concurrent in-place edit must not be overwritten after device I/O."""
+        original_channels = [
+            _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
+            _make_channel(1, channel_pb2.Channel.Role.SECONDARY, "peer"),
+        ]
+        mock_local_node.channels = original_channels
+        staged = _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "new")
+        plan = _SetUrlReplacePlan(
+            max_channels=2,
+            replace_original_channels_ref=original_channels,
+            replace_original_channels_fingerprint=_channels_fingerprint(
+                original_channels
+            ),
+            staged_channels=[staged],
+            staged_channels_by_index={0: staged},
+            deferred_new_named_admin_channel=None,
+            deferred_new_named_admin_index=None,
+            deferred_previous_admin_slot_channel=None,
+        )
+        parsed_input = _SetUrlParsedInput(
+            channel_set=apponly_pb2.ChannelSet(),
+            has_lora_update=False,
+        )
+        admin_context = MagicMock(admin_index_for_write=0)
+        state = _SetUrlReplaceExecutionState()
+
+        def _mutate_cache_during_write(*_args: object, **_kwargs: object) -> None:
+            original_channels[1].settings.name = "concurrent-edit"
+
+        mock_local_node._write_channel_snapshot.side_effect = _mutate_cache_during_write
+        mock_local_node._raise_interface_error = MagicMock(
+            side_effect=_make_raise_error_side_effect()
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="Channel cache changed during replace-all cache update",
+        ):
+            execution_engine.executeReplaceAll(
+                parsed_input=parsed_input,
+                admin_context=admin_context,
+                plan=plan,
+                state=state,
+            )
+
+        mock_local_node._write_channel_snapshot.assert_called_once()
+        assert state.written_channel_indices == [0]
+        assert mock_local_node.channels is None
+        assert mock_local_node.partialChannels == []
 
     @pytest.mark.unit
     def test_execute_replace_all_with_lora_update_skipped_send_raises(
@@ -423,12 +492,12 @@ class TestSetUrlExecutionEngine:
         mock_local_node._send_admin.assert_not_called()
 
     @pytest.mark.unit
-    def test_execute_replace_all_skip_set_skips_fingerprint_check(
+    def test_execute_replace_all_resume_uses_refreshed_cache_baseline(
         self,
         execution_engine: _SetUrlExecutionEngine,
         mock_local_node: MagicMock,
     ) -> None:
-        """execute_replace_all with skip_channel_indices bypasses fingerprint pre-check."""
+        """A resumed transaction guards the refreshed cache instead of the stale plan."""
         original_channels = [
             _make_channel(0, channel_pb2.Channel.Role.PRIMARY, "old"),
         ]

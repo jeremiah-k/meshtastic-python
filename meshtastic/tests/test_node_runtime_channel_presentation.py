@@ -6,7 +6,7 @@ import re
 import threading
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
@@ -15,6 +15,8 @@ from meshtastic.node_runtime.channel_presentation_runtime import (
     _NodeChannelPresentationRuntime,
 )
 from meshtastic.protobuf import channel_pb2, localonly_pb2
+
+from ._node_channel_state_test_support import _attach_channel_state
 
 
 @pytest.fixture
@@ -33,10 +35,11 @@ def mock_node() -> MagicMock:
             "iface",
             "localConfig",
             "moduleConfig",
+            "_test_channel_state",
         ]
     )
-    node.channels = []
-    node._channels_lock = threading.RLock()  # noqa: SLF001
+    channel_state = _attach_channel_state(node)
+    channel_state.channels = []
     node.iface = SimpleNamespace(_node_db_lock=threading.RLock())
     node.localConfig = None
     node.moduleConfig = None
@@ -59,7 +62,11 @@ def presentation_runtime(mock_node: MagicMock) -> _NodeChannelPresentationRuntim
     """
     export_runtime = create_autospec(_NodeChannelExportRuntime, instance=True)
     export_runtime.get_url.return_value = "https://meshtastic.org/e/#test"
-    return _NodeChannelPresentationRuntime(mock_node, export_runtime=export_runtime)
+    return _NodeChannelPresentationRuntime(
+        mock_node,
+        channel_state=mock_node._test_channel_state,
+        export_runtime=export_runtime,
+    )
 
 
 @pytest.mark.unit
@@ -106,6 +113,57 @@ def test_show_channels_with_channels(
 
 
 @pytest.mark.unit
+def test_show_channels_uses_one_snapshot_for_display_and_both_urls(
+    mock_node: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Printed channels and both exported URLs should share one state snapshot."""
+    primary = channel_pb2.Channel(index=0, role=channel_pb2.Channel.Role.PRIMARY)
+    primary.settings.name = "captured"
+    primary.settings.psk = b"\x01"
+    mock_node.channels = [primary]
+    export_runtime = _NodeChannelExportRuntime(
+        mock_node,
+        channel_state=mock_node._test_channel_state,
+    )
+    presentation_runtime = _NodeChannelPresentationRuntime(
+        mock_node,
+        channel_state=mock_node._test_channel_state,
+        export_runtime=export_runtime,
+    )
+
+    def _encode_snapshot(
+        channels_snapshot: list[channel_pb2.Channel],
+        *,
+        include_all: bool,
+    ) -> str:
+        assert channels_snapshot[0].settings.name == "captured"
+        return "complete-encoded" if include_all else "public-encoded"
+
+    with (
+        patch.object(
+            export_runtime,
+            "_build_and_encode_channel_set",
+            side_effect=_encode_snapshot,
+        ) as encode_snapshot,
+        patch.object(export_runtime, "get_url") as compatibility_export,
+    ):
+        presentation_runtime._show_channels()
+
+    assert encode_snapshot.call_count == 2
+    first_snapshot = encode_snapshot.call_args_list[0].args[0]
+    second_snapshot = encode_snapshot.call_args_list[1].args[0]
+    assert first_snapshot is second_snapshot
+    compatibility_export.assert_not_called()
+    out, _ = capsys.readouterr()
+    assert "Primary channel URL: https://meshtastic.org/e/#public-encoded" in out
+    assert (
+        "Complete URL (includes all channels): "
+        "https://meshtastic.org/e/#complete-encoded" in out
+    )
+
+
+@pytest.mark.unit
 def test_show_channels_handles_unknown_role_values(
     presentation_runtime: _NodeChannelPresentationRuntime,
     mock_node: MagicMock,
@@ -134,7 +192,9 @@ def test_show_channels_handles_export_errors_without_raising(
     export_runtime = create_autospec(_NodeChannelExportRuntime, instance=True)
     export_runtime.get_url.side_effect = RuntimeError("channels not loaded")
     presentation_runtime = _NodeChannelPresentationRuntime(
-        mock_node, export_runtime=export_runtime
+        mock_node,
+        channel_state=mock_node._test_channel_state,
+        export_runtime=export_runtime,
     )
     mock_node.channels = []
 
@@ -165,7 +225,9 @@ def test_show_channels_shows_complete_url_when_different_from_public(
 
     export_runtime.get_url.side_effect = get_url_side_effect
     presentation_runtime = _NodeChannelPresentationRuntime(
-        mock_node, export_runtime=export_runtime
+        mock_node,
+        channel_state=mock_node._test_channel_state,
+        export_runtime=export_runtime,
     )
 
     # Add multiple secondary channels so admin_url != public_url

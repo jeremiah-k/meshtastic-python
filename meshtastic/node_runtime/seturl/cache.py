@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.seturl.helpers import _channels_fingerprint
 from meshtastic.protobuf import channel_pb2, config_pb2
 
@@ -19,13 +20,14 @@ _ERR_CONFIG_OR_CHANNELS_NOT_LOADED = "Config or channels not loaded"
 class _SetUrlCacheManager:
     """Owns local cache updates, invalidation, and restoration for setURL transactions."""
 
-    def __init__(self, node: Node) -> None:
+    def __init__(self, node: Node, *, channel_state: _NodeChannelState) -> None:
         self._node = node
+        self._channel_state = channel_state
 
     def _invalidate_channel_cache_locked(self, warning_message: str) -> None:
-        """Invalidate channel cache while already holding ``_channels_lock``."""
-        self._node.channels = None
-        self._node.partialChannels = []
+        """Invalidate channel cache while already holding ``_channel_state.lock``."""
+        self._channel_state.channels = None
+        self._channel_state.partial_channels = []
         logger.warning("%s", warning_message)
 
     def apply_add_only_success(
@@ -35,10 +37,10 @@ class _SetUrlCacheManager:
         expected_channels_fingerprint: tuple[bytes, ...] | None = None,
     ) -> None:
         """Apply addOnly channel cache updates after remote writes succeed."""
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
+        with self._channel_state.lock:
+            channels = self._channel_state.channels
             if channels is None:
-                self._node.partialChannels = []
+                self._channel_state.partial_channels = []
                 logger.warning(
                     "Channel cache unavailable after successful addOnly apply; reload channels to refresh local state."
                 )
@@ -60,7 +62,7 @@ class _SetUrlCacheManager:
                     )
                     break
             else:
-                self._node.partialChannels = []
+                self._channel_state.partial_channels = []
 
     def apply_replace_channel_write(
         self,
@@ -68,15 +70,14 @@ class _SetUrlCacheManager:
         *,
         expected_channels_fingerprint: tuple[bytes, ...] | None = None,
         expected_channels_ref: list[channel_pb2.Channel] | None = None,
-    ) -> None:
-        """Apply one replace-path channel cache update after a successful write."""
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
+    ) -> tuple[bytes, ...]:
+        """Apply a replace-path write and return the next guarded fingerprint."""
+        with self._channel_state.lock:
+            channels = self._channel_state.channels
             if channels is None:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
                 )
-                return  # unreachable; satisfies type checker
             channels_changed = False
             if (
                 expected_channels_ref is not None
@@ -94,18 +95,22 @@ class _SetUrlCacheManager:
                 self._node._raise_interface_error(  # noqa: SLF001
                     "Channel cache changed during replace-all cache update; aborting transaction."
                 )
-                return  # unreachable; satisfies type checker
             if not 0 <= staged_channel.index < len(channels):
+                self._invalidate_channel_cache_locked(
+                    "Channel index "
+                    f"{staged_channel.index} out of range during replace-all cache "
+                    "update; invalidating local channel cache."
+                )
                 self._node._raise_interface_error(  # noqa: SLF001
                     f"Channel index {staged_channel.index} out of range during cache update"
                 )
-                return  # unreachable; satisfies type checker
             channels[staged_channel.index].CopyFrom(staged_channel)
-            self._node.partialChannels = []
+            self._channel_state.partial_channels = []
+            return _channels_fingerprint(channels)
 
     def invalidate_channel_cache(self, warning_message: str) -> None:
         """Invalidate local channel cache after partial failure."""
-        with self._node._channels_lock:  # noqa: SLF001
+        with self._channel_state.lock:
             self._invalidate_channel_cache_locked(warning_message)
 
     def apply_lora_success(self, lora_config: config_pb2.Config.LoRaConfig) -> None:

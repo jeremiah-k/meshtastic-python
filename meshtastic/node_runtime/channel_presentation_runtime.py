@@ -9,6 +9,7 @@ from meshtastic.protobuf import channel_pb2
 from meshtastic.util import messageToJson, pskToString
 
 from .channel_export_runtime import _NodeChannelExportRuntime
+from .channel_state import _NodeChannelState
 
 if TYPE_CHECKING:
     from meshtastic.node import Node
@@ -30,20 +31,17 @@ class _NodeChannelPresentationRuntime:
         self,
         node: "Node",
         *,
+        channel_state: _NodeChannelState,
         export_runtime: _NodeChannelExportRuntime,
     ) -> None:
         self._node = node
+        self._channel_state = channel_state
         self._export_runtime = export_runtime
 
     def _show_channels(self) -> None:
         """Print channels and URL exports preserving historical output behavior."""
         print("Channels:")
-        with self._node._channels_lock:  # noqa: SLF001
-            channels_snapshot: list[channel_pb2.Channel] = []
-            for source_channel in self._node.channels or []:
-                copied_channel = channel_pb2.Channel()
-                copied_channel.CopyFrom(source_channel)
-                channels_snapshot.append(copied_channel)
+        channels_snapshot = self._channel_state.snapshot_channels()
         if channels_snapshot:
             logger.debug(
                 "channel snapshot captured (%d entries): %s",
@@ -96,6 +94,23 @@ class _NodeChannelPresentationRuntime:
         include_all: bool,
     ) -> str:
         """Resolve URL export path while preserving compatibility with export mocks."""
+        snapshot_export = getattr(
+            self._export_runtime,
+            "_get_url_from_snapshot",
+            None,
+        )
+        if (
+            callable(snapshot_export)
+            and getattr(snapshot_export, "__func__", None)
+            is _NodeChannelExportRuntime._get_url_from_snapshot  # noqa: SLF001
+        ):
+            return cast(
+                str,
+                snapshot_export(
+                    channels_snapshot,
+                    include_all=include_all,
+                ),
+            )
         get_url = getattr(self._export_runtime, "get_url", None)
         if callable(get_url):
             return cast(str, get_url(include_all=include_all))

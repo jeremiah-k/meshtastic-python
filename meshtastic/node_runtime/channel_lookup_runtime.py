@@ -1,111 +1,50 @@
 """Channel lookup and admin-index resolution runtime owner."""
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable
 
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.shared import (
     isNamedAdminChannelName as _isNamedAdminChannelName,
 )
 from meshtastic.protobuf import channel_pb2
 
-if TYPE_CHECKING:
-    from meshtastic.node import Node
-
 
 class _NodeChannelLookupRuntime:
-    """Owns lock-safe channel lookup and admin-channel index resolution."""
+    """Own lock-safe channel lookup and admin-channel index resolution."""
 
-    def __init__(self, node: "Node") -> None:
-        self._node = node
-
-    @staticmethod
-    def _copy_channel(channel: channel_pb2.Channel) -> channel_pb2.Channel:
-        """Return a defensive copy of a channel."""
-        copied = channel_pb2.Channel()
-        copied.CopyFrom(channel)
-        return copied
+    def __init__(self, channel_state: _NodeChannelState) -> None:
+        self._channel_state = channel_state
 
     def _get_channel_by_index(self, channel_index: int) -> channel_pb2.Channel | None:
-        """Return live channel by index when available, preserving compatibility.
-
-        Notes
-        -----
-        Returned channels are live references and may be mutated by other threads
-        after the lock is released. Use ``_get_channel_copy_by_index`` when a
-        stable read-only snapshot is required.
-        """
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
-            if channels and 0 <= channel_index < len(channels):
-                return channels[channel_index]
-            return None
+        """Return the historical live channel reference by index."""
+        return self._channel_state.get_live_by_index(channel_index)
 
     def _get_channel_copy_by_index(
         self, channel_index: int
     ) -> channel_pb2.Channel | None:
-        """Return defensive channel copy by index for read-only callers."""
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
-            if channels and 0 <= channel_index < len(channels):
-                return self._copy_channel(channels[channel_index])
-            return None
+        """Return a defensive channel copy by index for read-only callers."""
+        return self._channel_state.get_copy_by_index(channel_index)
 
     def _get_channel_by_name(self, name: str) -> channel_pb2.Channel | None:
-        """Return live channel whose settings.name exactly matches ``name``.
-
-        Notes
-        -----
-        Returned channels are live references and may be mutated by other threads
-        after the lock is released. Use ``_get_channel_copy_by_name`` when a
-        stable read-only snapshot is required.
-        """
-        with self._node._channels_lock:  # noqa: SLF001
-            for channel in self._node.channels or []:
-                if channel.settings and channel.settings.name == name:
-                    return channel
-            return None
+        """Return the historical live channel reference matching ``name``."""
+        return self._channel_state.get_live_by_name(name)
 
     def _get_channel_copy_by_name(self, name: str) -> channel_pb2.Channel | None:
-        """Return defensive channel copy found by exact settings.name match."""
-        with self._node._channels_lock:  # noqa: SLF001
-            for channel in self._node.channels or []:
-                if channel.settings and channel.settings.name == name:
-                    return self._copy_channel(channel)
-            return None
+        """Return a defensive channel copy matching ``name``."""
+        return self._channel_state.get_copy_by_name(name)
 
     def _get_disabled_channel(self) -> channel_pb2.Channel | None:
-        """Return first live disabled channel, if present.
-
-        Notes
-        -----
-        Returned channels are live references and may be mutated by other threads
-        after the lock is released. Use ``_get_disabled_channel_copy`` when a
-        stable read-only snapshot is required.
-        """
-        with self._node._channels_lock:  # noqa: SLF001
-            for channel in self._node.channels or []:
-                if channel.role == channel_pb2.Channel.Role.DISABLED:
-                    return channel
-            return None
+        """Return the historical live first disabled-channel reference."""
+        return self._channel_state.get_live_disabled()
 
     def _get_disabled_channel_copy(self) -> channel_pb2.Channel | None:
-        """Return defensive copy of first disabled channel, if present."""
-        with self._node._channels_lock:  # noqa: SLF001
-            for channel in self._node.channels or []:
-                if channel.role == channel_pb2.Channel.Role.DISABLED:
-                    return self._copy_channel(channel)
-            return None
+        """Return a defensive copy of the first disabled channel."""
+        return self._channel_state.get_copy_disabled()
 
     def _get_named_admin_channel_index(self) -> int | None:
         """Return index of explicitly named ``admin`` channel, if present."""
-        with self._node._channels_lock:  # noqa: SLF001
-            for channel in self._node.channels or []:
-                if (
-                    channel.role != channel_pb2.Channel.Role.DISABLED
-                    and channel.settings
-                    and _isNamedAdminChannelName(channel.settings.name)
-                ):
-                    return channel.index
-            return None
+        predicate: Callable[[str], bool] = _isNamedAdminChannelName
+        return self._channel_state.named_admin_index(is_named_admin=predicate)
 
     def _get_admin_channel_index(self) -> int:
         """Return named admin index when present; otherwise channel index zero."""

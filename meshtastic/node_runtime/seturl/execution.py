@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.seturl.cache import _SetUrlCacheManager
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.helpers import _channels_fingerprint
@@ -75,9 +76,11 @@ class _SetUrlExecutionEngine:
         self,
         node: Node,
         *,
+        channel_state: _NodeChannelState,
         cache_manager: _SetUrlCacheManager,
     ) -> None:
         self._node = node
+        self._channel_state = channel_state
         self._cache_manager = cache_manager
 
     @staticmethod
@@ -108,6 +111,65 @@ class _SetUrlExecutionEngine:
                 "LoRa config update was not started"
             )
         state.lora_write_started = True
+
+    def _validate_replace_cache(
+        self,
+        expected_channels_ref: list[channel_pb2.Channel],
+        expected_channels_fingerprint: tuple[bytes, ...],
+    ) -> None:
+        """Abort when channel state drifts from a replace transaction baseline."""
+        with self._channel_state.lock:
+            channels = self._channel_state.channels
+            channels_changed = channels is not expected_channels_ref
+            if not channels_changed:
+                channels_changed = (
+                    _channels_fingerprint(expected_channels_ref)
+                    != expected_channels_fingerprint
+                )
+        if channels_changed:
+            self._cache_manager.invalidate_channel_cache(
+                "Channel cache changed before replace-all write; invalidating local channel cache."
+            )
+            self._node._raise_interface_error(  # noqa: SLF001
+                "Channel cache changed before replace-all write; aborting transaction."
+            )
+
+    def _capture_replace_cache(
+        self,
+    ) -> tuple[list[channel_pb2.Channel], tuple[bytes, ...]]:
+        """Capture the current cache guard for a resumed replace transaction."""
+        with self._channel_state.lock:
+            channels = self._channel_state.channels
+            if channels is not None:
+                return channels, _channels_fingerprint(channels)
+        return self._node._raise_interface_error(  # noqa: SLF001
+            "Config or channels not loaded"
+        )
+
+    def _write_replace_channel(
+        self,
+        staged_channel: channel_pb2.Channel,
+        *,
+        admin_index: int | None,
+        state: _SetUrlReplaceExecutionState,
+        expected_channels_ref: list[channel_pb2.Channel],
+        expected_channels_fingerprint: tuple[bytes, ...],
+    ) -> tuple[bytes, ...]:
+        """Write one channel without the state lock, then commit it atomically."""
+        self._validate_replace_cache(
+            expected_channels_ref,
+            expected_channels_fingerprint,
+        )
+        self._node._write_channel_snapshot(  # noqa: SLF001
+            staged_channel,
+            adminIndex=admin_index,
+        )
+        state.written_channel_indices.append(staged_channel.index)
+        return self._cache_manager.apply_replace_channel_write(
+            staged_channel,
+            expected_channels_ref=expected_channels_ref,
+            expected_channels_fingerprint=expected_channels_fingerprint,
+        )
 
     def executeAddOnly(
         self,
@@ -177,28 +239,11 @@ class _SetUrlExecutionEngine:
             )
             if channel is not None
         }
-        cache_ref = (
-            plan.replace_original_channels_ref if skip_channel_indices is None else None
-        )
         if skip_channel_indices is None:
-            channels = self._node.channels
-            channels_changed = plan.replace_original_channels_ref is not channels
-            if (
-                not channels_changed
-                and plan.replace_original_channels_fingerprint
-                and channels is not None
-            ):
-                channels_changed = (
-                    _channels_fingerprint(channels)
-                    != plan.replace_original_channels_fingerprint
-                )
-            if channels_changed:
-                self._cache_manager.invalidate_channel_cache(
-                    "Channel cache changed before replace-all write; invalidating local channel cache."
-                )
-                self._node._raise_interface_error(  # noqa: SLF001
-                    "Channel cache changed before replace-all write; aborting transaction."
-                )
+            cache_ref = plan.replace_original_channels_ref
+            cache_fingerprint = plan.replace_original_channels_fingerprint
+        else:
+            cache_ref, cache_fingerprint = self._capture_replace_cache()
         state.stage = _ReplaceAllStage.CHANNEL_WRITES
         written_count = 0
         for staged_channel in plan.staged_channels:
@@ -217,14 +262,12 @@ class _SetUrlExecutionEngine:
                 self._safe_channel_role_name(staged_channel.role),
                 staged_channel.settings.name if staged_channel.settings else None,
             )
-            self._node._write_channel_snapshot(  # noqa: SLF001
+            cache_fingerprint = self._write_replace_channel(
                 staged_channel,
-                adminIndex=admin_context.admin_index_for_write,
-            )
-            state.written_channel_indices.append(staged_channel.index)
-            self._cache_manager.apply_replace_channel_write(
-                staged_channel,
+                admin_index=admin_context.admin_index_for_write,
+                state=state,
                 expected_channels_ref=cache_ref,
+                expected_channels_fingerprint=cache_fingerprint,
             )
             written_count += 1
 
@@ -259,16 +302,12 @@ class _SetUrlExecutionEngine:
                         else None
                     ),
                 )
-                self._node._write_channel_snapshot(  # noqa: SLF001
+                cache_fingerprint = self._write_replace_channel(
                     plan.deferred_new_named_admin_channel,
-                    adminIndex=admin_context.admin_index_for_write,
-                )
-                state.written_channel_indices.append(
-                    plan.deferred_new_named_admin_channel.index
-                )
-                self._cache_manager.apply_replace_channel_write(
-                    plan.deferred_new_named_admin_channel,
+                    admin_index=admin_context.admin_index_for_write,
+                    state=state,
                     expected_channels_ref=cache_ref,
+                    expected_channels_fingerprint=cache_fingerprint,
                 )
 
         if plan.deferred_previous_admin_slot_channel is not None:
@@ -291,14 +330,10 @@ class _SetUrlExecutionEngine:
                     plan.deferred_previous_admin_slot_channel.index,
                     updated_admin_index_for_write,
                 )
-                self._node._write_channel_snapshot(  # noqa: SLF001
+                self._write_replace_channel(
                     plan.deferred_previous_admin_slot_channel,
-                    adminIndex=updated_admin_index_for_write,
-                )
-                state.written_channel_indices.append(
-                    plan.deferred_previous_admin_slot_channel.index
-                )
-                self._cache_manager.apply_replace_channel_write(
-                    plan.deferred_previous_admin_slot_channel,
+                    admin_index=updated_admin_index_for_write,
+                    state=state,
                     expected_channels_ref=cache_ref,
+                    expected_channels_fingerprint=cache_fingerprint,
                 )

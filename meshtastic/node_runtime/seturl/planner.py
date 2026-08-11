@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.node_runtime.seturl.context import _SetUrlAdminContext
 from meshtastic.node_runtime.seturl.helpers import _channels_fingerprint
 from meshtastic.node_runtime.seturl.parser import _SetUrlParsedInput
@@ -58,8 +59,10 @@ class _SetUrlAddOnlyPlanner:
         *,
         parsed_input: _SetUrlParsedInput,
         admin_context: _SetUrlAdminContext,
+        channel_state: _NodeChannelState,
     ) -> None:
         self._node = node
+        self._channel_state = channel_state
         self._parsed_input = parsed_input
         self._admin_context = admin_context
 
@@ -70,8 +73,8 @@ class _SetUrlAddOnlyPlanner:
         original_channels_ref: list[channel_pb2.Channel] = []
         original_channels_by_index: dict[int, channel_pb2.Channel] = {}
         original_channels_fingerprint: tuple[bytes, ...] = ()
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
+        with self._channel_state.lock:
+            channels = self._channel_state.channels
             if channels is None:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED
@@ -157,17 +160,19 @@ class _SetUrlReplacePlanner:
         *,
         parsed_input: _SetUrlParsedInput,
         admin_context: _SetUrlAdminContext,
+        channel_state: _NodeChannelState,
     ) -> None:
         self._node = node
+        self._channel_state = channel_state
         self._parsed_input = parsed_input
         self._admin_context = admin_context
 
     def build_plan(self) -> _SetUrlReplacePlan:
         """Build replace-all staging plan, deferred admin strategy, and snapshots."""
         replace_original_channels_fingerprint: tuple[bytes, ...] = ()
-        with self._node._channels_lock:  # noqa: SLF001
+        with self._channel_state.lock:
             replace_original_channels_ref: list[channel_pb2.Channel] = []
-            channels = self._node.channels
+            channels = self._channel_state.channels
             if channels is None:
                 self._node._raise_interface_error(  # noqa: SLF001
                     _ERR_CONFIG_OR_CHANNELS_NOT_LOADED

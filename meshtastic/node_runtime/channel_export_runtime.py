@@ -4,6 +4,7 @@ import base64
 import logging
 from typing import TYPE_CHECKING, Any
 
+from meshtastic.node_runtime.channel_state import _NodeChannelState
 from meshtastic.protobuf import apponly_pb2, channel_pb2, localonly_pb2
 from meshtastic.util import fromPSK, generate_channel_hash
 
@@ -18,18 +19,13 @@ LORA_TIMEOUT_MSG = "Timeout waiting for LoRa config"
 class _NodeChannelExportRuntime:
     """Owns channel URL export, channel-hash export, and primary PSK mutation."""
 
-    def __init__(self, node: "Node") -> None:
+    def __init__(self, node: "Node", *, channel_state: _NodeChannelState) -> None:
         self._node = node
+        self._channel_state = channel_state
 
     def _snapshot_channels(self) -> list[channel_pb2.Channel]:
         """Return detached channel snapshots captured under the channel lock."""
-        with self._node._channels_lock:  # noqa: SLF001
-            snapshot: list[channel_pb2.Channel] = []
-            for source_channel in self._node.channels or []:
-                copied_channel = channel_pb2.Channel()
-                copied_channel.CopyFrom(source_channel)
-                snapshot.append(copied_channel)
-            return snapshot
+        return self._channel_state.snapshot_channels()
 
     def _snapshot_local_config(self) -> localonly_pb2.LocalConfig:
         """Return detached localConfig snapshot for consistent field checks/copies."""
@@ -163,12 +159,17 @@ class _NodeChannelExportRuntime:
 
     def _turn_off_encryption_on_primary_channel(self) -> None:
         """Disable primary-channel encryption and persist updated channel state."""
+        with self._channel_state.mutation_lock:
+            self._turn_off_encryption_on_primary_channel_locked()
+
+    def _turn_off_encryption_on_primary_channel_locked(self) -> None:
+        """Persist primary-channel encryption state under the mutation lock."""
         primary_snapshot: channel_pb2.Channel | None = None
         original_channels_ref: list[channel_pb2.Channel] | None = None
         original_primary_slot: channel_pb2.Channel | None = None
         original_primary_snapshot: bytes | None = None
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
+        with self._channel_state.lock:
+            channels = self._channel_state.channels
             if not channels:
                 self._node._raise_interface_error(  # noqa: SLF001
                     "Error: No channels have been read"
@@ -191,20 +192,20 @@ class _NodeChannelExportRuntime:
                 )  # type narrowing for static analysis
         logger.info("Writing modified channels to device")
         self._node._write_channel_snapshot(primary_snapshot)  # noqa: SLF001
-        with self._node._channels_lock:  # noqa: SLF001
-            channels = self._node.channels
+        with self._channel_state.lock:
+            channels = self._channel_state.channels
             if not channels:
                 logger.warning(
                     "Primary channel write succeeded but local channel cache is unavailable; reload channels to refresh local state."
                 )
-                self._node.partialChannels = []
+                self._channel_state.partial_channels = []
                 return
             if channels is not original_channels_ref:
                 logger.warning(
                     "Primary channel write succeeded but channel cache changed concurrently; invalidating local channel cache."
                 )
-                self._node.channels = None
-                self._node.partialChannels = []
+                self._channel_state.channels = None
+                self._channel_state.partial_channels = []
                 return
             for channel in channels:
                 if channel.index == primary_snapshot.index:
@@ -212,8 +213,8 @@ class _NodeChannelExportRuntime:
                         logger.warning(
                             "Primary channel write succeeded but primary slot object changed concurrently; invalidating local channel cache."
                         )
-                        self._node.channels = None
-                        self._node.partialChannels = []
+                        self._channel_state.channels = None
+                        self._channel_state.partial_channels = []
                         return
                     if (
                         original_primary_snapshot is not None
@@ -222,15 +223,15 @@ class _NodeChannelExportRuntime:
                         logger.warning(
                             "Primary channel write succeeded but primary slot content changed concurrently; invalidating local channel cache."
                         )
-                        self._node.channels = None
-                        self._node.partialChannels = []
+                        self._channel_state.channels = None
+                        self._channel_state.partial_channels = []
                         return
                     channel.CopyFrom(primary_snapshot)
-                    self._node.partialChannels = []
+                    self._channel_state.partial_channels = []
                     return
             logger.warning(
                 "Primary channel write succeeded but local channel index %s is unavailable; invalidating local channel cache.",
                 primary_snapshot.index,
             )
-            self._node.channels = None
-            self._node.partialChannels = []
+            self._channel_state.channels = None
+            self._channel_state.partial_channels = []
