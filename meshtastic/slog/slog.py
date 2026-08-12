@@ -157,6 +157,11 @@ INTERVAL_REQUIRED_MESSAGE = "interval must be > 0 seconds"
 DIR_NAME_REQUIRED_MESSAGE = "dir_name must be a non-empty path when provided"
 SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS = 5.0
 SAMPLE_FAILURE_WARNING_BURST_COUNT = 3
+TOPIC_MESHTASTIC_LOG_LINE = "meshtastic.log.line"
+
+
+class _PowerLoggerShutdownError(RuntimeError):
+    """Raised when the sampler cannot stop before dependency teardown."""
 
 
 class PowerLogger:
@@ -242,6 +247,10 @@ class PowerLogger:
         self._stop_event = threading.Event()
         self._sample_warning_count = 0
         self._last_sample_warning_monotonic = 0.0
+        self._dependency_close_lock = threading.Lock()
+        self._dependencies_closed = False
+        self._deferred_dependency_close = False
+        self._background_close_error: Exception | None = None
         self.is_logging = True
         self.thread = threading.Thread(
             target=self._logging_thread, name="PowerLogger", daemon=True
@@ -381,70 +390,134 @@ class PowerLogger:
 
     def _logging_thread(self) -> None:
         """Background thread for logging periodic current readings."""
-        while not self._stop_event.is_set():
-            try:
-                self._store_current_reading()
-                self._sample_warning_count = 0
-                self._last_sample_warning_monotonic = 0.0
-            except Exception as exc:  # noqa: BLE001 - keep sampler alive
-                self._sample_warning_count += 1
-                now_monotonic = time.monotonic()
-                should_warn = (
-                    self._sample_warning_count <= SAMPLE_FAILURE_WARNING_BURST_COUNT
-                    or (
-                        now_monotonic - self._last_sample_warning_monotonic
-                        >= SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    self._store_current_reading()
+                    self._sample_warning_count = 0
+                    self._last_sample_warning_monotonic = 0.0
+                except Exception as exc:  # noqa: BLE001 - keep sampler alive
+                    self._sample_warning_count += 1
+                    now_monotonic = time.monotonic()
+                    should_warn = (
+                        self._sample_warning_count <= SAMPLE_FAILURE_WARNING_BURST_COUNT
+                        or (
+                            now_monotonic - self._last_sample_warning_monotonic
+                            >= SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS
+                        )
                     )
+                    if should_warn:
+                        logger.warning(
+                            "PowerLogger sample failed: %s", exc, exc_info=True
+                        )
+                        self._last_sample_warning_monotonic = now_monotonic
+                    else:
+                        logger.debug(
+                            "PowerLogger sample failed (suppressed warning #%d): %s",
+                            self._sample_warning_count,
+                            exc,
+                        )
+                self._stop_event.wait(self.interval)
+        finally:
+            if self._deferred_dependency_close:
+                self._close_dependencies_after_worker_exit()
+
+    def _close_dependencies_locked(self) -> None:
+        """Close dependencies while the caller holds ``_dependency_close_lock``."""
+        if self._dependencies_closed:
+            return
+
+        meter_close_exc: Exception | None = None
+        writer_close_exc: Exception | None = None
+        try:
+            self._p_meter.close()
+        except Exception as exc:  # noqa: BLE001 - preserve primary close failure
+            meter_close_exc = exc
+        try:
+            self.writer.close()
+        except Exception as exc:  # noqa: BLE001 - secondary cleanup
+            writer_close_exc = exc
+        finally:
+            self._dependencies_closed = True
+
+        if meter_close_exc is not None:
+            if writer_close_exc is not None:
+                logger.warning(
+                    "PowerLogger writer close failed after power meter close error: %s",
+                    writer_close_exc,
+                    exc_info=True,
                 )
-                if should_warn:
-                    logger.warning("PowerLogger sample failed: %s", exc, exc_info=True)
-                    self._last_sample_warning_monotonic = now_monotonic
-                else:
-                    logger.debug(
-                        "PowerLogger sample failed (suppressed warning #%d): %s",
-                        self._sample_warning_count,
-                        exc,
-                    )
-            self._stop_event.wait(self.interval)
+            raise meter_close_exc
+        if writer_close_exc is not None:
+            raise writer_close_exc
+
+    def _close_dependencies(self) -> None:
+        """Close meter and writer exactly once while preserving error priority."""
+        with self._dependency_close_lock:
+            self._close_dependencies_locked()
+
+    def _close_dependencies_after_worker_exit(self) -> None:
+        """Close dependencies and retain any error for the next ``close()`` caller."""
+        close_error: Exception | None = None
+        with self._dependency_close_lock:
+            try:
+                self._close_dependencies_locked()
+            except Exception as exc:  # noqa: BLE001 - cannot escape worker thread
+                self._background_close_error = exc
+                close_error = exc
+        if close_error is not None:
+            logger.warning(
+                "PowerLogger dependency cleanup failed on worker exit: %s",
+                close_error,
+                exc_info=close_error,
+            )
+
+    def _take_closed_dependency_error(self) -> tuple[bool, Exception | None]:
+        """Atomically report closed state and consume its deferred worker error."""
+        with self._dependency_close_lock:
+            if not self._dependencies_closed:
+                return False, None
+            close_error = self._background_close_error
+            self._background_close_error = None
+            return True, close_error
 
     def close(self) -> None:
-        """Close the PowerLogger and stop logging."""
-        if self.is_logging:
-            self.is_logging = False
-            self._stop_event.set()
-            if threading.current_thread() is not self.thread:
-                self.thread.join(timeout=POWER_LOGGER_JOIN_TIMEOUT)
-                if self.thread.is_alive():
-                    logger.warning(
-                        "PowerLogger background thread did not stop within %.1fs; continuing teardown.",
-                        POWER_LOGGER_JOIN_TIMEOUT,
-                    )
-            else:
-                logger.debug(
-                    "PowerLogger.close() called from logging thread; skipping self-join."
-                )
-            meter_close_exc: Exception | None = None
-            try:
-                self._p_meter.close()
-            except Exception as exc:  # noqa: BLE001 - preserve primary close failure
-                meter_close_exc = exc
-            try:
-                self.writer.close()
-            except Exception as writer_close_exc:  # noqa: BLE001 - secondary cleanup
-                if meter_close_exc is not None:
-                    logger.warning(
-                        "PowerLogger writer close failed after power meter close error: %s",
-                        writer_close_exc,
-                        exc_info=True,
-                    )
-                else:
-                    raise
-            if meter_close_exc is not None:
-                raise meter_close_exc
+        """Stop sampling before closing meter/writer dependencies.
 
+        A worker that outlives the bounded join retains ownership of dependency
+        cleanup and closes them in ``_logging_thread``'s ``finally`` block. The
+        caller receives an explicit shutdown error instead of racing the live
+        sampler by closing resources underneath it.
+        """
+        dependencies_closed, background_error = self._take_closed_dependency_error()
+        if dependencies_closed:
+            if background_error is not None:
+                raise background_error
+            return
 
-# FIXME move these defs somewhere else
-TOPIC_MESHTASTIC_LOG_LINE = "meshtastic.log.line"
+        self.is_logging = False
+        self._deferred_dependency_close = True
+        self._stop_event.set()
+        if threading.current_thread() is self.thread:
+            logger.debug(
+                "PowerLogger.close() called from logging thread; deferring dependency cleanup until thread exit."
+            )
+            return
+
+        self.thread.join(timeout=POWER_LOGGER_JOIN_TIMEOUT)
+        if self.thread.is_alive():
+            raise _PowerLoggerShutdownError(
+                "PowerLogger background thread did not stop within "
+                f"{POWER_LOGGER_JOIN_TIMEOUT:.1f}s; meter and writer remain open "
+                "until the worker exits."
+            )
+
+        # Fake/test threads may not execute _logging_thread's finally block, so
+        # the caller also finalizes once the thread is confirmed stopped.
+        self._close_dependencies()
+        _dependencies_closed, background_error = self._take_closed_dependency_error()
+        if background_error is not None:
+            raise background_error
 
 
 class StructuredLogger:
