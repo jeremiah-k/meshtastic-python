@@ -27,7 +27,6 @@ Threading model summary
 # BLEInterface is the public compatibility facade and composition root for extracted BLE runtimes.
 # pylint: disable=too-many-lines
 
-
 import atexit
 import contextlib
 import math
@@ -124,6 +123,11 @@ from meshtastic.interfaces.ble.management_service import (
 from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandHandler,
 )
+from meshtastic.interfaces.ble.management_state import (
+    BLEManagementState,
+    _ManagementConditionPort,
+)
+from meshtastic.interfaces.ble.ports import _LockPort
 from meshtastic.interfaces.ble.notifications import (
     BLENotificationDispatcher,
     NotificationManager,
@@ -315,11 +319,7 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
         state_lock = self._state_manager.lock
         self._session_state = BLESessionState(lock=state_lock)
         self._connect_lock = threading.RLock()  # Serializes connection attempts
-        self._management_lock = (
-            threading.RLock()
-        )  # Serializes pair/unpair/trust vs. close()
-        self._management_idle_condition = threading.Condition(self._management_lock)
-        self._management_inflight = 0  # Tracks end-to-end management operations.
+        self._management_state = BLEManagementState()
         self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
         self._exit_handler: Any | None = None
         self.address = address
@@ -361,7 +361,11 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             self.thread_coordinator,
             self,
         )
-        self._lifecycle_controller = BLELifecycleController(self)
+        self._lifecycle_controller = BLELifecycleController(
+            self,
+            client_closer=self._client_manager_safe_close_client,
+            management_state=self._get_management_state(),
+        )
         self._receive_recovery_controller = BLEReceiveRecoveryController(
             self, session_state=self._session_state
         )
@@ -374,6 +378,10 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             self,
             ble_client_factory=BLEClient,
             connected_elsewhere=self._connected_elsewhere_late_bound,
+            session_state=self._session_state,
+            management_state=self._get_management_state(),
+            connect_lock=self._connect_lock,
+            client_closer=self._client_manager_safe_close_client,
         )
 
         # Event coordination for reconnection and read operations
@@ -901,9 +909,7 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             except (BleakError, RuntimeError) as e:
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
+            except Exception as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
@@ -1255,8 +1261,8 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
         """
         state_manager = self._state_manager
         lifecycle_owner_is_current: bool | None
-        canonical_locked_probe = (
-            _is_canonical_state_manager(state_manager, self._state_lock)
+        canonical_locked_probe = _is_canonical_state_manager(
+            state_manager, self._state_lock
         )
         with self._state_lock:
             if self._closed or self._connection_session_epoch != expected_session_epoch:
@@ -1330,7 +1336,12 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
     def _get_lifecycle_controller(self) -> BLELifecycleController:
         """Return lifecycle collaborator, creating one lazily when needed."""
         return self._get_or_create_collaborator(
-            "_lifecycle_controller", lambda: BLELifecycleController(self)
+            "_lifecycle_controller",
+            lambda: BLELifecycleController(
+                self,
+                client_closer=self._client_manager_safe_close_client,
+                management_state=self._get_management_state(),
+            ),
         )
 
     def _get_receive_recovery_controller(self) -> BLEReceiveRecoveryController:
@@ -1349,6 +1360,45 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             ),
         )
 
+    def _get_management_state(self) -> BLEManagementState:
+        """Return the owned management state, creating it for partial objects."""
+        state = self.__dict__.get("_management_state")
+        if isinstance(state, BLEManagementState):
+            return state
+        candidate = BLEManagementState()
+        winner = self.__dict__.setdefault("_management_state", candidate)
+        if isinstance(winner, BLEManagementState):
+            return winner
+        self.__dict__["_management_state"] = candidate
+        return candidate
+
+    @property
+    def _management_lock(self) -> _LockPort:
+        """Compatibility view of the owned management lock."""
+        return self._get_management_state().lock
+
+    @_management_lock.setter
+    def _management_lock(self, value: _LockPort) -> None:
+        self._get_management_state().replace_lock(value)
+
+    @property
+    def _management_idle_condition(self) -> _ManagementConditionPort:
+        """Compatibility view of the owned management idle condition."""
+        return self._get_management_state().condition
+
+    @_management_idle_condition.setter
+    def _management_idle_condition(self, value: _ManagementConditionPort) -> None:
+        self._get_management_state().replace_condition(value)
+
+    @property
+    def _management_inflight(self) -> int:
+        """Compatibility view of in-flight management-operation count."""
+        return self._get_management_state().inflight
+
+    @_management_inflight.setter
+    def _management_inflight(self, value: int) -> None:
+        self._get_management_state().inflight = value
+
     def _get_management_command_handler(self) -> BLEManagementCommandHandler:
         """Return the bound management-command collaborator.
 
@@ -1363,6 +1413,10 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
                 self,
                 ble_client_factory=BLEClient,
                 connected_elsewhere=self._connected_elsewhere_late_bound,
+                session_state=self._session_state,
+                management_state=self._get_management_state(),
+                connect_lock=self._connect_lock,
+                client_closer=self._client_manager_safe_close_client,
             ),
         )
 
@@ -2440,17 +2494,13 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             """Best-effort rollback for notification session bookkeeping."""
             if notification_dispatcher is None or notification_session_snapshot is None:
                 return
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._registered_notification_session_epoch = (
                     notification_session_snapshot[
                         "_registered_notification_session_epoch"
                     ]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 started_notify_snapshot = _copy_started_notify_snapshot(
                     notification_session_snapshot["_started_notify_characteristics"]
                 )
@@ -2458,39 +2508,27 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
                     notification_dispatcher._started_notify_characteristics = (
                         started_notify_snapshot
                     )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.fromnum_notify_enabled = (
                     notification_session_snapshot["fromnum_notify_enabled"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.malformed_notification_count = (
                     notification_session_snapshot["malformed_notification_count"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_legacy_log_handler = (
                     notification_session_snapshot["_current_legacy_log_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_log_handler = (
                     notification_session_snapshot["_current_log_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_from_num_handler = (
                     notification_session_snapshot["_current_from_num_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_manager = notification_dispatcher._notification_manager
                 manager_lock = getattr(notification_manager, "_lock", None)
                 active_subscriptions_snapshot = notification_session_snapshot[

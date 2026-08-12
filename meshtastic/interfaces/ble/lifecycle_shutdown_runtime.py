@@ -31,6 +31,10 @@ from meshtastic.interfaces.ble.lifecycle_primitives import (
     _LifecycleStateAccess,
     _LifecycleThreadAccess,
 )
+from meshtastic.interfaces.ble.management_state import (
+    _BLEManagementStatePort,
+    _management_state_for,
+)
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
@@ -65,6 +69,7 @@ class BLEShutdownLifecycleCoordinator:
         iface: "BLEInterface",
         *,
         session_state: _BLESessionStatePort | None = None,
+        management_state: _BLEManagementStatePort | None = None,
     ) -> None:
         """Bind shutdown ownership to a specific interface.
 
@@ -75,6 +80,9 @@ class BLEShutdownLifecycleCoordinator:
         session_state : _BLESessionStatePort | None
             Optional shared lifecycle state. When ``None``, resolve the
             interface-owned state or use the legacy adapter.
+        management_state : _BLEManagementStatePort | None, optional
+            Shared management-operation state. When omitted, resolve the
+            interface-owned state or use the legacy adapter.
 
         Returns
         -------
@@ -83,6 +91,7 @@ class BLEShutdownLifecycleCoordinator:
         """
         self._iface = iface
         self._session = _session_state_for(iface, session_state)
+        self._management = _management_state_for(iface, management_state)
         self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
@@ -238,7 +247,6 @@ class BLEShutdownLifecycleCoordinator:
             ``None`` when already closed; otherwise ``True`` when management wait
             timed out, ``False`` when inflight management reached idle.
         """
-        iface = self._iface
         get_current_state = current_state_getter or self._state_access.current_state
         get_is_closing = is_closing_getter or self._state_access.is_closing
         do_transition_to = transition_to_state or self._state_access.transition_to
@@ -258,7 +266,7 @@ class BLEShutdownLifecycleCoordinator:
         # closing state without interface/session locks, then revalidate closed
         # state after acquiring the normal shutdown lock order.
         was_closing = get_is_closing()
-        with iface._management_lock:
+        with self._management.lock:
             with self._session.lock:
                 if self._session.closed:
                     logger.debug(SHUTDOWN_ALREADY_CLOSED_MSG)
@@ -298,18 +306,18 @@ class BLEShutdownLifecycleCoordinator:
                         disconnect_alias_key,
                         getattr(fallback_state, "value", fallback_state),
                     )
-            while iface._management_inflight > 0:
+            while self._management.inflight > 0:
                 elapsed = time.monotonic() - management_wait_started
                 if elapsed >= management_shutdown_wait_timeout:
                     management_wait_timed_out = True
                     logger.warning(
                         "Timed out waiting %.1fs for %d inflight management operation(s) during shutdown",
                         elapsed,
-                        iface._management_inflight,
+                        self._management.inflight,
                     )
                     break
                 remaining = management_shutdown_wait_timeout - elapsed
-                iface._management_idle_condition.wait(
+                self._management.condition.wait(
                     timeout=min(management_wait_poll_seconds, remaining)
                 )
         return management_wait_timed_out

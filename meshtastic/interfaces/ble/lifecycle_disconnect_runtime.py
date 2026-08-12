@@ -51,6 +51,7 @@ class BLEDisconnectLifecycleCoordinator:
         iface: "BLEInterface",
         *,
         session_state: _BLESessionStatePort | None = None,
+        client_closer: Callable[..., None] | None = None,
     ) -> None:
         """Bind disconnect orchestration ownership to a specific interface.
 
@@ -61,6 +62,9 @@ class BLEDisconnectLifecycleCoordinator:
         session_state : _BLESessionStatePort | None
             Optional shared lifecycle state. When ``None``, resolve the
             interface-owned state or use the legacy adapter.
+        client_closer : Callable[..., None] | None, optional
+            Explicit client-close capability. When omitted, compatibility
+            resolution falls back to the bound interface.
 
         Returns
         -------
@@ -69,6 +73,7 @@ class BLEDisconnectLifecycleCoordinator:
         """
         self._iface = iface
         self._session = _session_state_for(iface, session_state)
+        self._client_closer = client_closer
         self._state_access = _LifecycleStateAccess(iface)
         self._thread_access = _LifecycleThreadAccess(iface)
         self._error_access = _LifecycleErrorAccess(iface)
@@ -124,10 +129,15 @@ class BLEDisconnectLifecycleCoordinator:
         timeout : float | None, optional
             Optional maximum seconds to wait for client disconnect/close.
         """
-        self._iface._client_manager_safe_close_client(
-            client,
-            disconnect_timeout=timeout,
+        closer = self._client_closer or _resolve_declared_callable(
+            self._iface,
+            "_client_manager_safe_close_client",
         )
+        if closer is None:
+            raise AttributeError(
+                "BLE disconnect collaborator is missing client cleanup capability"
+            )
+        closer(client, disconnect_timeout=timeout)
 
     def on_ble_disconnect(self, client: BleakRootClient) -> None:
         """Handle a Bleak disconnect callback from the active transport client."""
@@ -186,7 +196,6 @@ class BLEDisconnectLifecycleCoordinator:
 
     # Early exits preserve ownership checks before any disconnect side effects occur.
     def _resolve_disconnect_target(  # pylint: disable=too-many-return-statements
-
         self,
         source: str,
         client: "BLEClient | None",
@@ -402,7 +411,6 @@ class BLEDisconnectLifecycleCoordinator:
         safe_cleanup: Callable[[Callable[[], object], str], None] | None = None,
     ) -> None:
         """Close a disconnected previous client asynchronously."""
-        iface = self._iface
         create_runtime_thread = create_thread or self._thread_access.create_thread
         start_runtime_thread = start_thread or self._thread_access.start_thread
         run_safe_cleanup = safe_cleanup or self._error_access.safe_cleanup
@@ -411,7 +419,7 @@ class BLEDisconnectLifecycleCoordinator:
 
         def _close_inline() -> None:
             run_safe_cleanup(
-                lambda: iface._client_manager_safe_close_client(previous_client),
+                lambda: self.disconnect_and_close_client(previous_client),
                 "BLE client close during disconnect",
             )
 

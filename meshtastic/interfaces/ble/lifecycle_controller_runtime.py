@@ -30,6 +30,10 @@ from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
 from meshtastic.interfaces.ble.lifecycle_shutdown_runtime import (
     BLEShutdownLifecycleCoordinator,
 )
+from meshtastic.interfaces.ble.management_state import (
+    _BLEManagementStatePort,
+    _management_state_for,
+)
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.state import ConnectionState
 
@@ -61,7 +65,13 @@ def _callable_accepts_timeout_kwarg(func: Callable[..., object]) -> bool:
 class BLELifecycleController:
     """Instance-bound collaborator for BLE lifecycle responsibilities."""
 
-    def __init__(self, iface: "BLEInterface") -> None:
+    def __init__(
+        self,
+        iface: "BLEInterface",
+        *,
+        client_closer: Callable[..., None] | None = None,
+        management_state: _BLEManagementStatePort | None = None,
+    ) -> None:
         """Bind lifecycle orchestration helpers to a specific interface.
 
         Parameters
@@ -69,6 +79,13 @@ class BLELifecycleController:
         iface : BLEInterface
             Interface instance whose lifecycle collaborators are owned by this
             controller.
+        client_closer : Callable[..., None] | None, optional
+            Explicit client-close capability used by the disconnect coordinator.
+            When omitted, compatibility resolution falls back to the bound
+            interface.
+        management_state : _BLEManagementStatePort | None, optional
+            Shared management-operation state. When omitted, resolve the
+            interface-owned state or use the legacy adapter.
 
         Returns
         -------
@@ -77,14 +94,21 @@ class BLELifecycleController:
         """
         self._iface = iface
         session = _session_state_for(iface)
+        management = _management_state_for(iface, management_state)
         self._receive = BLEReceiveLifecycleCoordinator(iface, session_state=session)
         self._disconnect = BLEDisconnectLifecycleCoordinator(
-            iface, session_state=session
+            iface,
+            session_state=session,
+            client_closer=client_closer,
         )
         self._connection_ownership = BLEConnectionOwnershipLifecycleCoordinator(
             iface, session_state=session
         )
-        self._shutdown = BLEShutdownLifecycleCoordinator(iface, session_state=session)
+        self._shutdown = BLEShutdownLifecycleCoordinator(
+            iface,
+            session_state=session,
+            management_state=management,
+        )
 
     def _set_receive_wanted(self, *, want_receive: bool) -> None:
         """Request or clear the receive loop on the bound interface."""
@@ -299,9 +323,7 @@ class BLELifecycleController:
         service_get_status = (
             lifecycle_service_mod.BLELifecycleService._get_connected_client_status
         )
-        service_get_status_locked = (
-            lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
-        )
+        service_get_status_locked = lifecycle_service_mod.BLELifecycleService._get_connected_client_status_locked
         service_verify_snapshot = (
             lifecycle_service_mod.BLELifecycleService._verify_ownership_snapshot
         )
