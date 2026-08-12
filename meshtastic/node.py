@@ -21,6 +21,7 @@ from typing import (
 
 from google.protobuf.descriptor import FieldDescriptor
 
+from meshtastic._interface_errors import MeshInterfaceError as _MeshInterfaceError
 from meshtastic.node_runtime import contact_runtime
 from meshtastic.node_runtime.admin_wait import (
     _send_admin_with_ack_scope,
@@ -675,11 +676,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         MeshInterface.MeshInterfaceError
             Always raised with the provided message.
         """
-        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
-            MeshInterface,
-        )
-
-        raise MeshInterface.MeshInterfaceError(message)
+        raise _MeshInterfaceError(message)
 
     def writeConfig(self, config_name: str) -> None:
         """Write a single named subsection of the node's edited configuration to the device.
