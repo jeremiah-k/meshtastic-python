@@ -8,7 +8,12 @@ import pytest
 
 from ..mesh_interface import MeshInterface
 from ..protobuf import portnums_pb2, remote_hardware_pb2
-from ..remote_hardware import WATCH_MASKS_ATTR, RemoteHardwareClient, onGPIOreceive
+from ..remote_hardware import (
+    WATCH_MASKS_ATTR,
+    RemoteHardwareClient,
+    _get_remote_hardware_state,
+    onGPIOreceive,
+)
 from ..serial_interface import SerialInterface
 
 
@@ -56,7 +61,9 @@ def test_onGPIOreceive_uses_node_watch_mask(
 ) -> None:
     """Test onGPIOreceive falls back to tracked per-node watch mask when needed."""
     iface = mock_gpio_iface
-    setattr(iface, WATCH_MASKS_ATTR, {"num:16": 7})
+    state = _get_remote_hardware_state(iface)
+    with state.lock:
+        state.watch_masks["num:16"] = 7
     packet = {"from": 16, "decoded": {"remotehw": {"gpioValue": "7"}}}
     with caplog.at_level(logging.DEBUG):
         onGPIOreceive(packet, iface)
@@ -72,7 +79,9 @@ def test_onGPIOreceive_does_not_apply_single_mask_fallback_with_mismatched_sende
 ) -> None:
     """Sender-specific misses should not apply the legacy single-mask fallback."""
     iface = mock_gpio_iface
-    setattr(iface, WATCH_MASKS_ATTR, {"num:16": 7})
+    state = _get_remote_hardware_state(iface)
+    with state.lock:
+        state.watch_masks["num:16"] = 7
     packet = {"from": 17, "decoded": {"remotehw": {"gpioValue": "7"}}}
     with caplog.at_level(logging.DEBUG):
         onGPIOreceive(packet, iface)
@@ -87,7 +96,9 @@ def test_onGPIOreceive_applies_single_mask_fallback_with_blank_sender_fields(
 ) -> None:
     """Blank sender identity fields should be treated as missing for legacy fallback."""
     iface = mock_gpio_iface
-    setattr(iface, WATCH_MASKS_ATTR, {"num:16": 7})
+    state = _get_remote_hardware_state(iface)
+    with state.lock:
+        state.watch_masks["num:16"] = 7
     packet = {
         "from": "   ",
         "fromId": "",
@@ -133,6 +144,35 @@ def test_onGPIOreceive_marks_response_on_nondict_remotehw() -> None:
     onGPIOreceive(packet, iface)
 
     assert iface.gotResponse is True
+
+
+@pytest.mark.unit
+def test_remote_hardware_state_is_registry_owned_and_interface_scoped(
+    mock_gpio_iface: MagicMock,
+) -> None:
+    """Watch state should be isolated per interface without hidden injection."""
+    other_iface = MagicMock()
+    first = _get_remote_hardware_state(mock_gpio_iface)
+    second = _get_remote_hardware_state(other_iface)
+
+    with first.lock:
+        first.watch_masks["num:16"] = 7
+
+    assert second.watch_masks == {}
+    assert WATCH_MASKS_ATTR not in mock_gpio_iface.__dict__
+    assert WATCH_MASKS_ATTR not in other_iface.__dict__
+
+
+@pytest.mark.unit
+def test_remote_hardware_state_migrates_legacy_private_masks_once() -> None:
+    """Existing private mask dictionaries should seed registry state compatibly."""
+    iface = MagicMock()
+    iface.__dict__[WATCH_MASKS_ATTR] = {"num:16": 7}
+
+    state = _get_remote_hardware_state(iface)
+    iface.__dict__[WATCH_MASKS_ATTR]["num:16"] = 3
+
+    assert state.watch_masks == {"num:16": 7}
 
 
 @pytest.mark.unit
@@ -214,7 +254,9 @@ def test_watchGPIOs(
     assert kwargs["channelIndex"] == rhw.channelIndex
     assert kwargs["wantResponse"] is False
     assert kwargs["onResponse"] is None
-    assert getattr(mock_gpio_iface, WATCH_MASKS_ATTR)["num:16"] == 123
+    state = _get_remote_hardware_state(mock_gpio_iface)
+    assert state.watch_masks["num:16"] == 123
+    assert WATCH_MASKS_ATTR not in mock_gpio_iface.__dict__
 
 
 @pytest.mark.unit
@@ -225,7 +267,9 @@ def test_watchGPIOs_normalizes_leading_zero_decimal_nodeid(
     rhw = RemoteHardwareClient(mock_gpio_iface)
     rhw.watchGPIOs("0016", 123)
 
-    assert getattr(mock_gpio_iface, WATCH_MASKS_ATTR)["num:16"] == 123
+    state = _get_remote_hardware_state(mock_gpio_iface)
+    assert state.watch_masks["num:16"] == 123
+    assert WATCH_MASKS_ATTR not in mock_gpio_iface.__dict__
 
 
 @pytest.mark.unit
@@ -236,7 +280,9 @@ def test_watchGPIOs_treats_malformed_signed_nodeid_as_id(
     rhw = RemoteHardwareClient(mock_gpio_iface)
     rhw.watchGPIOs("+-1", 123)
 
-    assert getattr(mock_gpio_iface, WATCH_MASKS_ATTR)["id:+-1"] == 123
+    state = _get_remote_hardware_state(mock_gpio_iface)
+    assert state.watch_masks["id:+-1"] == 123
+    assert WATCH_MASKS_ATTR not in mock_gpio_iface.__dict__
 
 
 @pytest.mark.unit
@@ -250,8 +296,8 @@ def test_watchGPIOs_does_not_cache_mask_on_send_failure(
     with pytest.raises(RuntimeError, match="send failed"):
         rhw.watchGPIOs("0x10", 123)
 
-    watch_masks = getattr(mock_gpio_iface, WATCH_MASKS_ATTR, {})
-    assert "num:16" not in watch_masks
+    state = _get_remote_hardware_state(mock_gpio_iface)
+    assert "num:16" not in state.watch_masks
 
 
 @pytest.mark.unit
