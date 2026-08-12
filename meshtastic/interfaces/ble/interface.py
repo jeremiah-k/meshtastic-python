@@ -27,7 +27,6 @@ Threading model summary
 # BLEInterface is the public compatibility facade and composition root for extracted BLE runtimes.
 # pylint: disable=too-many-lines
 
-
 import atexit
 import contextlib
 import math
@@ -47,7 +46,7 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic._publishing import publishing_thread as publishingThread
-from meshtastic.interfaces.ble import constants as _ble_constants
+import meshtastic.interfaces.ble.constants as _ble_constants
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
@@ -901,9 +900,7 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             except (BleakError, RuntimeError) as e:
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
+            except Exception as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
@@ -1255,8 +1252,8 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
         """
         state_manager = self._state_manager
         lifecycle_owner_is_current: bool | None
-        canonical_locked_probe = (
-            _is_canonical_state_manager(state_manager, self._state_lock)
+        canonical_locked_probe = _is_canonical_state_manager(
+            state_manager, self._state_lock
         )
         with self._state_lock:
             if self._closed or self._connection_session_epoch != expected_session_epoch:
@@ -2440,17 +2437,13 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             """Best-effort rollback for notification session bookkeeping."""
             if notification_dispatcher is None or notification_session_snapshot is None:
                 return
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._registered_notification_session_epoch = (
                     notification_session_snapshot[
                         "_registered_notification_session_epoch"
                     ]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 started_notify_snapshot = _copy_started_notify_snapshot(
                     notification_session_snapshot["_started_notify_characteristics"]
                 )
@@ -2458,39 +2451,27 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
                     notification_dispatcher._started_notify_characteristics = (
                         started_notify_snapshot
                     )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.fromnum_notify_enabled = (
                     notification_session_snapshot["fromnum_notify_enabled"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher.malformed_notification_count = (
                     notification_session_snapshot["malformed_notification_count"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_legacy_log_handler = (
                     notification_session_snapshot["_current_legacy_log_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_log_handler = (
                     notification_session_snapshot["_current_log_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_dispatcher._current_from_num_handler = (
                     notification_session_snapshot["_current_from_num_handler"]
                 )
-            with contextlib.suppress(
-                Exception
-            ):  # noqa: BLE001 - rollback cleanup is best effort
+            with contextlib.suppress(Exception):  # noqa: BLE001 - rollback cleanup is best effort
                 notification_manager = notification_dispatcher._notification_manager
                 manager_lock = getattr(notification_manager, "_lock", None)
                 active_subscriptions_snapshot = notification_session_snapshot[

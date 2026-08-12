@@ -60,6 +60,27 @@ class TestBLEPackageInit:
         assert hasattr(ble, "BLEClient")
         assert hasattr(ble, "SERVICE_UUID")
 
+    def test_ble_package_defers_interface_import_until_attribute_access(self) -> None:
+        """Importing the BLE package alone should not import the interface facade."""
+        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
+        try:
+            for name in list(sys.modules):
+                if _module_matches_prefix(name, _BLE_IMPORT_TEST_MODULE_PREFIXES):
+                    del sys.modules[name]
+
+            ble = importlib.import_module("meshtastic.interfaces.ble")
+
+            assert "meshtastic.interfaces.ble.interface" not in sys.modules
+            assert "BLEInterface" in dir(ble)
+
+            resolved = ble.BLEInterface
+
+            assert resolved is not None
+            assert "meshtastic.interfaces.ble.interface" in sys.modules
+            assert ble.BLEInterface is resolved
+        finally:
+            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
+
     def test_ble_init_raises_import_error_when_bleak_missing(self) -> None:
         """Test that importing ble package raises helpful ImportError when bleak is missing.
 
