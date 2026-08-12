@@ -8,5 +8,5 @@ consumers share one process-wide worker.
 
 from meshtastic.util import DeferredExecution
 
-publishing_thread = DeferredExecution("publishing")
-"""Process-wide worker that serializes deferred publication callbacks."""
+publishing_thread = DeferredExecution._create_lazy("publishing")
+"""Process-wide executor that starts its worker on the first queued callback."""

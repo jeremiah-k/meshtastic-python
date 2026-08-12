@@ -287,9 +287,10 @@ class BLECompatibilityEventService:
         callback : Any
             Callable to enqueue for deferred execution.
         prefer_non_blocking : bool
-            When ``True``, only attempt ``queue.put_nowait``. If a non-blocking
-            enqueue path is unavailable or full, return ``False`` so callers
-            can apply an inline fallback.
+            When ``True``, use an executor's atomic non-blocking enqueue contract
+            when available, otherwise attempt ``queue.put_nowait``. If neither
+            path can accept the callback, return ``False`` so callers can apply
+            an inline fallback.
 
         Returns
         -------
@@ -297,12 +298,20 @@ class BLECompatibilityEventService:
             ``True`` when the callback was queued, otherwise ``False``.
         """
         queue_work = getattr(publishing_thread, "queueWork", None)
+        queue_work_non_blocking = _get_declared_callable(
+            publishing_thread, "_queue_work_non_blocking"
+        )
         queue = getattr(publishing_thread, "queue", None)
         put_nowait = getattr(queue, "put_nowait", None)
         can_queue_work = callable(queue_work)
         can_put_nowait = callable(put_nowait)
         queue_work_callback: Callable[[Any], object] | None = (
             cast(Callable[[Any], object], queue_work) if can_queue_work else None
+        )
+        queue_work_non_blocking_callback: Callable[[Any], bool] | None = (
+            cast(Callable[[Any], bool], queue_work_non_blocking)
+            if callable(queue_work_non_blocking)
+            else None
         )
         put_nowait_callback: Callable[[Any], object] | None = (
             cast(Callable[[Any], object], put_nowait) if can_put_nowait else None
@@ -321,7 +330,9 @@ class BLECompatibilityEventService:
 
         queued = False
         if prefer_non_blocking:
-            if put_nowait_callback is not None:
+            if queue_work_non_blocking_callback is not None:
+                queued = queue_work_non_blocking_callback(callback)
+            elif put_nowait_callback is not None:
                 try:
                     put_nowait_callback(callback)
                     queued = True

@@ -13,7 +13,7 @@ import threading
 import time
 import warnings
 from collections.abc import Iterable
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 from typing import (
     Any,
     Callable,
@@ -655,7 +655,11 @@ class DeferredExecution:
 
     # Sentinel object to signal shutdown of the worker thread
     _SHUTDOWN = object()
+    queue: Queue[Any]
+    _shutdown: bool
     _stop_lock: threading.Lock
+    _thread_name: str
+    thread: threading.Thread | None
 
     def __init__(self, name: str) -> None:
         """Create a DeferredExecution instance and start its daemon worker thread.
@@ -668,14 +672,53 @@ class DeferredExecution:
         name : str
             Name assigned to the worker thread.
         """
+        self._initialize(name, start_worker=True)
+
+    @classmethod
+    def _create_lazy(cls, name: str) -> "DeferredExecution":
+        """Create an executor whose worker starts only when work is accepted.
+
+        This private constructor keeps the historical public ``__init__``
+        signature and eager-start behavior unchanged while allowing process-wide
+        owners to avoid import-time thread creation.
+        """
+        instance = cls.__new__(cls)
+        instance._initialize(name, start_worker=False)
+        return instance
+
+    def _initialize(self, name: str, *, start_worker: bool) -> None:
+        """Initialize queue/worker state with an explicit startup policy."""
         self.queue: Queue[Any] = Queue()
-        self._shutdown: bool = False
+        self._shutdown = False
         self._stop_lock = threading.Lock()
-        # this thread must be marked as daemon, otherwise it will prevent clients from exiting
-        self.thread = threading.Thread(
-            target=self._run, args=(), name=name, daemon=True
+        self._thread_name = name
+        self.thread = None
+        if start_worker:
+            with self._stop_lock:
+                self._ensure_started_locked()
+
+    def _ensure_started_locked(self) -> None:
+        """Start the daemon worker exactly once while ``_stop_lock`` is held."""
+        if self.thread is not None or self._shutdown:
+            return
+        # This thread must be daemonized, otherwise it prevents clients from exiting.
+        thread = threading.Thread(
+            target=self._run, args=(), name=self._thread_name, daemon=True
         )
-        self.thread.start()
+        thread.start()
+        self.thread = thread
+
+    def _queue_work_non_blocking(self, runnable: Callable[[], Any]) -> bool:
+        """Atomically start the worker and enqueue work without blocking."""
+        with self._stop_lock:
+            if self._shutdown:
+                return False
+            self._ensure_started_locked()
+            try:
+                self.queue.put_nowait(runnable)
+            except Full:
+                return False
+            return True
 
     def queueWork(self, runnable: Callable[[], Any]) -> None:
         """Enqueue a callable to be executed by the background worker thread.
@@ -693,6 +736,7 @@ class DeferredExecution:
         with self._stop_lock:
             if self._shutdown:
                 return
+            self._ensure_started_locked()
             self.queue.put(runnable)
 
     def stop(self) -> None:
@@ -704,8 +748,10 @@ class DeferredExecution:
         shutdown has already started.
         """
         with self._stop_lock:
-            if not self._shutdown:
-                self._shutdown = True
+            if self._shutdown:
+                return
+            self._shutdown = True
+            if self.thread is not None:
                 self.queue.put(self._SHUTDOWN)
 
     def join(self, timeout: float | None = None) -> bool:

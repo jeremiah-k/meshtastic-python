@@ -1620,6 +1620,62 @@ def test_deferred_execution_runs_closure() -> None:
 
 
 @pytest.mark.unit
+def test_deferred_execution_lazy_start_waits_for_first_work() -> None:
+    """A lazy executor should not create a worker until work is accepted."""
+    completed = threading.Event()
+    de = DeferredExecution._create_lazy("test_lazy_thread")
+
+    assert de.thread is None
+    de.queueWork(completed.set)
+
+    assert de.thread is not None
+    assert completed.wait(timeout=1.0)
+    de.stop()
+    assert de.join(timeout=1.0)
+
+
+@pytest.mark.unit
+def test_deferred_execution_lazy_start_failure_can_be_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed lazy thread start must not leave the executor permanently poisoned."""
+    de = DeferredExecution._create_lazy("test_retry_lazy_thread")
+    real_thread = threading.Thread
+
+    class _FailingThread:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            _ = (args, kwargs)
+
+        def start(self) -> None:
+            raise RuntimeError("thread start failed")
+
+    monkeypatch.setattr(threading, "Thread", _FailingThread)
+    with pytest.raises(RuntimeError, match="thread start failed"):
+        de.queueWork(lambda: None)
+    assert de.thread is None
+
+    monkeypatch.setattr(threading, "Thread", real_thread)
+    completed = threading.Event()
+    de.queueWork(completed.set)
+    assert completed.wait(timeout=1.0)
+    de.stop()
+    assert de.join(timeout=1.0)
+
+
+@pytest.mark.unit
+def test_deferred_execution_lazy_stop_without_work_does_not_start_worker() -> None:
+    """Stopping an unused lazy executor must not create a shutdown-only thread."""
+    de = DeferredExecution._create_lazy("test_unused_lazy_thread")
+
+    de.stop()
+
+    assert de.thread is None
+    assert de.join(timeout=1.0)
+    de.queueWork(lambda: pytest.fail("work after stop must remain ignored"))
+    assert de.thread is None
+
+
+@pytest.mark.unit
 def test_deferred_execution_stop_drains_previously_queued_work() -> None:
     """stop() should drain work accepted before the shutdown sentinel."""
     first_started = threading.Event()

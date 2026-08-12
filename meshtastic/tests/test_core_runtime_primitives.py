@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 import inspect
 import pickle
+import subprocess
+import sys
 import typing
 from pathlib import Path
 
@@ -183,6 +185,26 @@ def test_protocol_owner_module_does_not_import_package_root() -> None:
 def test_public_publishing_thread_is_internal_owner_identity() -> None:
     """Historical publishingThread should alias the internal singleton exactly."""
     assert meshtastic.publishingThread is _publishing.publishing_thread
+
+
+def test_importing_meshtastic_does_not_start_publishing_worker() -> None:
+    """Package import should not create the publishing daemon before work exists."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import meshtastic; "
+                "print(meshtastic.publishingThread.thread is None); "
+                "meshtastic.publishingThread.stop()"
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines()[-1].strip() == "True"
 
 
 def test_production_consumers_do_not_import_publishing_worker_from_package_root() -> (
