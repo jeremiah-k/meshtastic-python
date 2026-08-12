@@ -285,3 +285,65 @@ def test_ppk2_constructor_initializes_measurement_thread_and_compatibility_wrapp
     assert PPK2PowerSupply.getMinCurrentmA is PowerSupply.getMinCurrentmA
     assert PPK2PowerSupply.getMaxCurrentmA is PowerSupply.getMaxCurrentmA
     assert PPK2PowerSupply.getAverageCurrentmA is PowerSupply.getAverageCurrentmA
+
+
+@pytest.mark.unit
+def test_constructor_closes_transport_when_modifier_initialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Constructor failures after opening PPK2 transport must release serial state."""
+    api = MagicMock()
+    api.ser = MagicMock()
+    api.get_modifiers.side_effect = RuntimeError("modifier failure")
+    monkeypatch.setattr(
+        "meshtastic.powermon.ppk2.ppk2_api.PPK2_API",
+        MagicMock(return_value=api),
+    )
+
+    with pytest.raises(RuntimeError, match="modifier failure"):
+        PPK2PowerSupply(portName="COM9")
+
+    api.close.assert_called_once_with()
+    api.ser.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_constructor_closes_transport_when_thread_setup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Post-open constructor failures must also release the PPK2 transport."""
+    api = MagicMock()
+    api.ser = MagicMock()
+    monkeypatch.setattr(
+        "meshtastic.powermon.ppk2.ppk2_api.PPK2_API",
+        MagicMock(return_value=api),
+    )
+    monkeypatch.setattr(
+        "meshtastic.powermon.ppk2.threading.Thread",
+        MagicMock(side_effect=RuntimeError("thread setup failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="thread setup failed"):
+        PPK2PowerSupply(portName="COM9")
+
+    api.get_modifiers.assert_called_once_with()
+    api.close.assert_called_once_with()
+    api.ser.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_close_is_idempotent(ppk2_stub: "PPK2PowerSupply") -> None:
+    """Repeated close calls must not repeat hardware teardown commands."""
+    ppk = ppk2_stub
+    ppk.r = MagicMock()
+    ppk.r.ser = MagicMock()
+    ppk.measurement_thread = MagicMock()
+    ppk.measurement_thread.is_alive.return_value = False
+    ppk._closed = False
+
+    ppk.close()
+    ppk.close()
+
+    ppk.r.stop_measuring.assert_called_once_with()
+    ppk.r.close.assert_called_once_with()
+    ppk.r.ser.close.assert_called_once_with()

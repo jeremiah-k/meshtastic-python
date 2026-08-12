@@ -20,6 +20,19 @@ STABILIZATION_DELAY_S: Final[float] = 0.2  # Delay to discard initial FIFO readi
 READ_ERROR_RETRY_DELAY_S: Final[float] = 0.05  # Backoff after transient read errors.
 
 
+def _close_ppk2_transport(api: object) -> None:
+    """Best-effort close of a PPK2 API object and its serial transport."""
+    close_method = getattr(api, "close", None)
+    if callable(close_method):
+        with suppress(Exception):
+            close_method()
+
+    serial_handle = getattr(api, "ser", None)
+    if serial_handle is not None:
+        with suppress(Exception):
+            serial_handle.close()
+
+
 class PPK2PowerSupply(PowerSupply):
     """Interface for talking with the NRF PPK2 high-resolution micro-power supply.
 
@@ -88,13 +101,16 @@ class PPK2PowerSupply(PowerSupply):
         self.r = r = ppk2_api.PPK2_API(
             portName
         )  # serial port will be different for you
-        r.get_modifiers()
-
-        self.measurement_thread = threading.Thread(
-            target=self._measurement_loop, daemon=True, name="ppk2 measurement"
-        )
-        logging.info("Connected to Power Profiler Kit II (PPK2)")
-        super().__init__()  # we call this late so that the serial port is already open
+        try:
+            r.get_modifiers()
+            self.measurement_thread = threading.Thread(
+                target=self._measurement_loop, daemon=True, name="ppk2 measurement"
+            )
+            logging.info("Connected to Power Profiler Kit II (PPK2)")
+            super().__init__()  # we call this late so that the serial port is already open
+        except BaseException:
+            _close_ppk2_transport(r)
+            raise
 
     def _measurement_loop(self) -> None:
         """Endless measurement loop that runs in a background thread.
@@ -236,8 +252,10 @@ class PPK2PowerSupply(PowerSupply):
         self.resetMeasurements()
 
     def close(self) -> None:
-        """Close the power meter and release resources."""
+        """Close the power meter and release resources idempotently."""
         with self._measurement_state_lock:
+            if getattr(self, "_closed", False):
+                return
             self.measuring = False
             with self._want_measurement:
                 self._want_measurement.notify_all()
@@ -250,16 +268,8 @@ class PPK2PowerSupply(PowerSupply):
                     logging.warning(
                         "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
                     )
-            close_method = getattr(self.r, "close", None)
-            if callable(close_method):
-                with suppress(Exception):
-                    close_method()  # pylint: disable=not-callable
-
-            serial_handle = getattr(self.r, "ser", None)
-            if serial_handle is not None:
-                with suppress(Exception):
-                    serial_handle.close()
-        super().close()
+            _close_ppk2_transport(self.r)
+            super().close()
 
     def setIsSupply(self, is_supply: bool) -> None:
         """Set the PPK2 mode to either power supply or amp meter.

@@ -1030,7 +1030,7 @@ def parse_cli_args(
 
     power_group.add_argument(
         "--power-stress",
-        help="Perform power monitor stress testing, to capture a power consumption profile for the device (also requires --power-mon)",
+        help="Exercise device power states for power-consumption profiling",
         action="store_true",
     )
 

@@ -1839,3 +1839,116 @@ def test_stable_path_banner_shown_when_different(
             in out
         )
         assert err == ""
+
+
+@pytest.mark.unit
+def test_create_power_meter_validates_ppk2_voltage_before_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PPK2 voltage validation should fail before opening the hardware backend."""
+    args = SimpleNamespace(
+        power_voltage=None,
+        power_riden=None,
+        power_ppk2_supply=False,
+        power_ppk2_meter=True,
+        power_sim=False,
+        power_wait=False,
+    )
+    constructor = MagicMock()
+    monkeypatch.setattr(main_module, "meter", None)
+    monkeypatch.setattr(main_module, "have_powermon", True)
+    monkeypatch.setattr(main_module, "RidenPowerSupply", object)
+    monkeypatch.setattr(main_module, "PPK2PowerSupply", constructor)
+    monkeypatch.setattr(main_module, "SimPowerSupply", object)
+    monkeypatch.setattr(mt_config, "args", args)
+
+    with pytest.raises(SystemExit):
+        _create_power_meter()
+
+    constructor.assert_not_called()
+
+
+@pytest.mark.unit
+def test_create_power_meter_rejects_nan_voltage_before_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-finite voltage input must not reach a hardware backend."""
+    constructor = MagicMock()
+    args = SimpleNamespace(
+        power_voltage="nan",
+        power_riden="/dev/ttyUSB0",
+        power_ppk2_supply=False,
+        power_ppk2_meter=False,
+        power_sim=False,
+        power_wait=False,
+    )
+    monkeypatch.setattr(main_module, "meter", None)
+    monkeypatch.setattr(main_module, "have_powermon", True)
+    monkeypatch.setattr(main_module, "RidenPowerSupply", constructor)
+    monkeypatch.setattr(main_module, "PPK2PowerSupply", object)
+    monkeypatch.setattr(main_module, "SimPowerSupply", object)
+    monkeypatch.setattr(mt_config, "args", args)
+
+    with pytest.raises(SystemExit):
+        _create_power_meter()
+
+    constructor.assert_not_called()
+
+
+@pytest.mark.unit
+def test_create_power_meter_closes_partial_backend_and_preserves_previous_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Configuration failures should close the new meter without replacing the old one."""
+    previous = MagicMock()
+    candidate = MagicMock()
+    candidate.setVoltage.side_effect = RuntimeError("configure failed")
+    args = SimpleNamespace(
+        power_voltage="3.3",
+        power_riden=None,
+        power_ppk2_supply=False,
+        power_ppk2_meter=False,
+        power_sim=True,
+        power_wait=False,
+    )
+    monkeypatch.setattr(main_module, "meter", previous)
+    monkeypatch.setattr(main_module, "have_powermon", True)
+    monkeypatch.setattr(main_module, "RidenPowerSupply", object)
+    monkeypatch.setattr(main_module, "PPK2PowerSupply", object)
+    monkeypatch.setattr(main_module, "SimPowerSupply", MagicMock(return_value=candidate))
+    monkeypatch.setattr(mt_config, "args", args)
+
+    with pytest.raises(RuntimeError, match="configure failed"):
+        _create_power_meter()
+
+    candidate.close.assert_called_once_with()
+    previous.close.assert_not_called()
+    assert main_module.meter is previous
+
+
+@pytest.mark.unit
+def test_create_power_meter_replaces_and_closes_previous_meter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Successful meter replacement should release the previous backend transport."""
+    previous = MagicMock()
+    replacement = MagicMock()
+    args = SimpleNamespace(
+        power_voltage=None,
+        power_riden=None,
+        power_ppk2_supply=False,
+        power_ppk2_meter=False,
+        power_sim=True,
+        power_wait=False,
+    )
+    monkeypatch.setattr(main_module, "meter", previous)
+    monkeypatch.setattr(main_module, "have_powermon", True)
+    monkeypatch.setattr(main_module, "RidenPowerSupply", object)
+    monkeypatch.setattr(main_module, "PPK2PowerSupply", object)
+    monkeypatch.setattr(main_module, "SimPowerSupply", MagicMock(return_value=replacement))
+    monkeypatch.setattr(mt_config, "args", args)
+
+    _create_power_meter()
+
+    assert main_module.meter is replacement
+    previous.close.assert_called_once_with()
