@@ -701,3 +701,81 @@ def test_missing_channel_selection_defaults_to_primary_channel() -> None:
     _handle_messaging_actions(context, hooks)
 
     interface.sendTraceRoute.assert_called_once_with("!00000003", 5, channelIndex=0)
+
+
+@pytest.mark.unit
+def test_slog_transfers_cleanup_to_active_cli_session() -> None:
+    """Successful slog startup should survive dispatch and close with the invocation."""
+    import contextlib
+
+    from meshtastic.cli.session_resources import CliSessionResources
+
+    interface = _interface_double()
+    log_set = MagicMock()
+    with contextlib.ExitStack() as stack:
+        session = CliSessionResources(stack)
+        session.activate()
+        context = _context(interface, slog="default")
+        hooks = _hooks(log_set_factory=MagicMock(return_value=log_set))
+
+        _handle_long_running_services(context, hooks)
+
+        assert context.outcome.failure_cleanup_callbacks == []
+        log_set.close.assert_not_called()
+
+    log_set.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_tunnel_transfers_cleanup_to_active_cli_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Successful tunnel startup should be owned until the invocation ends."""
+    import contextlib
+
+    from meshtastic import tunnel
+    from meshtastic.cli.session_resources import CliSessionResources
+
+    interface = _interface_double()
+    interface.noProto = False
+    tunnel_instance = MagicMock()
+    monkeypatch.setattr(tunnel, "Tunnel", MagicMock(return_value=tunnel_instance))
+
+    with contextlib.ExitStack() as stack:
+        session = CliSessionResources(stack)
+        session.activate()
+        context = _context(interface, tunnel=True, dest="^all")
+
+        actions._start_tunnel(context, _hooks())
+
+        assert context.outcome.failure_cleanup_callbacks == []
+        tunnel_instance.close.assert_not_called()
+
+    tunnel_instance.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_power_stress_closes_retained_slog_only_once() -> None:
+    """Eager slog shutdown for power stress should disarm later session cleanup."""
+    import contextlib
+
+    from meshtastic.cli.session_resources import CliSessionResources
+
+    interface = _interface_double()
+    log_set = MagicMock()
+    stress = MagicMock()
+    with contextlib.ExitStack() as stack:
+        session = CliSessionResources(stack)
+        session.activate()
+        context = _context(interface, slog="default", power_stress=True)
+        hooks = _hooks(
+            log_set_factory=MagicMock(return_value=log_set),
+            power_stress_factory=MagicMock(return_value=stress),
+        )
+
+        _handle_long_running_services(context, hooks)
+
+        log_set.close.assert_called_once_with()
+        assert context.outcome.failure_cleanup_callbacks == []
+
+    log_set.close.assert_called_once_with()
