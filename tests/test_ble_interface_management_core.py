@@ -13,6 +13,7 @@ import pytest
 
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble as ble_mod
+import meshtastic.interfaces.ble.interface as ble_interface_mod
 from meshtastic.interfaces.ble import (
     BLEClient,
     BLEInterface,
@@ -37,6 +38,76 @@ from tests._ble_interface_core_support import (
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
+
+
+def test_get_management_state_replaces_invalid_partial_object_state() -> None:
+    """Partial objects should normalize foreign private state to the owned state type."""
+    iface = object.__new__(BLEInterface)
+    foreign_state = SimpleNamespace(inflight=7)
+    iface.__dict__["_management_state"] = foreign_state
+
+    resolved = iface._get_management_state()
+
+    assert resolved is iface.__dict__["_management_state"]
+    assert resolved is not foreign_state
+    assert resolved.inflight == 0
+
+
+def test_get_management_state_repairs_invalid_state_once_under_concurrency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent partial-object repair should converge on one management state."""
+    iface = object.__new__(BLEInterface)
+    iface.__dict__["_management_state"] = object()
+    real_state_type = ble_interface_mod.BLEManagementState
+    first_constructor_entered = threading.Event()
+    second_constructor_entered = threading.Event()
+    release_first_constructor = threading.Event()
+    constructor_count = 0
+    constructor_count_lock = threading.Lock()
+
+    class _BlockingManagementState(real_state_type):
+        def __init__(self) -> None:
+            nonlocal constructor_count
+            with constructor_count_lock:
+                constructor_count += 1
+                invocation = constructor_count
+            if invocation == 1:
+                first_constructor_entered.set()
+                assert release_first_constructor.wait(timeout=1.0)
+            else:
+                second_constructor_entered.set()
+            super().__init__()
+
+    monkeypatch.setattr(
+        ble_interface_mod,
+        "BLEManagementState",
+        _BlockingManagementState,
+    )
+    resolved: list[object] = []
+
+    def _resolve() -> None:
+        resolved.append(iface._get_management_state())
+
+    first = threading.Thread(target=_resolve)
+    second = threading.Thread(target=_resolve)
+    first.start()
+    assert first_constructor_entered.wait(timeout=1.0)
+    second.start()
+
+    # The second resolver must block on the shared partial-object init lock,
+    # rather than constructing a competing state while the first is in flight.
+    assert not second_constructor_entered.wait(timeout=0.05)
+    release_first_constructor.set()
+    first.join(timeout=1.0)
+    second.join(timeout=1.0)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert constructor_count == 1
+    assert len(resolved) == 2
+    assert resolved[0] is resolved[1]
+    assert resolved[0] is iface.__dict__["_management_state"]
 
 
 def test_find_device_returns_single_scan_result() -> None:

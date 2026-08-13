@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import weakref
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 
@@ -65,7 +66,14 @@ class _ContextLockCondition:
         self._exit_lock: Callable[..., Any] = exit_lock
 
     def wait(self, timeout: float | None = None) -> bool:
-        """Release the compatibility lock while waiting, then reacquire it."""
+        """Release the compatibility lock while waiting, then reacquire it.
+
+        Notes
+        -----
+        The compatibility lock is released exactly once. Callers must hold it
+        exactly once while waiting; nested acquisition would leave the lock
+        owned and prevent another thread from reaching the notifier.
+        """
         waiter = threading.Event()
         with self._waiters_lock:
             self._waiters.append(waiter)
@@ -103,22 +111,30 @@ def _condition_for_lock(lock: _LockPort) -> _ManagementConditionPort:
 
 _LEGACY_ADAPTER_ATTR = "_ble_management_state_adapter"
 _LEGACY_ADAPTER_CACHE_LOCK = threading.RLock()
+# Values, rather than targets, are weak: each adapter intentionally owns a strong
+# target reference, so a WeakKeyDictionary[target, adapter] would indirectly pin
+# its supposedly weak key. Identity keys also support slotted/non-weakrefable
+# compatibility targets; a live adapter keeps its target alive, preventing id reuse.
+_LEGACY_ADAPTER_FALLBACK_CACHE: weakref.WeakValueDictionary[
+    int, _LegacyBLEManagementStateAdapter
+] = weakref.WeakValueDictionary()
+_LEGACY_MEMBER_MISSING = object()
+_CONDITION_LOCK_MISSING = object()
 
 
-def _persist_legacy_member(target: object, name: str, value: object) -> None:
-    """Persist a compatibility synchronization member when the target allows it."""
+def _persist_legacy_member(target: object, name: str, value: object) -> bool:
+    """Persist a compatibility member and report whether the write succeeded."""
     try:
         vars(target)[name] = value
-        return
+        return True
     except TypeError:
         pass
     try:
         setattr(target, name, value)
     except (AttributeError, TypeError):
         # Some legacy test doubles/proxies intentionally reject new attributes.
-        # The adapter still works for that single resolution; callers with writable
-        # compatibility members converge on one shared synchronization primitive.
-        pass
+        return False
+    return True
 
 
 class BLEManagementState:
@@ -207,13 +223,26 @@ class _LegacyBLEManagementStateAdapter:
 
     def __init__(self, target: object) -> None:
         self._target = target
+        self._fallback_inflight = 0
+        self._fallback_inflight_authoritative = False
         declared_lock = _get_declared_lock(target, "_management_lock")
         self._lock = declared_lock or cast(_LockPort, threading.RLock())
         if declared_lock is None:
             _persist_legacy_member(target, "_management_lock", self._lock)
 
         declared_condition = _get_declared_member(target, "_management_idle_condition")
-        if declared_condition is not None:
+        condition_lock = (
+            _get_declared_member(
+                declared_condition,
+                "_lock",
+                _CONDITION_LOCK_MISSING,
+            )
+            if declared_condition is not None
+            else _CONDITION_LOCK_MISSING
+        )
+        if declared_condition is not None and (
+            condition_lock is _CONDITION_LOCK_MISSING or condition_lock is self._lock
+        ):
             self._condition = cast(_ManagementConditionPort, declared_condition)
         else:
             self._condition = _condition_for_lock(self._lock)
@@ -236,12 +265,27 @@ class _LegacyBLEManagementStateAdapter:
     @property
     def inflight(self) -> int:
         """Return the legacy target's current management-operation count."""
-        value = _get_declared_member(self._target, "_management_inflight", 0)
-        return int(value) if isinstance(value, int) else 0
+        if self._fallback_inflight_authoritative:
+            return self._fallback_inflight
+        value = _get_declared_member(
+            self._target,
+            "_management_inflight",
+            _LEGACY_MEMBER_MISSING,
+        )
+        if value is _LEGACY_MEMBER_MISSING:
+            return self._fallback_inflight
+        if isinstance(value, bool) or not isinstance(value, int):
+            return 0
+        self._fallback_inflight = value
+        return value
 
     @inflight.setter
     def inflight(self, value: int) -> None:
-        cast(Any, self._target)._management_inflight = int(value)
+        normalized = int(value)
+        self._fallback_inflight = normalized
+        self._fallback_inflight_authoritative = not _persist_legacy_member(
+            self._target, "_management_inflight", normalized
+        )
 
     def _begin_locked(self) -> None:
         """Increment legacy inflight accounting while the caller owns ``lock``."""
@@ -289,7 +333,13 @@ def _management_state_for(
         cached = _get_declared_member(target, _LEGACY_ADAPTER_ATTR)
         if isinstance(cached, _LegacyBLEManagementStateAdapter):
             return cached
+
+        fallback_cached = _LEGACY_ADAPTER_FALLBACK_CACHE.get(id(target))
+        if fallback_cached is not None and fallback_cached._target is target:
+            return fallback_cached
+
         adapter = _LegacyBLEManagementStateAdapter(target)
+        _LEGACY_ADAPTER_FALLBACK_CACHE[id(target)] = adapter
         try:
             namespace = vars(target)
         except TypeError:

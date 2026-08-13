@@ -1361,16 +1361,26 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
         )
 
     def _get_management_state(self) -> BLEManagementState:
-        """Return the owned management state, creating it for partial objects."""
+        """Return owned management state, repairing partial-object state safely."""
         state = self.__dict__.get("_management_state")
         if isinstance(state, BLEManagementState):
             return state
-        candidate = BLEManagementState()
-        winner = self.__dict__.setdefault("_management_state", candidate)
-        if isinstance(winner, BLEManagementState):
-            return winner
-        self.__dict__["_management_state"] = candidate
-        return candidate
+
+        repair_lock = cast(
+            _LockPort,
+            BLEInterface._get_or_create_collaborator(
+                self,
+                "_ble_management_state_init_lock",
+                threading.RLock,
+            ),
+        )
+        with repair_lock:
+            state = self.__dict__.get("_management_state")
+            if isinstance(state, BLEManagementState):
+                return state
+            state = BLEManagementState()
+            self.__dict__["_management_state"] = state
+            return state
 
     @property
     def _management_lock(self) -> _LockPort:

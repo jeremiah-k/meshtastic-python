@@ -1335,3 +1335,17 @@ def test_disconnect_client_closer_propagates_internal_type_error() -> None:
 
     with pytest.raises(TypeError, match="closer implementation failed"):
         coordinator.disconnect_and_close_client(object(), timeout=2.0)  # type: ignore[arg-type]
+
+
+def test_disconnect_client_closer_requires_cleanup_capability() -> None:
+    """A coordinator without any closer should report the missing capability."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+
+    coordinator = BLEDisconnectLifecycleCoordinator(  # type: ignore[arg-type]
+        SimpleNamespace(),
+    )
+
+    with pytest.raises(AttributeError, match="client cleanup capability"):
+        coordinator.disconnect_and_close_client(object())  # type: ignore[arg-type]

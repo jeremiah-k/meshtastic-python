@@ -99,8 +99,8 @@ class _ContextOnlyLock:
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
         traceback: TracebackType | None,
-    ) -> bool | None:
-        return self._lock.__exit__(exc_type, exc_value, traceback)
+    ) -> None:
+        self._lock.__exit__(exc_type, exc_value, traceback)
 
 
 @pytest.mark.unit
@@ -108,6 +108,19 @@ def test_management_state_condition_supports_context_only_lock() -> None:
     """A compatibility lock without acquire/release should still support waiters."""
     state = BLEManagementState(_ContextOnlyLock())
     released = threading.Event()
+    waiting = threading.Event()
+    original_condition = state.condition
+
+    def _tracked_wait(timeout: float | None = None) -> bool:
+        waiting.set()
+        return original_condition.wait(timeout)
+
+    state._replace_condition(
+        SimpleNamespace(
+            wait=_tracked_wait,
+            notify_all=original_condition.notify_all,
+        )
+    )  # type: ignore[arg-type]
 
     with state.lock:
         state._begin_locked()
@@ -120,11 +133,40 @@ def test_management_state_condition_supports_context_only_lock() -> None:
 
     waiter = threading.Thread(target=_wait_for_idle)
     waiter.start()
+    assert waiting.wait(timeout=1.0)
     assert state.finish() is True
     waiter.join(timeout=1.0)
 
     assert not waiter.is_alive()
     assert released.is_set()
+
+
+@pytest.mark.unit
+def test_context_only_condition_timeout_unregisters_waiter() -> None:
+    """A timed-out compatibility wait should unregister itself before returning."""
+    state = BLEManagementState(_ContextOnlyLock())
+
+    with state.lock:
+        assert state.condition.wait(timeout=0.0) is False
+
+    # A later notification must remain safe after the timed-out waiter is gone.
+    with state.lock:
+        state.condition.notify_all()
+
+
+@pytest.mark.unit
+def test_legacy_management_state_normalizes_underflow() -> None:
+    """Legacy accounting underflow should normalize to idle without raising."""
+    lock = threading.RLock()
+    target = SimpleNamespace(
+        _management_lock=lock,
+        _management_idle_condition=threading.Condition(lock),
+        _management_inflight=0,
+    )
+    state = _management_state_for(target)
+
+    assert state.finish() is False
+    assert target._management_inflight == 0
 
 
 @pytest.mark.unit
@@ -161,7 +203,7 @@ def test_legacy_management_state_persists_fallback_primitives_on_slotted_target(
     second = _management_state_for(target)
     released = threading.Event()
 
-    assert first is not second
+    assert first is second
     assert first.lock is second.lock
     assert first.condition is second.condition
 
@@ -181,3 +223,59 @@ def test_legacy_management_state_persists_fallback_primitives_on_slotted_target(
 
     assert not waiter.is_alive()
     assert released.is_set()
+
+
+class _UnwritableLegacyTarget:
+    """Legacy target that cannot persist any compatibility members."""
+
+    __slots__ = ()
+
+
+@pytest.mark.unit
+def test_legacy_management_state_caches_unwritable_target_and_tracks_inflight() -> None:
+    """Unwritable targets should still share adapter state across collaborators."""
+    target = _UnwritableLegacyTarget()
+
+    first = _management_state_for(target)
+    second = _management_state_for(target)
+
+    assert first is second
+    with first.lock:
+        first._begin_locked()
+    assert first.inflight == 1
+    assert second.inflight == 1
+    assert second.finish() is True
+    assert first.inflight == 0
+
+
+@pytest.mark.unit
+def test_legacy_management_state_treats_boolean_inflight_as_invalid() -> None:
+    """Boolean legacy counters should not masquerade as active operations."""
+    target = SimpleNamespace(_management_inflight=True)
+    state = _management_state_for(target)
+
+    assert state.inflight == 0
+    with state.lock:
+        state._begin_locked()
+    assert target._management_inflight == 1
+    assert state.finish() is True
+
+
+@pytest.mark.unit
+def test_legacy_management_state_replaces_condition_bound_to_other_lock() -> None:
+    """A declared condition must not be reused with a different management lock."""
+    lock = threading.RLock()
+    mismatched = threading.Condition(threading.RLock())
+    target = SimpleNamespace(
+        _management_lock=lock,
+        _management_idle_condition=mismatched,
+        _management_inflight=1,
+    )
+
+    state = _management_state_for(target)
+
+    assert state.condition is not mismatched
+    assert target._management_idle_condition is state.condition
+    with state.lock:
+        assert state.condition.wait(timeout=0.0) is False
+    assert state.finish() is True
