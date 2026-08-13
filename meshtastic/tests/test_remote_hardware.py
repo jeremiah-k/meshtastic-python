@@ -348,3 +348,20 @@ def test_write_gpios_rejects_vals_outside_mask(mock_gpio_iface: MagicMock) -> No
         MeshInterface.MeshInterfaceError, match="vals contains bits outside mask"
     ):
         rhw.writeGPIOs("0x10", 0b0011, 0b0100)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("invalid_mask", [True, False, "7", 7.5, None])
+def test_remote_hardware_state_migration_filters_invalid_legacy_masks(
+    invalid_mask: object,
+) -> None:
+    """Legacy migration should retain only genuine integer watch masks."""
+    iface = MagicMock()
+    iface.__dict__[WATCH_MASKS_ATTR] = {
+        "num:16": 7,
+        "num:17": invalid_mask,
+    }
+
+    state = _get_remote_hardware_state(iface)
+
+    assert state.watch_masks == {"num:16": 7}
