@@ -39,3 +39,13 @@ def test_node_raises_shared_interface_error_without_facade_import() -> None:
 
     with pytest.raises(MeshInterface.MeshInterfaceError, match="node failure"):
         node._raise_interface_error("node failure")  # noqa: SLF001
+
+@pytest.mark.unit
+def test_internal_exception_subclasses_preserve_public_mesh_interface_base() -> None:
+    """Internal subclasses should use the leaf class without changing public ancestry."""
+    from meshtastic.interfaces.ble.errors import MeshtasticBLEError
+    from meshtastic.stream_interface import StreamInterface
+
+    assert issubclass(StreamInterface.StreamInterfaceError, MeshInterface.MeshInterfaceError)
+    assert issubclass(StreamInterface.PayloadTooLargeError, MeshInterface.MeshInterfaceError)
+    assert issubclass(MeshtasticBLEError, MeshInterface.MeshInterfaceError)

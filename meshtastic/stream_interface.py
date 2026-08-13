@@ -12,6 +12,7 @@ from typing import IO, Any, BinaryIO, Callable
 import serial  # type: ignore[import-untyped]
 from google.protobuf.message import DecodeError
 
+from meshtastic._interface_errors import MeshInterfaceError as _MeshInterfaceError
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 from meshtastic.util import is_windows11, stripnl
@@ -92,7 +93,7 @@ class StreamInterface(MeshInterface):
     ``connect()`` should be called even when ``self.stream`` is ``None``.
     """
 
-    class StreamInterfaceError(MeshInterface.MeshInterfaceError):
+    class StreamInterfaceError(_MeshInterfaceError):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
         DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
@@ -110,7 +111,7 @@ class StreamInterface(MeshInterface):
             """
             super().__init__(message)
 
-    class PayloadTooLargeError(MeshInterface.MeshInterfaceError, ValueError):
+    class PayloadTooLargeError(_MeshInterfaceError, ValueError):
         """Raised when a serialized ToRadio payload exceeds MAX_TO_FROM_RADIO_SIZE."""
 
         def __init__(self, payload_size: int, max_size: int) -> None:
