@@ -1379,7 +1379,7 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
 
     @_management_lock.setter
     def _management_lock(self, value: _LockPort) -> None:
-        self._get_management_state().replace_lock(value)
+        self._get_management_state()._replace_lock(value)
 
     @property
     def _management_idle_condition(self) -> _ManagementConditionPort:
@@ -1388,7 +1388,7 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
 
     @_management_idle_condition.setter
     def _management_idle_condition(self, value: _ManagementConditionPort) -> None:
-        self._get_management_state().replace_condition(value)
+        self._get_management_state()._replace_condition(value)
 
     @property
     def _management_inflight(self) -> int:

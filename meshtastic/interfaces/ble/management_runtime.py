@@ -525,7 +525,7 @@ class BLEManagementCommandHandler:
 
     def begin_management_operation_locked(self) -> None:
         """Record a management operation while holding ``_management_lock``."""
-        self._management.begin_locked()
+        self._management._begin_locked()
 
     def finish_management_operation(self) -> None:
         """Mark completion of an in-flight management operation."""

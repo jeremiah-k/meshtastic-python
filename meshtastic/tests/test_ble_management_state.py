@@ -1,7 +1,7 @@
 """Tests for owned BLE management synchronization state."""
 
 import threading
-from types import SimpleNamespace
+from types import SimpleNamespace, TracebackType
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,11 +18,11 @@ def test_management_state_tracks_and_notifies_idle_waiters() -> None:
     state = BLEManagementState()
     notify_all = MagicMock(wraps=state.condition.notify_all)
     condition = SimpleNamespace(wait=state.condition.wait, notify_all=notify_all)
-    state.replace_condition(condition)  # type: ignore[arg-type]
+    state._replace_condition(condition)  # type: ignore[arg-type]
 
     with state.lock:
-        state.begin_locked()
-        state.begin_locked()
+        state._begin_locked()
+        state._begin_locked()
     assert state.inflight == 2
 
     assert state.finish() is True
@@ -43,7 +43,7 @@ def test_management_state_normalizes_underflow_and_notifies() -> None:
         wait=lambda *_args, **_kwargs: True,
         notify_all=notify_all,
     )
-    state.replace_condition(condition)  # type: ignore[arg-type]
+    state._replace_condition(condition)  # type: ignore[arg-type]
     state.inflight = -3
 
     assert state.finish() is False
@@ -57,11 +57,11 @@ def test_management_state_lock_replacement_rebuilds_default_condition() -> None:
     state = BLEManagementState()
     replacement = threading.RLock()
 
-    state.replace_lock(replacement)  # type: ignore[arg-type]
+    state._replace_lock(replacement)  # type: ignore[arg-type]
 
     assert state.lock is replacement
     with state.lock:
-        state.begin_locked()
+        state._begin_locked()
     assert state.inflight == 1
     assert state.finish() is True
 
@@ -79,7 +79,105 @@ def test_management_state_for_preserves_legacy_collaborator_members() -> None:
     state = _management_state_for(target)
 
     with state.lock:
-        state.begin_locked()
+        state._begin_locked()
     assert target._management_inflight == 1
     assert state.finish() is True
     assert target._management_inflight == 0
+
+
+class _ContextOnlyLock:
+    """Expose only the lock operations promised by ``_LockPort``."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+
+    def __enter__(self) -> object:
+        return self._lock.__enter__()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        return self._lock.__exit__(exc_type, exc_value, traceback)
+
+
+@pytest.mark.unit
+def test_management_state_condition_supports_context_only_lock() -> None:
+    """A compatibility lock without acquire/release should still support waiters."""
+    state = BLEManagementState(_ContextOnlyLock())
+    released = threading.Event()
+
+    with state.lock:
+        state._begin_locked()
+
+    def _wait_for_idle() -> None:
+        with state.lock:
+            while state.inflight:
+                state.condition.wait(timeout=1.0)
+        released.set()
+
+    waiter = threading.Thread(target=_wait_for_idle)
+    waiter.start()
+    assert state.finish() is True
+    waiter.join(timeout=1.0)
+
+    assert not waiter.is_alive()
+    assert released.is_set()
+
+
+@pytest.mark.unit
+def test_legacy_management_state_adapter_is_cached_per_target() -> None:
+    """Legacy collaborators should resolve one shared lock/condition adapter."""
+    target = SimpleNamespace(_management_inflight=0)
+
+    first = _management_state_for(target)
+    second = _management_state_for(target)
+
+    assert first is second
+    assert first.lock is second.lock
+    assert first.condition is second.condition
+
+
+class _SlottedLegacyTarget:
+    """Legacy target that stores synchronization members but no adapter cache."""
+
+    __slots__ = (
+        "_management_idle_condition",
+        "_management_inflight",
+        "_management_lock",
+    )
+
+    def __init__(self) -> None:
+        self._management_inflight = 0
+
+
+@pytest.mark.unit
+def test_legacy_management_state_persists_fallback_primitives_on_slotted_target() -> None:
+    """Independent adapters should share fallback synchronization and wakeups."""
+    target = _SlottedLegacyTarget()
+    first = _management_state_for(target)
+    second = _management_state_for(target)
+    released = threading.Event()
+
+    assert first is not second
+    assert first.lock is second.lock
+    assert first.condition is second.condition
+
+    with first.lock:
+        first._begin_locked()
+
+    def _wait_with_second_adapter() -> None:
+        with second.lock:
+            while second.inflight:
+                second.condition.wait(timeout=1.0)
+        released.set()
+
+    waiter = threading.Thread(target=_wait_with_second_adapter)
+    waiter.start()
+    assert first.finish() is True
+    waiter.join(timeout=1.0)
+
+    assert not waiter.is_alive()
+    assert released.is_set()

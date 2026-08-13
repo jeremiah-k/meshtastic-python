@@ -32,6 +32,7 @@ from meshtastic.interfaces.ble.state import (
     _is_canonical_state_manager,
 )
 from meshtastic.interfaces.ble.utils import (
+    _is_unexpected_keyword_error,
     _sleep,
     _thread_start_probe,
 )
@@ -137,7 +138,12 @@ class BLEDisconnectLifecycleCoordinator:
             raise AttributeError(
                 "BLE disconnect collaborator is missing client cleanup capability"
             )
-        closer(client, disconnect_timeout=timeout)
+        try:
+            closer(client, disconnect_timeout=timeout)
+        except TypeError as exc:
+            if not _is_unexpected_keyword_error(exc, "disconnect_timeout"):
+                raise
+            closer(client)
 
     def on_ble_disconnect(self, client: BleakRootClient) -> None:
         """Handle a Bleak disconnect callback from the active transport client."""
