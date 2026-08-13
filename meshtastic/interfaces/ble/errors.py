@@ -5,8 +5,8 @@ from typing import Any, Callable, TypeVar
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
+from meshtastic._interface_errors import MeshInterfaceError as _MeshInterfaceError
 from meshtastic.interfaces.ble.constants import logger
-from meshtastic.mesh_interface import MeshInterface
 
 # Import DecodeError from protobuf, or create a fallback if not available
 DecodeError: type[Exception]
@@ -41,7 +41,7 @@ __all__ = [
 T = TypeVar("T")
 
 
-class MeshtasticBLEError(MeshInterface.MeshInterfaceError):
+class MeshtasticBLEError(_MeshInterfaceError):
     """Base exception for structured Meshtastic BLE failures."""
 
     def __init__(  # pylint: disable=super-init-not-called,non-parent-init-called
