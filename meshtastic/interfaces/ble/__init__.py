@@ -8,6 +8,14 @@ managers/helpers live in submodules under
 """
 
 # ruff: noqa: RUF022, E402  # __all__ is intentionally grouped; import guard precedes exports
+# pylint: disable=wrong-import-position,ungrouped-imports  # dependency guard must run first
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Static-only declaration keeps the public lazy export discoverable to type
+    # checkers without importing the heavyweight implementation at runtime.
+    from meshtastic.interfaces.ble.interface import BLEInterface
 
 try:
     import bleak as _bleak  # noqa: F401
@@ -48,9 +56,46 @@ from meshtastic.interfaces.ble.errors import (
     BLEDiscoveryError,
     MeshtasticBLEError,
 )
-from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.interfaces.ble.utils import sanitize_address
 
+
+def __getattr__(name: str) -> object:
+    """Resolve heavyweight BLE facade exports lazily.
+
+    Parameters
+    ----------
+    name : str
+        Package attribute requested by import or attribute access.
+
+    Returns
+    -------
+    object
+        Resolved compatibility export.
+
+    Raises
+    ------
+    AttributeError
+        If ``name`` is not a supported lazy export.
+    """
+    if name == "BLEInterface":
+        # Import here intentionally so the public package facade remains lazy.
+        # pylint: disable=import-outside-toplevel
+        from meshtastic.interfaces.ble.interface import BLEInterface
+
+        # pylint: enable=import-outside-toplevel
+        globals()[name] = BLEInterface
+        return BLEInterface
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Return package attributes including unresolved lazy compatibility exports."""
+    return sorted(set(globals()) | set(__all__))
+
+
+# ``BLEInterface`` is provided through ``__getattr__`` so importing this package
+# does not eagerly load the heavyweight implementation module.
+# pylint: disable=undefined-all-variable
 __all__ = [
     # Main classes
     "BLEInterface",

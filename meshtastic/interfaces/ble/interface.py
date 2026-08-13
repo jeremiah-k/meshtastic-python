@@ -46,7 +46,7 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic._publishing import publishing_thread as publishingThread
-from meshtastic.interfaces.ble import constants as _ble_constants
+import meshtastic.interfaces.ble.constants as _ble_constants
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
