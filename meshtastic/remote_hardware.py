@@ -2,10 +2,13 @@
 
 import logging
 import threading
+import weakref
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Protocol, cast
 
 from pubsub import pub
 
+from meshtastic._interface_errors import MeshInterfaceError as _MeshInterfaceError
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, remote_hardware_pb2
 
 if TYPE_CHECKING:
@@ -29,12 +32,6 @@ INVALID_GPIO_MASK_ERROR = "mask must be a non-negative int"
 INVALID_GPIO_VALS_ERROR = "vals must be a non-negative int"
 INVALID_GPIO_VALS_MASK_ERROR = "vals contains bits outside mask"
 WATCH_MASKS_ATTR = "_remote_hardware_watch_masks"
-WATCH_MASKS_LOCK_ATTR = "_remote_hardware_watch_masks_lock"
-WATCH_MASKS_INIT_LOCK = threading.Lock()
-REMOTE_HARDWARE_SUBSCRIBE_LOCK = threading.Lock()
-
-_MESH_INTERFACE_ERROR_LOCK = threading.Lock()
-_MESH_INTERFACE_ERROR: type[Exception] | None = None
 
 
 class LockLike(Protocol):
@@ -56,26 +53,6 @@ class LockLike(Protocol):
         tb: Any,
     ) -> None:
         """Exit context manager and release lock."""
-
-
-def _get_mesh_interface_error() -> type[Exception]:
-    """Resolve MeshInterfaceError lazily to avoid module-import cycles.
-
-    Returns
-    -------
-    MeshInterfaceError : type[Exception]
-        The cached MeshInterface.MeshInterfaceError exception class.
-    """
-    global _MESH_INTERFACE_ERROR  # pylint: disable=global-statement
-    if _MESH_INTERFACE_ERROR is None:
-        with _MESH_INTERFACE_ERROR_LOCK:
-            if _MESH_INTERFACE_ERROR is None:
-                from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
-                    MeshInterface,
-                )
-
-                _MESH_INTERFACE_ERROR = MeshInterface.MeshInterfaceError
-    return _MESH_INTERFACE_ERROR
 
 
 def _normalize_node_key(nodeid: Any) -> str | None:
@@ -133,32 +110,89 @@ def _parse_node_number(text: str) -> int | None:
         return None
 
 
-def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
-    """Return per-interface watch masks, creating storage if needed.
+@dataclass(slots=True)
+class _RemoteHardwareState:
+    """Per-interface remote-hardware watch state."""
 
-    This helper mutates ``WATCH_MASKS_ATTR`` on ``interface`` when missing and
-    is not thread-safe by itself. Callers of ``_get_watch_masks`` must hold the
-    lock returned by ``_get_watch_masks_lock(interface)`` when reading or
-    mutating the returned dictionary.
-    """
-    watch_masks = getattr(interface, WATCH_MASKS_ATTR, None)
-    if isinstance(watch_masks, dict):
-        return watch_masks
-    watch_masks = {}
-    setattr(interface, WATCH_MASKS_ATTR, watch_masks)
-    return watch_masks
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    watch_masks: dict[str, int] = field(default_factory=dict)
+
+
+class _RemoteHardwareStateRegistry:
+    """Own per-interface watch state and process-level pubsub registration."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._states: weakref.WeakKeyDictionary[object, _RemoteHardwareState] = (
+            weakref.WeakKeyDictionary()
+        )
+
+    def state_for(self, interface: "MeshInterface") -> _RemoteHardwareState:
+        """Return stable state for one interface without mutating that interface.
+
+        Parameters
+        ----------
+        interface : MeshInterface
+            Interface whose remote-hardware state is requested.
+
+        Returns
+        -------
+        _RemoteHardwareState
+            Registry-owned state that disappears when the interface is collected.
+        """
+        with self._lock:
+            state = self._states.get(interface)
+            if state is not None:
+                return state
+            state = _RemoteHardwareState()
+            legacy_masks = getattr(interface, WATCH_MASKS_ATTR, None)
+            if isinstance(legacy_masks, dict):
+                state.watch_masks.update(
+                    {
+                        str(key): int(value)
+                        for key, value in legacy_masks.items()
+                        if isinstance(value, int) and not isinstance(value, bool)
+                    }
+                )
+            self._states[interface] = state
+            return state
+
+    def ensure_subscription(self) -> None:
+        """Ensure the process-level remote-hardware receive hook is subscribed."""
+        with self._lock:
+            already_subscribed = False
+            try:
+                already_subscribed = pub.isSubscribed(
+                    onGPIOReceive, REMOTE_HARDWARE_TOPIC
+                )
+            except pub.TopicNameError:
+                # Topic may not exist yet; subscribe below to create/register it.
+                already_subscribed = False
+            except (TypeError, ValueError) as ex:
+                logger.warning(
+                    "Unable to inspect remote hardware topic subscription: %s", ex
+                )
+                already_subscribed = False
+            if not already_subscribed:
+                pub.subscribe(onGPIOReceive, REMOTE_HARDWARE_TOPIC)
+
+
+_REMOTE_HARDWARE_STATE_REGISTRY = _RemoteHardwareStateRegistry()
+
+
+def _get_remote_hardware_state(interface: "MeshInterface") -> _RemoteHardwareState:
+    """Return registry-owned remote-hardware state for ``interface``."""
+    return _REMOTE_HARDWARE_STATE_REGISTRY.state_for(interface)
+
+
+def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
+    """Compatibility helper returning registry-owned per-interface watch masks."""
+    return _get_remote_hardware_state(interface).watch_masks
 
 
 def _get_watch_masks_lock(interface: "MeshInterface") -> LockLike:
-    """Return the per-interface lock guarding watch-mask state."""
-    lock = getattr(interface, WATCH_MASKS_LOCK_ATTR, None)
-    if lock is None:
-        with WATCH_MASKS_INIT_LOCK:
-            lock = getattr(interface, WATCH_MASKS_LOCK_ATTR, None)
-            if lock is None:
-                lock = threading.Lock()
-                setattr(interface, WATCH_MASKS_LOCK_ATTR, lock)
-    return cast(LockLike, lock)
+    """Compatibility helper returning the registry-owned watch-state lock."""
+    return cast(LockLike, _get_remote_hardware_state(interface).lock)
 
 
 def onGPIOReceive(packet: Any, interface: "MeshInterface") -> None:
@@ -302,28 +336,10 @@ class RemoteHardwareClient:
         else:
             ch = iface.localNode.getChannelByName(GPIO_CHANNEL_NAME)
         if ch is None:
-            mesh_interface_error = _get_mesh_interface_error()
-            raise mesh_interface_error(NO_GPIO_CHANNEL_ERROR)
+            raise _MeshInterfaceError(NO_GPIO_CHANNEL_ERROR)
         self.channelIndex = ch.index
-        with _get_watch_masks_lock(self.iface):
-            _get_watch_masks(self.iface)
-
-        with REMOTE_HARDWARE_SUBSCRIBE_LOCK:
-            already_subscribed = False
-            try:
-                already_subscribed = pub.isSubscribed(
-                    onGPIOReceive, REMOTE_HARDWARE_TOPIC
-                )
-            except pub.TopicNameError:
-                # Topic may not exist yet; subscribe below to create/register it.
-                already_subscribed = False
-            except (TypeError, ValueError) as ex:
-                logger.warning(
-                    "Unable to inspect remote hardware topic subscription: %s", ex
-                )
-                already_subscribed = False
-            if not already_subscribed:
-                pub.subscribe(onGPIOReceive, REMOTE_HARDWARE_TOPIC)
+        self._state = _get_remote_hardware_state(self.iface)
+        _REMOTE_HARDWARE_STATE_REGISTRY.ensure_subscription()
 
     @staticmethod
     def _normalize_dest_nodeid(nodeid: int | str | None) -> int | str:
@@ -351,14 +367,12 @@ class RemoteHardwareClient:
             or is_special_alias
         )
         if has_invalid_dest_nodeid:
-            mesh_interface_error = _get_mesh_interface_error()
-            raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
+            raise _MeshInterfaceError(MISSING_DEST_NODE_ID_ERROR)
         if isinstance(nodeid, str):
             return nodeid.strip()
         if isinstance(nodeid, int):
             return nodeid
-        mesh_interface_error = _get_mesh_interface_error()
-        raise mesh_interface_error(
+        raise _MeshInterfaceError(
             f"{MISSING_DEST_NODE_ID_ERROR} (got {type(nodeid).__name__}: {nodeid!r})"
         )
 
@@ -407,8 +421,7 @@ class RemoteHardwareClient:
     def _validate_non_negative_int(value: Any, error_message: str) -> int:
         """Validate integer GPIO arguments and return normalized int."""
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            mesh_interface_error = _get_mesh_interface_error()
-            raise mesh_interface_error(error_message)
+            raise _MeshInterfaceError(error_message)
         return value
 
     def writeGPIOs(
@@ -433,8 +446,7 @@ class RemoteHardwareClient:
         mask = self._validate_non_negative_int(mask, INVALID_GPIO_MASK_ERROR)
         vals = self._validate_non_negative_int(vals, INVALID_GPIO_VALS_ERROR)
         if vals & ~mask:
-            mesh_interface_error = _get_mesh_interface_error()
-            raise mesh_interface_error(INVALID_GPIO_VALS_MASK_ERROR)
+            raise _MeshInterfaceError(INVALID_GPIO_VALS_MASK_ERROR)
         logger.debug("writeGPIOs nodeid:%s mask:%s vals:%s", nodeid, mask, vals)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WRITE_GPIOS
@@ -495,6 +507,6 @@ class RemoteHardwareClient:
         result = self._send_hardware(nodeid, r)
         node_key = _normalize_node_key(nodeid)
         if node_key is not None:
-            with _get_watch_masks_lock(self.iface):
-                _get_watch_masks(self.iface)[node_key] = int(mask)
+            with self._state.lock:
+                self._state.watch_masks[node_key] = int(mask)
         return result
