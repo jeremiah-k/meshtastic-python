@@ -1294,3 +1294,58 @@ def test_shutdown_start_does_not_probe_closing_after_terminal_close() -> None:
     )
 
     assert result is None
+
+
+def test_disconnect_client_closer_falls_back_when_timeout_keyword_is_unsupported() -> None:
+    """Legacy injected closers should still be called without timeout keywords."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+
+    calls: list[object] = []
+
+    def _legacy_closer(client: object) -> None:
+        calls.append(client)
+
+    client = object()
+    coordinator = BLEDisconnectLifecycleCoordinator(  # type: ignore[arg-type]
+        SimpleNamespace(),
+        client_closer=_legacy_closer,
+    )
+
+    coordinator.disconnect_and_close_client(client, timeout=2.0)  # type: ignore[arg-type]
+
+    assert calls == [client]
+
+
+def test_disconnect_client_closer_propagates_internal_type_error() -> None:
+    """Timeout compatibility fallback must not hide errors raised inside a closer."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+
+    def _broken_closer(_client: object, *, disconnect_timeout: float | None = None) -> None:
+        _ = disconnect_timeout
+        raise TypeError("closer implementation failed")
+
+    coordinator = BLEDisconnectLifecycleCoordinator(  # type: ignore[arg-type]
+        SimpleNamespace(),
+        client_closer=_broken_closer,
+    )
+
+    with pytest.raises(TypeError, match="closer implementation failed"):
+        coordinator.disconnect_and_close_client(object(), timeout=2.0)  # type: ignore[arg-type]
+
+
+def test_disconnect_client_closer_requires_cleanup_capability() -> None:
+    """A coordinator without any closer should report the missing capability."""
+    from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
+        BLEDisconnectLifecycleCoordinator,
+    )
+
+    coordinator = BLEDisconnectLifecycleCoordinator(  # type: ignore[arg-type]
+        SimpleNamespace(),
+    )
+
+    with pytest.raises(AttributeError, match="client cleanup capability"):
+        coordinator.disconnect_and_close_client(object())  # type: ignore[arg-type]

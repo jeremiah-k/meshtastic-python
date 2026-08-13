@@ -15,6 +15,7 @@ from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _load_runtime_module,
     _get_declared_callable,
+    _get_declared_lock,
     _get_declared_member,
 )
 from meshtastic.interfaces.ble.connection import ConnectionOrchestrator
@@ -38,6 +39,12 @@ from meshtastic.interfaces.ble.gating import (
     _addr_lock_context,
 )
 from meshtastic.interfaces.ble.lifecycle_primitives import _client_is_connected_compat
+from meshtastic.interfaces.ble.management_state import (
+    _BLEManagementStatePort,
+    _management_state_for,
+)
+from meshtastic.interfaces.ble.ports import _BLESessionStatePort, _LockPort
+from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.utils import (
     _call_factory_with_optional_kwarg,
     sanitize_address,
@@ -239,6 +246,10 @@ class BLEManagementCommandHandler:
         *,
         ble_client_factory: Callable[..., BLEClient],
         connected_elsewhere: Callable[[str | None, object | None], bool],
+        session_state: _BLESessionStatePort | None = None,
+        management_state: _BLEManagementStatePort | None = None,
+        connect_lock: _LockPort | None = None,
+        client_closer: Callable[..., None] | None = None,
     ) -> None:
         """Create a bound management collaborator.
 
@@ -250,11 +261,42 @@ class BLEManagementCommandHandler:
             Factory for temporary management clients.
         connected_elsewhere : Callable[[str | None, object | None], bool]
             Cross-interface ownership probe.
+        session_state : _BLESessionStatePort | None, optional
+            Shared BLE lifecycle state. When omitted, resolve the interface-owned
+            state or use the legacy adapter.
+        management_state : _BLEManagementStatePort | None, optional
+            Shared management-operation accounting state. When omitted, resolve
+            the interface-owned state or use the legacy adapter.
+        connect_lock : _LockPort | None, optional
+            Explicit connect-serialization lock. Compatibility resolution falls
+            back to a declared interface lock or an isolated reentrant lock.
+        client_closer : Callable[..., None] | None, optional
+            Explicit client-close capability for temporary management clients.
+            When omitted, compatibility resolution falls back to the interface.
         """
         self._iface = iface
         self._ble_client_factory = ble_client_factory
         self._connected_elsewhere = connected_elsewhere
+        self._session = _session_state_for(iface, session_state)
+        self._management = _management_state_for(iface, management_state)
+        self._connect_lock = (
+            connect_lock
+            or _get_declared_lock(iface, "_connect_lock")
+            or cast(_LockPort, threading.RLock())
+        )
+        self._client_closer = client_closer
         self._iface_override_dispatch_guard = threading.local()
+
+    def _close_client(self, client: BLEClient) -> None:
+        """Close a management client through the injected/fallback capability."""
+        closer = self._client_closer or _get_declared_callable(
+            self._iface, "_client_manager_safe_close_client"
+        )
+        if closer is None:
+            raise AttributeError(
+                "BLE management collaborator is missing client cleanup capability"
+            )
+        closer(client)
 
     def _active_iface_override_dispatches(self) -> set[str]:
         """Return per-thread set of in-flight iface override dispatch names."""
@@ -330,7 +372,7 @@ class BLEManagementCommandHandler:
         ):
             raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
         if address is None:
-            with iface._state_lock:
+            with self._session.lock:
                 current_client = iface.client
             if self._is_client_connected(current_client):
                 current_address = iface._extract_client_address(current_client)
@@ -370,7 +412,7 @@ class BLEManagementCommandHandler:
         self, address: str | None
     ) -> BLEClient | None:
         """Return active/reusable management client when available."""
-        with self._iface._state_lock:
+        with self._session.lock:
             return self.get_management_client_if_available_locked(address)
 
     def get_management_client_if_available_locked(
@@ -398,7 +440,7 @@ class BLEManagementCommandHandler:
         prefer_current_client: bool,
     ) -> BLEClient | None:
         """Return reusable management client matching ``target_address``."""
-        with self._iface._state_lock:
+        with self._session.lock:
             return self.get_management_client_for_target_locked(
                 target_address,
                 prefer_current_client=prefer_current_client,
@@ -461,7 +503,7 @@ class BLEManagementCommandHandler:
     ) -> None:
         """Abort when implicit management target changed while waiting on gate."""
         iface = self._iface
-        with iface._state_lock:
+        with self._session.lock:
             current_binding = self.get_current_implicit_management_binding_locked()
         if current_binding is None:
             raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
@@ -483,22 +525,14 @@ class BLEManagementCommandHandler:
 
     def begin_management_operation_locked(self) -> None:
         """Record a management operation while holding ``_management_lock``."""
-        self._iface._management_inflight += 1
+        self._management._begin_locked()
 
     def finish_management_operation(self) -> None:
         """Mark completion of an in-flight management operation."""
-        iface = self._iface
-        with iface._management_lock:
-            if iface._management_inflight <= 0:
-                logger.warning(
-                    "Management operation accounting underflow detected during finish(); resetting inflight count to zero."
-                )
-                iface._management_inflight = 0
-                iface._management_idle_condition.notify_all()
-                return
-            iface._management_inflight -= 1
-            if iface._management_inflight == 0:
-                iface._management_idle_condition.notify_all()
+        if not self._management.finish():
+            logger.warning(
+                "Management operation accounting underflow detected during finish(); resetting inflight count to zero."
+            )
 
     def start_management_phase(self, address: str | None) -> _ManagementStartContext:
         """Begin management operation and capture startup context."""
@@ -508,7 +542,7 @@ class BLEManagementCommandHandler:
         use_existing_client_without_resolved_address = False
         operation_started = False
         try:
-            with iface._connect_lock, iface._management_lock, iface._state_lock:
+            with self._connect_lock, self._management.lock, self._session.lock:
                 iface._validate_management_preconditions()
                 if address is None:
                     expected_implicit_binding = (
@@ -553,7 +587,7 @@ class BLEManagementCommandHandler:
         use_refreshed_existing_client = True
 
         if address is None:
-            with iface._connect_lock, iface._management_lock, iface._state_lock:
+            with self._connect_lock, self._management.lock, self._session.lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
                     "_get_management_client_if_available_locked",
@@ -576,7 +610,7 @@ class BLEManagementCommandHandler:
                 else:
                     use_refreshed_existing_client = False
         else:
-            with iface._connect_lock, iface._management_lock, iface._state_lock:
+            with self._connect_lock, self._management.lock, self._session.lock:
                 iface._validate_management_preconditions()
                 refreshed_existing_client = self._call_iface_override(
                     "_get_management_client_if_available_locked",
@@ -665,7 +699,7 @@ class BLEManagementCommandHandler:
         target_key: str | None = None
         temporary_client: BLEClient | None = None
 
-        with iface._connect_lock, iface._management_lock, iface._state_lock:
+        with self._connect_lock, self._management.lock, self._session.lock:
             iface._validate_management_preconditions()
             if address is None:
                 self._call_iface_override(
@@ -716,16 +750,13 @@ class BLEManagementCommandHandler:
         command: Callable[[BLEClient], T],
     ) -> T:
         """Execute management command and close temporary client on exit."""
-        iface = self._iface
         try:
             return command(client_to_use)
         finally:
             if temporary_client is not None:
                 try:
-                    iface._client_manager_safe_close_client(temporary_client)
-                except (
-                    Exception
-                ):  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                    self._close_client(temporary_client)
+                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
                     logger.debug(
                         "Failed to close temporary management client.",
                         exc_info=True,
@@ -781,7 +812,7 @@ class BLEManagementCommandHandler:
 
             if target_address is None:
                 if refreshed_existing_client is not None:
-                    with iface._connect_lock, iface._management_lock, iface._state_lock:
+                    with self._connect_lock, self._management.lock, self._session.lock:
                         iface._validate_management_preconditions()
                         if (
                             address is None
@@ -809,14 +840,22 @@ class BLEManagementCommandHandler:
                             gate_target = _synthetic_gate_address_for_client(
                                 refreshed_existing_client
                             )
-                        with iface._management_target_gate(gate_target):
+                        with self._call_iface_override(
+                            "_management_target_gate",
+                            self.management_target_gate,
+                            gate_target,
+                        ):
                             return command(refreshed_existing_client)
                     raise iface.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
                 raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
 
-            with iface._management_target_gate(target_address):
+            with self._call_iface_override(
+                "_management_target_gate",
+                self.management_target_gate,
+                target_address,
+            ):
                 if refreshed_existing_client is not None:
-                    with iface._connect_lock, iface._management_lock, iface._state_lock:
+                    with self._connect_lock, self._management.lock, self._session.lock:
                         iface._validate_management_preconditions()
                         if address is None:
                             self._call_iface_override(
@@ -978,9 +1017,7 @@ class BLEManagementCommandHandler:
                 check=False,
                 timeout=command_timeout,
             )
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(
@@ -1061,8 +1098,12 @@ class BLEManagementCommandHandler:
                 if target_address is None:
                     raise iface.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
             canonical_address = iface._format_bluetoothctl_address(target_address)
-            with iface._management_target_gate(target_address):
-                with iface._connect_lock, iface._management_lock, iface._state_lock:
+            with self._call_iface_override(
+                "_management_target_gate",
+                self.management_target_gate,
+                target_address,
+            ):
+                with self._connect_lock, self._management.lock, self._session.lock:
                     iface._validate_management_preconditions()
                     if address is None:
                         self._call_iface_override(

@@ -29,6 +29,8 @@ from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandHandler,
     BLEManagementCommandsService,
 )
+from meshtastic.interfaces.ble.management_state import BLEManagementState
+from meshtastic.interfaces.ble.session_state import BLESessionState
 from meshtastic.interfaces.ble.reconnection import (
     ReconnectPolicyMissingMethodError,
     ReconnectScheduler,
@@ -735,6 +737,95 @@ def test_management_shim_handler_resolution_preserves_minimal_iface_double(
             BLEManagementCommandsService._has_required_handler_entrypoint(object())
             is False
         )
+    finally:
+        iface.close()
+
+
+def _minimal_management_handler(
+    *, client_closer: Any = None
+) -> BLEManagementCommandHandler:
+    """Build a handler with explicit synchronization state and no iface fallbacks."""
+    iface = SimpleNamespace()
+    return BLEManagementCommandHandler(
+        iface,  # type: ignore[arg-type]
+        ble_client_factory=DummyClient,
+        connected_elsewhere=lambda *_args, **_kwargs: False,
+        session_state=BLESessionState(RLock()),
+        management_state=BLEManagementState(),
+        connect_lock=RLock(),
+        client_closer=client_closer,
+    )
+
+
+def test_management_handler_requires_client_cleanup_capability() -> None:
+    """A handler without any closer should report the missing cleanup capability."""
+    handler = _minimal_management_handler()
+
+    with pytest.raises(AttributeError, match="client cleanup capability"):
+        handler._close_client(DummyClient())
+
+
+def test_management_handler_close_failure_does_not_mask_command_result() -> None:
+    """Best-effort temporary cleanup must not replace a successful command result."""
+
+    def _failing_close(_client: object) -> None:
+        raise RuntimeError("close failed")
+
+    handler = _minimal_management_handler(client_closer=_failing_close)
+
+    result = handler.execute_with_client(
+        client_to_use=DummyClient(),
+        temporary_client=DummyClient(),
+        command=lambda _client: "ok",
+    )
+
+    assert result == "ok"
+
+
+def test_management_handler_revalidates_refreshed_client_under_shared_locks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refreshed client should be revalidated while all coordination locks are held."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    try:
+        handler = BLEManagementCommandHandler(
+            iface,
+            ble_client_factory=DummyClient,
+            connected_elsewhere=lambda *_args, **_kwargs: False,
+            session_state=iface._session_state,
+            management_state=iface._management_state,
+            connect_lock=iface._connect_lock,
+            client_closer=iface._client_manager_safe_close_client,
+        )
+        refreshed_client = DummyClient()
+        start_context = SimpleNamespace(
+            expected_implicit_binding=None,
+            target_address="AA:BB:CC:DD:EE:FF",
+            use_existing_client_without_resolved_address=False,
+        )
+        preconditions = MagicMock()
+        monkeypatch.setattr(iface, "_validate_management_preconditions", preconditions)
+        monkeypatch.setattr(handler, "_start_management_phase", lambda _address: start_context)
+        monkeypatch.setattr(
+            handler,
+            "_resolve_management_target",
+            lambda _address, _context: ("AA:BB:CC:DD:EE:FF", refreshed_client),
+        )
+        monkeypatch.setattr(handler, "_is_client_connected", lambda _client: True)
+        monkeypatch.setattr(
+            iface,
+            "_management_target_gate",
+            lambda _target: contextlib.nullcontext(),
+        )
+        monkeypatch.setattr(handler, "finish_management_operation", lambda: None)
+
+        result = handler.execute_management_command(
+            "AA:BB:CC:DD:EE:FF",
+            lambda client: client,
+        )
+
+        assert result is refreshed_client
+        preconditions.assert_called_once_with()
     finally:
         iface.close()
 
