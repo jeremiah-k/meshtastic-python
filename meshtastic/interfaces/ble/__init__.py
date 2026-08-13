@@ -8,6 +8,14 @@ managers/helpers live in submodules under
 """
 
 # ruff: noqa: RUF022, E402  # __all__ is intentionally grouped; import guard precedes exports
+# pylint: disable=wrong-import-position,ungrouped-imports  # dependency guard must run first
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Static-only declaration keeps the public lazy export discoverable to type
+    # checkers without importing the heavyweight implementation at runtime.
+    from meshtastic.interfaces.ble.interface import BLEInterface
 
 try:
     import bleak as _bleak  # noqa: F401

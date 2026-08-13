@@ -76,7 +76,7 @@ from meshtastic.configure_verify import (  # noqa: F401 - legacy __main__ compat
     _verify_channel_url_against_state,
 )
 from meshtastic.host_port import parseHostAndPort
-from meshtastic.interfaces.ble import BLEInterface
+from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.lockdown import (
     build_lockdown_auth,
     read_lockdown_passphrase_file,

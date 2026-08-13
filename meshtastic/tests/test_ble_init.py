@@ -5,46 +5,26 @@ Tests the import guard and error handling when bleak is not available.
 
 from __future__ import annotations
 
-import builtins
-import importlib
+import subprocess
 import sys
-from types import ModuleType
-from unittest.mock import patch
+import textwrap
 
 import pytest
 
-# pylint: disable=import-outside-toplevel
 
-_BLE_IMPORT_TEST_MODULE_PREFIXES = (
-    "bleak",
-    "meshtastic.ble_interface",
-    "meshtastic.interfaces",
-    "meshtastic.interfaces.ble",
-)
+def _run_isolated_python(source: str) -> None:
+    """Run an import-state assertion in a fresh interpreter process.
 
-
-def _module_matches_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
-    """Return True when a module name is in or under one of the prefixes."""
-    return any(name == prefix or name.startswith(f"{prefix}.") for prefix in prefixes)
-
-
-def _snapshot_modules(prefixes: tuple[str, ...]) -> dict[str, ModuleType]:
-    """Capture module objects for the provided prefixes."""
-    return {
-        name: module
-        for name, module in sys.modules.items()
-        if _module_matches_prefix(name, prefixes)
-    }
-
-
-def _restore_modules(
-    snapshot: dict[str, ModuleType], prefixes: tuple[str, ...]
-) -> None:
-    """Restore captured modules and remove any modules created during the test."""
-    for name in list(sys.modules.keys()):
-        if _module_matches_prefix(name, prefixes):
-            del sys.modules[name]
-    sys.modules.update(snapshot)
+    Parameters
+    ----------
+    source : str
+        Python source executed by a child interpreter.
+    """
+    subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(source)],
+        check=True,
+        text=True,
+    )
 
 
 @pytest.mark.unit
@@ -61,102 +41,79 @@ class TestBLEPackageInit:
         assert hasattr(ble, "SERVICE_UUID")
 
     def test_ble_package_defers_interface_import_until_attribute_access(self) -> None:
-        """Importing the BLE package alone should not import the interface facade."""
-        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
-        try:
-            for name in list(sys.modules):
-                if _module_matches_prefix(name, _BLE_IMPORT_TEST_MODULE_PREFIXES):
-                    del sys.modules[name]
+        """Importing the BLE package alone should not import the implementation module."""
+        _run_isolated_python(
+            """
+            import importlib
+            import sys
 
             ble = importlib.import_module("meshtastic.interfaces.ble")
-
             assert "meshtastic.interfaces.ble.interface" not in sys.modules
             assert "BLEInterface" in dir(ble)
-
             resolved = ble.BLEInterface
-
-            assert resolved is not None
             assert "meshtastic.interfaces.ble.interface" in sys.modules
             assert ble.BLEInterface is resolved
-        finally:
-            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
+            """
+        )
 
     def test_ble_init_raises_import_error_when_bleak_missing(self) -> None:
-        """Test that importing ble package raises helpful ImportError when bleak is missing.
+        """Missing bleak should produce the package's actionable import error."""
+        _run_isolated_python(
+            """
+            import builtins
+            import importlib
 
-        Covers lines 14-17 of meshtastic/interfaces/ble/__init__.py:
-        the ModuleNotFoundError handler that provides a helpful error message.
-        """
-        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
-        original_import = builtins.__import__
-
-        try:
-            if "bleak" in sys.modules:
-                del sys.modules["bleak"]
-            if "meshtastic.interfaces.ble" in sys.modules:
-                del sys.modules["meshtastic.interfaces.ble"]
-            for key in list(sys.modules.keys()):
-                if key.startswith("meshtastic.interfaces.ble"):
-                    del sys.modules[key]
-
-            def raise_bleak_not_found(
-                name: str,
-                _globals: dict[str, object] | None = None,
-                _locals: dict[str, object] | None = None,
-                fromlist: tuple[str, ...] | None = None,
-                level: int = 0,
-            ) -> ModuleType:
+            original_import = builtins.__import__
+            def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
                 if name == "bleak":
                     raise ModuleNotFoundError("No module named 'bleak'", name="bleak")
-                return original_import(name, _globals, _locals, fromlist, level)
+                return original_import(name, globals, locals, fromlist, level)
 
-            with patch("builtins.__import__", side_effect=raise_bleak_not_found):
-                with pytest.raises(ImportError) as exc_info:
-                    importlib.import_module("meshtastic.interfaces.ble")
-
-            assert "bleak" in str(exc_info.value).lower()
-            assert "poetry install" in str(exc_info.value).lower()
-
-        finally:
-            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
+            builtins.__import__ = guarded_import
+            try:
+                importlib.import_module("meshtastic.interfaces.ble")
+            except ImportError as exc:
+                message = str(exc).lower()
+                assert "bleak" in message
+                assert "poetry install" in message
+            else:
+                raise AssertionError("expected BLE package import to fail without bleak")
+            """
+        )
 
     def test_ble_init_reraises_non_bleak_module_not_found(self) -> None:
-        """Test that ModuleNotFoundError for non-bleak modules is re-raised.
+        """Non-bleak dependency failures must not be rewritten as bleak guidance."""
+        _run_isolated_python(
+            """
+            import builtins
+            import importlib
 
-        Covers line 15-16: the check that only catches ModuleNotFoundError
-        when the missing module is specifically 'bleak'.
-        """
-        module_snapshot = _snapshot_modules(_BLE_IMPORT_TEST_MODULE_PREFIXES)
-        original_import = builtins.__import__
-
-        try:
-            if "meshtastic.interfaces.ble" in sys.modules:
-                del sys.modules["meshtastic.interfaces.ble"]
-            for key in list(sys.modules.keys()):
-                if key.startswith("meshtastic.interfaces.ble"):
-                    del sys.modules[key]
-
-            def raise_other_not_found(
-                name: str,
-                _globals: dict[str, object] | None = None,
-                _locals: dict[str, object] | None = None,
-                fromlist: tuple[str, ...] | None = None,
-                level: int = 0,
-            ) -> ModuleType:
+            original_import = builtins.__import__
+            def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
                 if name == "bleak":
                     raise ModuleNotFoundError(
-                        "No module named 'some_other_module'", name="some_other_module"
+                        "No module named 'some_other_module'",
+                        name="some_other_module",
                     )
-                return original_import(name, _globals, _locals, fromlist, level)
+                return original_import(name, globals, locals, fromlist, level)
 
-            with patch("builtins.__import__", side_effect=raise_other_not_found):
-                with pytest.raises(ModuleNotFoundError) as exc_info:
-                    importlib.import_module("meshtastic.interfaces.ble")
+            builtins.__import__ = guarded_import
+            try:
+                importlib.import_module("meshtastic.interfaces.ble")
+            except ModuleNotFoundError as exc:
+                assert exc.name == "some_other_module"
+            else:
+                raise AssertionError("expected non-bleak ModuleNotFoundError")
+            """
+        )
 
-                assert exc_info.value.name == "some_other_module"
+    def test_ble_unknown_lazy_export_raises_attribute_error(self) -> None:
+        """Unknown package attributes should retain normal module semantics."""
+        from meshtastic.interfaces import ble
 
-        finally:
-            _restore_modules(module_snapshot, _BLE_IMPORT_TEST_MODULE_PREFIXES)
+        unknown_name = "NoSuchBLEExport"
+        with pytest.raises(AttributeError, match=unknown_name):
+            getattr(ble, unknown_name)
 
     def test_ble_all_exports(self) -> None:
         """Test that __all__ exports are accessible."""
