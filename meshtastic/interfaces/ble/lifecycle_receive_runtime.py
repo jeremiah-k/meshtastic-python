@@ -8,6 +8,13 @@ from typing import TYPE_CHECKING
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleThreadAccess
+from meshtastic.interfaces.ble.lifecycle_decisions import (
+    _ReceiveStartDecision,
+    _ReceiveStartDisposition,
+    _ReceiveStartSnapshot,
+    _ReceiveThreadProbe,
+    _decide_receive_start,
+)
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.utils import _thread_start_probe
@@ -234,9 +241,143 @@ class BLEReceiveLifecycleCoordinator:
         thread_ident, _ = _thread_start_probe(thread)
         return isinstance(thread_ident, int) and thread_ident == threading.get_ident()
 
-    # Early exits preserve snapshot/revalidation semantics across lock release points.
-    def _check_receive_start_conditions(  # pylint: disable=too-many-return-statements
+    @staticmethod
+    def _probe_receive_thread(existing: ThreadLike | None) -> _ReceiveThreadProbe:
+        """Probe one receive-thread reference without holding lifecycle locks."""
+        if existing is None:
+            return _ReceiveThreadProbe(
+                ident=None,
+                is_alive=False,
+                is_current=False,
+                start_failure_confirmed=False,
+                display_name="<no receive thread>",
+            )
+        ident, is_alive = _thread_start_probe(existing)
+        is_current = existing is threading.current_thread() or (
+            isinstance(ident, int) and ident == threading.get_ident()
+        )
+        start_failure_confirmed = False
+        if not is_alive and not is_current and ident is None:
+            start_failure_confirmed = (
+                BLEReceiveLifecycleCoordinator._is_thread_start_failure_confirmed(
+                    existing
+                )
+            )
+        return _ReceiveThreadProbe(
+            ident=ident,
+            is_alive=is_alive,
+            is_current=is_current,
+            start_failure_confirmed=start_failure_confirmed,
+            display_name=_thread_display_name(existing),
+        )
 
+    def _apply_receive_start_decision(
+        self,
+        *,
+        decision: _ReceiveStartDecision,
+        snapshot: _ReceiveStartSnapshot,
+        probe: _ReceiveThreadProbe,
+        name: str,
+        reset_recovery: bool,
+    ) -> tuple[ThreadLike | None, ThreadLike | None, bool]:
+        """Apply one stable receive-start decision under the session lock.
+
+        Returns
+        -------
+        tuple[ThreadLike | None, ThreadLike | None, bool]
+            Deferred-current thread, inconclusive-probe thread, and whether the
+            caller should return without staging a new thread.
+        """
+        existing = snapshot.existing
+        disposition = decision.disposition
+        deferred: ThreadLike | None = None
+        inconclusive: ThreadLike | None = None
+        should_return = False
+
+        if disposition is _ReceiveStartDisposition.DEFER_CURRENT_TIMEOUT:
+            self._session.receive_start_pending = False
+            self._session.receive_start_pending_since = None
+            logger.debug(
+                "Receive-thread deferral timeout reached (%s): scheduling deferred restart.",
+                name,
+            )
+            deferred = existing
+            should_return = True
+        elif disposition is _ReceiveStartDisposition.DEFER_CURRENT:
+            self._session.receive_start_pending = True
+            if decision.initialize_pending_since:
+                self._session.receive_start_pending_since = time.monotonic()
+            message = (
+                "Deferring replacement receive thread start (%s): current receive "
+                "thread is still unwinding (pending %.3fs)."
+                if not reset_recovery
+                else "Deferring receive thread start (%s): current receive thread "
+                "is still unwinding (pending %.3fs)."
+            )
+            logger.debug(message, name, decision.pending_age)
+            should_return = True
+        elif disposition is _ReceiveStartDisposition.SKIP_RUNNING:
+            self._session.receive_start_pending = False
+            self._session.receive_start_pending_since = None
+            logger.debug(
+                "Skipping receive thread start (%s): %s is already running.",
+                name,
+                probe.display_name,
+            )
+            should_return = True
+        elif disposition is _ReceiveStartDisposition.REPLACE_STALE_PENDING:
+            logger.debug(
+                "Replacing stale pending receive-thread start reference for %s: "
+                "worker is no longer alive.",
+                probe.display_name,
+            )
+            self._session.receive_thread = None
+            self._session.receive_start_pending = False
+            self._session.receive_start_pending_since = None
+        elif disposition is _ReceiveStartDisposition.REPLACE_STALE_PENDING_TIMEOUT:
+            logger.debug(
+                "Receive thread start pending timed out for %s after %.3fs; "
+                "replacing stale pending reference.",
+                probe.display_name,
+                decision.pending_age,
+            )
+            self._session.receive_start_pending = False
+            self._session.receive_start_pending_since = None
+        elif disposition is _ReceiveStartDisposition.WAIT_PENDING:
+            if decision.initialize_pending_since:
+                self._session.receive_start_pending_since = time.monotonic()
+            logger.debug(
+                "Skipping receive thread start (%s): %s start still pending.",
+                name,
+                probe.display_name,
+            )
+            should_return = True
+        elif disposition is _ReceiveStartDisposition.REPLACE_DEAD:
+            logger.debug(
+                "Replacing dead receive thread reference for %s before restart.",
+                probe.display_name,
+            )
+            self._session.receive_thread = None
+            self._session.receive_start_pending = False
+            self._session.receive_start_pending_since = None
+        elif disposition is _ReceiveStartDisposition.WAIT_INCONCLUSIVE:
+            if decision.initialize_pending_since:
+                self._session.receive_start_pending_since = time.monotonic()
+            self._session.receive_start_pending = True
+            logger.debug(
+                "Skipping receive thread start (%s): %s liveness probe inconclusive.",
+                name,
+                probe.display_name,
+            )
+            inconclusive = existing
+            should_return = True
+        elif disposition is _ReceiveStartDisposition.CLEAR_FAILED_START:
+            self._session.receive_start_pending = False
+            self._session.receive_start_pending_since = None
+
+        return deferred, inconclusive, should_return
+
+    def _check_receive_start_conditions(  # pylint: disable=too-many-return-statements
         self,
         *,
         name: str,
@@ -245,33 +386,17 @@ class BLEReceiveLifecycleCoordinator:
     ) -> tuple[ThreadLike | None, int | None]:
         """Validate start preconditions and create a staged receive thread.
 
-        Thread-like liveness/start probes deliberately run outside the shared
-        session lock.  The state snapshot is revalidated before any mutation so
-        arbitrary collaborator code cannot extend the critical section without
-        allowing a stale probe result to overwrite newer lifecycle state.
-
-        Parameters
-        ----------
-        name : str
-            Thread name used for diagnostics and deferred restart helpers.
-        reset_recovery : bool
-            Whether recovery attempts should reset after a successful start.
-        create_runtime_thread : Callable[..., ThreadLike]
-            Factory used to create the staged receive thread.
-
-        Returns
-        -------
-        tuple[ThreadLike | None, int | None]
-            Staged thread and the pre-start recovery-attempt snapshot, or
-            ``(None, None)`` when no thread should start.
+        Thread probes run outside the shared session lock. A stable snapshot is
+        revalidated before the pure decision is applied so collaborator code can
+        never extend the critical section or overwrite newer lifecycle state.
         """
         iface = self._iface
         expected_existing: ThreadLike | None = None
         recovery_attempts_before_start: int | None = None
         deferred_current_thread: ThreadLike | None = None
-        deferred_current_thread_waiting = False
         schedule_deferred_restart_for: ThreadLike | None = None
         inconclusive_probe_thread: ThreadLike | None = None
+        should_return_after_decision = False
 
         for _snapshot_attempt in range(RECEIVE_START_SNAPSHOT_MAX_ATTEMPTS):
             with self._session.lock:
@@ -281,164 +406,52 @@ class BLEReceiveLifecycleCoordinator:
                         name,
                     )
                     return None, None
-                existing = self._session.receive_thread
-                existing_start_pending = self._session.receive_start_pending
-                existing_pending_since = self._session.receive_start_pending_since
-
-            existing_ident: int | None = None
-            existing_is_alive = False
-            existing_is_current = False
-            start_failure_confirmed = False
-            existing_display_name = "<no receive thread>"
-            if existing is not None:
-                existing_ident, existing_is_alive = _thread_start_probe(existing)
-                existing_display_name = _thread_display_name(existing)
-                existing_is_current = existing is threading.current_thread() or (
-                    isinstance(existing_ident, int)
-                    and existing_ident == threading.get_ident()
+                snapshot = _ReceiveStartSnapshot(
+                    existing=self._session.receive_thread,
+                    start_pending=self._session.receive_start_pending,
+                    pending_since=self._session.receive_start_pending_since,
                 )
-                if (
-                    not existing_is_alive
-                    and not existing_is_current
-                    and existing_ident is None
-                ):
-                    start_failure_confirmed = self._is_thread_start_failure_confirmed(
-                        existing
-                    )
+
+            probe = self._probe_receive_thread(snapshot.existing)
+            decision = _decide_receive_start(
+                snapshot,
+                probe,
+                now=time.monotonic(),
+                pending_timeout=RECEIVE_START_PENDING_TIMEOUT_SECONDS,
+            )
 
             with self._session.lock:
                 if self._session.closed or not self._session.want_receive:
-                    # The lifecycle changed while the lock was released for
-                    # thread probes. Re-enter through the snapshot check so the
-                    # stop-path logging and return remain centralized above.
                     continue
                 if (
-                    self._session.receive_thread is not existing
-                    or self._session.receive_start_pending != existing_start_pending
-                    or self._session.receive_start_pending_since
-                    != existing_pending_since
+                    self._session.receive_thread is not snapshot.existing
+                    or self._session.receive_start_pending != snapshot.start_pending
+                    or self._session.receive_start_pending_since != snapshot.pending_since
                 ):
-                    # State changed while thread-like probes ran without the
-                    # lock. Re-snapshot rather than applying stale observations.
                     continue
 
-                if existing_is_current:
-                    now = time.monotonic()
-                    pending_since = existing_pending_since
-                    if not existing_start_pending or not isinstance(
-                        pending_since, (float, int)
-                    ):
-                        pending_age = 0.0
-                    else:
-                        pending_age = now - float(pending_since)
-                        if pending_age >= RECEIVE_START_PENDING_TIMEOUT_SECONDS:
-                            self._session.receive_start_pending = False
-                            self._session.receive_start_pending_since = None
-                            deferred_current_thread = existing
-                            logger.debug(
-                                "Receive-thread deferral timeout reached (%s): scheduling deferred restart.",
-                                name,
-                            )
-                    if deferred_current_thread is None:
-                        deferred_current_thread_waiting = True
-                        self._session.receive_start_pending = True
-                        if not isinstance(pending_since, (float, int)):
-                            self._session.receive_start_pending_since = now
-                            schedule_deferred_restart_for = existing
-                        elif not existing_start_pending:
-                            schedule_deferred_restart_for = existing
-                        if not reset_recovery:
-                            logger.debug(
-                                "Deferring replacement receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
-                                name,
-                                pending_age,
-                            )
-                        else:
-                            logger.debug(
-                                "Deferring receive thread start (%s): current receive thread is still unwinding (pending %.3fs).",
-                                name,
-                                pending_age,
-                            )
-                    else:
-                        logger.debug(
-                            "Deferring receive thread start (%s) and queueing restart after current thread unwind.",
-                            name,
-                        )
-
-                if existing is not None and not existing_is_current:
-                    if existing_is_alive:
-                        self._session.receive_start_pending = False
-                        self._session.receive_start_pending_since = None
-                        logger.debug(
-                            "Skipping receive thread start (%s): %s is already running.",
-                            name,
-                            existing_display_name,
-                        )
-                        return None, None
-                    if existing_start_pending:
-                        if existing_ident is not None or start_failure_confirmed:
-                            logger.debug(
-                                "Replacing stale pending receive-thread start reference for %s: worker is no longer alive.",
-                                existing_display_name,
-                            )
-                            self._session.receive_thread = None
-                            existing = None
-                            self._session.receive_start_pending = False
-                            self._session.receive_start_pending_since = None
-                        else:
-                            pending_since = existing_pending_since
-                            now = time.monotonic()
-                            if not isinstance(pending_since, (float, int)):
-                                self._session.receive_start_pending_since = now
-                                pending_age = 0.0
-                            else:
-                                pending_age = now - float(pending_since)
-                            if pending_age < RECEIVE_START_PENDING_TIMEOUT_SECONDS:
-                                logger.debug(
-                                    "Skipping receive thread start (%s): %s start still pending.",
-                                    name,
-                                    existing_display_name,
-                                )
-                                return None, None
-                            logger.debug(
-                                "Receive thread start pending timed out for %s after %.3fs; replacing stale pending reference.",
-                                existing_display_name,
-                                pending_age,
-                            )
-                            self._session.receive_start_pending = False
-                            self._session.receive_start_pending_since = None
-                    else:
-                        if existing_ident is not None:
-                            logger.debug(
-                                "Replacing dead receive thread reference for %s before restart.",
-                                existing_display_name,
-                            )
-                            self._session.receive_thread = None
-                            existing = None
-                            self._session.receive_start_pending = False
-                            self._session.receive_start_pending_since = None
-                        elif not start_failure_confirmed:
-                            pending_since = existing_pending_since
-                            if not isinstance(pending_since, (float, int)):
-                                self._session.receive_start_pending_since = (
-                                    time.monotonic()
-                                )
-                            self._session.receive_start_pending = True
-                            inconclusive_probe_thread = existing
-                            logger.debug(
-                                "Skipping receive thread start (%s): %s liveness probe inconclusive.",
-                                name,
-                                existing_display_name,
-                            )
-                        else:
-                            self._session.receive_start_pending = False
-                            self._session.receive_start_pending_since = None
-
+                deferred, inconclusive, should_return = (
+                    self._apply_receive_start_decision(
+                        decision=decision,
+                        snapshot=snapshot,
+                        probe=probe,
+                        name=name,
+                        reset_recovery=reset_recovery,
+                    )
+                )
+                if deferred is not None:
+                    deferred_current_thread = deferred
+                if inconclusive is not None:
+                    inconclusive_probe_thread = inconclusive
+                should_return_after_decision = should_return
                 if (
-                    deferred_current_thread is None
-                    and inconclusive_probe_thread is None
+                    decision.disposition is _ReceiveStartDisposition.DEFER_CURRENT
+                    and decision.schedule_deferred_restart
                 ):
-                    expected_existing = existing
+                    schedule_deferred_restart_for = snapshot.existing
+
+                if not should_return:
+                    expected_existing = self._session.receive_thread
                     recovery_attempts_before_start = (
                         self._session.receive_recovery_attempts
                         if reset_recovery
@@ -462,20 +475,14 @@ class BLEReceiveLifecycleCoordinator:
                 enforce_pending_timeout=True,
             )
             return None, None
-        if deferred_current_thread_waiting:
-            if schedule_deferred_restart_for is not None:
+        if should_return_after_decision:
+            deferred_target = schedule_deferred_restart_for or deferred_current_thread
+            if deferred_target is not None:
                 self._schedule_deferred_receive_restart(
-                    existing_thread=schedule_deferred_restart_for,
+                    existing_thread=deferred_target,
                     name=name,
                     reset_recovery=reset_recovery,
                 )
-            return None, None
-        if deferred_current_thread is not None:
-            self._schedule_deferred_receive_restart(
-                existing_thread=deferred_current_thread,
-                name=name,
-                reset_recovery=reset_recovery,
-            )
             return None, None
 
         thread = create_runtime_thread(

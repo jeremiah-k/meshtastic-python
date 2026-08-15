@@ -17,6 +17,11 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.gating import _addr_key
+from meshtastic.interfaces.ble.lifecycle_decisions import (
+    _DisconnectDisposition,
+    _DisconnectOwnershipSnapshot,
+    _decide_disconnect_ownership,
+)
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     RECONNECT_SCHEDULER_MISSING_MSG,
     _DisconnectPlan,
@@ -201,7 +206,7 @@ class BLEDisconnectLifecycleCoordinator:
         )
 
     # Early exits preserve ownership checks before any disconnect side effects occur.
-    def _resolve_disconnect_target(  # pylint: disable=too-many-return-statements
+    def _resolve_disconnect_target(
         self,
         source: str,
         client: "BLEClient | None",
@@ -212,7 +217,7 @@ class BLEDisconnectLifecycleCoordinator:
         transition_to_disconnected: Callable[[], bool] | None = None,
         reset_to_disconnected: Callable[[], bool] | None = None,
     ) -> _DisconnectPlan:
-        """Resolve disconnect ownership, mutate state, and build side-effect plan."""
+        """Resolve disconnect ownership, mutate accepted state, and build the side-effect plan."""
         iface = self._iface
         get_current_state = current_state_getter or self._state_access.current_state
         get_is_closing = is_closing_getter or self._state_access.is_closing
@@ -222,8 +227,6 @@ class BLEDisconnectLifecycleCoordinator:
         do_reset_to_disconnected = reset_to_disconnected or (
             self._state_access.reset_to_disconnected
         )
-        target_client = client
-        should_reconnect = False
 
         state_manager = _get_declared_member(iface, "_state_manager")
         canonical_state_manager: BLEStateManager | None = None
@@ -235,20 +238,12 @@ class BLEDisconnectLifecycleCoordinator:
         ):
             canonical_state_manager = state_manager
 
-        # Compatibility closing probes may execute collaborator code. Shutdown
-        # claims ``session.closed`` under this same lock, so combining the
-        # lock-free compatibility snapshot with the locked terminal flag avoids
-        # holding shared lifecycle state around that probe.
         compatibility_is_closing = get_is_closing()
         compatibility_current_state = (
             None if canonical_state_manager is not None else get_current_state()
         )
+        should_reconnect = False
         with self._session.lock:
-            # Connection state and session ownership share this RLock on the real
-            # interface. Keep the state transition atomic with clearing the owned
-            # client/session fields. Compatibility probes/callbacks are excluded
-            # from this critical section; the exact BLEStateManager uses its
-            # lock-owned primitive instead.
             current_state = cast(
                 ConnectionState,
                 (
@@ -258,63 +253,44 @@ class BLEDisconnectLifecycleCoordinator:
                 ),
             )
             current_client = iface.client
-            is_closing = compatibility_is_closing or self._session.closed
             was_publish_pending = self._session.client_publish_pending
             was_replacement_pending = self._session.client_replacement_pending
-
-            if current_state == ConnectionState.CONNECTING:
-                disconnect_from_owned_client = current_client is not None and (
-                    target_client is current_client
-                    or (
-                        target_client is None
-                        and bleak_client is not None
-                        and getattr(current_client, "bleak_client", None)
-                        is bleak_client
-                    )
+            decision = _decide_disconnect_ownership(
+                _DisconnectOwnershipSnapshot(
+                    current_state=current_state,
+                    current_client=current_client,
+                    target_client=client,
+                    bleak_client=bleak_client,
+                    is_closing=compatibility_is_closing or self._session.closed,
+                    publish_pending=was_publish_pending,
+                    replacement_pending=was_replacement_pending,
+                    disconnect_notified=self._session.disconnect_notified,
                 )
-                if not disconnect_from_owned_client:
+            )
+
+            if decision.disposition is not _DisconnectDisposition.ACCEPT:
+                if decision.disposition is _DisconnectDisposition.IGNORE_CONNECTING:
                     logger.debug(
                         "Ignoring disconnect from %s while a connection is in progress.",
                         source,
                     )
                     return _DisconnectPlan(early_return=True)
-            if is_closing:
-                logger.debug("Ignoring disconnect from %s during shutdown.", source)
-                return _DisconnectPlan(early_return=False)
-
-            if target_client is None and bleak_client is not None:
-                if (
-                    current_client is not None
-                    and getattr(current_client, "bleak_client", None) is bleak_client
-                ):
-                    target_client = current_client
-                elif current_client is not None:
-                    logger.debug("Ignoring stale disconnect from %s.", source)
+                if decision.disposition is _DisconnectDisposition.IGNORE_SHUTDOWN:
+                    logger.debug("Ignoring disconnect from %s during shutdown.", source)
+                    return _DisconnectPlan(early_return=False)
+                if decision.disposition is _DisconnectDisposition.IGNORE_UNOWNED:
+                    logger.debug(
+                        "Ignoring stale disconnect from %s: no active client is owned.",
+                        source,
+                    )
                     return _DisconnectPlan(early_return=True)
-
-            if (
-                current_client is None
-                and not was_publish_pending
-                and not was_replacement_pending
-            ):
-                logger.debug(
-                    "Ignoring stale disconnect from %s: no active client is owned.",
-                    source,
-                )
-                return _DisconnectPlan(early_return=True)
-
-            if (
-                target_client is not None
-                and current_client is not None
-                and target_client is not current_client
-            ):
+                if decision.disposition is _DisconnectDisposition.IGNORE_DUPLICATE:
+                    logger.debug("Ignoring duplicate disconnect from %s.", source)
+                    return _DisconnectPlan(early_return=True)
                 logger.debug("Ignoring stale disconnect from %s.", source)
                 return _DisconnectPlan(early_return=True)
 
-            if self._session.disconnect_notified:
-                logger.debug("Ignoring duplicate disconnect from %s.", source)
-                return _DisconnectPlan(early_return=True)
-
+            target_client = decision.target_client
             previous_client = current_client
             client_at_start = current_client
             alias_key = self._session.connection_alias_key
