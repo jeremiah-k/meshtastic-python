@@ -68,8 +68,12 @@ def _decide_receive_start(
     """Classify the next receive-start action without mutating shared state."""
     existing = snapshot.existing
     pending_since = snapshot.pending_since
-    has_pending_since = isinstance(pending_since, (float, int))
-    pending_age = now - float(pending_since) if has_pending_since else 0.0
+    if pending_since is None:
+        has_pending_since = False
+        pending_age = 0.0
+    else:
+        has_pending_since = True
+        pending_age = now - pending_since
 
     if existing is None:
         decision = _ReceiveStartDecision(_ReceiveStartDisposition.PROCEED)
