@@ -1120,6 +1120,88 @@ def test_thread_event_dispatcher_resolution_paths(
         original_close()
 
 
+def test_connect_notification_snapshot_compatibility_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Notification snapshot hooks should remain best effort for compatibility doubles."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+
+    def _raise_dispatcher_lookup() -> object:
+        raise RuntimeError("dispatcher lookup failed")
+
+    try:
+        with monkeypatch.context() as patcher:
+            patcher.setattr(iface, "_get_notification_dispatcher", _raise_dispatcher_lookup)
+            assert iface._snapshot_connect_notifications() == (None, None)
+
+        missing_snapshotter = SimpleNamespace()
+        with monkeypatch.context() as patcher:
+            patcher.setattr(
+                iface, "_get_notification_dispatcher", lambda: missing_snapshotter
+            )
+            assert iface._snapshot_connect_notifications() == (
+                missing_snapshotter,
+                None,
+            )
+
+        def _raise_snapshot_error() -> object:
+            raise RuntimeError("snapshot failed")
+
+        raising_snapshotter = SimpleNamespace(
+            _snapshot_session_state=_raise_snapshot_error
+        )
+        with (
+            monkeypatch.context() as patcher,
+            caplog.at_level(logging.DEBUG),
+        ):
+            patcher.setattr(
+                iface, "_get_notification_dispatcher", lambda: raising_snapshotter
+            )
+            assert iface._snapshot_connect_notifications() == (
+                raising_snapshotter,
+                None,
+            )
+        assert "Unable to snapshot BLE notification state before connect." in caplog.text
+
+        invalid_snapshotter = SimpleNamespace(_snapshot_session_state=lambda: object())
+        with monkeypatch.context() as patcher:
+            patcher.setattr(
+                iface, "_get_notification_dispatcher", lambda: invalid_snapshotter
+            )
+            assert iface._snapshot_connect_notifications() == (
+                invalid_snapshotter,
+                None,
+            )
+    finally:
+        iface.close()
+
+
+def test_restore_connect_notifications_is_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Rollback should tolerate missing or failing notification restore hooks."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    snapshot = iface._notification_dispatcher._snapshot_session_state()
+
+    try:
+        BLEInterface._restore_connect_notifications(None, snapshot)
+        BLEInterface._restore_connect_notifications(SimpleNamespace(), snapshot)
+
+        def _raise_restore_error(_snapshot: object) -> None:
+            raise RuntimeError("restore failed")
+
+        failing_dispatcher = SimpleNamespace(
+            _restore_session_state=_raise_restore_error
+        )
+        with caplog.at_level(logging.DEBUG):
+            BLEInterface._restore_connect_notifications(failing_dispatcher, snapshot)
+        assert "Unable to restore BLE notification state after connect rollback." in caplog.text
+    finally:
+        iface.close()
+
+
 def test_establish_and_update_client_restores_notification_registration_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1136,6 +1218,13 @@ def test_establish_and_update_client_restores_notification_registration_snapshot
     prior_counter = manager._subscription_counter
     dispatcher._registered_notification_session_epoch = 17
     dispatcher._started_notify_characteristics = {"prior-characteristic"}
+    with iface._state_lock:
+        iface._client_publish_pending = True
+        iface._client_replacement_pending = True
+        iface._connection_session_epoch = 41
+        prior_publish_pending = iface._client_publish_pending
+        prior_replacement_pending = iface._client_replacement_pending
+        prior_session_epoch = iface._connection_session_epoch
 
     def _fail_after_registration(*_args: object, **_kwargs: object) -> BLEClient:
         manager._subscribe("new-characteristic", new_callback)
@@ -1162,5 +1251,8 @@ def test_establish_and_update_client_restores_notification_registration_snapshot
         assert manager._subscription_counter == prior_counter
         assert dispatcher._registered_notification_session_epoch == 17
         assert dispatcher._started_notify_characteristics == {"prior-characteristic"}
+        assert iface._client_publish_pending is prior_publish_pending
+        assert iface._client_replacement_pending is prior_replacement_pending
+        assert iface._connection_session_epoch == prior_session_epoch
     finally:
         iface.close()

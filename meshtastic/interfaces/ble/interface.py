@@ -2250,7 +2250,21 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
     def _snapshot_connect_notifications(
         self,
     ) -> tuple[object | None, _NotificationSessionSnapshot | None]:
-        """Capture notification registration state for connect rollback."""
+        """Capture notification registration state for connect rollback.
+
+        Returns
+        -------
+        tuple[object | None, _NotificationSessionSnapshot | None]
+            Dispatcher and snapshot when the concrete dispatcher supports
+            transactional snapshots; otherwise the available dispatcher with
+            ``None`` snapshot state.
+
+        Notes
+        -----
+        The connect transaction calls this helper while ``_connect_lock`` is
+        held. Snapshot support remains feature-detected so compatibility test
+        doubles and older collaborators can continue without this private hook.
+        """
         try:
             dispatcher = self._get_notification_dispatcher()
         except Exception:  # noqa: BLE001 - rollback snapshot remains best effort
@@ -2275,7 +2289,25 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
         dispatcher: object | None,
         snapshot: _NotificationSessionSnapshot | None,
     ) -> None:
-        """Best-effort restoration of notification registration state."""
+        """Best-effort restoration of notification registration state.
+
+        Parameters
+        ----------
+        dispatcher : object | None
+            Dispatcher captured before the connection attempt.
+        snapshot : _NotificationSessionSnapshot | None
+            Registration snapshot captured from ``dispatcher``.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        The connect transaction calls this helper while ``_connect_lock`` is
+        held. Missing compatibility hooks and rollback failures are intentionally
+        treated as best effort so they do not mask the original connection error.
+        """
         if dispatcher is None or snapshot is None:
             return
         restorer = getattr(dispatcher, "_restore_session_state", None)
@@ -2290,7 +2322,19 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             )
 
     def _begin_connect_transaction(self) -> _BLEConnectStateSnapshot:
-        """Capture interface state and claim a provisional connection session."""
+        """Capture interface state and claim a provisional connection session.
+
+        Returns
+        -------
+        _BLEConnectStateSnapshot
+            Interface-owned state required to roll back the provisional session.
+
+        Notes
+        -----
+        The caller must hold ``_connect_lock`` for the full connection
+        transaction. Individual interface fields are synchronized by
+        ``_state_lock`` inside this helper.
+        """
         with self._state_lock:
             snapshot = _BLEConnectStateSnapshot(
                 client=self.client,
@@ -2321,7 +2365,22 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
     def _restore_connect_provisional_state(
         self, snapshot: _BLEConnectStateSnapshot
     ) -> None:
-        """Restore provisional flags changed before connection establishment."""
+        """Restore provisional flags changed before connection establishment.
+
+        Parameters
+        ----------
+        snapshot : _BLEConnectStateSnapshot
+            State captured before provisional connection ownership was claimed.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        The caller must hold ``_connect_lock``. The individual fields are
+        restored atomically under ``_state_lock``.
+        """
         with self._state_lock:
             self._disconnect_notified = snapshot.disconnect_notified
             self._client_publish_pending = snapshot.client_publish_pending
@@ -2334,7 +2393,27 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
         normalized_request: str | None,
         snapshot: _BLEConnectStateSnapshot,
     ) -> _BLEClientAdoption:
-        """Adopt a new client under the state lock or reject it during shutdown."""
+        """Adopt a new client under the state lock or reject it during shutdown.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Newly established client candidate.
+        normalized_request : str | None
+            Normalized connection request used to update reconnect identity.
+        snapshot : _BLEConnectStateSnapshot
+            Pre-transaction state used when shutdown invalidates the result.
+
+        Returns
+        -------
+        _BLEClientAdoption
+            Previous client, resolved device address, and shutdown-abort status.
+
+        Notes
+        -----
+        The caller must hold ``_connect_lock``. Interface state is mutated only
+        while ``_state_lock`` is held.
+        """
         device_address = getattr(
             getattr(client, "bleak_client", None), "address", None
         ) or getattr(client, "address", None)
@@ -2370,7 +2449,25 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
     def _restore_connect_after_handoff_failure(
         self, snapshot: _BLEConnectStateSnapshot, client: BLEClient
     ) -> None:
-        """Restore the pre-connect client state after failed reference handoff."""
+        """Restore the pre-connect client state after failed reference handoff.
+
+        Parameters
+        ----------
+        snapshot : _BLEConnectStateSnapshot
+            State captured before the connection transaction began.
+        client : BLEClient
+            Newly adopted client whose handoff failed.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        The caller must hold ``_connect_lock``. If another thread has already
+        replaced ``self.client``, the helper returns without modifying that newer
+        ownership state. Otherwise restoration is atomic under ``_state_lock``.
+        """
         with self._state_lock:
             if self.client is not client:
                 return
