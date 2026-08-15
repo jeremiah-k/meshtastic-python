@@ -15,6 +15,7 @@ from google.protobuf.message import DecodeError
 from meshtastic._interface_errors import MeshInterfaceError as _MeshInterfaceError
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
+from meshtastic.transport_retry import _linear_retry_delay
 from meshtastic.util import is_windows11, stripnl
 
 START1 = 0x94
@@ -602,10 +603,10 @@ class StreamInterface(MeshInterface):
                                     transient_retries,
                                 )
                                 time.sleep(
-                                    min(
-                                        TRANSIENT_READ_BACKOFF_SECONDS
-                                        * transient_retries,
-                                        MAX_TRANSIENT_READ_BACKOFF_SECONDS,
+                                    _linear_retry_delay(
+                                        retry_number=transient_retries,
+                                        base_delay=TRANSIENT_READ_BACKOFF_SECONDS,
+                                        max_delay=MAX_TRANSIENT_READ_BACKOFF_SECONDS,
                                     )
                                 )
                                 continue
@@ -618,7 +619,12 @@ class StreamInterface(MeshInterface):
                             transient_retries,
                             TRANSIENT_READ_MAX_RETRIES,
                         )
-                        time.sleep(TRANSIENT_READ_BACKOFF_SECONDS * transient_retries)
+                        time.sleep(
+                            _linear_retry_delay(
+                                retry_number=transient_retries,
+                                base_delay=TRANSIENT_READ_BACKOFF_SECONDS,
+                            )
+                        )
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
                 if b:
