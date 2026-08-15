@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, cast
 
 import pytest
+from bleak.exc import BleakError
 
 # Import meshtastic modules for use in tests
 from meshtastic.interfaces.ble import (
@@ -1117,3 +1118,49 @@ def test_thread_event_dispatcher_resolution_paths(
     finally:
         iface.thread_coordinator = original_thread_coordinator
         original_close()
+
+
+def test_establish_and_update_client_restores_notification_registration_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failed connection setup should restore all registration-owned notification state."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    dispatcher = iface._notification_dispatcher
+    manager = dispatcher._notification_manager
+    def prior_callback(*_args: object) -> None:
+        return None
+
+    def new_callback(*_args: object) -> None:
+        return None
+    prior_token = manager._subscribe("prior-characteristic", prior_callback)
+    prior_counter = manager._subscription_counter
+    dispatcher._registered_notification_session_epoch = 17
+    dispatcher._started_notify_characteristics = {"prior-characteristic"}
+
+    def _fail_after_registration(*_args: object, **_kwargs: object) -> BLEClient:
+        manager._subscribe("new-characteristic", new_callback)
+        dispatcher._registered_notification_session_epoch = 99
+        dispatcher._started_notify_characteristics.add("new-characteristic")
+        raise BleakError("registration failed")
+
+    monkeypatch.setattr(iface, "_establish_connection", _fail_after_registration)
+
+    try:
+        with iface._connect_lock, pytest.raises(BleakError, match="registration failed"):
+            iface._establish_and_update_client(
+                "AA:BB:CC:DD:EE:FF",
+                "aabbccddeeff",
+                "aabbccddeeff",
+            )
+
+        assert manager._active_subscriptions == {
+            prior_token: ("prior-characteristic", prior_callback)
+        }
+        assert manager._characteristic_to_callback == {
+            "prior-characteristic": prior_callback
+        }
+        assert manager._subscription_counter == prior_counter
+        assert dispatcher._registered_notification_session_epoch == 17
+        assert dispatcher._started_notify_characteristics == {"prior-characteristic"}
+    finally:
+        iface.close()
