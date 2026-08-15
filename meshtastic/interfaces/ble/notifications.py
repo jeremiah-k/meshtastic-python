@@ -748,13 +748,13 @@ class BLENotificationDispatcher:
         uuid: str,
         *,
         cache_attr: str,
-        factory: Callable[[], Callable[[Any, Any], None]],
+        handler: Callable[[Any, Any], None],
         track: bool = True,
     ) -> Callable[[Any, Any], None]:
-        """Return a cached safe handler and optionally track it in the manager."""
+        """Return the cached safe handler or cache the supplied candidate."""
         cached_handler = getattr(self, cache_attr, None)
         if not callable(cached_handler):
-            cached_handler = factory()
+            cached_handler = handler
             setattr(self, cache_attr, cached_handler)
         if track:
             active_handler = self._notification_manager._get_callback(uuid)
@@ -831,7 +831,7 @@ class BLENotificationDispatcher:
             ),
             (LOGRADIO_UUID, "_safe_log_handler", _safe_log_handler, "log"),
         )
-        for uuid, cache_attr, factory, label in optional_candidates:
+        for uuid, cache_attr, candidate_handler, label in optional_candidates:
             try:
                 supported = client.has_characteristic(uuid)
             except optional_errors as err:
@@ -845,7 +845,7 @@ class BLENotificationDispatcher:
             if not supported or uuid in self._started_notify_characteristics:
                 continue
             handler = self._get_or_create_registration_handler(
-                uuid, cache_attr=cache_attr, factory=lambda handler=factory: handler
+                uuid, cache_attr=cache_attr, handler=candidate_handler
             )
             optional_starts.append(
                 _OptionalNotificationStart(
@@ -856,7 +856,7 @@ class BLENotificationDispatcher:
         ingress_handler = self._get_or_create_registration_handler(
             FROMNUM_UUID,
             cache_attr="_safe_from_num_handler",
-            factory=lambda: _safe_from_num_handler,
+            handler=_safe_from_num_handler,
             track=False,
         )
         return _NotificationRegistrationPlan(
