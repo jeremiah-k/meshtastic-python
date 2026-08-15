@@ -4,15 +4,14 @@
 # pylint: disable=too-many-lines
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, NoReturn, cast
 
 from bleak import BleakClient as BleakRootClient
 
 from meshtastic.interfaces.ble.compat_adapter import (
-    _load_runtime_module,
     _get_declared_callable,
+    _load_runtime_module,
     _resolve_declared_member,
 )
 from meshtastic.interfaces.ble.coordination import ThreadLike
@@ -21,6 +20,13 @@ from meshtastic.interfaces.ble.failure_policy import (
     _log_ble_failure,
 )
 from meshtastic.interfaces.ble.gating import _is_currently_connected_elsewhere
+from meshtastic.interfaces.ble.lifecycle_compat_wiring import (
+    _DisconnectCallbackBundle,
+    _LifecycleErrorCallbacks,
+    _LifecycleOwnershipCallbacks,
+    _LifecycleStateCallbacks,
+    _LifecycleThreadCallbacks,
+)
 from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
     BLEDisconnectLifecycleCoordinator,
 )
@@ -65,21 +71,78 @@ def _callable_accepts_timeout_kwarg(func: Callable[..., object]) -> bool:
     )
 
 
-@dataclass(frozen=True)
-class _DisconnectCallbackBundle:
-    """Typed callback bundle for disconnect coordinator compatibility dispatch."""
-
-    is_closing_getter: Callable[[], bool]
-    current_state_getter: Callable[[], ConnectionState]
-    transition_to_disconnected: Callable[[], bool]
-    reset_to_disconnected: Callable[[], bool]
-    close_previous_client_async: Callable[["BLEClient | None"], None]
-    clear_events: Callable[..., None]
-
-
 class BLELifecycleService:
     # COMPAT_STABLE_SHIM: compatibility lifecycle shim surface retained for historical entrypoints.
     """Service helpers for BLEInterface lifecycle responsibilities."""
+
+    @staticmethod
+    def _state_callbacks(iface: "BLEInterface") -> _LifecycleStateCallbacks:
+        """Build state callbacks through compatibility-stable service entrypoints."""
+        return _LifecycleStateCallbacks(
+            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
+                iface
+            ),
+            is_connected_getter=lambda: BLELifecycleService._state_manager_is_connected(
+                iface
+            ),
+            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
+                iface
+            ),
+            transition_to_state=lambda state: BLELifecycleService._state_manager_transition_to(
+                iface, state
+            ),
+            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(
+                iface
+            ),
+        )
+
+    @staticmethod
+    def _thread_callbacks(iface: "BLEInterface") -> _LifecycleThreadCallbacks:
+        """Build thread callbacks through compatibility-stable service entrypoints."""
+        return _LifecycleThreadCallbacks(
+            create_thread=lambda **kwargs: BLELifecycleService._thread_create_thread(
+                iface, **kwargs
+            ),
+            start_thread=lambda thread: BLELifecycleService._thread_start_thread(
+                iface, thread
+            ),
+            join_thread=lambda thread, timeout: BLELifecycleService._thread_join_thread(
+                iface, thread, timeout=timeout
+            ),
+            clear_events=lambda *events: BLELifecycleService._thread_clear_events(
+                iface, *events
+            ),
+            wake_waiting_threads=lambda *events: BLELifecycleService._thread_wake_waiting_threads(
+                iface, *events
+            ),
+        )
+
+    @staticmethod
+    def _error_callbacks(iface: "BLEInterface") -> _LifecycleErrorCallbacks:
+        """Build error callbacks through compatibility-stable service entrypoints."""
+        return _LifecycleErrorCallbacks(
+            safe_cleanup=lambda cleanup, operation_name: BLELifecycleService._error_handler_safe_cleanup(
+                iface, cleanup, operation_name
+            ),
+            safe_execute=lambda func, error_msg: BLELifecycleService._error_handler_safe_execute(
+                iface, func, error_msg=error_msg
+            ),
+        )
+
+    @staticmethod
+    def _ownership_callbacks(iface: "BLEInterface") -> _LifecycleOwnershipCallbacks:
+        """Build ownership callbacks through compatibility-stable entrypoints."""
+        return _LifecycleOwnershipCallbacks(
+            get_connected_client_status=lambda client: BLELifecycleService._get_connected_client_status(
+                iface, client
+            ),
+            get_connected_client_status_locked=lambda client: BLELifecycleService._get_connected_client_status_locked(
+                iface, client
+            ),
+            verify_ownership_snapshot=lambda client, device_key, alias_key: BLELifecycleService._verify_ownership_snapshot(
+                iface, client, device_key, alias_key
+            ),
+        )
 
     @staticmethod
     def _is_receive_lifecycle_coordinator_like(candidate: object) -> bool:
@@ -513,17 +576,12 @@ class BLELifecycleService:
                 parameter.kind is parameter.VAR_KEYWORD for parameter in params.values()
             )
         if supports_injected_hooks:
+            thread_callbacks = BLELifecycleService._thread_callbacks(iface)
             start_receive_thread(
                 name=name,
                 reset_recovery=reset_recovery,
-                create_thread=lambda **kwargs: BLELifecycleService._thread_create_thread(
-                    iface,
-                    **kwargs,
-                ),
-                start_thread=lambda thread: BLELifecycleService._thread_start_thread(
-                    iface,
-                    thread,
-                ),
+                create_thread=thread_callbacks.create_thread,
+                start_thread=thread_callbacks.start_thread,
             )
             return
         start_receive_thread(
@@ -703,27 +761,19 @@ class BLELifecycleService:
             ``transition_to_disconnected``, ``reset_to_disconnected``,
             ``close_previous_client_async``, and ``clear_events``.
         """
+        state_callbacks = BLELifecycleService._state_callbacks(iface)
+        thread_callbacks = BLELifecycleService._thread_callbacks(iface)
         return _DisconnectCallbackBundle(
             is_closing_getter=lambda: BLEShutdownLifecycleCoordinator(
                 iface
             ).is_connection_closing(),
-            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
-                iface
+            current_state_getter=state_callbacks.current_state_getter,
+            transition_to_disconnected=state_callbacks.transition_to_disconnected,
+            reset_to_disconnected=state_callbacks.reset_to_disconnected,
+            close_previous_client_async=lambda previous_client: BLELifecycleService._close_previous_client_async(
+                iface, previous_client
             ),
-            transition_to_disconnected=lambda: BLELifecycleService._state_manager_transition_to(  # noqa: E501
-                iface,
-                ConnectionState.DISCONNECTED,
-            ),
-            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
-                iface
-            ),
-            close_previous_client_async=lambda previous_client: BLELifecycleService._close_previous_client_async(  # noqa: E501
-                iface,
-                previous_client,
-            ),
-            clear_events=lambda *events: BLELifecycleService._thread_clear_events(
-                iface, *events
-            ),
+            clear_events=thread_callbacks.clear_events,
         )
 
     @staticmethod
@@ -748,21 +798,13 @@ class BLELifecycleService:
         -----
         Falls back to inline cleanup when thread creation/start fails.
         """
+        thread_callbacks = BLELifecycleService._thread_callbacks(iface)
+        error_callbacks = BLELifecycleService._error_callbacks(iface)
         BLEDisconnectLifecycleCoordinator(iface)._close_previous_client_async(
             previous_client,
-            create_thread=lambda **kwargs: BLELifecycleService._thread_create_thread(
-                iface,
-                **kwargs,
-            ),
-            start_thread=lambda thread: BLELifecycleService._thread_start_thread(
-                iface,
-                thread,
-            ),
-            safe_cleanup=lambda cleanup, operation_name: BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
-                iface,
-                cleanup,
-                operation_name,
-            ),
+            create_thread=thread_callbacks.create_thread,
+            start_thread=thread_callbacks.start_thread,
+            safe_cleanup=error_callbacks.safe_cleanup,
         )
 
     @staticmethod
@@ -884,30 +926,19 @@ class BLELifecycleService:
         None
             Returns ``None`` after best-effort cleanup.
         """
+        state_callbacks = BLELifecycleService._state_callbacks(iface)
+        error_callbacks = BLELifecycleService._error_callbacks(iface)
         BLEConnectionOwnershipLifecycleCoordinator(
             iface
         )._discard_invalidated_connected_client(
             client,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
-            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
-                iface
-            ),
-            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
-                iface
-            ),
-            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
-                iface
-            ),
-            transition_to_disconnected=lambda: BLELifecycleService._state_manager_transition_to(  # noqa: E501
-                iface,
-                ConnectionState.DISCONNECTED,
-            ),
-            safe_cleanup=lambda cleanup, operation_name: BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
-                iface,
-                cleanup,
-                operation_name,
-            ),
+            is_closing_getter=state_callbacks.is_closing_getter,
+            reset_to_disconnected=state_callbacks.reset_to_disconnected,
+            current_state_getter=state_callbacks.current_state_getter,
+            transition_to_disconnected=state_callbacks.transition_to_disconnected,
+            safe_cleanup=error_callbacks.safe_cleanup,
         )
 
     @staticmethod
@@ -1078,16 +1109,13 @@ class BLELifecycleService:
         tuple[bool, bool]
             ``(is_owned, is_closing)`` for the current snapshot.
         """
+        state_callbacks = BLELifecycleService._state_callbacks(iface)
         return BLEConnectionOwnershipLifecycleCoordinator(
             iface
         )._get_connected_client_status_locked(
             client,
-            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
-                iface
-            ),
-            state_connected_getter=lambda: BLELifecycleService._state_manager_is_connected(  # noqa: E501
-                iface
-            ),
+            is_closing_getter=state_callbacks.is_closing_getter,
+            state_connected_getter=state_callbacks.is_connected_getter,
             client_connected_getter=BLELifecycleService._client_is_connected,
         )
 
@@ -1109,16 +1137,13 @@ class BLELifecycleService:
         tuple[bool, bool]
             ``(is_owned, is_closing)`` for the current snapshot.
         """
+        state_callbacks = BLELifecycleService._state_callbacks(iface)
         return BLEConnectionOwnershipLifecycleCoordinator(
             iface
         )._get_connected_client_status(
             client,
-            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
-                iface
-            ),
-            state_connected_getter=lambda: BLELifecycleService._state_manager_is_connected(  # noqa: E501
-                iface
-            ),
+            is_closing_getter=state_callbacks.is_closing_getter,
+            state_connected_getter=state_callbacks.is_connected_getter,
             client_connected_getter=BLELifecycleService._client_is_connected,
         )
 
@@ -1232,16 +1257,14 @@ class BLELifecycleService:
             Snapshot containing ownership, closing, gate-loss, and reconnect
             publication context.
         """
+        ownership_callbacks = BLELifecycleService._ownership_callbacks(iface)
         return BLEConnectionOwnershipLifecycleCoordinator(
             iface
         )._verify_ownership_snapshot(
             connected_client,
             connected_device_key,
             connection_alias_key,
-            get_connected_client_status_locked=lambda client: BLELifecycleService._get_connected_client_status_locked(  # noqa: E501
-                iface,
-                client,
-            ),
+            get_connected_client_status_locked=ownership_callbacks.get_connected_client_status_locked,
         )
 
     @staticmethod
@@ -1305,22 +1328,15 @@ class BLELifecycleService:
         BLEError
             Raised when ownership is invalidated before or during publication.
         """
+        ownership_callbacks = BLELifecycleService._ownership_callbacks(iface)
         BLEConnectionOwnershipLifecycleCoordinator(iface)._verify_and_publish_connected(
             connected_client,
             connected_device_key,
             connection_alias_key,
             restore_address=restore_address,
             restore_last_connection_request=restore_last_connection_request,
-            verify_ownership_snapshot=lambda client, device_key, alias_key: BLELifecycleService._verify_ownership_snapshot(  # noqa: E501
-                iface,
-                client,
-                device_key,
-                alias_key,
-            ),
-            get_connected_client_status_locked=lambda client: BLELifecycleService._get_connected_client_status_locked(  # noqa: E501
-                iface,
-                client,
-            ),
+            verify_ownership_snapshot=ownership_callbacks.verify_ownership_snapshot,
+            get_connected_client_status_locked=ownership_callbacks.get_connected_client_status_locked,
         )
 
     @staticmethod
@@ -1411,18 +1427,13 @@ class BLELifecycleService:
         None
             Returns ``None`` after gate publication or stale-claim cleanup.
         """
+        ownership_callbacks = BLELifecycleService._ownership_callbacks(iface)
         BLEConnectionOwnershipLifecycleCoordinator(iface)._finalize_connection_gates(
             connected_client,
             connected_device_key,
             connection_alias_key,
-            get_connected_client_status=lambda client: BLELifecycleService._get_connected_client_status(  # noqa: E501
-                iface,
-                client,
-            ),
-            get_connected_client_status_locked=lambda client: BLELifecycleService._get_connected_client_status_locked(  # noqa: E501
-                iface,
-                client,
-            ),
+            get_connected_client_status=ownership_callbacks.get_connected_client_status,
+            get_connected_client_status_locked=ownership_callbacks.get_connected_client_status_locked,
         )
 
     @staticmethod
@@ -1468,22 +1479,14 @@ class BLELifecycleService:
             ``True`` when waiting timed out, ``False`` when all operations
             drained cleanly, or ``None`` when the interface was already closed.
         """
+        state_callbacks = BLELifecycleService._state_callbacks(iface)
         return BLEShutdownLifecycleCoordinator(iface)._await_management_shutdown(
             management_shutdown_wait_timeout=management_shutdown_wait_timeout,
             management_wait_poll_seconds=management_wait_poll_seconds,
-            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
-                iface
-            ),
-            is_closing_getter=lambda: BLELifecycleService._state_manager_is_closing(
-                iface
-            ),
-            transition_to_state=lambda state: BLELifecycleService._state_manager_transition_to(  # noqa: E501
-                iface,
-                state,
-            ),
-            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
-                iface
-            ),
+            current_state_getter=state_callbacks.current_state_getter,
+            is_closing_getter=state_callbacks.is_closing_getter,
+            transition_to_state=state_callbacks.transition_to_state,
+            reset_to_disconnected=state_callbacks.reset_to_disconnected,
         )
 
     @staticmethod
@@ -1500,12 +1503,9 @@ class BLELifecycleService:
         None
             Returns ``None`` after discovery cleanup is attempted.
         """
+        error_callbacks = BLELifecycleService._error_callbacks(iface)
         BLEShutdownLifecycleCoordinator(iface)._shutdown_discovery(
-            safe_cleanup=lambda cleanup, operation_name: BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
-                iface,
-                cleanup,
-                operation_name,
-            ),
+            safe_cleanup=error_callbacks.safe_cleanup,
         )
 
     @staticmethod
@@ -1522,16 +1522,10 @@ class BLELifecycleService:
         None
             Returns ``None`` after best-effort receive-thread shutdown.
         """
+        thread_callbacks = BLELifecycleService._thread_callbacks(iface)
         BLEShutdownLifecycleCoordinator(iface)._shutdown_receive_thread(
-            wake_waiting_threads=lambda *event_names: BLELifecycleService._thread_wake_waiting_threads(  # noqa: E501
-                iface,
-                *event_names,
-            ),
-            join_thread=lambda thread, timeout: BLELifecycleService._thread_join_thread(
-                iface,
-                thread,
-                timeout=timeout,
-            ),
+            wake_waiting_threads=thread_callbacks.wake_waiting_threads,
+            join_thread=thread_callbacks.join_thread,
         )
 
     @staticmethod
@@ -1548,11 +1542,10 @@ class BLELifecycleService:
         None
             Returns ``None`` after guarded close execution.
         """
+        error_callbacks = BLELifecycleService._error_callbacks(iface)
         BLEShutdownLifecycleCoordinator(iface)._close_mesh_interface(
-            safe_execute=lambda func: BLELifecycleService._error_handler_safe_execute(
-                iface,
-                func,
-                error_msg="Error closing mesh interface",
+            safe_execute=lambda func: error_callbacks.safe_execute(
+                func, "Error closing mesh interface"
             )
         )
 
@@ -1626,17 +1619,14 @@ class BLELifecycleService:
         None
             Returns ``None`` after best-effort shutdown cleanup.
         """
+        error_callbacks = BLELifecycleService._error_callbacks(iface)
         BLEShutdownLifecycleCoordinator(iface)._shutdown_client(
             management_wait_timed_out=management_wait_timed_out,
-            detach_client_for_shutdown=lambda: BLELifecycleService._detach_client_for_shutdown(  # noqa: E501
+            detach_client_for_shutdown=lambda: BLELifecycleService._detach_client_for_shutdown(
                 iface
             ),
-            safe_cleanup=lambda cleanup, operation_name: BLELifecycleService._error_handler_safe_cleanup(  # noqa: E501
-                iface,
-                cleanup,
-                operation_name,
-            ),
-            consume_disconnect_notification_state=lambda: BLELifecycleService._consume_disconnect_notification_state(  # noqa: E501
+            safe_cleanup=error_callbacks.safe_cleanup,
+            consume_disconnect_notification_state=lambda: BLELifecycleService._consume_disconnect_notification_state(
                 iface
             ),
         )
@@ -1655,17 +1645,11 @@ class BLELifecycleService:
         None
             Returns ``None`` after final state and ownership cleanup.
         """
+        state_callbacks = BLELifecycleService._state_callbacks(iface)
         BLEShutdownLifecycleCoordinator(iface)._finalize_close_state(
-            current_state_getter=lambda: BLELifecycleService._state_manager_current_state(
-                iface
-            ),
-            transition_to_state=lambda state: BLELifecycleService._state_manager_transition_to(  # noqa: E501
-                iface,
-                state,
-            ),
-            reset_to_disconnected=lambda: BLELifecycleService._state_manager_reset_to_disconnected(  # noqa: E501
-                iface
-            ),
+            current_state_getter=state_callbacks.current_state_getter,
+            transition_to_state=state_callbacks.transition_to_state,
+            reset_to_disconnected=state_callbacks.reset_to_disconnected,
         )
 
 
