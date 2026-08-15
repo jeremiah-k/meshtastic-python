@@ -25,6 +25,10 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
 )
 from meshtastic.interfaces.ble.errors import DecodeError
+from meshtastic.interfaces.ble.notification_registration import (
+    _NotificationRegistrationPlan,
+    _OptionalNotificationStart,
+)
 from meshtastic.interfaces.ble.utils import (
     _is_unexpected_keyword_error,
     _sleep,
@@ -646,9 +650,362 @@ class BLENotificationDispatcher:
                 from_num_handler=from_num_handler,
             )
 
-    # Registration is a compatibility state machine; early exits preserve rollback boundaries.
-    def _register_notifications_locked(  # pylint: disable=too-many-return-statements
+    def _rollback_registration_state(
+        self, *, stop_client: BLEClient | None = None
+    ) -> None:
+        """Rollback every backend notification started by the current session."""
+        if stop_client is not None:
+            for characteristic in tuple(self._started_notify_characteristics):
+                with contextlib.suppress(
+                    Exception
+                ):  # noqa: BLE001 - rollback cleanup must remain best effort
+                    stop_client.stop_notify(
+                        characteristic,
+                        timeout=NOTIFICATION_START_TIMEOUT,
+                    )
+        self._started_notify_characteristics.clear()
+        self.fromnum_notify_enabled = False
+        self.malformed_notification_count = 0
 
+    def _rollback_fromnum_registration_state(self) -> None:
+        """Rollback only FROMNUM registration state for polling fallback."""
+        self._started_notify_characteristics.discard(FROMNUM_UUID)
+        self.fromnum_notify_enabled = False
+        self.malformed_notification_count = 0
+
+    def _registration_still_current(
+        self, client: BLEClient, session_epoch: int
+    ) -> bool:
+        """Return whether registration still belongs to the active session."""
+        try:
+            return self._registration_current_provider(client, session_epoch) is True
+        except Exception:  # noqa: BLE001 - stale registration must fail closed
+            logger.debug(
+                "Error validating BLE notification registration ownership.",
+                exc_info=True,
+            )
+            return False
+
+    def _dispatch_notification_safely(
+        self,
+        iface: "BLEInterface",
+        handler: Callable[[Any, Any], None],
+        sender: Any,
+        data: Any,
+        error_msg: str,
+    ) -> None:
+        """Invoke one notification callback through compatibility-safe error handling."""
+
+        def _report_notification_error() -> None:
+            def _try_report(hook: object | None) -> bool:
+                if not callable(hook):
+                    return False
+                try:
+                    hook(error_msg)
+                except Exception:  # noqa: BLE001 - reporting must stay best effort
+                    logger.debug(
+                        "Notification error reporter failed; trying fallback.",
+                        exc_info=True,
+                    )
+                    return False
+                return True
+
+            for _member_name, reporter in _iter_declared_callables(
+                iface,
+                "report_notification_handler_error",
+                "_report_notification_handler_error",
+            ):
+                if _try_report(reporter):
+                    return
+            self.report_notification_handler_error(error_msg)
+
+        def _invoke_handler() -> None:
+            handler(sender, data)
+
+        def _fallback_invoke_handler() -> None:
+            try:
+                _invoke_handler()
+            except Exception:  # noqa: BLE001 - callbacks must stay best effort
+                _report_notification_error()
+
+        error_handler = self._resolve_error_handler()
+        safe_execute = _resolve_declared_callable(
+            error_handler, "safe_execute", "_safe_execute"
+        )
+        if safe_execute is None:
+            _fallback_invoke_handler()
+            return
+        self.invoke_safe_execute_compat(
+            safe_execute,
+            _invoke_handler,
+            error_msg=error_msg,
+            fallback=_fallback_invoke_handler,
+            report_handler_error=lambda _error: _report_notification_error(),
+        )
+
+    def _get_or_create_registration_handler(
+        self,
+        uuid: str,
+        *,
+        cache_attr: str,
+        factory: Callable[[], Callable[[Any, Any], None]],
+        track: bool = True,
+    ) -> Callable[[Any, Any], None]:
+        """Return a cached safe handler and optionally track it in the manager."""
+        cached_handler = getattr(self, cache_attr, None)
+        if not callable(cached_handler):
+            cached_handler = factory()
+            setattr(self, cache_attr, cached_handler)
+        if track:
+            active_handler = self._notification_manager._get_callback(uuid)
+            if active_handler is not cached_handler:
+                self._notification_manager._subscribe(uuid, cached_handler)
+        return cast(Callable[[Any, Any], None], cached_handler)
+
+    @staticmethod
+    def _optional_notification_errors(
+        iface: "BLEInterface",
+    ) -> tuple[type[BaseException], ...]:
+        """Return exception classes treated as optional-notification failures."""
+        return (
+            BleakError,
+            BleakDBusError,
+            RuntimeError,
+            BLEClient.BLEError,
+            iface.BLEError,
+        )
+
+    def _prepare_registration_plan(
+        self,
+        iface: "BLEInterface",
+        client: BLEClient,
+        *,
+        legacy_log_handler: Callable[[Any, bytes | bytearray], None],
+        log_handler: Callable[[Any, bytes | bytearray], None],
+        from_num_handler: Callable[[Any, bytes], None],
+    ) -> _NotificationRegistrationPlan:
+        """Prepare safe handlers and optional starts without starting backend notifications."""
+        self._current_legacy_log_handler = legacy_log_handler
+        self._current_log_handler = log_handler
+        self._current_from_num_handler = from_num_handler
+        session_epoch = int(getattr(iface, "_connection_session_epoch", 0))
+        if self._registered_notification_session_epoch != session_epoch:
+            self._rollback_registration_state(stop_client=client)
+            self._registered_notification_session_epoch = session_epoch
+
+        def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
+            handler = cast(
+                Callable[[Any, Any], None],
+                getattr(self, "_current_legacy_log_handler", legacy_log_handler),
+            )
+            self._dispatch_notification_safely(
+                iface, handler, sender, data, "Error in legacy log notification handler"
+            )
+
+        def _safe_log_handler(sender: Any, data: bytes | bytearray) -> None:
+            handler = cast(
+                Callable[[Any, Any], None],
+                getattr(self, "_current_log_handler", log_handler),
+            )
+            self._dispatch_notification_safely(
+                iface, handler, sender, data, "Error in log notification handler"
+            )
+
+        def _safe_from_num_handler(sender: Any, data: bytes) -> None:
+            handler = cast(
+                Callable[[Any, Any], None],
+                getattr(self, "_current_from_num_handler", from_num_handler),
+            )
+            self._dispatch_notification_safely(
+                iface, handler, sender, data, "Error in FROMNUM notification handler"
+            )
+
+        optional_starts: list[_OptionalNotificationStart] = []
+        optional_errors = self._optional_notification_errors(iface)
+        optional_candidates = (
+            (
+                LEGACY_LOGRADIO_UUID,
+                "_safe_legacy_handler",
+                _safe_legacy_handler,
+                "legacy log",
+            ),
+            (LOGRADIO_UUID, "_safe_log_handler", _safe_log_handler, "log"),
+        )
+        for uuid, cache_attr, factory, label in optional_candidates:
+            try:
+                supported = client.has_characteristic(uuid)
+            except optional_errors as err:
+                logger.debug(
+                    "Failed to inspect optional %s notifications for %s: %s",
+                    label,
+                    uuid,
+                    err,
+                )
+                continue
+            if not supported or uuid in self._started_notify_characteristics:
+                continue
+            handler = self._get_or_create_registration_handler(
+                uuid, cache_attr=cache_attr, factory=lambda handler=factory: handler
+            )
+            optional_starts.append(
+                _OptionalNotificationStart(
+                    characteristic=uuid, handler=handler, label=label
+                )
+            )
+
+        ingress_handler = self._get_or_create_registration_handler(
+            FROMNUM_UUID,
+            cache_attr="_safe_from_num_handler",
+            factory=lambda: _safe_from_num_handler,
+            track=False,
+        )
+        return _NotificationRegistrationPlan(
+            session_epoch=session_epoch,
+            optional_starts=tuple(optional_starts),
+            fromnum_handler=ingress_handler,
+        )
+
+    def _execute_optional_registration(
+        self,
+        iface: "BLEInterface",
+        client: BLEClient,
+        plan: _NotificationRegistrationPlan,
+    ) -> bool:
+        """Start optional notifications and stop if session ownership becomes stale."""
+        optional_errors = self._optional_notification_errors(iface)
+        for start in plan.optional_starts:
+            try:
+                client.start_notify(
+                    start.characteristic,
+                    start.handler,
+                    timeout=NOTIFICATION_START_TIMEOUT,
+                )
+            except optional_errors as err:
+                logger.debug(
+                    "Failed to start optional %s notifications for %s: %s",
+                    start.label,
+                    start.characteristic,
+                    err,
+                )
+                continue
+            self._started_notify_characteristics.add(start.characteristic)
+            if not self._registration_still_current(client, plan.session_epoch):
+                self._rollback_registration_state(stop_client=client)
+                return False
+        return True
+
+    def _track_fromnum_handler(
+        self, client: BLEClient, handler: Callable[[Any, Any], None]
+    ) -> bool:
+        """Track the FROMNUM callback or rollback backend notifications on failure."""
+        try:
+            current_handler = self._notification_manager._get_callback(FROMNUM_UUID)
+            if current_handler is handler:
+                return True
+            self._notification_manager._subscribe(FROMNUM_UUID, handler)
+        except Exception as err:  # noqa: BLE001 - local/backend state must converge
+            logger.warning(
+                "Unable to track FROMNUM notification callback for %s: %s; "
+                "rolling back backend notifications and falling back to polling reads.",
+                FROMNUM_UUID,
+                err,
+            )
+            self._rollback_registration_state(stop_client=client)
+            return False
+        return True
+
+    def _commit_fromnum_registration(
+        self, client: BLEClient, plan: _NotificationRegistrationPlan
+    ) -> bool:
+        """Validate and commit active FROMNUM notification state."""
+        if not self._track_fromnum_handler(client, plan.fromnum_handler):
+            return False
+        if not self._registration_still_current(client, plan.session_epoch):
+            self._rollback_registration_state(stop_client=client)
+            return False
+        self.fromnum_notify_enabled = True
+        self._registered_notification_session_epoch = plan.session_epoch
+        return True
+
+    def _execute_fromnum_registration(
+        self,
+        iface: "BLEInterface",
+        client: BLEClient,
+        plan: _NotificationRegistrationPlan,
+    ) -> None:
+        """Start or validate FROMNUM notifications, falling back to polling on failure."""
+        if FROMNUM_UUID in self._started_notify_characteristics:
+            self._commit_fromnum_registration(client, plan)
+            return
+
+        self.fromnum_notify_enabled = False
+        optional_errors = self._optional_notification_errors(iface)
+        max_attempts = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
+        for attempt in range(max_attempts):
+            try:
+                client.start_notify(
+                    FROMNUM_UUID,
+                    plan.fromnum_handler,
+                    timeout=NOTIFICATION_START_TIMEOUT,
+                )
+            except BleakDBusError as err:
+                if not self._is_notify_acquired_error(err):
+                    logger.warning(
+                        "Unable to start FROMNUM notifications for %s: %s; "
+                        "falling back to polling reads.",
+                        FROMNUM_UUID,
+                        err,
+                    )
+                    self._rollback_fromnum_registration_state()
+                    return
+                logger.debug(
+                    "FROMNUM notify already acquired for %s; retrying after "
+                    "best-effort stop_notify (attempt %d/%d)",
+                    FROMNUM_UUID,
+                    attempt + 1,
+                    max_attempts,
+                )
+                with contextlib.suppress(*optional_errors):
+                    client.stop_notify(
+                        FROMNUM_UUID, timeout=NOTIFICATION_START_TIMEOUT
+                    )
+                if attempt + 1 < max_attempts:
+                    _sleep(BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY * (attempt + 1))
+                    continue
+                logger.warning(
+                    "Unable to start FROMNUM notifications for %s after %d attempts "
+                    "due to BlueZ 'Notify acquired'; falling back to polling reads.",
+                    FROMNUM_UUID,
+                    max_attempts,
+                )
+                self._rollback_fromnum_registration_state()
+                return
+            except optional_errors as err:
+                logger.warning(
+                    "Unable to start FROMNUM notifications for %s: %s; "
+                    "falling back to polling reads.",
+                    FROMNUM_UUID,
+                    err,
+                )
+                self._rollback_fromnum_registration_state()
+                return
+
+            self._started_notify_characteristics.add(FROMNUM_UUID)
+            if not self._commit_fromnum_registration(client, plan):
+                return
+            logger.debug(
+                "FROMNUM notifications active for BLE session %d; receive loop "
+                "using notification-driven reads.",
+                plan.session_epoch,
+            )
+            return
+
+    @staticmethod
+    def _is_notify_acquired_error(err: BaseException) -> bool:
+        """Return whether BlueZ reports that another notify owner is active."""
+        return _NOTIFY_ACQUIRED_FRAGMENT in str(err).casefold()
+
+    def _register_notifications_locked(
         self,
         iface: "BLEInterface",
         client: BLEClient,
@@ -657,365 +1014,17 @@ class BLENotificationDispatcher:
         log_handler: Callable[[Any, bytes | bytearray], None],
         from_num_handler: Callable[[Any, bytes], None],
     ) -> None:
-        """Register notification handlers while registration ownership is held."""
-        self._current_legacy_log_handler = legacy_log_handler
-        self._current_log_handler = log_handler
-        self._current_from_num_handler = from_num_handler
-        current_session_epoch = int(getattr(iface, "_connection_session_epoch", 0))
-
-        def _rollback_registration_state(
-            *, stop_client: BLEClient | None = None
-        ) -> None:
-            if stop_client is not None:
-                started_characteristics = tuple(self._started_notify_characteristics)
-                for characteristic in started_characteristics:
-                    with contextlib.suppress(
-                        Exception
-                    ):  # noqa: BLE001 - rollback cleanup must remain best effort
-                        stop_client.stop_notify(
-                            characteristic,
-                            timeout=NOTIFICATION_START_TIMEOUT,
-                        )
-            self._started_notify_characteristics.clear()
-            self.fromnum_notify_enabled = False
-            self.malformed_notification_count = 0
-
-        def _rollback_fromnum_registration_state() -> None:
-            self._started_notify_characteristics.discard(FROMNUM_UUID)
-            self.fromnum_notify_enabled = False
-            self.malformed_notification_count = 0
-
-        def _registration_still_current() -> bool:
-            try:
-                return (
-                    self._registration_current_provider(client, current_session_epoch)
-                    is True
-                )
-            except Exception:  # noqa: BLE001 - stale registration must fail closed
-                logger.debug(
-                    "Error validating BLE notification registration ownership.",
-                    exc_info=True,
-                )
-                return False
-
-        if self._registered_notification_session_epoch != current_session_epoch:
-            _rollback_registration_state(stop_client=client)
-            self._registered_notification_session_epoch = current_session_epoch
-
-        def _safe_call(
-            handler: Callable[[Any, Any], None],
-            sender: Any,
-            data: Any,
-            error_msg: str,
-        ) -> None:
-            def _report_notification_error() -> None:
-                def _try_report(hook: object | None) -> bool:
-                    if not callable(hook):
-                        return False
-                    try:
-                        hook(error_msg)
-                    except Exception:  # noqa: BLE001 - reporting must stay best effort
-                        logger.debug(
-                            "Notification error reporter failed; trying fallback.",
-                            exc_info=True,
-                        )
-                        return False
-                    return True
-
-                for _member_name, reporter in _iter_declared_callables(
-                    iface,
-                    "report_notification_handler_error",
-                    "_report_notification_handler_error",
-                ):
-                    if _try_report(reporter):
-                        return
-                self.report_notification_handler_error(error_msg)
-
-            def _invoke_handler() -> None:
-                handler(sender, data)
-
-            def _fallback_invoke_handler() -> None:
-                try:
-                    _invoke_handler()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
-                    _report_notification_error()
-
-            error_handler = self._resolve_error_handler()
-            safe_execute = _resolve_declared_callable(
-                error_handler, "safe_execute", "_safe_execute"
-            )
-            if safe_execute is None:
-                try:
-                    _invoke_handler()
-                except (
-                    Exception
-                ):  # noqa: BLE001 - notification callbacks must stay best effort
-                    _report_notification_error()
-                return
-            self.invoke_safe_execute_compat(
-                safe_execute,
-                _invoke_handler,
-                error_msg=error_msg,
-                fallback=_fallback_invoke_handler,
-                report_handler_error=lambda _error: _report_notification_error(),
-            )
-
-        def _safe_legacy_handler(sender: Any, data: bytes | bytearray) -> None:
-            current_legacy_handler = cast(
-                Callable[[Any, Any], None],
-                getattr(
-                    self,
-                    "_current_legacy_log_handler",
-                    legacy_log_handler,
-                ),
-            )
-            _safe_call(
-                current_legacy_handler,
-                sender,
-                data,
-                "Error in legacy log notification handler",
-            )
-
-        def _safe_log_handler(sender: Any, data: bytes | bytearray) -> None:
-            current_log_handler = cast(
-                Callable[[Any, Any], None],
-                getattr(
-                    self,
-                    "_current_log_handler",
-                    log_handler,
-                ),
-            )
-            _safe_call(
-                current_log_handler,
-                sender,
-                data,
-                "Error in log notification handler",
-            )
-
-        def _safe_from_num_handler(sender: Any, data: bytes) -> None:
-            current_from_num_handler = cast(
-                Callable[[Any, Any], None],
-                getattr(
-                    self,
-                    "_current_from_num_handler",
-                    from_num_handler,
-                ),
-            )
-            _safe_call(
-                current_from_num_handler,
-                sender,
-                data,
-                "Error in FROMNUM notification handler",
-            )
-
-        def _get_or_create_handler(
-            uuid: str,
-            *,
-            cache_attr: str,
-            factory: Callable[[], Callable[[Any, Any], None]],
-        ) -> Callable[[Any, Any], None]:
-            cached_handler = getattr(self, cache_attr, None)
-            if not callable(cached_handler):
-                cached_handler = factory()
-                setattr(self, cache_attr, cached_handler)
-            active_handler = self._notification_manager._get_callback(uuid)
-            if active_handler is not cached_handler:
-                self._notification_manager._subscribe(uuid, cached_handler)
-            return cast(Callable[[Any, Any], None], cached_handler)
-
-        def _get_or_create_cached_handler(
-            *,
-            cache_attr: str,
-            factory: Callable[[], Callable[[Any, Any], None]],
-        ) -> Callable[[Any, Any], None]:
-            cached_handler = getattr(self, cache_attr, None)
-            if not callable(cached_handler):
-                cached_handler = factory()
-                setattr(self, cache_attr, cached_handler)
-            return cast(Callable[[Any, Any], None], cached_handler)
-
-        def _is_notify_acquired_error(err: BaseException) -> bool:
-            return _NOTIFY_ACQUIRED_FRAGMENT in str(err).casefold()
-
-        optional_errors = (
-            BleakError,
-            BleakDBusError,
-            RuntimeError,
-            BLEClient.BLEError,
-            iface.BLEError,
+        """Prepare and execute one notification-registration transaction."""
+        plan = self._prepare_registration_plan(
+            iface,
+            client,
+            legacy_log_handler=legacy_log_handler,
+            log_handler=log_handler,
+            from_num_handler=from_num_handler,
         )
-
-        try:
-            has_legacy_logradio = client.has_characteristic(LEGACY_LOGRADIO_UUID)
-        except optional_errors as err:
-            logger.debug(
-                "Failed to start optional legacy log notifications for %s: %s",
-                LEGACY_LOGRADIO_UUID,
-                err,
-            )
-        else:
-            if has_legacy_logradio:
-                if LEGACY_LOGRADIO_UUID in self._started_notify_characteristics:
-                    has_legacy_logradio = False
-            if has_legacy_logradio:
-                legacy_handler = _get_or_create_handler(
-                    LEGACY_LOGRADIO_UUID,
-                    cache_attr="_safe_legacy_handler",
-                    factory=lambda: _safe_legacy_handler,
-                )
-                try:
-                    client.start_notify(
-                        LEGACY_LOGRADIO_UUID,
-                        legacy_handler,
-                        timeout=NOTIFICATION_START_TIMEOUT,
-                    )
-                except optional_errors as err:
-                    logger.debug(
-                        "Failed to start optional legacy log notifications for %s: %s",
-                        LEGACY_LOGRADIO_UUID,
-                        err,
-                    )
-                else:
-                    self._started_notify_characteristics.add(LEGACY_LOGRADIO_UUID)
-                    if not _registration_still_current():
-                        _rollback_registration_state(stop_client=client)
-                        return
-
-        try:
-            has_logradio = client.has_characteristic(LOGRADIO_UUID)
-        except optional_errors as err:
-            logger.debug(
-                "Failed to start optional log notifications for %s: %s",
-                LOGRADIO_UUID,
-                err,
-            )
-        else:
-            if has_logradio:
-                if LOGRADIO_UUID in self._started_notify_characteristics:
-                    has_logradio = False
-            if has_logradio:
-                log_callback = _get_or_create_handler(
-                    LOGRADIO_UUID,
-                    cache_attr="_safe_log_handler",
-                    factory=lambda: _safe_log_handler,
-                )
-                try:
-                    client.start_notify(
-                        LOGRADIO_UUID,
-                        log_callback,
-                        timeout=NOTIFICATION_START_TIMEOUT,
-                    )
-                except optional_errors as err:
-                    logger.debug(
-                        "Failed to start optional log notifications for %s: %s",
-                        LOGRADIO_UUID,
-                        err,
-                    )
-                else:
-                    self._started_notify_characteristics.add(LOGRADIO_UUID)
-                    if not _registration_still_current():
-                        _rollback_registration_state(stop_client=client)
-                        return
-
-        ingress_handler = _get_or_create_cached_handler(
-            cache_attr="_safe_from_num_handler",
-            factory=lambda: _safe_from_num_handler,
-        )
-
-        def _track_fromnum_handler() -> bool:
-            try:
-                current_ingress_handler = self._notification_manager._get_callback(
-                    FROMNUM_UUID
-                )
-                if current_ingress_handler is ingress_handler:
-                    return True
-                self._notification_manager._subscribe(FROMNUM_UUID, ingress_handler)
-            except Exception as err:  # noqa: BLE001 - local/backend state must converge
-                logger.warning(
-                    "Unable to track FROMNUM notification callback for %s: %s; rolling back backend notifications and falling back to polling reads.",
-                    FROMNUM_UUID,
-                    err,
-                )
-                _rollback_registration_state(stop_client=client)
-                return False
-            return True
-
-        if FROMNUM_UUID in self._started_notify_characteristics:
-            if not _track_fromnum_handler():
-                return
-            if not _registration_still_current():
-                _rollback_registration_state(stop_client=client)
-                return
-            self.fromnum_notify_enabled = True
-            self._registered_notification_session_epoch = current_session_epoch
+        if not self._execute_optional_registration(iface, client, plan):
             return
-        self.fromnum_notify_enabled = False
-        max_attempts = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
-        for attempt in range(max_attempts):
-            try:
-                client.start_notify(
-                    FROMNUM_UUID,
-                    ingress_handler,
-                    timeout=NOTIFICATION_START_TIMEOUT,
-                )
-            except BleakDBusError as err:
-                if not _is_notify_acquired_error(err):
-                    logger.warning(
-                        "Unable to start FROMNUM notifications for %s: %s; falling back to polling reads.",
-                        FROMNUM_UUID,
-                        err,
-                    )
-                    _rollback_fromnum_registration_state()
-                    return
-                logger.debug(
-                    "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify (attempt %d/%d)",
-                    FROMNUM_UUID,
-                    attempt + 1,
-                    max_attempts,
-                )
-                with contextlib.suppress(*optional_errors):
-                    client.stop_notify(
-                        FROMNUM_UUID,
-                        timeout=NOTIFICATION_START_TIMEOUT,
-                    )
-                if attempt + 1 < max_attempts:
-                    _sleep(BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY * (attempt + 1))
-                    continue
-                logger.warning(
-                    "Unable to start FROMNUM notifications for %s after %d attempts due to BlueZ 'Notify acquired'; falling back to polling reads.",
-                    FROMNUM_UUID,
-                    max_attempts,
-                )
-                _rollback_fromnum_registration_state()
-                return
-            except optional_errors as err:
-                logger.warning(
-                    "Unable to start FROMNUM notifications for %s: %s; falling back to polling reads.",
-                    FROMNUM_UUID,
-                    err,
-                )
-                _rollback_fromnum_registration_state()
-                return
-            else:
-                # Track the active backend subscription immediately after start_notify
-                # succeeds. Any later validation or local callback-registration failure
-                # can then unwind through the single centralized rollback path exactly
-                # once per started characteristic.
-                self._started_notify_characteristics.add(FROMNUM_UUID)
-                if not _track_fromnum_handler():
-                    return
-                if not _registration_still_current():
-                    _rollback_registration_state(stop_client=client)
-                    return
-                self.fromnum_notify_enabled = True
-                self._registered_notification_session_epoch = current_session_epoch
-                logger.debug(
-                    "FROMNUM notifications active for BLE session %d; receive loop using notification-driven reads.",
-                    current_session_epoch,
-                )
-                return
+        self._execute_fromnum_registration(iface, client, plan)
 
     def log_radio_handler(self, _: Any, b: bytes | bytearray) -> str | None:
         """Decode protobuf log payload and return formatted message."""
