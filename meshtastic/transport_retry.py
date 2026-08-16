@@ -78,8 +78,12 @@ def _exponential_retry_delay(
 def _linear_retry_delay(
     *, retry_number: int, base_delay: float, max_delay: float | None = None
 ) -> float:
-    """Return linear delay for a one-based retry number."""
-    delay = max(0.0, base_delay * max(1, retry_number))
+    """Return a non-negative linear delay for a retry counter.
+
+    A zero retry counter produces zero delay, preserving the raw
+    ``base_delay * retry_number`` semantics used by the original stream loop.
+    """
+    delay = max(0.0, base_delay * retry_number)
     if max_delay is not None:
         return min(max_delay, delay)
     return delay

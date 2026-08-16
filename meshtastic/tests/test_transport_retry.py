@@ -1,5 +1,7 @@
 """Tests for shared internal transport retry policy primitives."""
 
+import pytest
+
 from meshtastic.transport_retry import (
     _exponential_retry_delay,
     _linear_retry_delay,
@@ -8,6 +10,8 @@ from meshtastic.transport_retry import (
     _RetryWindow,
     _sleep_interruptibly,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def test_retry_window_clamps_delay_to_remaining_budget() -> None:
@@ -67,16 +71,12 @@ def test_counted_retry_plan_preserves_immediate_first_attempt() -> None:
 def test_retry_delay_helpers_bound_backoff() -> None:
     """Shared delay helpers should preserve exponential and linear bounds."""
     assert (
-        _exponential_retry_delay(
-            attempt=4, base_delay=2.0, backoff=2.0, max_delay=10.0
-        )
+        _exponential_retry_delay(attempt=4, base_delay=2.0, backoff=2.0, max_delay=10.0)
         == 10.0
     )
+    assert _linear_retry_delay(retry_number=0, base_delay=0.1) == 0.0
     assert _linear_retry_delay(retry_number=4, base_delay=0.1) == 0.4
-    assert (
-        _linear_retry_delay(retry_number=4, base_delay=0.1, max_delay=0.25)
-        == 0.25
-    )
+    assert _linear_retry_delay(retry_number=4, base_delay=0.1, max_delay=0.25) == 0.25
 
 
 def test_interruptible_sleep_stops_when_abort_becomes_true() -> None:
