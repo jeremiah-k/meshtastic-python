@@ -1,12 +1,11 @@
 """Main Meshtastic."""
 
-# We just hit the 1600 line limit for main.py, but I currently have a huge set of powermon/structured logging changes
-# later we can have a separate changelist to refactor main.py into smaller files
 # pylint: disable=R0917,C0302
 
 import argparse
 import binascii
 import contextlib
+import getpass  # noqa: F401  # pylint: disable=unused-import  # compatibility seam
 import importlib
 import logging
 import platform
@@ -27,8 +26,8 @@ import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.dispatch as cli_dispatch
-import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.invocation as cli_invocation
+import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.preference_runtime as cli_preference_runtime
 import meshtastic.cli.runtime as cli_runtime
 import meshtastic.ota
@@ -39,8 +38,8 @@ from meshtastic import mt_config, remote_hardware
 
 # COMPAT_STABLE_SHIM: LOCAL_ADDR remains importable from meshtastic.__main__.
 # pylint: disable=unused-import
-from meshtastic._core_constants import LOCAL_ADDR  # noqa: F401
 from meshtastic._core_constants import BROADCAST_ADDR  # noqa: F401
+from meshtastic._core_constants import LOCAL_ADDR  # noqa: F401
 from meshtastic.cli.context import ActionOutcome, CliContext
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
@@ -266,7 +265,6 @@ OTA_MAX_RETRIES = cli_device_actions.OTA_MAX_RETRIES
 _PREFERENCE_FIELD_ALIASES = cli_preference_runtime.PREFERENCE_FIELD_ALIASES
 
 
-
 def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     """Exit this CLI entrypoint with a user-facing message.
 
@@ -299,7 +297,9 @@ def _current_camel_case() -> bool:
 def _current_channel_index() -> int | None:
     """Return the invocation-selected channel index with legacy fallback."""
     invocation = cli_invocation.get_current_invocation()
-    return invocation.channel_index if invocation is not None else mt_config.channel_index
+    return (
+        invocation.channel_index if invocation is not None else mt_config.channel_index
+    )
 
 
 def _set_current_channel_index(value: int) -> None:
@@ -338,7 +338,6 @@ def _cli_print(message: str, *, force: bool = False) -> None:
 def _report_pref_validation(message: str) -> None:
     """Report preference validation through the extracted runtime."""
     cli_preference_runtime.report_pref_validation(message, cli_print=_cli_print)
-
 
 
 def supportInfo() -> None:
@@ -658,7 +657,6 @@ _is_secret_pref = cli_preference_runtime.is_secret_pref
 _redact_pref_value = cli_preference_runtime.redact_pref_value
 
 
-
 def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
     """Retrieve and display a node configuration preference or populated section fields.
 
@@ -827,8 +825,6 @@ _resolve_pref = cli_preference_runtime.resolve_pref
 _protobuf_field_type_label = cli_preference_runtime.protobuf_field_type_label
 
 
-
-
 def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
     """Print available channel-setting fields after an unknown --ch-set name."""
     print(f"{settings.__class__.__name__} does not have an attribute {pref_name}.")
@@ -842,6 +838,8 @@ def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
             continue
         for sub_field in sorted(field.message_type.fields, key=lambda item: item.name):
             print(f"    {field.name}.{sub_field.name}")
+
+
 def _reject_pref_value(
     field: FieldDescriptor, *, field_path: str, raw_value: Any
 ) -> bool:
@@ -883,7 +881,6 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         cli_print=_cli_print,
         is_repeated_field=_is_repeated_field,
     )
-
 
 
 def _handle_ota_update(

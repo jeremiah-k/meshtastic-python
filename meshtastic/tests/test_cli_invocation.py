@@ -17,7 +17,9 @@ from meshtastic.cli.invocation import (
 )
 
 
-def _invocation(*, channel_index: int | None = None, camel_case: bool = False) -> CliInvocation:
+def _invocation(
+    *, channel_index: int | None = None, camel_case: bool = False
+) -> CliInvocation:
     """Build one minimal invocation state for unit tests."""
     return CliInvocation(
         args=argparse.Namespace(quiet=False),

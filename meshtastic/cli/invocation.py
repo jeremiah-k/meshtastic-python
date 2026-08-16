@@ -8,8 +8,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import IO, Iterator
 
-_CURRENT_INVOCATION: contextvars.ContextVar[CliInvocation | None] = contextvars.ContextVar(
-    "cli_invocation", default=None
+_CURRENT_INVOCATION: contextvars.ContextVar[CliInvocation | None] = (
+    contextvars.ContextVar("cli_invocation", default=None)
 )
 
 

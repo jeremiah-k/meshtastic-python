@@ -96,13 +96,16 @@ def _validate_and_normalize_args(
         (args.set_ham, "Ham radio callsign"),
     ):
         if value is not None and not value.strip():
-            _terminate_cli(hooks,
+            _terminate_cli(
+                hooks,
                 f"ERROR: {label} cannot be empty or contain only whitespace characters",
                 1,
             )
 
     if args.ota_update is not None and not os.path.isfile(args.ota_update):
-        _terminate_cli(hooks, f"Error: OTA firmware file not found: {args.ota_update}", 1)
+        _terminate_cli(
+            hooks, f"Error: OTA firmware file not found: {args.ota_update}", 1
+        )
 
     if args.ch_index is not None:
         hooks.set_channel_index(int(args.ch_index))
@@ -138,7 +141,8 @@ def _run_preconnect_action(
     if not args.test:
         return False
     if hooks.test_module is None:
-        _terminate_cli(hooks,
+        _terminate_cli(
+            hooks,
             "Test module could not be imported. Ensure you have the 'dotmap' module installed.",
             1,
         )
@@ -220,7 +224,8 @@ def _open_serial_transport(
     except hooks.mesh_interface_error as exc:
         _terminate_cli(hooks, f"[TCP localhost] {exc}", 1)
     except OSError as exc:
-        _terminate_cli(hooks,
+        _terminate_cli(
+            hooks,
             f"No Meshtastic device detected and no TCP listener on localhost: {exc}",
             1,
         )
@@ -266,7 +271,9 @@ def _open_transport(
                 )
             )
         except (hooks.mesh_interface_error, OSError) as exc:
-            _terminate_cli(hooks, f"Error connecting to {tcp_hostname}:{tcp_port}: {exc}", 1)
+            _terminate_cli(
+                hooks, f"Error connecting to {tcp_hostname}:{tcp_port}: {exc}", 1
+            )
 
     return _open_serial_transport(args, hooks, session, logfile)
 
@@ -315,7 +322,9 @@ def _run_connected_session(
             hooks.create_power_meter()
             active_meter = hooks.get_power_meter()
             if active_meter is not None:
-                session.register_cleanup(lambda: hooks.release_power_meter(active_meter))
+                session.register_cleanup(
+                    lambda: hooks.release_power_meter(active_meter)
+                )
 
         logfile = _open_serial_log(args, hooks, session)
         hooks.subscribe()
@@ -332,10 +341,7 @@ def _run_connected_session(
 
         have_tunnel = platform.system() == "Linux"
         if not (
-            args.noproto
-            or args.reply
-            or (have_tunnel and args.tunnel)
-            or args.listen
+            args.noproto or args.reply or (have_tunnel and args.tunnel) or args.listen
         ):
             return
         try:

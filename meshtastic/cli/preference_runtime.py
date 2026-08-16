@@ -19,7 +19,9 @@ import meshtastic.util
 from meshtastic.cli.values import parse_bitfield_value
 from meshtastic.protobuf import config_pb2
 
-logger = logging.getLogger(__name__)
+# Preserve the historical CLI logger name even though implementation moved here.
+# Warning/debug routing is observable through existing logging configuration and tests.
+logger = logging.getLogger("meshtastic.__main__")
 
 CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "configure_preflight_mode", default=False
@@ -118,9 +120,7 @@ def redact_pref_value(name: str, value: str) -> str:
     return REDACTED_PREF_VALUE if is_secret_pref(name) else value
 
 
-def report_pref_validation(
-    message: str, *, cli_print: Callable[..., None]
-) -> None:
+def report_pref_validation(message: str, *, cli_print: Callable[..., None]) -> None:
     """Report one validation diagnostic through the active preflight/output policy."""
     reporter = PREF_VALIDATION_REPORTER.get()
     if reporter is not None:
@@ -442,9 +442,7 @@ def set_pref(
         prefix = (
             f"{'.'.join(name[:-1])}." if config_type.message_type is not None else ""
         )
-        display_value = redact_pref_value(
-            normalized, meshtastic.util.toStr(raw_value)
-        )
+        display_value = redact_pref_value(normalized, meshtastic.util.toStr(raw_value))
         if not CONFIGURE_PREFLIGHT_MODE.get():
             cli_print(f"Set {prefix}{display_name} to {display_value}")
     return assignment_ok
