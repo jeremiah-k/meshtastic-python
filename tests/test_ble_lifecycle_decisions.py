@@ -52,6 +52,21 @@ def _receive_probe(
         ),
         (
             _ReceiveStartSnapshot(cast(object, SimpleNamespace()), True, 9.5),
+            _receive_probe(ident=17),
+            _ReceiveStartDisposition.REPLACE_STALE_PENDING,
+        ),
+        (
+            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), False, None),
+            _receive_probe(ident=17),
+            _ReceiveStartDisposition.REPLACE_DEAD,
+        ),
+        (
+            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), False, None),
+            _receive_probe(),
+            _ReceiveStartDisposition.WAIT_INCONCLUSIVE,
+        ),
+        (
+            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), True, 9.5),
             _receive_probe(),
             _ReceiveStartDisposition.WAIT_PENDING,
         ),
@@ -81,6 +96,22 @@ def test_decide_receive_start_classifies_stable_snapshot(
     )
 
     assert decision.disposition is expected
+
+
+def test_decide_receive_start_current_thread_without_timeout_defers_restart() -> None:
+    """A current receive thread should defer replacement and initialize pending time."""
+    existing = cast(object, SimpleNamespace())
+    decision = _decide_receive_start(
+        _ReceiveStartSnapshot(existing, False, None),
+        _receive_probe(current=True),
+        now=10.0,
+        pending_timeout=1.0,
+    )
+
+    assert decision.disposition is _ReceiveStartDisposition.DEFER_CURRENT
+    assert decision.initialize_pending_since is True
+    assert decision.schedule_deferred_restart is True
+    assert decision.pending_age == 0.0
 
 
 def test_decide_receive_start_current_thread_timeout_requests_deferred_restart() -> None:
@@ -141,6 +172,60 @@ def test_decide_disconnect_ownership_rejects_stale_client() -> None:
     )
 
     assert decision.disposition is _DisconnectDisposition.IGNORE_STALE
+
+
+def test_decide_disconnect_ownership_rejects_unowned_connecting_signal() -> None:
+    """A non-owned disconnect must not interrupt an in-progress connection."""
+    decision = _decide_disconnect_ownership(
+        _DisconnectOwnershipSnapshot(
+            current_state=ConnectionState.CONNECTING,
+            current_client=None,
+            target_client=None,
+            bleak_client=None,
+            is_closing=False,
+            publish_pending=True,
+            replacement_pending=False,
+            disconnect_notified=False,
+        )
+    )
+
+    assert decision.disposition is _DisconnectDisposition.IGNORE_CONNECTING
+
+
+def test_decide_disconnect_ownership_rejects_unowned_idle_signal() -> None:
+    """A disconnect without any owned client or provisional claim is stale."""
+    decision = _decide_disconnect_ownership(
+        _DisconnectOwnershipSnapshot(
+            current_state=ConnectionState.CONNECTED,
+            current_client=None,
+            target_client=None,
+            bleak_client=None,
+            is_closing=False,
+            publish_pending=False,
+            replacement_pending=False,
+            disconnect_notified=False,
+        )
+    )
+
+    assert decision.disposition is _DisconnectDisposition.IGNORE_UNOWNED
+
+
+def test_decide_disconnect_ownership_rejects_duplicate_provisional_signal() -> None:
+    """A previously-notified provisional session should classify as duplicate."""
+    decision = _decide_disconnect_ownership(
+        _DisconnectOwnershipSnapshot(
+            current_state=ConnectionState.CONNECTED,
+            current_client=None,
+            target_client=None,
+            bleak_client=None,
+            is_closing=False,
+            publish_pending=True,
+            replacement_pending=False,
+            disconnect_notified=True,
+        )
+    )
+
+    assert decision.disposition is _DisconnectDisposition.IGNORE_DUPLICATE
 
 
 def test_decide_disconnect_ownership_preserves_shutdown_semantics() -> None:

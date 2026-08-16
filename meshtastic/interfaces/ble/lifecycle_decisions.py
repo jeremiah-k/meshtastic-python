@@ -67,6 +67,8 @@ def _decide_receive_start(
 ) -> _ReceiveStartDecision:
     """Classify the next receive-start action without mutating shared state."""
     existing = snapshot.existing
+    # Session state normalizes this timestamp to monotonic float-or-None before
+    # the pure decision layer sees it; keep that invariant explicit here.
     pending_since = snapshot.pending_since
     if pending_since is None:
         has_pending_since = False
