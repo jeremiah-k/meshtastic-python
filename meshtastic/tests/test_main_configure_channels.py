@@ -1892,6 +1892,7 @@ def test_remote_channel_url_with_config_rejected_before_direct_write(
     with pytest.raises(SystemExit):
         main_module._handle_configure_command(iface, args, {})
 
+    iface.getNode.assert_not_called()
     target_node.setURL.assert_not_called()
     target_node.setOwner.assert_not_called()
     target_node.beginSettingsTransaction.assert_not_called()

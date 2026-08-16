@@ -166,6 +166,28 @@ class _PreparedConfigureDocument(NamedTuple):
 
 
 @dataclass(frozen=True, slots=True)
+class _ConfigureExecutionPlan:
+    """Immutable device-independent plan for one configure document.
+
+    Parameters
+    ----------
+    prepared : _PreparedConfigureDocument
+        Validated document with normalized direct and protobuf-section values.
+    destination : str
+        Destination value from the parsed CLI invocation.
+    is_local_target : bool
+        Whether the destination resolves to the locally connected node.
+    has_config_writes : bool
+        Whether a firmware settings transaction is required.
+    """
+
+    prepared: _PreparedConfigureDocument
+    destination: str
+    is_local_target: bool
+    has_config_writes: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ConfigureHooks:
     """Entrypoint-owned dependencies used by configure execution.
 
@@ -1261,13 +1283,140 @@ def _report_configure_result(
         hooks.cli_print("Configuration applied (no reboot expected).")
 
 
+def _prepare_configure_execution(
+    hooks: ConfigureHooks,
+    interface: MeshInterface,
+    args: Any,
+) -> _ConfigureExecutionPlan:
+    """Build and validate a configure plan before resolving the target node.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        Entrypoint-owned compatibility and reporting seams.
+    interface : MeshInterface
+        Connected interface used only for local-destination classification.
+    args : Any
+        Parsed CLI arguments containing ``configure`` and destination values.
+
+    Returns
+    -------
+    _ConfigureExecutionPlan
+        Immutable normalized plan that is safe to execute against a target node.
+    """
+    if len(args.configure) != 1:
+        _terminate_cli(
+            hooks.cli_exit,
+            "ERROR: --configure may be specified only once per invocation.",
+        )
+
+    prepared = _load_and_validate_configure_document(hooks, args.configure[0])
+    has_config_writes = bool(
+        prepared.config_sections or prepared.module_config_sections
+    )
+    is_local_target = hooks.is_local_destination(interface, args.dest)
+    if (
+        prepared.direct_values.channel_url is not None
+        and has_config_writes
+        and not is_local_target
+    ):
+        _terminate_cli(
+            hooks.cli_exit,
+            "ERROR: Combining channel_url with additional configuration writes "
+            "is not supported for remote nodes. Apply channel_url and "
+            "configuration in separate operations.",
+        )
+
+    return _ConfigureExecutionPlan(
+        prepared=prepared,
+        destination=args.dest,
+        is_local_target=is_local_target,
+        has_config_writes=has_config_writes,
+    )
+
+
+def _execute_configure_plan(
+    hooks: ConfigureHooks,
+    interface: MeshInterface,
+    target_node: Any,
+    plan: _ConfigureExecutionPlan,
+) -> _ConfigureCommandResult:
+    """Execute one validated configure plan against the resolved target node.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        Entrypoint-owned compatibility and reporting seams.
+    interface : MeshInterface
+        Connected interface used by stability and reconnect verification.
+    target_node : Any
+        Node selected for direct writes and settings transactions.
+    plan : _ConfigureExecutionPlan
+        Immutable plan prepared before device access.
+
+    Returns
+    -------
+    _ConfigureCommandResult
+        Named lifecycle flags describing requests sent by the execution.
+    """
+    prepared = plan.prepared
+    if plan.has_config_writes:
+        _preflight_configure_sections(
+            hooks,
+            target_node,
+            config_sections=prepared.config_sections,
+            module_config_sections=prepared.module_config_sections,
+        )
+
+    seturl_executed = _apply_direct_configuration(hooks, target_node, prepared)
+    if seturl_executed and plan.has_config_writes and plan.is_local_target:
+        if not hooks.post_seturl_stability_check(
+            interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
+        ):
+            _terminate_cli(
+                hooks.cli_exit,
+                "ERROR: channel_url applied, but transport did not stabilize for "
+                "additional configuration writes; aborting before the configuration "
+                "transaction.",
+            )
+
+    if plan.has_config_writes:
+        _apply_settings_transaction(
+            hooks,
+            target_node,
+            config_sections=prepared.config_sections,
+            module_config_sections=prepared.module_config_sections,
+        )
+
+    _report_configure_result(
+        hooks,
+        interface,
+        destination=plan.destination,
+        is_local_target=plan.is_local_target,
+        settings_transaction_started=plan.has_config_writes,
+        seturl_executed=seturl_executed,
+        channel_url=prepared.direct_values.channel_url,
+        config_sections=prepared.config_sections,
+        module_config_sections=prepared.module_config_sections,
+    )
+    return _ConfigureCommandResult(
+        settings_transaction_started=plan.has_config_writes,
+        local_channel_url_applied=seturl_executed and plan.is_local_target,
+        request_sent=(
+            prepared.direct_values.has_non_url_writes
+            or seturl_executed
+            or plan.has_config_writes
+        ),
+    )
+
+
 def _handle_configure_command(
     hooks: ConfigureHooks,
     interface: MeshInterface,
     args: Any,
     get_node_kwargs: dict[str, Any],
 ) -> _ConfigureCommandResult:
-    """Load and apply one YAML configuration document.
+    """Prepare and execute one YAML configuration document.
 
     Parameters
     ----------
@@ -1286,74 +1435,9 @@ def _handle_configure_command(
         Named lifecycle flags describing whether a settings transaction ran and whether
         a local channel URL write was actually performed.
     """
-    if len(args.configure) != 1:
-        _terminate_cli(
-            hooks.cli_exit,
-            "ERROR: --configure may be specified only once per invocation.",
-        )
-    prepared = _load_and_validate_configure_document(hooks, args.configure[0])
-    target_node = interface.getNode(args.dest, False, **get_node_kwargs)
-    has_config_writes = bool(
-        prepared.config_sections or prepared.module_config_sections
-    )
-    is_local_target = hooks.is_local_destination(interface, args.dest)
-
-    if has_config_writes:
-        _preflight_configure_sections(
-            hooks,
-            target_node,
-            config_sections=prepared.config_sections,
-            module_config_sections=prepared.module_config_sections,
-        )
-        if prepared.direct_values.channel_url is not None and not is_local_target:
-            _terminate_cli(
-                hooks.cli_exit,
-                "ERROR: Combining channel_url with additional configuration writes "
-                "is not supported for remote nodes. Apply channel_url and "
-                "configuration in separate operations.",
-            )
-
-    seturl_executed = _apply_direct_configuration(hooks, target_node, prepared)
-    if seturl_executed and has_config_writes and is_local_target:
-        if not hooks.post_seturl_stability_check(
-            interface, timeout=SETURL_STABILITY_TIMEOUT_SECONDS
-        ):
-            _terminate_cli(
-                hooks.cli_exit,
-                "ERROR: channel_url applied, but transport did not stabilize for "
-                "additional configuration writes; aborting before the configuration "
-                "transaction.",
-            )
-
-    settings_transaction_started = has_config_writes
-    if has_config_writes:
-        _apply_settings_transaction(
-            hooks,
-            target_node,
-            config_sections=prepared.config_sections,
-            module_config_sections=prepared.module_config_sections,
-        )
-
-    _report_configure_result(
-        hooks,
-        interface,
-        destination=args.dest,
-        is_local_target=is_local_target,
-        settings_transaction_started=settings_transaction_started,
-        seturl_executed=seturl_executed,
-        channel_url=prepared.direct_values.channel_url,
-        config_sections=prepared.config_sections,
-        module_config_sections=prepared.module_config_sections,
-    )
-    return _ConfigureCommandResult(
-        settings_transaction_started=settings_transaction_started,
-        local_channel_url_applied=seturl_executed and is_local_target,
-        request_sent=(
-            prepared.direct_values.has_non_url_writes
-            or seturl_executed
-            or settings_transaction_started
-        ),
-    )
+    plan = _prepare_configure_execution(hooks, interface, args)
+    target_node = interface.getNode(plan.destination, False, **get_node_kwargs)
+    return _execute_configure_plan(hooks, interface, target_node, plan)
 
 
 def _handle_configure_actions(
