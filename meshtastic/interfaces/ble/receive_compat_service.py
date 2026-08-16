@@ -9,10 +9,10 @@ from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
-    _load_runtime_module,
     _get_declared_callable,
     _get_declared_lock,
     _get_declared_member,
+    _load_runtime_module,
 )
 
 if TYPE_CHECKING:
@@ -31,7 +31,10 @@ class BLEReceiveRecoveryService:
         receive_module = _load_runtime_module(
             "meshtastic.interfaces.ble.receive_service"
         )
-        return cast(type["BLEReceiveRecoveryController"], receive_module.BLEReceiveRecoveryController)
+        return cast(
+            type["BLEReceiveRecoveryController"],
+            receive_module.BLEReceiveRecoveryController,
+        )
 
     @staticmethod
     def _is_controller_like(

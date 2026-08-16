@@ -30,13 +30,13 @@ from meshtastic.interfaces.ble.management_service import (
     BLEManagementCommandsService,
 )
 from meshtastic.interfaces.ble.management_state import BLEManagementState
-from meshtastic.interfaces.ble.session_state import BLESessionState
 from meshtastic.interfaces.ble.reconnection import (
     ReconnectPolicyMissingMethodError,
     ReconnectScheduler,
     ReconnectWorker,
     ThreadCoordinatorMissingMethodError,
 )
+from meshtastic.interfaces.ble.session_state import BLESessionState
 from meshtastic.interfaces.ble.state import BLEStateManager
 from meshtastic.util import DeferredExecution
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
@@ -805,7 +805,9 @@ def test_management_handler_revalidates_refreshed_client_under_shared_locks(
         )
         preconditions = MagicMock()
         monkeypatch.setattr(iface, "_validate_management_preconditions", preconditions)
-        monkeypatch.setattr(handler, "_start_management_phase", lambda _address: start_context)
+        monkeypatch.setattr(
+            handler, "_start_management_phase", lambda _address: start_context
+        )
         monkeypatch.setattr(
             handler,
             "_resolve_management_target",

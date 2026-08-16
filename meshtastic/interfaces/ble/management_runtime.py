@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
-    _load_runtime_module,
     _get_declared_callable,
     _get_declared_lock,
     _get_declared_member,
+    _load_runtime_module,
 )
 from meshtastic.interfaces.ble.connection import ConnectionOrchestrator
 from meshtastic.interfaces.ble.constants import (
@@ -756,7 +756,9 @@ class BLEManagementCommandHandler:
             if temporary_client is not None:
                 try:
                     self._close_client(temporary_client)
-                except Exception:  # noqa: BLE001 - best-effort cleanup must not mask command outcome
+                except (
+                    Exception
+                ):  # noqa: BLE001 - best-effort cleanup must not mask command outcome
                     logger.debug(
                         "Failed to close temporary management client.",
                         exc_info=True,
@@ -1017,7 +1019,9 @@ class BLEManagementCommandHandler:
                 check=False,
                 timeout=command_timeout,
             )
-        except Exception as exc:  # noqa: BLE001 - preserve injected module compatibility
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - preserve injected module compatibility
             if isinstance(exc, timeout_exc_type):
                 raise iface.BLEError(
                     ERROR_TRUST_COMMAND_TIMEOUT.format(

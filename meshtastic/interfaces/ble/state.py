@@ -441,6 +441,7 @@ class BLEStateManager:
         """
         return self._reset_to_disconnected()
 
+
 def _is_canonical_state_manager(
     candidate: object,
     lock: object,

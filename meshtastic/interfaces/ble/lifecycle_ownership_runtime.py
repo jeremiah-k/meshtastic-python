@@ -89,9 +89,7 @@ class BLEConnectionOwnershipLifecycleCoordinator:
             session lock; otherwise ``None`` for compatibility managers.
         """
         state_manager = self._state_manager
-        if (
-            _is_canonical_state_manager(state_manager, self._session.lock)
-        ):
+        if _is_canonical_state_manager(state_manager, self._session.lock):
             return BLEStateManager._current_state_unlocked(state_manager)
         return None
 

@@ -45,8 +45,8 @@ from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
-from meshtastic._publishing import publishing_thread as publishingThread
 import meshtastic.interfaces.ble.constants as _ble_constants
+from meshtastic._publishing import publishing_thread as publishingThread
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
     _get_declared_callable,
@@ -58,14 +58,14 @@ from meshtastic.interfaces.ble.compat_adapter import (
 from meshtastic.interfaces.ble.compatibility_service import (
     BLECompatibilityEventPublisher,
 )
+from meshtastic.interfaces.ble.connect_transaction import (
+    _BLEClientAdoption,
+    _BLEConnectStateSnapshot,
+)
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
     ConnectionOrchestrator,
     ConnectionValidator,
-)
-from meshtastic.interfaces.ble.connect_transaction import (
-    _BLEClientAdoption,
-    _BLEConnectStateSnapshot,
 )
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
@@ -131,13 +131,13 @@ from meshtastic.interfaces.ble.management_state import (
     BLEManagementState,
     _ManagementConditionPort,
 )
-from meshtastic.interfaces.ble.ports import _LockPort
 from meshtastic.interfaces.ble.notifications import (
     BLENotificationDispatcher,
     NotificationManager,
     _NotificationSessionSnapshot,
 )
 from meshtastic.interfaces.ble.policies import RetryPolicy
+from meshtastic.interfaces.ble.ports import _LockPort
 from meshtastic.interfaces.ble.receive_service import BLEReceiveRecoveryController
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.session_state import (
@@ -894,7 +894,9 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             except (BleakError, RuntimeError) as e:
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
-            except Exception as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
+            except (
+                Exception
+            ) as e:  # noqa: BLE001 # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
@@ -2339,21 +2341,15 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             snapshot = _BLEConnectStateSnapshot(
                 client=self.client,
                 address=self.address,
-                last_connection_request=getattr(
-                    self, "_last_connection_request", None
-                ),
+                last_connection_request=getattr(self, "_last_connection_request", None),
                 client_publish_pending=bool(
                     getattr(self, "_client_publish_pending", False)
                 ),
                 client_replacement_pending=bool(
                     getattr(self, "_client_replacement_pending", False)
                 ),
-                disconnect_notified=bool(
-                    getattr(self, "_disconnect_notified", False)
-                ),
-                connection_session_epoch=getattr(
-                    self, "_connection_session_epoch", 0
-                ),
+                disconnect_notified=bool(getattr(self, "_disconnect_notified", False)),
+                connection_session_epoch=getattr(self, "_connection_session_epoch", 0),
             )
             self._client_replacement_pending = (
                 self.client is not None and not snapshot.client_publish_pending

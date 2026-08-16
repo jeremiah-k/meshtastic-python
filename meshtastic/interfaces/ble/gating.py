@@ -736,7 +736,6 @@ def _addr_lock_context(addr: str | None) -> Generator[RLock, None, None]:
 
 # Early exits keep registry-lock cleanup and TOCTOU revalidation branches explicit.
 def _is_currently_connected_elsewhere(  # pylint: disable=too-many-return-statements
-
     addr: str | None, owner: Any | None = None
 ) -> bool:
     """Return whether a BLE address is recorded as connected by a different owner.

@@ -35,7 +35,6 @@ except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
 # Public API re-export: import the canonical BLE facade once and mirror its
 # declared public surface from __all__ into this shim namespace.
 from meshtastic.interfaces import ble as _ble
-from meshtastic.interfaces.ble.interface import BLEInterface as _BLEInterface
 from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-import
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
     ERROR_CONNECTION_FAILED,
@@ -63,6 +62,7 @@ from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-
     logger,
     sanitize_address,
 )
+from meshtastic.interfaces.ble.interface import BLEInterface as _BLEInterface
 
 BLEInterface = _BLEInterface
 

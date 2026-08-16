@@ -42,8 +42,7 @@ class TestBLEPackageInit:
 
     def test_ble_package_defers_interface_import_until_attribute_access(self) -> None:
         """Importing the BLE package alone should not import the implementation module."""
-        _run_isolated_python(
-            """
+        _run_isolated_python("""
             import importlib
             import sys
 
@@ -53,13 +52,11 @@ class TestBLEPackageInit:
             resolved = ble.BLEInterface
             assert "meshtastic.interfaces.ble.interface" in sys.modules
             assert ble.BLEInterface is resolved
-            """
-        )
+            """)
 
     def test_ble_init_raises_import_error_when_bleak_missing(self) -> None:
         """Missing bleak should produce the package's actionable import error."""
-        _run_isolated_python(
-            """
+        _run_isolated_python("""
             import builtins
             import importlib
 
@@ -78,13 +75,11 @@ class TestBLEPackageInit:
                 assert "poetry install" in message
             else:
                 raise AssertionError("expected BLE package import to fail without bleak")
-            """
-        )
+            """)
 
     def test_ble_init_reraises_non_bleak_module_not_found(self) -> None:
         """Non-bleak dependency failures must not be rewritten as bleak guidance."""
-        _run_isolated_python(
-            """
+        _run_isolated_python("""
             import builtins
             import importlib
 
@@ -104,8 +99,7 @@ class TestBLEPackageInit:
                 assert exc.name == "some_other_module"
             else:
                 raise AssertionError("expected non-bleak ModuleNotFoundError")
-            """
-        )
+            """)
 
     def test_ble_unknown_lazy_export_raises_attribute_error(self) -> None:
         """Unknown package attributes should retain normal module semantics."""

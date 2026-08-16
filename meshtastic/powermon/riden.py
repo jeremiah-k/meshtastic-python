@@ -49,9 +49,7 @@ class RidenPowerSupply(PowerSupply):
         portName : str, optional
             The serial port path of the power supply. Defaults to ``"/dev/ttyUSB0"``.
         """
-        serial_handle = serial.Serial(
-            port=portName, baudrate=DEFAULT_RIDEN_BAUDRATE
-        )
+        serial_handle = serial.Serial(port=portName, baudrate=DEFAULT_RIDEN_BAUDRATE)
         try:
             self.r = r = Riden(
                 port=portName,
