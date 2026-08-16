@@ -11,11 +11,16 @@ from pathlib import Path
 
 import pytest
 
-from meshtastic._branding import DISTRIBUTION_NAME, PRIMARY_CLI_NAME
+from meshtastic._branding import (
+    COMPATIBILITY_CLI_NAMES,
+    DISTRIBUTION_NAME,
+    PRIMARY_CLI_NAME,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RELEASE_VERIFIER = _REPO_ROOT / "bin" / "verify_release_source.py"
 _STANDALONE_SMOKE = _REPO_ROOT / "bin" / "smoke-standalone.sh"
+_BUILD_BIN = _REPO_ROOT / "bin" / "build-bin.sh"
 
 
 def _git(repository: Path, *args: str) -> str:
@@ -345,6 +350,66 @@ def _write_fake_standalone(
 
 
 @pytest.mark.unit
+def test_standalone_build_copies_configured_distribution_metadata(
+    tmp_path: Path,
+) -> None:
+    """The frozen executable must carry metadata used by importlib.metadata.version()."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    pyinstaller_args = tmp_path / "pyinstaller-args.txt"
+    poetry = fake_bin / "poetry"
+    compatibility_names = " ".join(COMPATIBILITY_CLI_NAMES)
+    poetry.write_text(
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ $1 == install ]]; then
+  exit 0
+fi
+if [[ $1 == run && $2 == python && $3 == -c ]]; then
+  case $4 in
+    *DISTRIBUTION_NAME*) printf '%s\n' '{DISTRIBUTION_NAME}' ;;
+    *PRIMARY_CLI_NAME*) printf '%s\n' '{PRIMARY_CLI_NAME}' ;;
+    *COMPATIBILITY_CLI_NAMES*) printf '%s\n' '{compatibility_names}' ;;
+    *) exit 2 ;;
+  esac
+  exit 0
+fi
+if [[ $1 == run && $2 == pyinstaller ]]; then
+  shift 2
+  printf '%s\n' "$@" > "${{PYINSTALLER_ARGS}}"
+  mkdir -p dist
+  : > 'dist/{PRIMARY_CLI_NAME}'
+  exit 0
+fi
+exit 2
+""",
+        encoding="utf-8",
+    )
+    poetry.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["PYINSTALLER_ARGS"] = str(pyinstaller_args)
+
+    result = subprocess.run(
+        [str(_BUILD_BIN)],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    args = pyinstaller_args.read_text(encoding="utf-8").splitlines()
+    metadata_index = args.index("--copy-metadata")
+    assert args[metadata_index + 1] == DISTRIBUTION_NAME
+    name_index = args.index("-n")
+    assert args[name_index + 1] == PRIMARY_CLI_NAME
+    for compatibility_cli in COMPATIBILITY_CLI_NAMES:
+        assert (tmp_path / "dist" / compatibility_cli).is_file()
+
+
+@pytest.mark.unit
 def test_standalone_smoke_contract_accepts_expected_cli_surface(tmp_path: Path) -> None:
     """The smoke helper should validate version, help, and schema introspection."""
     binary = tmp_path / "standalone build" / PRIMARY_CLI_NAME
@@ -454,9 +519,11 @@ def test_release_workflows_share_provenance_and_artifact_contracts() -> None:
     ) in pypi
 
     build_bin = (_REPO_ROOT / "bin" / "build-bin.sh").read_text(encoding="utf-8")
+    assert "from meshtastic._branding import DISTRIBUTION_NAME" in build_bin
     assert "from meshtastic._branding import PRIMARY_CLI_NAME" in build_bin
     assert "from meshtastic._branding import COMPATIBILITY_CLI_NAMES" in build_bin
     assert '-n "${primary_cli}"' in build_bin
+    assert '--copy-metadata "${distribution_name}"' in build_bin
 
     release_assets = assets_path.read_text(encoding="utf-8")
     assert (
@@ -464,12 +531,28 @@ def test_release_workflows_share_provenance_and_artifact_contracts() -> None:
     )
     assert "from meshtastic._branding import PRIMARY_CLI_NAME" in release_assets
     assert "from meshtastic._branding import COMPATIBILITY_CLI_NAMES" in release_assets
+    assert "workflow_dispatch:" in release_assets
+    assert "release_tag:" in release_assets
+    assert 'gh release view "${RELEASE_TAG}"' in release_assets
     assert (
-        'bin/smoke-standalone.sh "dist/${PRIMARY_CLI_NAME}" '
+        'install -m 0755 bin/build-bin.sh "${RUNNER_TEMP}/build-bin.sh"'
+        in release_assets
+    )
+    assert (
+        'install -m 0755 bin/smoke-standalone.sh "${RUNNER_TEMP}/smoke-standalone.sh"'
+    ) in release_assets
+    trusted_tooling_index = release_assets.index(
+        "Stage trusted standalone release tooling"
+    )
+    release_checkout_index = release_assets.index("Checkout validated release commit")
+    assert trusted_tooling_index < release_checkout_index
+    assert 'run: "${RUNNER_TEMP}/build-bin.sh"' in release_assets
+    assert (
+        '"${RUNNER_TEMP}/smoke-standalone.sh" "dist/${PRIMARY_CLI_NAME}" '
         '"${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"'
     ) in release_assets
     assert (
-        'bin/smoke-standalone.sh "dist/${cli_name}" '
+        '"${RUNNER_TEMP}/smoke-standalone.sh" "dist/${cli_name}" '
         '"${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"'
     ) in release_assets
     assert "rm -rf release-assets" in release_assets
