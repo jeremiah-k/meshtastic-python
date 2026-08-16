@@ -13,6 +13,7 @@ import pytest
 from meshtastic import mt_config
 
 from ..mesh_interface import MeshInterface
+from ..protobuf import mesh_pb2, portnums_pb2
 from ..tcp_interface import TCPInterface
 
 try:
@@ -67,6 +68,33 @@ def test_Tunnel_on_non_linux_system(
     finally:
         iface.close()
     assert issubclass(pytest_wrapped_e.type, Tunnel.TunnelError)
+
+
+@pytest.mark.unit
+def test_tunnel_mtu_tracks_mesh_data_payload_contract() -> None:
+    """Tunnel MTU should use the generated maximum Data.payload size."""
+    assert TUN_MTU == mesh_pb2.Constants.DATA_PAYLOAD_LEN == 233
+
+
+@pytest.mark.unit
+def test_tunnel_sends_full_mtu_payload_without_extra_framing(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """A maximum-MTU IP packet should be passed unchanged as Data.payload."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    iface.sendData = MagicMock()  # type: ignore[method-assign]
+    payload = bytes(TUN_MTU)
+
+    with _managed_tunnel(iface) as tun:
+        tun._send_packet(b"\x00\x00\xff\xff", payload)
+
+    iface.sendData.assert_called_once_with(
+        payload,
+        "^all",
+        portnums_pb2.IP_TUNNEL_APP,
+        wantAck=False,
+    )
 
 
 @pytest.mark.unit

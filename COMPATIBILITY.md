@@ -173,6 +173,18 @@ Approved BLE deprecation:
 | ----------------------------------------------------------- | ------------------ | ----------------------------- | -------------------------------- |
 | `BLECoroutineRunner._run_coroutine_threadsafe(timeout=...)` | `COMPAT_DEPRECATE` | Warn-once per runner instance | Alias for `startup_timeout=...`. |
 
+## Additional Public API Promotions
+
+The following additive APIs are intentionally public and follow the repository's
+normal backwards-compatibility policy.
+
+| Symbol                               | Status    | Notes                                                                     |
+| ------------------------------------ | --------- | ------------------------------------------------------------------------- |
+| `meshtastic.slog.SlogHealthSnapshot` | `PRIMARY` | Immutable structured/power logging health snapshot.                       |
+| `PowerLogger.getHealth()`            | `PRIMARY` | Current power-logging degradation plus cumulative failure history.        |
+| `StructuredLogger.getHealth()`       | `PRIMARY` | Current structured/raw/correlated-power degradation plus failure history. |
+| `LogSet.getHealth()`                 | `PRIMARY` | Aggregate health that remains available after owned loggers close.        |
+
 ## Deprecated Compatibility Aliases
 
 These are intentionally maintained deprecated aliases.
