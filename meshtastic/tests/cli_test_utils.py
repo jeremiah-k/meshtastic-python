@@ -9,6 +9,8 @@ from typing import NoReturn
 
 import pytest
 
+from meshtastic._branding import PRIMARY_CLI_NAME
+
 EMPTY_SHELL_COMMAND_ERROR = "Empty command passed to CLI shell helper"
 EMPTY_ARGV_COMMAND_ERROR = "Empty command list passed to CLI argv helper"
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
@@ -155,7 +157,7 @@ def _run_host_cli(
     host: str,
     *args: str,
     timeout: int | float = 30,
-    meshtastic_bin: str = "meshtastic",
+    meshtastic_bin: str = PRIMARY_CLI_NAME,
 ) -> tuple[int, str]:
     """Run a meshtastic CLI command against a host and return (code, output).
 
@@ -170,7 +172,7 @@ def _run_host_cli(
         (Default value = 30)
     meshtastic_bin : str
         Path or name of the meshtastic executable.
-        (Default value = "meshtastic")
+        (Default value = PRIMARY_CLI_NAME)
 
     Returns
     -------
@@ -188,7 +190,7 @@ def _run_host_cli_ok(
     host: str,
     *args: str,
     timeout: int | float = 30,
-    meshtastic_bin: str = "meshtastic",
+    meshtastic_bin: str = PRIMARY_CLI_NAME,
 ) -> str:
     """Run a host CLI command and assert success with useful context.
 
@@ -203,7 +205,7 @@ def _run_host_cli_ok(
         (Default value = 30)
     meshtastic_bin : str
         Path or name of the meshtastic executable.
-        (Default value = "meshtastic")
+        (Default value = PRIMARY_CLI_NAME)
 
     Returns
     -------

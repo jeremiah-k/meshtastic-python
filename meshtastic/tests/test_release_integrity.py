@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from meshtastic._branding import DISTRIBUTION_NAME, PRIMARY_CLI_NAME
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RELEASE_VERIFIER = _REPO_ROOT / "bin" / "verify_release_source.py"
 _STANDALONE_SMOKE = _REPO_ROOT / "bin" / "smoke-standalone.sh"
@@ -37,7 +39,7 @@ def _write_pyproject(
     if metadata_section not in {"project", "tool.poetry"}:
         raise ValueError(f"unsupported metadata section: {metadata_section}")
     (repository / "pyproject.toml").write_text(
-        f'[{metadata_section}]\nname = "mtjk"\nversion = "{version}"\n',
+        f'[{metadata_section}]\nname = "{DISTRIBUTION_NAME}"\nversion = "{version}"\n',
         encoding="utf-8",
     )
 
@@ -131,7 +133,8 @@ def test_release_verifier_accepts_partial_pep621_migration(tmp_path: Path) -> No
     repository = _initialize_release_repository(tmp_path)
     _git(repository, "tag", "-d", "v1.2.3")
     (repository / "pyproject.toml").write_text(
-        '[project]\nname = "mtjk"\n' '[tool.poetry]\nversion = "1.2.3"\n',
+        f'[project]\nname = "{DISTRIBUTION_NAME}"\n'
+        '[tool.poetry]\nversion = "1.2.3"\n',
         encoding="utf-8",
     )
     _git(repository, "add", "pyproject.toml")
@@ -152,8 +155,8 @@ def test_release_verifier_rejects_conflicting_metadata_sections(tmp_path: Path) 
     release_commit = _git(repository, "rev-parse", "v1.2.3^{commit}")
     _git(repository, "tag", "-d", "v1.2.3")
     (repository / "pyproject.toml").write_text(
-        '[project]\nname = "mtjk"\nversion = "1.2.3"\n'
-        '[tool.poetry]\nname = "mtjk"\nversion = "9.9.9"\n',
+        f'[project]\nname = "{DISTRIBUTION_NAME}"\nversion = "1.2.3"\n'
+        f'[tool.poetry]\nname = "{DISTRIBUTION_NAME}"\nversion = "9.9.9"\n',
         encoding="utf-8",
     )
     _git(repository, "add", "pyproject.toml")
@@ -188,11 +191,11 @@ def test_release_verifier_reads_package_metadata_from_tagged_commit(
 
 @pytest.mark.unit
 def test_release_verifier_rejects_wrong_package_name(tmp_path: Path) -> None:
-    """A release tag must still identify the mtjk distribution."""
+    """A release tag must still identify the configured distribution."""
     repository = _initialize_release_repository(tmp_path)
     _git(repository, "tag", "-d", "v1.2.3")
     (repository / "pyproject.toml").write_text(
-        '[tool.poetry]\nname = "not-mtjk"\nversion = "1.2.3"\n',
+        '[tool.poetry]\nname = "not-the-configured-package"\nversion = "1.2.3"\n',
         encoding="utf-8",
     )
     _git(repository, "add", "pyproject.toml")
@@ -204,7 +207,10 @@ def test_release_verifier_rejects_wrong_package_name(tmp_path: Path) -> None:
     result = _run_verifier(repository, "v1.2.3")
 
     assert result.returncode == 1
-    assert "Expected package name 'mtjk', got 'not-mtjk'" in result.stderr
+    assert (
+        f"Expected package name {DISTRIBUTION_NAME!r}, got 'not-the-configured-package'"
+        in result.stderr
+    )
 
 
 @pytest.mark.unit
@@ -314,6 +320,7 @@ def _write_fake_standalone(
     path: Path,
     *,
     version: str,
+    product: str = PRIMARY_CLI_NAME,
     help_values: tuple[str, ...] = ("--version", "--support", "--list-fields"),
     field_values: tuple[str, ...] = (
         "Local config fields:",
@@ -327,7 +334,7 @@ def _write_fake_standalone(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         'case "${1:-}" in\n'
-        f"  --version) printf '%s\\n' {shlex.quote(version)} ;;\n"
+        f"  --version) printf '%s\\n' {shlex.quote(f'{product} {version}')} ;;\n"
         f"  --help) printf '%s\\n' {shlex.quote(help_text)} ;;\n"
         f"  --list-fields) printf '%s\\n' {field_args} ;;\n"
         "  *) exit 2 ;;\n"
@@ -340,12 +347,12 @@ def _write_fake_standalone(
 @pytest.mark.unit
 def test_standalone_smoke_contract_accepts_expected_cli_surface(tmp_path: Path) -> None:
     """The smoke helper should validate version, help, and schema introspection."""
-    binary = tmp_path / "standalone build" / "meshtastic"
+    binary = tmp_path / "standalone build" / PRIMARY_CLI_NAME
     binary.parent.mkdir()
     _write_fake_standalone(binary, version="1.2.3")
 
     result = subprocess.run(
-        [str(_STANDALONE_SMOKE), str(binary), "1.2.3"],
+        [str(_STANDALONE_SMOKE), str(binary), "1.2.3", PRIMARY_CLI_NAME],
         check=False,
         capture_output=True,
         text=True,
@@ -359,11 +366,11 @@ def test_standalone_smoke_contract_accepts_expected_cli_surface(tmp_path: Path) 
 @pytest.mark.unit
 def test_standalone_smoke_contract_rejects_wrong_version(tmp_path: Path) -> None:
     """The built artifact must report exactly the package version being released."""
-    binary = tmp_path / "meshtastic"
+    binary = tmp_path / PRIMARY_CLI_NAME
     _write_fake_standalone(binary, version="9.9.9")
 
     result = subprocess.run(
-        [str(_STANDALONE_SMOKE), str(binary), "1.2.3"],
+        [str(_STANDALONE_SMOKE), str(binary), "1.2.3", PRIMARY_CLI_NAME],
         check=False,
         capture_output=True,
         text=True,
@@ -392,7 +399,7 @@ def test_standalone_smoke_contract_rejects_missing_required_surface(
     field_values = ["Local config fields:", "Module config fields:"]
     values = help_values if surface == "help" else field_values
     values.remove(missing)
-    binary = tmp_path / "meshtastic"
+    binary = tmp_path / PRIMARY_CLI_NAME
     _write_fake_standalone(
         binary,
         version="1.2.3",
@@ -401,7 +408,7 @@ def test_standalone_smoke_contract_rejects_missing_required_surface(
     )
 
     result = subprocess.run(
-        [str(_STANDALONE_SMOKE), str(binary), "1.2.3"],
+        [str(_STANDALONE_SMOKE), str(binary), "1.2.3", PRIMARY_CLI_NAME],
         check=False,
         capture_output=True,
         text=True,
@@ -446,13 +453,26 @@ def test_release_workflows_share_provenance_and_artifact_contracts() -> None:
         "${{ needs.build.outputs.version }}"
     ) in pypi
 
+    build_bin = (_REPO_ROOT / "bin" / "build-bin.sh").read_text(encoding="utf-8")
+    assert "from meshtastic._branding import PRIMARY_CLI_NAME" in build_bin
+    assert "from meshtastic._branding import COMPATIBILITY_CLI_NAMES" in build_bin
+    assert '-n "${primary_cli}"' in build_bin
+
     release_assets = assets_path.read_text(encoding="utf-8")
     assert (
         "RELEASE_VERSION: ${{ steps.release_source.outputs.version }}" in release_assets
     )
+    assert "from meshtastic._branding import PRIMARY_CLI_NAME" in release_assets
+    assert "from meshtastic._branding import COMPATIBILITY_CLI_NAMES" in release_assets
     assert (
-        'bin/smoke-standalone.sh dist/meshtastic "${RELEASE_VERSION}"' in release_assets
-    )
+        'bin/smoke-standalone.sh "dist/${PRIMARY_CLI_NAME}" '
+        '"${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"'
+    ) in release_assets
+    assert (
+        'bin/smoke-standalone.sh "dist/${cli_name}" '
+        '"${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"'
+    ) in release_assets
+    assert "dist/*_ubuntu" in release_assets
     assert (
         "name: standalone-release-assets-${{ steps.release_source.outputs.tag }}"
         in release_assets

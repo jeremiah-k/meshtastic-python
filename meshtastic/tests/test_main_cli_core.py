@@ -22,6 +22,7 @@ from meshtastic.__main__ import (
     main,
     support_info,
 )
+from meshtastic._branding import PRIMARY_CLI_NAME
 
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
@@ -74,7 +75,7 @@ def test_main_init_parser_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 0
     out, err = capsys.readouterr()
-    assert re.match(r"[0-9]+\.[0-9]+[\.a][0-9]", out)
+    assert re.match(rf"{re.escape(PRIMARY_CLI_NAME)} [0-9]+\.[0-9]+[\.a][0-9]", out)
     assert err == ""
 
 
@@ -191,7 +192,7 @@ def test_main_main_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 0
     out, err = capsys.readouterr()
-    assert re.match(r"[0-9]+\.[0-9]+[\.a][0-9]", out)
+    assert re.match(rf"{re.escape(PRIMARY_CLI_NAME)} [0-9]+\.[0-9]+[\.a][0-9]", out)
     assert err == ""
 
 

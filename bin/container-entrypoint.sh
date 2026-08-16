@@ -9,7 +9,20 @@
 
 set -eu
 
-bin='meshtastic'
+# Derive the preferred CLI from installed distribution metadata without
+# importing the meshtastic package (and therefore without loading optional deps).
+bin="$(
+	python - <<'PY'
+from importlib.metadata import packages_distributions
+
+distributions = packages_distributions().get("meshtastic", ())
+print(distributions[0] if distributions else "meshtastic")
+PY
+)"
+if ! command -v "${bin}" >/dev/null 2>&1; then
+	# Compatibility fallback for unusual/upstream-oriented installations.
+	bin='meshtastic'
+fi
 
 # run command if it is not starting with a "-" and is an executable in PATH
 if [ "${#}" -le 0 ] ||

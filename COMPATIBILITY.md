@@ -15,8 +15,34 @@ not present in that manifest, do not add or keep it by default.
 - Historical compatibility shims remain callable where documented below.
 - Internal helpers prefer underscore-prefixed `snake_case`.
 - Naming-only compatibility aliases are silent unless explicitly marked deprecated.
+  The interactive-only CLI preference notice documented under
+  [CLI Compatibility](#cli-compatibility) is the one sanctioned exception: it
+  is not a deprecation and never appears for non-interactive callers.
 - Naming-only deprecations must be warn-once.
 - Semantic deprecations may warn on every invalid usage.
+
+## CLI Compatibility
+
+CLI branding is intentionally separate from the Python import namespace:
+
+- `mtjk` is the preferred command for this distribution.
+- `meshtastic` remains an installed compatibility command and runs the same
+  implementation.
+- Interactive terminal use of `meshtastic` prints a short preference notice;
+  non-TTY use remains silent so normal automation does not gain new stderr output.
+- `import meshtastic` remains the stable Python namespace; no `mtjk`
+  import package exists.
+- Runtime distribution/display/CLI branding is centralized in
+  `meshtastic._branding.PRODUCT_NAME`. Install-time metadata such as
+  console-script names in `pyproject.toml` must remain synchronized and is
+  covered by tests.
+- Side-by-side installation with the upstream distribution in one environment is
+  not a supported isolation mechanism: both distributions use the `meshtastic`
+  import namespace and historical CLI name. Use separate environments when both
+  are needed.
+
+When `PRODUCT_NAME` is switched back to `meshtastic` for upstream use, the
+runtime compatibility-command list collapses automatically.
 
 ## Status Legend
 

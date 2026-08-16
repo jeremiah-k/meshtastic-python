@@ -172,8 +172,9 @@ docker run -d \
 	"${MESHTASTICD_IMAGE}" \
 	bash -c 'while true; do meshtasticd -s --fsdir=/var/lib/meshtasticd; echo "meshtasticd exited with code $?, restarting in 2s..."; sleep 2; done' >/dev/null
 
+primary_cli="$(poetry run python -c 'from meshtastic._branding import PRIMARY_CLI_NAME; print(PRIMARY_CLI_NAME)')"
 deadline=$((SECONDS + 10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
-until poetry run meshtastic --timeout 5 --host "${MESHTASTICD_HOST}" --info >>"${READY_LOG_FILE}" 2>&1; do
+until poetry run "${primary_cli}" --timeout 5 --host "${MESHTASTICD_HOST}" --info >>"${READY_LOG_FILE}" 2>&1; do
 	if ! docker ps --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		echo "${MESHTASTICD_CONTAINER} exited before becoming ready." >&2
 		if [[ -f ${READY_LOG_FILE} ]]; then
