@@ -891,6 +891,123 @@ def test_register_notifications_keeps_fromnum_during_client_replacement(
         iface.close()
 
 
+def test_execute_optional_registration_tolerates_optional_start_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional notification failure should leave registration state converged."""
+
+    class _OptionalFailureClient(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.start_notify_calls: list[str] = []
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == LEGACY_LOGRADIO_UUID
+
+        def start_notify(self, *args: object, **_kwargs: object) -> None:
+            characteristic = cast(str, args[0])
+            self.start_notify_calls.append(characteristic)
+            raise RuntimeError("optional start failed")
+
+    client = _OptionalFailureClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    dispatcher = iface._notification_dispatcher
+    try:
+        plan = dispatcher._prepare_registration_plan(
+            iface,
+            cast(BLEClient, client),
+            legacy_log_handler=lambda _sender, _data: None,
+            log_handler=lambda _sender, _data: None,
+            from_num_handler=lambda _sender, _data: None,
+        )
+
+        assert dispatcher._execute_optional_registration(
+            iface, cast(BLEClient, client), plan
+        )
+        assert client.start_notify_calls == [LEGACY_LOGRADIO_UUID]
+        assert LEGACY_LOGRADIO_UUID not in dispatcher._started_notify_characteristics
+        assert dispatcher.fromnum_notify_enabled is False
+    finally:
+        iface.close()
+
+
+def test_execute_optional_registration_rolls_back_stale_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional registration should unwind a start when session ownership turns stale."""
+
+    class _OptionalStaleClient(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.start_notify_calls: list[str] = []
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == LEGACY_LOGRADIO_UUID
+
+        def start_notify(self, *args: object, **_kwargs: object) -> None:
+            self.start_notify_calls.append(cast(str, args[0]))
+
+    client = _OptionalStaleClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    dispatcher = iface._notification_dispatcher
+    try:
+        plan = dispatcher._prepare_registration_plan(
+            iface,
+            cast(BLEClient, client),
+            legacy_log_handler=lambda _sender, _data: None,
+            log_handler=lambda _sender, _data: None,
+            from_num_handler=lambda _sender, _data: None,
+        )
+        with iface._state_lock:
+            iface._connection_session_epoch += 1
+
+        assert not dispatcher._execute_optional_registration(
+            iface, cast(BLEClient, client), plan
+        )
+        assert client.start_notify_calls == [LEGACY_LOGRADIO_UUID]
+        assert client.stop_notify_calls == [LEGACY_LOGRADIO_UUID]
+        assert not dispatcher._started_notify_characteristics
+        assert dispatcher.fromnum_notify_enabled is False
+    finally:
+        iface.close()
+
+
+def test_execute_fromnum_registration_rolls_back_failed_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FROMNUM commit failure should unwind backend state and remain in polling mode."""
+    client = _FromNumRegistrationClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    dispatcher = iface._notification_dispatcher
+    try:
+        _prepare_provisional_notification_registration(iface, published_client=None)
+        plan = dispatcher._prepare_registration_plan(
+            iface,
+            cast(BLEClient, client),
+            legacy_log_handler=lambda _sender, _data: None,
+            log_handler=lambda _sender, _data: None,
+            from_num_handler=lambda _sender, _data: None,
+        )
+        dispatcher._started_notify_characteristics.add(FROMNUM_UUID)
+        monkeypatch.setattr(
+            iface._notification_manager,
+            "_subscribe",
+            lambda _uuid, _callback: (_ for _ in ()).throw(
+                RuntimeError("local subscription tracking failed")
+            ),
+        )
+
+        dispatcher._execute_fromnum_registration(iface, cast(BLEClient, client), plan)
+
+        assert client.stop_notify_calls == [FROMNUM_UUID]
+        assert dispatcher.fromnum_notify_enabled is False
+        assert not dispatcher._started_notify_characteristics
+    finally:
+        with iface._state_lock:
+            iface.client = client
+        iface.close()
+
+
 def test_register_notifications_rolls_back_if_session_changes_during_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
