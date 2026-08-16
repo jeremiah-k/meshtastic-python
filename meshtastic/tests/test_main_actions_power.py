@@ -1491,13 +1491,13 @@ def test_main_ota_update_allows_explicit_local_dest(
 def test_create_power_meter_requires_initialized_args(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_create_power_meter should fail fast if mt_config.args is uninitialized."""
+    """_create_power_meter should fail fast if parsed CLI arguments are unavailable."""
     monkeypatch.setattr(main_module, "meter", None)
     monkeypatch.setattr(mt_config, "args", None)
 
     with pytest.raises(
         RuntimeError,
-        match="mt_config.args must be initialized before calling _create_power_meter",
+        match="CLI arguments must be initialized before calling _create_power_meter",
     ):
         _create_power_meter()
 
@@ -1915,7 +1915,9 @@ def test_create_power_meter_closes_partial_backend_and_preserves_previous_global
     monkeypatch.setattr(main_module, "have_powermon", True)
     monkeypatch.setattr(main_module, "RidenPowerSupply", object)
     monkeypatch.setattr(main_module, "PPK2PowerSupply", object)
-    monkeypatch.setattr(main_module, "SimPowerSupply", MagicMock(return_value=candidate))
+    monkeypatch.setattr(
+        main_module, "SimPowerSupply", MagicMock(return_value=candidate)
+    )
     monkeypatch.setattr(mt_config, "args", args)
 
     with pytest.raises(RuntimeError, match="configure failed"):
@@ -1945,7 +1947,9 @@ def test_create_power_meter_replaces_and_closes_previous_meter(
     monkeypatch.setattr(main_module, "have_powermon", True)
     monkeypatch.setattr(main_module, "RidenPowerSupply", object)
     monkeypatch.setattr(main_module, "PPK2PowerSupply", object)
-    monkeypatch.setattr(main_module, "SimPowerSupply", MagicMock(return_value=replacement))
+    monkeypatch.setattr(
+        main_module, "SimPowerSupply", MagicMock(return_value=replacement)
+    )
     monkeypatch.setattr(mt_config, "args", args)
 
     _create_power_meter()

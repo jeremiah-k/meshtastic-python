@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import contextvars
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import IO, Iterator
+from typing import IO
 
 _CURRENT_INVOCATION: contextvars.ContextVar[CliInvocation | None] = (
     contextvars.ContextVar("cli_invocation", default=None)

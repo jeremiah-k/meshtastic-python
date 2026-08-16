@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from typing import IO, Any, NoReturn
 
 from meshtastic._core_constants import BROADCAST_ADDR
+from meshtastic.cli.context import CliExit
+from meshtastic.cli.context import _terminate_cli as _terminate_cli_with_exit
 from meshtastic.cli.session_resources import CliSessionResources
 from meshtastic.mesh_interface import MeshInterface
 
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 class BootstrapHooks:
     """Entrypoint-owned dependencies used by CLI bootstrap orchestration."""
 
-    cli_exit: Callable[[str, int], NoReturn]
+    cli_exit: CliExit
     support_info: Callable[[], None]
     print_available_config_fields: Callable[[], None]
     create_power_meter: Callable[[], None]
@@ -56,8 +58,7 @@ def _terminate_cli(
     hooks: BootstrapHooks, message: str, return_value: int = 1
 ) -> NoReturn:
     """Invoke the entrypoint exit seam and fail closed if an injected seam returns."""
-    hooks.cli_exit(message, return_value)
-    raise AssertionError("cli_exit returned unexpectedly") from None
+    _terminate_cli_with_exit(hooks.cli_exit, message, return_value)
 
 
 def _configure_logging(args: argparse.Namespace) -> None:
@@ -346,6 +347,10 @@ def _run_connected_session(
             return
         try:
             while True:
+                # Return value is intentionally ignored: False means "sleep
+                # already handled, continue normally"; True means "reconnect
+                # timing was self-contained". Both values iterate again.
+                # Every branch sleeps, so there is no busy-wait.
                 hooks.listen_loop_poll_once(client)
         except KeyboardInterrupt:
             logger.info("Exiting due to keyboard interrupt")

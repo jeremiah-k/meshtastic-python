@@ -14,7 +14,7 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
-from typing import Any, NoReturn, Protocol
+from typing import IO, Any, NoReturn, Protocol
 
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
@@ -310,7 +310,7 @@ def _set_current_channel_index(value: int) -> None:
     mt_config.channel_index = value
 
 
-def _set_current_logfile(value: Any) -> None:
+def _set_current_logfile(value: IO[str] | None) -> None:
     """Update invocation-owned logfile state and mirror the compatibility global."""
     invocation = cli_invocation.get_current_invocation()
     if invocation is not None:
@@ -1467,13 +1467,14 @@ def _create_power_meter() -> None:
     Raises
     ------
     RuntimeError
-        If ``mt_config.args`` is not initialized.
+        If no parsed CLI arguments are available from the active invocation
+        or the legacy ``mt_config`` fallback.
     """
     global meter  # pylint: disable=global-statement
     args = _current_invocation_args()
     if args is None:
         raise RuntimeError(
-            "mt_config.args must be initialized before calling _create_power_meter()"
+            "CLI arguments must be initialized before calling _create_power_meter()"
         )
 
     if not have_powermon:
