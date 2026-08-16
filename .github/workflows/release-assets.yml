@@ -3,17 +3,24 @@ name: Build and Upload Release Assets
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    # checkov:skip=CKV_GHA_7:Manual recovery requires a release_tag input; the tag is verified against trusted develop by bin/verify_release_source.py before any build runs.
+    inputs:
+      release_tag:
+        description: Existing release tag whose standalone assets should be rebuilt
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  RELEASE_TAG: ${{ github.event.release.tag_name }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.release.tag_name }}
 
 jobs:
   build-and-upload-assets:
-    if: ${{ github.event.release.target_commitish != 'master' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.release.target_commitish != 'master' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,6 +49,17 @@ jobs:
           --tag "${RELEASE_TAG}"
           --github-output "${GITHUB_OUTPUT}"
 
+      - name: Verify manual recovery release exists
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null
+
+      - name: Stage trusted standalone release tooling
+        run: |
+          install -m 0755 bin/build-bin.sh "${RUNNER_TEMP}/build-bin.sh"
+          install -m 0755 bin/smoke-standalone.sh "${RUNNER_TEMP}/smoke-standalone.sh"
+
       - name: Checkout validated release commit
         env:
           RELEASE_COMMIT: ${{ steps.release_source.outputs.commit }}
@@ -53,7 +71,7 @@ jobs:
           python -m pip install "poetry==2.4.1"
 
       - name: Build standalone assets
-        run: bin/build-bin.sh
+        run: "${RUNNER_TEMP}/build-bin.sh"
 
       - name: Read CLI branding
         id: cli_branding
@@ -69,11 +87,11 @@ jobs:
           COMPATIBILITY_CLI_NAMES: ${{ steps.cli_branding.outputs.compatibility }}
           RELEASE_VERSION: ${{ steps.release_source.outputs.version }}
         run: |
-          bin/smoke-standalone.sh "dist/${PRIMARY_CLI_NAME}" "${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"
+          "${RUNNER_TEMP}/smoke-standalone.sh" "dist/${PRIMARY_CLI_NAME}" "${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"
           read -r -a compatibility_clis <<< "${COMPATIBILITY_CLI_NAMES}"
           for cli_name in "${compatibility_clis[@]}"; do
             [[ -n ${cli_name} ]] || continue
-            bin/smoke-standalone.sh "dist/${cli_name}" "${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"
+            "${RUNNER_TEMP}/smoke-standalone.sh" "dist/${cli_name}" "${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"
           done
 
       - name: Prepare release asset names
