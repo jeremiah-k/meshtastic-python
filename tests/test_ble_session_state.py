@@ -2,11 +2,14 @@
 
 import logging
 import threading
+import time
 from types import SimpleNamespace, TracebackType
+from typing import cast
 
 import pytest
 from bleak.exc import BleakError
 
+from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.interfaces.ble.lifecycle_controller_runtime import (
     BLELifecycleController,
@@ -584,6 +587,56 @@ def test_receive_lifecycle_schedules_inconclusive_restart_outside_session_lock()
     assert recovery_attempts is None
     assert scheduled == [(existing, True)]
     assert state.receive_start_pending is True
+
+
+def test_receive_lifecycle_schedules_falsy_deferred_thread_by_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A falsy thread-like proxy must still be selected as the deferred target."""
+    from meshtastic.interfaces.ble.lifecycle_receive_runtime import (
+        BLEReceiveLifecycleCoordinator,
+    )
+
+    class _FalsyCurrentThread:
+        name = "FalsyCurrentReceive"
+        ident = threading.get_ident()
+
+        def __bool__(self) -> bool:
+            return False
+
+        @staticmethod
+        def is_alive() -> bool:
+            return True
+
+    state = BLESessionState(lock=threading.RLock())
+    existing = cast(ThreadLike, _FalsyCurrentThread())
+    state.receive_thread = existing
+    state.receive_start_pending = True
+    state.receive_start_pending_since = time.monotonic() - 10.0
+    iface = cast(BLEInterface, SimpleNamespace(_receive_from_radio_impl=lambda: None))
+    coordinator = BLEReceiveLifecycleCoordinator(iface, session_state=state)
+    scheduled: list[object] = []
+
+    def _capture_schedule(**kwargs: object) -> None:
+        scheduled.append(kwargs["existing_thread"])
+
+    monkeypatch.setattr(
+        coordinator, "_schedule_deferred_receive_restart", _capture_schedule
+    )
+
+    created, recovery_attempts = (
+        coordinator._check_receive_start_conditions(  # noqa: SLF001
+            name="FalsyCurrentReceive",
+            reset_recovery=False,
+            create_runtime_thread=lambda **_kwargs: (_ for _ in ()).throw(
+                AssertionError("timed-out current receive must defer thread creation")
+            ),
+        )
+    )
+
+    assert created is None
+    assert recovery_attempts is None
+    assert scheduled == [existing]
 
 
 def test_receive_lifecycle_thread_probes_run_outside_session_lock() -> None:
@@ -1296,7 +1349,9 @@ def test_shutdown_start_does_not_probe_closing_after_terminal_close() -> None:
     assert result is None
 
 
-def test_disconnect_client_closer_falls_back_when_timeout_keyword_is_unsupported() -> None:
+def test_disconnect_client_closer_falls_back_when_timeout_keyword_is_unsupported() -> (
+    None
+):
     """Legacy injected closers should still be called without timeout keywords."""
     from meshtastic.interfaces.ble.lifecycle_disconnect_runtime import (
         BLEDisconnectLifecycleCoordinator,
@@ -1324,7 +1379,9 @@ def test_disconnect_client_closer_propagates_internal_type_error() -> None:
         BLEDisconnectLifecycleCoordinator,
     )
 
-    def _broken_closer(_client: object, *, disconnect_timeout: float | None = None) -> None:
+    def _broken_closer(
+        _client: object, *, disconnect_timeout: float | None = None
+    ) -> None:
         _ = disconnect_timeout
         raise TypeError("closer implementation failed")
 
