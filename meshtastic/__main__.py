@@ -35,6 +35,11 @@ import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
 from meshtastic import mt_config, remote_hardware
+from meshtastic._branding import (
+    PRIMARY_CLI_NAME,
+    PROJECT_ISSUE_URL,
+    _format_cli_version,
+)
 
 # COMPAT_STABLE_SHIM: LOCAL_ADDR remains importable from meshtastic.__main__.
 # pylint: disable=unused-import
@@ -345,14 +350,14 @@ def supportInfo() -> None:
 
     Specifically prints the issue tracker URL and the running environment: system,
     platform string, kernel release, machine architecture, stdin/stdout encodings,
-    installed meshtastic version (and available newer PyPI version if any), executable
-    path, and Python implementation/version. Advises adding the output of
-    `meshtastic --info` when filing an issue.
+    installed distribution version (and available newer PyPI version if any),
+    executable path, and Python implementation/version. Advises adding the output
+    of the preferred CLI ``--info`` command when filing an issue.
     """
     print("")
     print(f"If having issues with {PROJECT_DISPLAY_NAME} CLI / python library")
     print("or wish to make feature requests, visit:")
-    print("https://github.com/jeremiah-k/mtjk/issues")
+    print(PROJECT_ISSUE_URL)
     print("When adding an issue, be sure to include the following info:")
     print(f" System: {platform.system()}")
     print(f"   Platform: {platform.platform()}")
@@ -373,7 +378,7 @@ def supportInfo() -> None:
         f" Python: {platform.python_version()} {platform.python_implementation()} {platform.python_compiler()}"
     )
     print("")
-    print("Please add the output from the command: meshtastic --info")
+    print(f"Please add the output from the command: {PRIMARY_CLI_NAME} --info")
 
 
 _ConfigureReconnectResult = cli_configure_actions.ConfigureReconnectResult
@@ -1628,7 +1633,7 @@ def initParser() -> None:
         )
     mt_config.args = parse_cli_args(
         parser,
-        version=get_active_version(),
+        version=_format_cli_version(get_active_version()),
         argcomplete_module=argcomplete,
     )
     mt_config.parser = parser
@@ -1636,10 +1641,11 @@ def initParser() -> None:
 
 def main() -> None:
     """
-    Run the Meshtastic command-line entry point: initialize the argument parser, process CLI actions, and perform cleanup.
+    Run the Meshtastic-compatible command-line entry point.
 
-    This function initializes the global parser via initParser(), executes the shared CLI flow in
-    common(), and closes the configured logfile if one was opened.
+    This function initializes the global parser via ``initParser()``,
+    executes the shared CLI flow in ``common()``, and closes resources through
+    the normal CLI session lifecycle.
     """
     parser = argparse.ArgumentParser(
         add_help=False,

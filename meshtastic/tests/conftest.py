@@ -22,6 +22,7 @@ import pytest
 
 import meshtastic.util as util_module
 from meshtastic import mt_config, publishingThread
+from meshtastic._branding import PRIMARY_CLI_NAME
 from meshtastic.powermon import power_supply as power_supply_module
 from meshtastic.util import DeferredExecution
 
@@ -604,6 +605,12 @@ def _resolve_cli_binary_or_skip(binary_name: str) -> str:
 def _mock_gpio_iface_fixture() -> Generator[MagicMock, None, None]:
     """Provide a GPIO-capable mocked interface for GPIO tests."""
     yield _mock_iface_with_gpio_channel()
+
+
+@pytest.fixture(scope="session")
+def primary_cli_bin() -> str:
+    """Resolve the configured preferred CLI binary or skip when unavailable."""
+    return _resolve_cli_binary_or_skip(PRIMARY_CLI_NAME)
 
 
 @pytest.fixture(scope="session")

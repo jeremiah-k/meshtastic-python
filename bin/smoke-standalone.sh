@@ -2,11 +2,12 @@
 
 set -euo pipefail
 
-binary="${1:-dist/meshtastic}"
+binary="${1:-}"
 expected_version="${2:-}"
+expected_product="${3:-}"
 
-if [[ -z ${expected_version} ]]; then
-	echo "usage: $0 <standalone-binary> <expected-version>" >&2
+if [[ -z ${binary} || -z ${expected_version} || -z ${expected_product} ]]; then
+	echo "usage: $0 <standalone-binary> <expected-version> <expected-product>" >&2
 	exit 2
 fi
 if [[ ! -x ${binary} ]]; then
@@ -15,8 +16,9 @@ if [[ ! -x ${binary} ]]; then
 fi
 
 version_output="$("${binary}" --version)"
-if [[ ${version_output} != "${expected_version}" ]]; then
-	echo "standalone version mismatch: expected '${expected_version}', got '${version_output}'" >&2
+expected_version_output="${expected_product} ${expected_version}"
+if [[ ${version_output} != "${expected_version_output}" ]]; then
+	echo "standalone version mismatch: expected '${expected_version_output}', got '${version_output}'" >&2
 	exit 1
 fi
 
@@ -39,4 +41,4 @@ fields_output="$("${binary}" --list-fields)"
 require_output "${fields_output}" "Local config fields:" "--list-fields"
 require_output "${fields_output}" "Module config fields:" "--list-fields"
 
-printf 'Standalone smoke test passed: %s (%s)\n' "${binary}" "${expected_version}"
+printf 'Standalone smoke test passed: %s (%s)\n' "${binary}" "${expected_version_output}"

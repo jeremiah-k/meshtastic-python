@@ -8,7 +8,9 @@ delivery for [mmrelay](https://github.com/jeremiah-k/meshtastic-matrix-relay).
 The modernization work keeps existing Meshtastic Python usage compatible:
 
 - package import namespace remains `meshtastic`
-- CLI command remains `meshtastic`
+- preferred CLI command is `mtjk`
+- historical `meshtastic` CLI command remains available as a compatibility
+  entry point
 - existing API compatibility is intentionally preserved
 
 It is intended to be a drop-in, backward-compatible replacement for upstream.
@@ -58,8 +60,19 @@ pipx install mtjk
 ### 3) Verify
 
 ```bash
-meshtastic --version
+mtjk --version
+# mtjk 2.7.11.post5   # example output; version varies by release
 ```
+
+The package installs both `mtjk` and `meshtastic`. New shell usage should prefer
+`mtjk`; the `meshtastic` command is retained as a silent compatibility entry point
+for existing workflows. No shell alias is required because both commands are
+installed.
+
+Do not install the upstream `meshtastic` distribution alongside `mtjk` in the
+same environment: the two distributions share both the `meshtastic` Python
+namespace and the historical CLI name and are not designed to coexist. Keep
+them in separate virtual/pipx environments and invoke `mtjk` explicitly.
 
 ### Install latest from Git (`develop`)
 

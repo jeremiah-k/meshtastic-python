@@ -55,25 +55,49 @@ jobs:
       - name: Build standalone assets
         run: bin/build-bin.sh
 
-      - name: Smoke-test standalone executable
+      - name: Read CLI branding
+        id: cli_branding
+        run: |
+          primary="$(poetry run python -c 'from meshtastic._branding import PRIMARY_CLI_NAME; print(PRIMARY_CLI_NAME)')"
+          compatibility="$(poetry run python -c 'from meshtastic._branding import COMPATIBILITY_CLI_NAMES; print(" ".join(COMPATIBILITY_CLI_NAMES))')"
+          echo "primary=${primary}" >> "${GITHUB_OUTPUT}"
+          echo "compatibility=${compatibility}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke-test standalone executables
         env:
+          PRIMARY_CLI_NAME: ${{ steps.cli_branding.outputs.primary }}
+          COMPATIBILITY_CLI_NAMES: ${{ steps.cli_branding.outputs.compatibility }}
           RELEASE_VERSION: ${{ steps.release_source.outputs.version }}
-        run: bin/smoke-standalone.sh dist/meshtastic "${RELEASE_VERSION}"
+        run: |
+          bin/smoke-standalone.sh "dist/${PRIMARY_CLI_NAME}" "${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"
+          read -r -a compatibility_clis <<< "${COMPATIBILITY_CLI_NAMES}"
+          for cli_name in "${compatibility_clis[@]}"; do
+            [[ -n ${cli_name} ]] || continue
+            bin/smoke-standalone.sh "dist/${cli_name}" "${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"
+          done
 
       - name: Prepare release asset names
+        env:
+          PRIMARY_CLI_NAME: ${{ steps.cli_branding.outputs.primary }}
+          COMPATIBILITY_CLI_NAMES: ${{ steps.cli_branding.outputs.compatibility }}
         run: |
-          test -f dist/meshtastic || { echo "::error::Missing dist/meshtastic build artifact."; exit 1; }
           test -f standalone_readme.txt || { echo "::error::Missing standalone_readme.txt artifact."; exit 1; }
-          cp dist/meshtastic dist/meshtastic_ubuntu
-          cp standalone_readme.txt dist/readme.txt
+          rm -rf release-assets
+          mkdir release-assets
+          read -r -a compatibility_clis <<< "${COMPATIBILITY_CLI_NAMES}"
+          cli_names=("${PRIMARY_CLI_NAME}" "${compatibility_clis[@]}")
+          for cli_name in "${cli_names[@]}"; do
+            [[ -n ${cli_name} ]] || continue
+            test -f "dist/${cli_name}" || { echo "::error::Missing dist/${cli_name} build artifact."; exit 1; }
+            cp "dist/${cli_name}" "release-assets/${cli_name}_ubuntu"
+          done
+          cp standalone_readme.txt release-assets/readme.txt
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: standalone-release-assets-${{ steps.release_source.outputs.tag }}
-          path: |
-            dist/meshtastic_ubuntu
-            dist/readme.txt
+          path: release-assets/*
           if-no-files-found: error
           retention-days: 30
 
@@ -81,8 +105,6 @@ jobs:
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ steps.release_source.outputs.tag }}
-          files: |
-            dist/meshtastic_ubuntu
-            dist/readme.txt
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

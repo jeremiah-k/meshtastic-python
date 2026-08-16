@@ -29,6 +29,7 @@ from meshtastic.__main__ import (
     supportInfo,
     traverseConfig,
 )
+from meshtastic._branding import PRIMARY_CLI_NAME, PROJECT_ISSUE_URL
 from meshtastic.protobuf import config_pb2, localonly_pb2
 from meshtastic.serial_interface import SerialInterface
 
@@ -122,6 +123,8 @@ def test_support_info_with_newer_version(capsys: pytest.CaptureFixture[str]) -> 
         supportInfo()
         out, _err = capsys.readouterr()
         assert "newer version" in out.lower()
+        assert PROJECT_ISSUE_URL in out
+        assert f"{PRIMARY_CLI_NAME} --info" in out
 
 
 # =============================================================================

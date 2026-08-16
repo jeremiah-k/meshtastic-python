@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Verify that a release tag is a valid mtjk release from the develop lineage."""
+"""Verify that a release tag matches trusted branding and the develop lineage."""
 
 from __future__ import annotations
 
 import argparse
 import re
+import runpy
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -21,7 +22,21 @@ else:
         ) from exc
 
 _RELEASE_TAG_RE = re.compile(r"^v?[0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z]+)*$")
-_EXPECTED_PACKAGE_NAME = "mtjk"
+
+
+def _load_expected_package_name() -> str:
+    """Load the distribution identity from trusted repository branding code."""
+    branding_path = Path(__file__).resolve().parents[1] / "meshtastic" / "_branding.py"
+    namespace = runpy.run_path(str(branding_path))
+    package_name = namespace.get("DISTRIBUTION_NAME")
+    if not isinstance(package_name, str) or not package_name:
+        raise RuntimeError(
+            f"Trusted branding file {branding_path} does not define DISTRIBUTION_NAME"
+        )
+    return package_name
+
+
+_EXPECTED_PACKAGE_NAME = _load_expected_package_name()
 
 
 class ReleaseContractError(RuntimeError):

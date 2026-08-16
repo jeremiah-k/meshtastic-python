@@ -9,6 +9,7 @@ import requests
 
 import meshtastic.util as util_module
 import meshtastic.version as version_module
+from meshtastic._branding import DISTRIBUTION_NAME, UPSTREAM_PRODUCT_NAME
 
 
 class PackageNotPublishedError(requests.RequestException):
@@ -42,21 +43,41 @@ def _make_fake_response(version: str) -> ResponseLike:
     return fake_response
 
 
-def _fake_installed_mtjk_version(distribution_name: str) -> str:
-    """Return a fake installed version for mtjk and raise otherwise."""
-    if distribution_name == "mtjk":
+def _fake_installed_primary_version(distribution_name: str) -> str:
+    """Return a fake installed version for the configured distribution."""
+    if distribution_name == DISTRIBUTION_NAME:
         return "2.7.8"
     raise PackageNotFoundError
 
 
 @pytest.mark.unit
-def test_get_active_version_prefers_mtjk(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The active version lookup should prefer the fork distribution name."""
-    monkeypatch.setattr(version_module, "version", _fake_installed_mtjk_version)
+def test_legacy_package_name_constant_tracks_configured_distribution() -> None:
+    """Historical PACKAGE_NAME should remain an alias of trusted branding."""
+    assert version_module.PACKAGE_NAME == DISTRIBUTION_NAME
+
+
+@pytest.mark.unit
+def test_get_active_version_prefers_configured_distribution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The active version lookup should prefer the configured distribution name."""
+    calls: list[str] = []
+
+    def _fake_version(distribution_name: str) -> str:
+        calls.append(distribution_name)
+        if distribution_name == DISTRIBUTION_NAME:
+            return "2.7.8"
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME]
+
+    calls.clear()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         assert version_module.getActiveVersion() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME]
     assert not [
         warning
         for warning in caught
@@ -65,21 +86,30 @@ def test_get_active_version_prefers_mtjk(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.unit
-def test_get_active_version_falls_back_to_meshtastic(
+def test_get_active_version_falls_back_to_upstream_distribution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The active version lookup should fall back to upstream distribution name."""
+    if len(version_module.DISTRIBUTION_NAME_CANDIDATES) < 2:
+        pytest.skip("configured distribution has no distinct upstream fallback")
+
+    calls: list[str] = []
 
     def _fake_version(distribution_name: str) -> str:
-        if distribution_name == "meshtastic":
+        calls.append(distribution_name)
+        if distribution_name == UPSTREAM_PRODUCT_NAME:
             return "2.7.8"
         raise PackageNotFoundError
 
     monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME, UPSTREAM_PRODUCT_NAME]
+
+    calls.clear()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         assert version_module.getActiveVersion() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME, UPSTREAM_PRODUCT_NAME]
     assert not [
         warning
         for warning in caught
@@ -110,10 +140,10 @@ def test_get_active_version_returns_unknown_when_not_installed(
 
 
 @pytest.mark.unit
-def test_check_if_newer_version_checks_only_mtjk(
+def test_check_if_newer_version_checks_only_configured_distribution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PyPI checks should only query the fork's own package name."""
+    """PyPI checks should query only the configured distribution name."""
 
     calls: list[str] = []
 
@@ -123,11 +153,11 @@ def test_check_if_newer_version_checks_only_mtjk(
         return _make_fake_response("2.7.9")
 
     monkeypatch.setattr("meshtastic.util.requests.get", _fake_get)
-    monkeypatch.setattr(version_module, "version", _fake_installed_mtjk_version)
+    monkeypatch.setattr(version_module, "version", _fake_installed_primary_version)
 
     assert util_module.check_if_newer_version() == "2.7.9"
     assert calls == [
-        "https://pypi.org/pypi/mtjk/json",
+        f"https://pypi.org/pypi/{DISTRIBUTION_NAME}/json",
     ]
 
 
@@ -142,7 +172,7 @@ def test_check_if_newer_version_returns_none_on_pypi_failure(
         raise PackageNotPublishedError
 
     monkeypatch.setattr("meshtastic.util.requests.get", _fake_get)
-    monkeypatch.setattr(version_module, "version", _fake_installed_mtjk_version)
+    monkeypatch.setattr(version_module, "version", _fake_installed_primary_version)
 
     assert util_module.check_if_newer_version() is None
 
@@ -158,6 +188,6 @@ def test_check_if_newer_version_returns_none_when_not_newer(
         return _make_fake_response("2.7.8")
 
     monkeypatch.setattr("meshtastic.util.requests.get", _fake_get)
-    monkeypatch.setattr(version_module, "version", _fake_installed_mtjk_version)
+    monkeypatch.setattr(version_module, "version", _fake_installed_primary_version)
 
     assert util_module.check_if_newer_version() is None

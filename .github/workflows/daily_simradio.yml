@@ -50,7 +50,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "poetry==2.4.1"
           poetry install ${{ env.POETRY_INSTALL_ARGS }}
-          poetry run meshtastic --version
+          primary_cli="$(poetry run python -c 'from meshtastic._branding import PRIMARY_CLI_NAME; print(PRIMARY_CLI_NAME)')"
+          poetry run "${primary_cli}" --version
       - name: Install daily meshtasticd from PPA
         run: |
           for attempt in 1 2 3; do

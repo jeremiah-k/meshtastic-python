@@ -1,5 +1,6 @@
 # Includes PEP 561 py.typed marker for type checker support
 [tool.poetry]
+# Keep this static install-time identity synchronized with meshtastic/_branding.py.
 name = "mtjk"
 version = "2.7.11.post5"
 description = "Python API & client shell for talking to Meshtastic devices"
@@ -86,6 +87,8 @@ analysis = [
 ]
 
 [tool.poetry.scripts]
+# Primary/compatibility CLI keys are enforced by test_branding.py.
+mtjk = "meshtastic.__main__:main"
 meshtastic = "meshtastic.__main__:main"
 mesh-tunnel = "meshtastic.__main__:tunnelMain [tunnel]"
 mesh-analysis = "meshtastic.analysis.__main__:main [analysis]"

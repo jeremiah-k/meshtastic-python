@@ -2,20 +2,27 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-# Primary distribution name (used in pyproject.toml [tool.poetry] name).
-# Swap to "meshtastic" when upstreaming.
-PACKAGE_NAME: str = "mtjk"
+from meshtastic._branding import (
+    DISTRIBUTION_NAME,
+)
+from meshtastic._branding import PROJECT_DISPLAY_NAME as _PROJECT_DISPLAY_NAME
+from meshtastic._branding import (
+    UPSTREAM_PRODUCT_NAME,
+)
+
+# COMPAT_STABLE_SHIM: historical constants retained for callers importing them.
+PACKAGE_NAME: str = DISTRIBUTION_NAME
+PROJECT_DISPLAY_NAME: str = _PROJECT_DISPLAY_NAME
 
 # Ordered candidates for installed distribution metadata resolution.
 # Fork builds can publish under an alternate package name while keeping
 # the import package as `meshtastic`.
-DISTRIBUTION_NAME_CANDIDATES: tuple[str, ...] = (PACKAGE_NAME, "meshtastic")
-
-# Human-readable project name shown in CLI output.
-PROJECT_DISPLAY_NAME: str = "Meshtastic (mtjk fork)"
+DISTRIBUTION_NAME_CANDIDATES: tuple[str, ...] = tuple(
+    dict.fromkeys((PACKAGE_NAME, UPSTREAM_PRODUCT_NAME))
+)
 
 # Recommended one-liner for upgrading the package.
-# Uses pipx (recommended for CLI tools) with pip as fallback.
+# Uses pipx, the recommended installer for the CLI distribution.
 INSTALL_UPGRADE_HINT: str = f"pipx upgrade {PACKAGE_NAME}"
 
 

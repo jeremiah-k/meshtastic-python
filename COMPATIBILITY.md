@@ -18,6 +18,29 @@ not present in that manifest, do not add or keep it by default.
 - Naming-only deprecations must be warn-once.
 - Semantic deprecations may warn on every invalid usage.
 
+## CLI Compatibility
+
+CLI branding is intentionally separate from the Python import namespace:
+
+- `mtjk` is the preferred command for this distribution.
+- `meshtastic` remains an installed compatibility command and runs the same
+  implementation.
+- `meshtastic` is a silent naming-only compatibility command; documentation may
+  recommend `mtjk`, but invoking the compatibility name does not emit a warning.
+- `import meshtastic` remains the stable Python namespace; no `mtjk`
+  import package exists.
+- Runtime distribution/display/CLI branding is centralized in
+  `meshtastic._branding.PRODUCT_NAME`. Install-time metadata such as
+  console-script names in `pyproject.toml` must remain synchronized and is
+  covered by tests.
+- Side-by-side installation with the upstream distribution in one environment is
+  not a supported isolation mechanism: both distributions use the `meshtastic`
+  import namespace and historical CLI name. Use separate environments when both
+  are needed.
+
+When `PRODUCT_NAME` is switched back to `meshtastic` for upstream use, the
+runtime compatibility-command list collapses automatically.
+
 ## Status Legend
 
 - `PRIMARY`: canonical symbol for new code.
