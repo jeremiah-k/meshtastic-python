@@ -12,7 +12,6 @@
 # ping -c 1 -W 20 10.115.64.152
 # ping -i 30 -W 30 10.115.64.152
 
-# FIXME: use a more optimal MTU
 """
 
 import logging
@@ -25,7 +24,7 @@ from pubsub import pub
 from pytap2 import TapDevice
 
 from meshtastic import mt_config
-from meshtastic.protobuf import portnums_pb2
+from meshtastic.protobuf import mesh_pb2, portnums_pb2
 from meshtastic.util import ipstr, readnet_u16
 
 logger = logging.getLogger(__name__)
@@ -53,7 +52,7 @@ MIN_TRANSPORT_HEADER_LEN = 4
 IP_PROTOCOL_OFFSET = 9
 IP_SRC_ADDR_OFFSET = 12
 IP_DEST_ADDR_OFFSET = 16
-TUN_MTU = 200
+TUN_MTU: int = mesh_pb2.Constants.DATA_PAYLOAD_LEN
 
 
 def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
@@ -203,7 +202,8 @@ class Tunnel:
                     ip = self._node_num_to_ip(node["num"])
                     logger.info("Node %s has IP address %s", nodeId, ip)
 
-            # FIXME - figure out real max MTU, it should be 240 - the overhead bytes for SubPacket and Data
+            # Data.payload is the tunneled IP packet itself. Keep the TUN MTU
+            # pinned to the generated firmware/protobuf payload contract.
             if self.iface.noProto:
                 logger.warning(
                     "Not creating a TapDevice() because it is disabled by noProto"
