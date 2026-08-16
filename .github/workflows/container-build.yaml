@@ -1,9 +1,8 @@
 name: Docker Build and Publish
 
 # Build and publish the mtjk Docker image to ghcr.io only on release.
-# Manual dispatch is intentionally disabled to avoid stray `dev-master-*`
-# tags. The job-level `if:` further skips any release whose target branch
-# is master, so this workflow does not fire on master updates.
+# Manual dispatch is intentionally disabled. The release commit must be part of
+# the trusted develop lineage before any image is built or published.
 
 on:
   release:
@@ -12,6 +11,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: jeremiah-k/mtjk
+  RELEASE_TAG: ${{ github.event.release.tag_name }}
 
 permissions:
   contents: read
@@ -24,37 +24,47 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout repository
+      - name: Checkout trusted develop
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Extract version and build info
-        id: get_version
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Refresh trusted develop and release tags
+        run: |
+          git fetch --force --tags origin '+refs/heads/develop:refs/remotes/origin/develop'
+          git checkout --detach refs/remotes/origin/develop
+
+      - name: Verify release source and package metadata
+        id: release_source
+        run: >-
+          python bin/verify_release_source.py
+          --tag "${RELEASE_TAG}"
+          --github-output "${GITHUB_OUTPUT}"
+
+      - name: Checkout validated release commit
+        env:
+          RELEASE_COMMIT: ${{ steps.release_source.outputs.commit }}
+        run: git checkout --detach "${RELEASE_COMMIT}"
+
+      - name: Prepare build metadata
+        id: build_info
         shell: bash
+        env:
+          RELEASE_COMMIT: ${{ steps.release_source.outputs.commit }}
+          RELEASE_VERSION: ${{ steps.release_source.outputs.version }}
         run: |
           set -euo pipefail
-
-          VERSION="$(python3 -c "import tomllib; from pathlib import Path; print(tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))['tool']['poetry']['version'])")"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          echo "build_date=$BUILD_DATE" >> "$GITHUB_OUTPUT"
-
-          VCS_REF=$(git rev-parse HEAD)
-          echo "vcs_ref=$VCS_REF" >> "$GITHUB_OUTPUT"
-
-          GIT_SHA=$(git rev-parse --short HEAD)
-          echo "git_sha=$GIT_SHA" >> "$GITHUB_OUTPUT"
-
-          if [ "${{ github.event_name }}" == "release" ]; then
-            echo "docker_tag=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "is_release=true" >> "$GITHUB_OUTPUT"
-            echo "should_tag_latest=true" >> "$GITHUB_OUTPUT"
-          else
-            BRANCH_NAME="$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')"
-            echo "docker_tag=$VERSION-dev-$BRANCH_NAME-$GIT_SHA" >> "$GITHUB_OUTPUT"
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-            echo "should_tag_latest=false" >> "$GITHUB_OUTPUT"
-          fi
+          BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "build_date=${BUILD_DATE}" >> "${GITHUB_OUTPUT}"
+          echo "git_sha=${RELEASE_COMMIT}" >> "${GITHUB_OUTPUT}"
+          echo "docker_tag=${RELEASE_VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up QEMU for multi-platform builds
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
@@ -79,18 +89,20 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
           tags: |
-            type=raw,value=${{ steps.get_version.outputs.docker_tag }}
-            type=raw,value=latest,enable=${{ steps.get_version.outputs.should_tag_latest == 'true' }}
+            type=raw,value=${{ steps.build_info.outputs.docker_tag }}
+            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
           labels: |
             org.opencontainers.image.title=mtjk
             org.opencontainers.image.description=Python API and CLI for Meshtastic devices (mtjk fork)
             org.opencontainers.image.url=https://github.com/jeremiah-k/mtjk
             org.opencontainers.image.source=https://github.com/jeremiah-k/mtjk
             org.opencontainers.image.licenses=GPL-3.0-only
-            org.opencontainers.image.version=${{ steps.get_version.outputs.version }}
-            org.opencontainers.image.revision=${{ steps.get_version.outputs.vcs_ref }}
-            org.opencontainers.image.created=${{ steps.get_version.outputs.build_date }}
+            org.opencontainers.image.version=${{ steps.build_info.outputs.docker_tag }}
+            org.opencontainers.image.revision=${{ steps.build_info.outputs.git_sha }}
+            org.opencontainers.image.created=${{ steps.build_info.outputs.build_date }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -102,9 +114,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BUILD_DATE=${{ steps.get_version.outputs.build_date }}
-            VCS_REF=${{ steps.get_version.outputs.vcs_ref }}
-            VERSION=${{ steps.get_version.outputs.version }}
+            BUILD_DATE=${{ steps.build_info.outputs.build_date }}
+            VCS_REF=${{ steps.build_info.outputs.git_sha }}
+            VERSION=${{ steps.build_info.outputs.docker_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: false
+          provenance: mode=max
+          sbom: true
