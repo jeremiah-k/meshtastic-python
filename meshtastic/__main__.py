@@ -38,7 +38,6 @@ from meshtastic import mt_config, remote_hardware
 from meshtastic._branding import (
     PRIMARY_CLI_NAME,
     PROJECT_ISSUE_URL,
-    _emit_compatibility_cli_notice,
     _format_cli_version,
 )
 
@@ -1644,12 +1643,10 @@ def main() -> None:
     """
     Run the Meshtastic-compatible command-line entry point.
 
-    This function emits an interactive-only hint when invoked through a
-    compatibility command, initializes the global parser via ``initParser()``,
+    This function initializes the global parser via ``initParser()``,
     executes the shared CLI flow in ``common()``, and closes resources through
     the normal CLI session lifecycle.
     """
-    _emit_compatibility_cli_notice(sys.argv[0], stream=sys.stderr)
     parser = argparse.ArgumentParser(
         add_help=False,
         epilog="If no connection arguments are specified, we search for a compatible serial device, "

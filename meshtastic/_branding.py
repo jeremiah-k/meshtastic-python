@@ -13,8 +13,6 @@ stay synchronized with this module.
 
 from __future__ import annotations
 
-from typing import TextIO
-
 # Single runtime branding switch. Keep the import namespace as ``meshtastic``.
 PRODUCT_NAME: str = "mtjk"
 
@@ -57,64 +55,3 @@ def _format_cli_version(version: str) -> str:
         Product name followed by the supplied version.
     """
     return f"{PRIMARY_CLI_NAME} {version}"
-
-
-def _normalized_invocation_name(argv0: str) -> str:
-    """Return a platform-neutral executable basename for CLI routing checks."""
-    name = argv0.replace("\\", "/").rsplit("/", maxsplit=1)[-1]
-    if name.casefold().endswith(".exe"):
-        name = name[:-4]
-    return name.casefold()
-
-
-def _compatibility_cli_notice(argv0: str) -> str | None:
-    """Return an interactive migration hint for a compatibility CLI invocation.
-
-    Parameters
-    ----------
-    argv0 : str
-        Executable name or path used to invoke the CLI.
-
-    Returns
-    -------
-    str | None
-        A concise preference notice when a compatibility command was used,
-        otherwise ``None``.
-    """
-    invoked_name = _normalized_invocation_name(argv0)
-    compatibility_names = {name.casefold() for name in COMPATIBILITY_CLI_NAMES}
-    if invoked_name not in compatibility_names:
-        return None
-    return (
-        f"'{invoked_name}' is a compatibility command for {PRIMARY_CLI_NAME}; "
-        f"prefer '{PRIMARY_CLI_NAME}' for this distribution. "
-        "No shell alias is required because both commands are installed."
-    )
-
-
-def _emit_compatibility_cli_notice(argv0: str, *, stream: TextIO) -> bool:
-    """Write the compatibility CLI notice only for an interactive terminal.
-
-    Non-TTY callers intentionally remain silent so normal automation using the
-    historical ``meshtastic`` command does not gain new stderr output.
-
-    Parameters
-    ----------
-    argv0 : str
-        Executable name or path used to invoke the CLI.
-    stream : TextIO
-        Destination stream, normally ``sys.stderr``.
-
-    Returns
-    -------
-    bool
-        ``True`` when a notice was emitted.
-    """
-    notice = _compatibility_cli_notice(argv0)
-    if notice is None:
-        return False
-    isatty = getattr(stream, "isatty", None)
-    if not callable(isatty) or not isatty():
-        return False
-    print(f"Note: {notice}", file=stream)
-    return True

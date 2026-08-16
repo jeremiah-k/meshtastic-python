@@ -159,7 +159,7 @@ def _run_host_cli(
     timeout: int | float = 30,
     meshtastic_bin: str = PRIMARY_CLI_NAME,
 ) -> tuple[int, str]:
-    """Run a meshtastic CLI command against a host and return (code, output).
+    """Run the configured CLI command against a host and return (code, output).
 
     Parameters
     ----------
@@ -171,7 +171,7 @@ def _run_host_cli(
         Maximum time to allow command execution before failing the test.
         (Default value = 30)
     meshtastic_bin : str
-        Path or name of the meshtastic executable.
+        Path or name of the selected CLI executable.
         (Default value = PRIMARY_CLI_NAME)
 
     Returns
@@ -192,7 +192,7 @@ def _run_host_cli_ok(
     timeout: int | float = 30,
     meshtastic_bin: str = PRIMARY_CLI_NAME,
 ) -> str:
-    """Run a host CLI command and assert success with useful context.
+    """Run the configured host CLI command and assert success with useful context.
 
     Parameters
     ----------
@@ -204,7 +204,7 @@ def _run_host_cli_ok(
         Maximum time to allow command execution before failing the test.
         (Default value = 30)
     meshtastic_bin : str
-        Path or name of the meshtastic executable.
+        Path or name of the selected CLI executable.
         (Default value = PRIMARY_CLI_NAME)
 
     Returns

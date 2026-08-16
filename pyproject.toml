@@ -87,7 +87,7 @@ analysis = [
 ]
 
 [tool.poetry.scripts]
-# Primary/compatibility CLI keys are enforced by test_cli_branding.py.
+# Primary/compatibility CLI keys are enforced by test_branding.py.
 mtjk = "meshtastic.__main__:main"
 meshtastic = "meshtastic.__main__:main"
 mesh-tunnel = "meshtastic.__main__:tunnelMain [tunnel]"

@@ -1,8 +1,14 @@
-readme.txt for single standalone executable files that can be downloaded from
+readme.txt for standalone executable files that can be downloaded from
 https://github.com/jeremiah-k/mtjk/releases
 
 If you do not want to install Python and/or the Python libraries, download the
-`mtjk_ubuntu` executable and run the mtjk command-line interface directly.
+`mtjk_ubuntu` executable. Then run:
+
+```sh
+chmod +x mtjk_ubuntu
+./mtjk_ubuntu --help
+```
+
 `meshtastic_ubuntu` is published from the same build as a compatibility name for
 existing workflows.
 

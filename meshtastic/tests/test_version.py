@@ -61,11 +61,23 @@ def test_get_active_version_prefers_configured_distribution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The active version lookup should prefer the configured distribution name."""
-    monkeypatch.setattr(version_module, "version", _fake_installed_primary_version)
+    calls: list[str] = []
+
+    def _fake_version(distribution_name: str) -> str:
+        calls.append(distribution_name)
+        if distribution_name == DISTRIBUTION_NAME:
+            return "2.7.8"
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME]
+
+    calls.clear()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         assert version_module.getActiveVersion() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME]
     assert not [
         warning
         for warning in caught
@@ -78,17 +90,26 @@ def test_get_active_version_falls_back_to_upstream_distribution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The active version lookup should fall back to upstream distribution name."""
+    if len(version_module.DISTRIBUTION_NAME_CANDIDATES) < 2:
+        pytest.skip("configured distribution has no distinct upstream fallback")
+
+    calls: list[str] = []
 
     def _fake_version(distribution_name: str) -> str:
+        calls.append(distribution_name)
         if distribution_name == UPSTREAM_PRODUCT_NAME:
             return "2.7.8"
         raise PackageNotFoundError
 
     monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME, UPSTREAM_PRODUCT_NAME]
+
+    calls.clear()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         assert version_module.getActiveVersion() == "2.7.8"
+    assert calls == [DISTRIBUTION_NAME, UPSTREAM_PRODUCT_NAME]
     assert not [
         warning
         for warning in caught

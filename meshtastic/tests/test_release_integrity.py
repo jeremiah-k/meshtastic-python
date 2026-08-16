@@ -472,7 +472,13 @@ def test_release_workflows_share_provenance_and_artifact_contracts() -> None:
         'bin/smoke-standalone.sh "dist/${cli_name}" '
         '"${RELEASE_VERSION}" "${PRIMARY_CLI_NAME}"'
     ) in release_assets
-    assert "dist/*_ubuntu" in release_assets
+    assert "rm -rf release-assets" in release_assets
+    assert "mkdir release-assets" in release_assets
+    assert 'cp "dist/${cli_name}" "release-assets/${cli_name}_ubuntu"' in release_assets
+    assert "cp standalone_readme.txt release-assets/readme.txt" in release_assets
+    assert "path: release-assets/*" in release_assets
+    assert "files: release-assets/*" in release_assets
+    assert "dist/*_ubuntu" not in release_assets
     assert (
         "name: standalone-release-assets-${{ steps.release_source.outputs.tag }}"
         in release_assets

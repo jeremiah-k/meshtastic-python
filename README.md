@@ -65,9 +65,9 @@ mtjk --version
 ```
 
 The package installs both `mtjk` and `meshtastic`. New shell usage should prefer
-`mtjk`; the `meshtastic` command is retained for compatibility with existing
-workflows. Interactive use of the compatibility command prints a short preference
-hint, while non-TTY automation remains silent.
+`mtjk`; the `meshtastic` command is retained as a silent compatibility entry point
+for existing workflows. No shell alias is required because both commands are
+installed.
 
 Do not install the upstream `meshtastic` distribution alongside `mtjk` in the
 same environment: the two distributions share both the `meshtastic` Python
