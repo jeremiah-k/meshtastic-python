@@ -13,7 +13,12 @@ from pathlib import Path
 if sys.version_info >= (3, 11):
     import tomllib
 else:
-    import tomli as tomllib
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
+        raise SystemExit(
+            "Python < 3.11 requires the 'tomli' package to run this verifier"
+        ) from exc
 
 _RELEASE_TAG_RE = re.compile(r"^v?[0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z]+)*$")
 _EXPECTED_PACKAGE_NAME = "mtjk"
@@ -45,15 +50,68 @@ def _git(
 
 
 def _parse_package_metadata(pyproject_text: str) -> tuple[str, str]:
-    """Return Poetry package name and version from TOML text."""
+    """Return unambiguous package name and version from TOML text.
+
+    PEP 621 ``[project]`` metadata is preferred when present, while legacy
+    ``[tool.poetry]`` fields remain supported for the current project layout.
+    If both sections explicitly declare a value, they must agree so release
+    provenance cannot depend on which metadata consumer happens to read it.
+
+    Parameters
+    ----------
+    pyproject_text : str
+        Candidate ``pyproject.toml`` contents read from the tagged commit.
+
+    Returns
+    -------
+    tuple[str, str]
+        Package name and version.
+
+    Raises
+    ------
+    ReleaseContractError
+        If the TOML is invalid, metadata is missing, or duplicate declarations
+        disagree.
+    """
     try:
         pyproject = tomllib.loads(pyproject_text)
-        poetry = pyproject["tool"]["poetry"]
-        return str(poetry["name"]), str(poetry["version"])
-    except (KeyError, TypeError, tomllib.TOMLDecodeError) as exc:
+    except tomllib.TOMLDecodeError as exc:
+        raise ReleaseContractError(f"Unable to parse release metadata: {exc}") from exc
+
+    project = pyproject.get("project", {})
+    tool = pyproject.get("tool", {})
+    if not isinstance(project, dict) or not isinstance(tool, dict):
+        raise ReleaseContractError("Release metadata tables must be TOML tables")
+    poetry = tool.get("poetry", {})
+    if not isinstance(poetry, dict):
         raise ReleaseContractError(
-            f"Unable to read Poetry release metadata: {exc}"
-        ) from exc
+            "[tool.poetry] release metadata must be a TOML table"
+        )
+
+    def _select(field: str) -> str:
+        project_value = project.get(field)
+        poetry_value = poetry.get(field)
+        for section, value in (
+            ("project", project_value),
+            ("tool.poetry", poetry_value),
+        ):
+            if value is not None and not isinstance(value, str):
+                raise ReleaseContractError(
+                    f"[{section}] {field!r} must be a string when declared"
+                )
+        if project_value and poetry_value and project_value != poetry_value:
+            raise ReleaseContractError(
+                f"Conflicting release metadata for {field!r}: "
+                f"[project]={project_value!r}, [tool.poetry]={poetry_value!r}"
+            )
+        selected = project_value or poetry_value
+        if not selected:
+            raise ReleaseContractError(
+                f"Release metadata does not declare package {field!r}"
+            )
+        return selected
+
+    return _select("name"), _select("version")
 
 
 def _read_tagged_package_metadata(repository: Path, commit: str) -> tuple[str, str]:
@@ -134,9 +192,15 @@ def verify_release_source(
         develop_ref,
         check=False,
     )
-    if ancestry.returncode != 0:
+    if ancestry.returncode == 1:
         raise ReleaseContractError(
             f"Release commit {tag_commit} is not reachable from {develop_ref}"
+        )
+    if ancestry.returncode != 0:
+        detail = ancestry.stderr.strip() or ancestry.stdout.strip()
+        raise ReleaseContractError(
+            f"Unable to check ancestry of {tag_commit} against {develop_ref}: "
+            f"{detail or f'git exited with status {ancestry.returncode}'}"
         )
 
     package_name, package_version = _read_tagged_package_metadata(

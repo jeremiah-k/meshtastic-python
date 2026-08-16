@@ -43,7 +43,9 @@ jobs:
           --github-output "${GITHUB_OUTPUT}"
 
       - name: Checkout validated release commit
-        run: git checkout --detach "${{ steps.release_source.outputs.commit }}"
+        env:
+          RELEASE_COMMIT: ${{ steps.release_source.outputs.commit }}
+        run: git checkout --detach "${RELEASE_COMMIT}"
 
       - name: Install Poetry
         run: |
@@ -54,10 +56,9 @@ jobs:
         run: bin/build-bin.sh
 
       - name: Smoke-test standalone executable
-        run: >-
-          bin/smoke-standalone.sh
-          dist/meshtastic
-          "${{ steps.release_source.outputs.version }}"
+        env:
+          RELEASE_VERSION: ${{ steps.release_source.outputs.version }}
+        run: bin/smoke-standalone.sh dist/meshtastic "${RELEASE_VERSION}"
 
       - name: Prepare release asset names
         run: |
