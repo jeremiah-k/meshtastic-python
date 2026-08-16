@@ -5,6 +5,7 @@ import logging
 import re
 import struct
 from collections.abc import Callable
+from dataclasses import dataclass
 from threading import Lock, RLock
 from typing import TYPE_CHECKING, Any, cast
 
@@ -44,6 +45,35 @@ _SAFE_EXECUTE_POSITIONAL_SIGNATURE_MISMATCH_RE = re.compile(
 )
 
 
+_NotificationCallback = Callable[[Any, Any], None]
+
+
+@dataclass(frozen=True, slots=True)
+class _NotificationManagerSnapshot:
+    """Immutable rollback snapshot for notification subscription bookkeeping."""
+
+    active_subscriptions: dict[int, tuple[str, _NotificationCallback]]
+    characteristic_to_callback: dict[str, _NotificationCallback]
+    subscription_counter: int
+
+
+@dataclass(frozen=True, slots=True)
+class _NotificationSessionSnapshot:
+    """Immutable rollback snapshot for one dispatcher registration session."""
+
+    registered_session_epoch: int | None
+    started_notify_characteristics: frozenset[str]
+    fromnum_notify_enabled: bool
+    malformed_notification_count: int
+    current_legacy_log_handler: _NotificationCallback | None
+    current_log_handler: _NotificationCallback | None
+    current_from_num_handler: _NotificationCallback | None
+    safe_legacy_handler: _NotificationCallback | None
+    safe_log_handler: _NotificationCallback | None
+    safe_from_num_handler: _NotificationCallback | None
+    manager: _NotificationManagerSnapshot
+
+
 class SubscriptionTokenExhaustedError(RuntimeError):
     """Raised when notification subscription token space is exhausted."""
 
@@ -74,6 +104,53 @@ class NotificationManager:
         self._subscription_counter = 0
         self._resubscribe_epoch = 0
         self._lock = RLock()
+
+    def _snapshot_registration_state(self) -> _NotificationManagerSnapshot:
+        """Capture registration-owned manager state under the manager lock.
+
+        Returns
+        -------
+        _NotificationManagerSnapshot
+            Subscription mappings and token counter required for rollback.
+
+        Notes
+        -----
+        ``_resubscribe_epoch`` and ``_resubscribe_failures`` intentionally remain
+        outside this snapshot. They describe reconnect/resubscribe history rather
+        than the registration transaction being rolled back.
+        """
+        with self._lock:
+            return _NotificationManagerSnapshot(
+                active_subscriptions=dict(self._active_subscriptions),
+                characteristic_to_callback=dict(self._characteristic_to_callback),
+                subscription_counter=self._subscription_counter,
+            )
+
+    def _restore_registration_state(
+        self, snapshot: _NotificationManagerSnapshot
+    ) -> None:
+        """Restore registration-owned manager state under the manager lock.
+
+        Parameters
+        ----------
+        snapshot : _NotificationManagerSnapshot
+            Registration-owned subscription state captured before the transaction.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        Resubscribe epoch/failure history is preserved deliberately because it is
+        lifecycle history, not transaction-local registration state.
+        """
+        with self._lock:
+            self._active_subscriptions = dict(snapshot.active_subscriptions)
+            self._characteristic_to_callback = dict(
+                snapshot.characteristic_to_callback
+            )
+            self._subscription_counter = snapshot.subscription_counter
 
     def _subscribe(
         self, characteristic: str, callback: Callable[[Any, Any], None]
@@ -313,6 +390,81 @@ class BLENotificationDispatcher:
         self._safe_from_num_handler: Callable[[Any, Any], None] | None = None
         self._registered_notification_session_epoch: int | None = None
         self._started_notify_characteristics: set[str] = set()
+
+    def _snapshot_session_state(self) -> _NotificationSessionSnapshot:
+        """Capture registration session state atomically for connect rollback.
+
+        Returns
+        -------
+        _NotificationSessionSnapshot
+            Dispatcher and manager state needed to restore the registration
+            session after a failed connection transaction.
+
+        Notes
+        -----
+        ``_registration_lock`` is held across the snapshot. While it is held,
+        ``_notification_state_lock`` and ``_malformed_notification_lock`` are
+        acquired and released in that order, then the notification-manager lock
+        is acquired last by ``_snapshot_registration_state``.
+        """
+        with self._registration_lock:
+            with self._notification_state_lock:
+                fromnum_notify_enabled = self._fromnum_notify_enabled
+            with self._malformed_notification_lock:
+                malformed_notification_count = self._malformed_notification_count
+            return _NotificationSessionSnapshot(
+                registered_session_epoch=self._registered_notification_session_epoch,
+                started_notify_characteristics=frozenset(
+                    self._started_notify_characteristics
+                ),
+                fromnum_notify_enabled=fromnum_notify_enabled,
+                malformed_notification_count=malformed_notification_count,
+                current_legacy_log_handler=self._current_legacy_log_handler,
+                current_log_handler=self._current_log_handler,
+                current_from_num_handler=self._current_from_num_handler,
+                safe_legacy_handler=self._safe_legacy_handler,
+                safe_log_handler=self._safe_log_handler,
+                safe_from_num_handler=self._safe_from_num_handler,
+                manager=self._notification_manager._snapshot_registration_state(),
+            )
+
+    def _restore_session_state(self, snapshot: _NotificationSessionSnapshot) -> None:
+        """Restore one previously captured registration session snapshot.
+
+        Parameters
+        ----------
+        snapshot : _NotificationSessionSnapshot
+            Dispatcher and manager registration state to restore.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        ``_registration_lock`` is held across restoration. While it is held,
+        ``_notification_state_lock`` and ``_malformed_notification_lock`` are
+        acquired and released in that order, then the notification-manager lock
+        is acquired last by ``_restore_registration_state``.
+        """
+        with self._registration_lock:
+            self._registered_notification_session_epoch = (
+                snapshot.registered_session_epoch
+            )
+            self._started_notify_characteristics = set(
+                snapshot.started_notify_characteristics
+            )
+            with self._notification_state_lock:
+                self._fromnum_notify_enabled = snapshot.fromnum_notify_enabled
+            with self._malformed_notification_lock:
+                self._malformed_notification_count = snapshot.malformed_notification_count
+            self._current_legacy_log_handler = snapshot.current_legacy_log_handler
+            self._current_log_handler = snapshot.current_log_handler
+            self._current_from_num_handler = snapshot.current_from_num_handler
+            self._safe_legacy_handler = snapshot.safe_legacy_handler
+            self._safe_log_handler = snapshot.safe_log_handler
+            self._safe_from_num_handler = snapshot.safe_from_num_handler
+            self._notification_manager._restore_registration_state(snapshot.manager)
 
     @property
     def fromnum_notify_enabled(self) -> bool:
