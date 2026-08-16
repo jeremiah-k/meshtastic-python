@@ -196,7 +196,9 @@ class _SlottedLegacyTarget:
 
 
 @pytest.mark.unit
-def test_legacy_management_state_persists_fallback_primitives_on_slotted_target() -> None:
+def test_legacy_management_state_persists_fallback_primitives_on_slotted_target() -> (
+    None
+):
     """Independent adapters should share fallback synchronization and wakeups."""
     target = _SlottedLegacyTarget()
     first = _management_state_for(target)

@@ -208,7 +208,9 @@ def test_constructor_closes_transport_when_post_open_initialization_fails(
     monkeypatch.setattr(
         "meshtastic.powermon.riden.serial.Serial", MagicMock(return_value=serial_handle)
     )
-    monkeypatch.setattr("meshtastic.powermon.riden.Riden", MagicMock(return_value=device))
+    monkeypatch.setattr(
+        "meshtastic.powermon.riden.Riden", MagicMock(return_value=device)
+    )
 
     with pytest.raises(RuntimeError, match="clock failed"):
         RidenPowerSupply("COM9")

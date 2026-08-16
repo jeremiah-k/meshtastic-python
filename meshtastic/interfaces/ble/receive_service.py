@@ -12,10 +12,10 @@ from bleak.exc import BleakDBusError, BleakError, BleakGATTProtocolError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.compat_adapter import (
-    _load_runtime_module,
     _get_declared_callable,
     _get_declared_member,
     _iter_declared_members,
+    _load_runtime_module,
     _resolve_declared_callable,
 )
 from meshtastic.interfaces.ble.constants import (

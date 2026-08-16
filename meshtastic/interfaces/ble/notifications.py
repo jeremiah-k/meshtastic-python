@@ -151,9 +151,7 @@ class NotificationManager:
         """
         with self._lock:
             self._active_subscriptions = dict(snapshot.active_subscriptions)
-            self._characteristic_to_callback = dict(
-                snapshot.characteristic_to_callback
-            )
+            self._characteristic_to_callback = dict(snapshot.characteristic_to_callback)
             self._subscription_counter = snapshot.subscription_counter
 
     def _subscribe(
@@ -461,7 +459,9 @@ class BLENotificationDispatcher:
             with self._notification_state_lock:
                 self._fromnum_notify_enabled = snapshot.fromnum_notify_enabled
             with self._malformed_notification_lock:
-                self._malformed_notification_count = snapshot.malformed_notification_count
+                self._malformed_notification_count = (
+                    snapshot.malformed_notification_count
+                )
             self._current_legacy_log_handler = snapshot.current_legacy_log_handler
             self._current_log_handler = snapshot.current_log_handler
             self._current_from_num_handler = snapshot.current_from_num_handler

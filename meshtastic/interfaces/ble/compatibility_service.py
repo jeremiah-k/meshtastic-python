@@ -5,9 +5,9 @@ from threading import Event, Thread
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from meshtastic.interfaces.ble.compat_adapter import (
-    _load_runtime_module,
     _get_declared_callable,
     _get_declared_member,
+    _load_runtime_module,
 )
 from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,

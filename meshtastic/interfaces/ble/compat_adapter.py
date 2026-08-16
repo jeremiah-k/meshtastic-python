@@ -9,9 +9,9 @@ are represented.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable, Iterator
 from importlib import import_module
 from types import ModuleType
-from collections.abc import Callable, Iterator
 from typing import Any, TypeVar, cast
 
 from meshtastic.interfaces.ble.ports import _LockPort
