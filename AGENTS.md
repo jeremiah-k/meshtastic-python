@@ -9,7 +9,7 @@ This document tracks coding standards and API refactoring decisions for the Mesh
 - Standard public methods should use `camelCase` (e.g., `sendText`, `sendData`).
 - BLE promoted camelCase: `findDevice`, `isConnected`, `stopNotify`.
 - Powermon promoted camelCase: `getAverageCurrentMA`, `getMinCurrentMA`, `getMaxCurrentMA`, `resetMeasurements`.
-- Slog promoted camelCase: `rootDir`, `storeCurrentReading`.
+- Slog promoted camelCase: `rootDir`, `storeCurrentReading`, `getHealth`.
 
 ### Compatibility Shims (snake_case or deprecated camelCase)
 
@@ -130,14 +130,18 @@ Current `COMPAT_DEPRECATE` methods:
 
 ## Slog API Refactoring Decisions
 
-| Class         | Method                  | Refactor Action         |
-| ------------- | ----------------------- | ----------------------- |
-| `PowerLogger` | `_p_meter`              | Internal attribute      |
-| `PowerLogger` | `pMeter`                | Public property         |
-| `PowerLogger` | `storeCurrentReading`   | Primary implementation  |
-| `PowerLogger` | `store_current_reading` | Compatibility shim      |
-| `slog module` | `rootDir`               | Primary helper function |
-| `slog module` | `root_dir`              | Compatibility shim      |
+| Class              | Method                  | Refactor Action              |
+| ------------------ | ----------------------- | ---------------------------- |
+| `PowerLogger`      | `_p_meter`              | Internal attribute           |
+| `PowerLogger`      | `pMeter`                | Public property              |
+| `PowerLogger`      | `storeCurrentReading`   | Primary implementation       |
+| `PowerLogger`      | `store_current_reading` | Compatibility shim           |
+| `PowerLogger`      | `getHealth`             | Public health snapshot       |
+| `StructuredLogger` | `getHealth`             | Public health snapshot       |
+| `LogSet`           | `getHealth`             | Aggregate health snapshot    |
+| `slog module`      | `SlogHealthSnapshot`    | Public immutable health type |
+| `slog module`      | `rootDir`               | Primary helper function      |
+| `slog module`      | `root_dir`              | Compatibility shim           |
 
 ### Slog warning policy (explicit)
 

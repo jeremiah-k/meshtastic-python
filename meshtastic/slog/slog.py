@@ -24,6 +24,12 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.powermon import PowerMeter
 
 from .arrow import FeatherWriter
+from .health import (
+    SlogHealthSnapshot,
+    _get_health_tracker,
+    _merge_health_snapshots,
+    _SlogHealthTracker,
+)
 
 logger = logging.getLogger(__name__)
 _warned_deprecations: set[str] = set()
@@ -158,6 +164,12 @@ DIR_NAME_REQUIRED_MESSAGE = "dir_name must be a non-empty path when provided"
 SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS = 5.0
 SAMPLE_FAILURE_WARNING_BURST_COUNT = 3
 TOPIC_MESHTASTIC_LOG_LINE = "meshtastic.log.line"
+POWER_SAMPLE_HEALTH_COMPONENT = "power.sample"
+POWER_SHUTDOWN_HEALTH_COMPONENT = "power.shutdown"
+STRUCTURED_WRITER_HEALTH_COMPONENT = "structured.writer"
+STRUCTURED_POWER_HEALTH_COMPONENT = "structured.power"
+RAW_WRITER_HEALTH_COMPONENT = "structured.raw"
+STRUCTURED_SHUTDOWN_HEALTH_COMPONENT = "structured.shutdown"
 
 
 class _PowerLoggerShutdownError(RuntimeError):
@@ -251,6 +263,7 @@ class PowerLogger:
         self._dependencies_closed = False
         self._deferred_dependency_close = False
         self._background_close_error: Exception | None = None
+        self._health = _SlogHealthTracker()
         self.is_logging = True
         self.thread = threading.Thread(
             target=self._logging_thread, name="PowerLogger", daemon=True
@@ -299,6 +312,24 @@ class PowerLogger:
         return None
 
     def _store_current_reading(self, now: datetime | None = None) -> None:
+        """Store one power reading and update the component health state.
+
+        Parameters
+        ----------
+        now : datetime | None
+            Optional timestamp to use for the recorded row.
+        """
+        try:
+            self._store_current_reading_impl(now)
+        except Exception as exc:
+            _get_health_tracker(self)._record_failure(
+                POWER_SAMPLE_HEALTH_COMPONENT, exc
+            )
+            raise
+        else:
+            _get_health_tracker(self)._record_success(POWER_SAMPLE_HEALTH_COMPONENT)
+
+    def _store_current_reading_impl(self, now: datetime | None = None) -> None:
         """Capture a snapshot of current power measurements and append it to the writer.
 
         If `now` is provided it is used as the timestamp; otherwise the current system time is used.
@@ -370,6 +401,16 @@ class PowerLogger:
         """Preferred camelCase public API; see `_store_current_reading`."""
         self._store_current_reading(now)
 
+    def getHealth(self) -> SlogHealthSnapshot:
+        """Return current power-logging health and cumulative failure counts.
+
+        Returns
+        -------
+        SlogHealthSnapshot
+            Immutable health snapshot for power sampling and shutdown.
+        """
+        return _get_health_tracker(self)._snapshot()
+
     # COMPAT_DEPRECATE: snake_case alias for storeCurrentReading (warns once)
     def store_current_reading(self, now: datetime | None = None) -> None:
         """Use `storeCurrentReading()` instead."""
@@ -440,6 +481,14 @@ class PowerLogger:
         finally:
             self._dependencies_closed = True
 
+        shutdown_error = meter_close_exc or writer_close_exc
+        if shutdown_error is not None:
+            _get_health_tracker(self)._record_failure(
+                POWER_SHUTDOWN_HEALTH_COMPONENT, shutdown_error
+            )
+        else:
+            _get_health_tracker(self)._record_success(POWER_SHUTDOWN_HEALTH_COMPONENT)
+
         if meter_close_exc is not None:
             if writer_close_exc is not None:
                 logger.warning(
@@ -506,11 +555,15 @@ class PowerLogger:
 
         self.thread.join(timeout=POWER_LOGGER_JOIN_TIMEOUT)
         if self.thread.is_alive():
-            raise _PowerLoggerShutdownError(
+            shutdown_error = _PowerLoggerShutdownError(
                 "PowerLogger background thread did not stop within "
                 f"{POWER_LOGGER_JOIN_TIMEOUT:.1f}s; meter and writer remain open "
                 "until the worker exits."
             )
+            _get_health_tracker(self)._record_failure(
+                POWER_SHUTDOWN_HEALTH_COMPONENT, shutdown_error
+            )
+            raise shutdown_error
 
         # Fake/test threads may not execute _logging_thread's finally block, so
         # the caller also finalizes once the thread is confirmed stopped.
@@ -553,6 +606,7 @@ class StructuredLogger:
         """
         self.client = client
         self.power_logger = power_logger
+        self._health = _SlogHealthTracker()
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
@@ -629,6 +683,7 @@ class StructuredLogger:
         """
         unsubscribe_exc: Exception | None = None
         writer_close_exc: Exception | None = None
+        raw_close_exc: Exception | None = None
         try:
             pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         except Exception as exc:  # noqa: BLE001 - preserve as primary error
@@ -644,7 +699,19 @@ class StructuredLogger:
             try:
                 f.close()  # Close the raw.txt file
             except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                raw_close_exc = exc
                 logger.warning("Failed to close raw log file: %s", exc, exc_info=True)
+
+        shutdown_error = unsubscribe_exc or writer_close_exc or raw_close_exc
+        if shutdown_error is not None:
+            _get_health_tracker(self)._record_failure(
+                STRUCTURED_SHUTDOWN_HEALTH_COMPONENT, shutdown_error
+            )
+        else:
+            _get_health_tracker(self)._record_success(
+                STRUCTURED_SHUTDOWN_HEALTH_COMPONENT
+            )
+
         if unsubscribe_exc is not None:
             if writer_close_exc is not None:
                 logger.warning(
@@ -713,8 +780,15 @@ class StructuredLogger:
             try:
                 self.writer.addRow(di)
             except Exception as exc:  # noqa: BLE001 - best-effort logging path
+                _get_health_tracker(self)._record_failure(
+                    STRUCTURED_WRITER_HEALTH_COMPONENT, exc
+                )
                 logger.warning(
                     "Failed to write structured slog row: %s", exc, exc_info=True
+                )
+            else:
+                _get_health_tracker(self)._record_success(
+                    STRUCTURED_WRITER_HEALTH_COMPONENT
                 )
 
             # If we have a sibling power logger, make sure we have a power measurement with the EXACT same timestamp
@@ -725,10 +799,17 @@ class StructuredLogger:
                 try:
                     self.power_logger.storeCurrentReading(now)
                 except Exception as exc:  # noqa: BLE001 - best-effort logging path
+                    _get_health_tracker(self)._record_failure(
+                        STRUCTURED_POWER_HEALTH_COMPONENT, exc
+                    )
                     logger.warning(
                         "Failed to write corresponding power sample: %s",
                         exc,
                         exc_info=True,
+                    )
+                else:
+                    _get_health_tracker(self)._record_success(
+                        STRUCTURED_POWER_HEALTH_COMPONENT
                     )
 
         # Only acquire lock and write if raw logging is enabled
@@ -738,11 +819,28 @@ class StructuredLogger:
                     try:
                         self.raw_file.write(line + "\n")  # Write the raw log
                     except Exception as exc:  # noqa: BLE001 - keep callbacks resilient
+                        _get_health_tracker(self)._record_failure(
+                            RAW_WRITER_HEALTH_COMPONENT, exc
+                        )
                         logger.warning(
                             "Failed to write raw slog line: %s",
                             exc,
                             exc_info=True,
                         )
+                    else:
+                        _get_health_tracker(self)._record_success(
+                            RAW_WRITER_HEALTH_COMPONENT
+                        )
+
+    def getHealth(self) -> SlogHealthSnapshot:
+        """Return current structured-logging health and cumulative failures.
+
+        Returns
+        -------
+        SlogHealthSnapshot
+            Immutable health snapshot for writes, correlated power, and shutdown.
+        """
+        return _get_health_tracker(self)._snapshot()
 
     # COMPAT_STABLE_SHIM: historical internal helper name used by legacy integrations.
     def _onLogMessage(self, line: str) -> None:  # pylint: disable=invalid-name
@@ -843,6 +941,7 @@ class LogSet:
 
         self.power_logger: PowerLogger | None = None
         self.slog_logger: StructuredLogger | None = None
+        self._closed_health = SlogHealthSnapshot()
 
         if power_meter is not None:
             self.power_logger = PowerLogger(
@@ -870,6 +969,27 @@ class LogSet:
         self.atexit_handler = lambda: self.close()  # pylint: disable=unnecessary-lambda
         atexit.register(self.atexit_handler)
 
+    def getHealth(self) -> SlogHealthSnapshot:
+        """Return aggregate health for active or previously-closed loggers.
+
+        Returns
+        -------
+        SlogHealthSnapshot
+            Immutable aggregate health snapshot for this logging session.
+        """
+        snapshots = [getattr(self, "_closed_health", SlogHealthSnapshot())]
+        slog_logger = self.slog_logger
+        power_logger = self.power_logger
+        if slog_logger is not None:
+            slog_health = slog_logger.getHealth()
+            if isinstance(slog_health, SlogHealthSnapshot):
+                snapshots.append(slog_health)
+        if power_logger is not None:
+            power_health = power_logger.getHealth()
+            if isinstance(power_health, SlogHealthSnapshot):
+                snapshots.append(power_health)
+        return _merge_health_snapshots(*snapshots)
+
     def close(self) -> None:
         """Shuts down the log set and releases associated resources.
 
@@ -878,26 +998,39 @@ class LogSet:
         logger reference.
         """
 
-        if self.slog_logger:
+        slog_logger = self.slog_logger
+        if slog_logger:
+            power_logger = self.power_logger
             logger.info("Closing slogs in %s", self.dir_name)
             atexit.unregister(
                 self.atexit_handler
             )  # docs say it will silently ignore if not found
             slog_close_exc: Exception | None = None
             power_close_exc: Exception | None = None
+            closed_snapshots: list[SlogHealthSnapshot] = [
+                getattr(self, "_closed_health", SlogHealthSnapshot())
+            ]
             try:
-                self.slog_logger.close()
+                slog_logger.close()
             except Exception as exc:  # noqa: BLE001 - preserve chaining below
                 slog_close_exc = exc
             finally:
+                slog_health = slog_logger.getHealth()
+                if isinstance(slog_health, SlogHealthSnapshot):
+                    closed_snapshots.append(slog_health)
                 self.slog_logger = None
             try:
-                if self.power_logger:
-                    self.power_logger.close()
+                if power_logger:
+                    power_logger.close()
             except Exception as exc:  # noqa: BLE001 - preserve chaining below
                 power_close_exc = exc
             finally:
+                if power_logger is not None:
+                    power_health = power_logger.getHealth()
+                    if isinstance(power_health, SlogHealthSnapshot):
+                        closed_snapshots.append(power_health)
                 self.power_logger = None
+                self._closed_health = _merge_health_snapshots(*closed_snapshots)
 
             if slog_close_exc is not None:
                 if power_close_exc is not None:
