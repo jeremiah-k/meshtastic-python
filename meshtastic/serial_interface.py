@@ -24,6 +24,7 @@ import serial  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic.stream_interface import StreamInterface
+from meshtastic.transport_retry import _RetryWindow
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +276,11 @@ class SerialInterface(StreamInterface):
             "_connect_retry_budget_seconds", SERIAL_CONNECT_RETRY_BUDGET_SECONDS
         )
         assert retry_budget is not None
-        retry_deadline = time.monotonic() + retry_budget
+        retry_window = _RetryWindow.start(
+            now=time.monotonic(),
+            duration=retry_budget,
+            max_attempts=SERIAL_CONNECT_MAX_ATTEMPTS,
+        )
         for attempt in range(1, SERIAL_CONNECT_MAX_ATTEMPTS + 1):
             attempt_start = time.monotonic()
             stream = self.stream
@@ -319,8 +324,16 @@ class SerialInterface(StreamInterface):
                         exc,
                     )
                     raise
-                remaining = retry_deadline - time.monotonic()
-                if attempt >= SERIAL_CONNECT_MAX_ATTEMPTS or remaining <= 0:
+                disconnect_source = getattr(self, "_last_disconnect_source", "unknown")
+                retry_delay_base = SERIAL_CONNECT_RETRY_DELAY_SECONDS
+                if disconnect_source == "stream.closed":
+                    retry_delay_base = SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS
+                retry_decision = retry_window.after_failure(
+                    attempt=attempt,
+                    retry_delay=retry_delay_base,
+                    now=time.monotonic(),
+                )
+                if not retry_decision.should_retry:
                     logger.log(
                         self._connect_failure_log_level(),
                         "Serial connect retry budget exhausted after %.2fs (attempt %d/%d). Last error: %s",
@@ -330,11 +343,7 @@ class SerialInterface(StreamInterface):
                         exc,
                     )
                     raise
-                disconnect_source = getattr(self, "_last_disconnect_source", "unknown")
-                retry_delay_base = SERIAL_CONNECT_RETRY_DELAY_SECONDS
-                if disconnect_source == "stream.closed":
-                    retry_delay_base = SERIAL_CONNECT_STREAM_CLOSED_RETRY_DELAY_SECONDS
-                retry_delay = min(retry_delay_base, remaining)
+                retry_delay = retry_decision.delay
                 logger.warning(
                     "Connect attempt %d failed: %s. Retrying in %.1fs...",
                     attempt,

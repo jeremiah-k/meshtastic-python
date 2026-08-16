@@ -18,6 +18,11 @@ from meshtastic.stream_interface import (
     WRITE_PROGRESS_TIMEOUT_SECONDS,
     StreamInterface,
 )
+from meshtastic.transport_retry import (
+    _exponential_retry_delay,
+    _plan_counted_retry,
+    _sleep_interruptibly,
+)
 
 DEFAULT_TCP_PORT = 4403
 TCP_IO_EXCEPTIONS: tuple[type[BaseException], ...] = (
@@ -426,9 +431,12 @@ class TCPInterface(StreamInterface):
 
     def _compute_reconnect_delay(self) -> float:
         """Compute exponential reconnect backoff delay in seconds."""
-        exponent = max(0, self._reconnect_attempts - 1)
-        delay = self._reconnect_base_delay * (self._reconnect_backoff**exponent)
-        return min(self._reconnect_max_delay, delay)
+        return _exponential_retry_delay(
+            attempt=self._reconnect_attempts,
+            base_delay=self._reconnect_base_delay,
+            backoff=self._reconnect_backoff,
+            max_delay=self._reconnect_max_delay,
+        )
 
     def _sleep_reconnect_delay(self, delay: float) -> bool:
         """Sleep reconnect delay with frequent shutdown checks.
@@ -438,14 +446,13 @@ class TCPInterface(StreamInterface):
         bool
             `True` if the full delay elapsed, `False` if interrupted by shutdown.
         """
-        deadline = time.monotonic() + delay
-        while True:
-            if self._wantExit or self._fatal_disconnect:
-                return False
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return True
-            time.sleep(min(self.DEFAULT_RECONNECT_SLEEP_SLICE, remaining))
+        return _sleep_interruptibly(
+            delay,
+            should_abort=lambda: self._wantExit or self._fatal_disconnect,
+            sleep_slice=self.DEFAULT_RECONNECT_SLEEP_SLICE,
+            monotonic=time.monotonic,
+            sleep=time.sleep,
+        )
 
     def _on_fatal_disconnect(self, reason: str) -> None:
         """Mark the interface as fatally disconnected and stop reconnect attempts."""
@@ -488,16 +495,22 @@ class TCPInterface(StreamInterface):
                     abort_reconnect = True
                 elif self._wantExit or self._fatal_disconnect:
                     abort_reconnect = True
-                elif self._reconnect_attempts >= self._max_reconnect_attempts:
-                    should_mark_fatal = True
                 else:
-                    self._reconnect_attempt_in_progress = True
-                    owns_reconnect_attempt = True
-                    self._reconnect_attempts += 1
-                    attempt_number = self._reconnect_attempts
-                    delay = (
-                        0.0 if attempt_number == 1 else self._compute_reconnect_delay()
+                    retry_decision = _plan_counted_retry(
+                        completed_attempts=self._reconnect_attempts,
+                        max_attempts=self._max_reconnect_attempts,
+                        base_delay=self._reconnect_base_delay,
+                        backoff=self._reconnect_backoff,
+                        max_delay=self._reconnect_max_delay,
                     )
+                    if not retry_decision.should_retry:
+                        should_mark_fatal = True
+                    else:
+                        self._reconnect_attempt_in_progress = True
+                        owns_reconnect_attempt = True
+                        self._reconnect_attempts = retry_decision.attempt
+                        attempt_number = retry_decision.attempt
+                        delay = retry_decision.delay
 
             if should_mark_fatal:
                 self._on_fatal_disconnect("reconnect retry limit reached")
