@@ -29,7 +29,7 @@ INT_SIZE_ENUM = {8: "IS_8", 16: "IS_16", 32: "IS_32", 64: "IS_64"}
 # Options that are valid proto FieldOptions and useful outside of C code generation.
 # We skip C-only options (anonymous_oneof, no_unions, skip_message, packed_struct,
 # packed_enum, mangle_names, callback_datatype, callback_function, descriptorsize,
-# type_override) since they either don't apply to proto fields or are C-specific.
+# type, type_override) since they either don't apply to proto fields or are C-specific.
 FIELD_OPTIONS = frozenset(
     {
         "max_size",

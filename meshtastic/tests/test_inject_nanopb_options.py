@@ -17,6 +17,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from google.protobuf.descriptor import FieldDescriptor
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -179,6 +180,18 @@ def test_parse_skips_non_python_options(tmp_path):
     f = _write_options(tmp_path, "*MeshPacket.payload_variant anonymous_oneof:true\n")
     specific, wildcard = parse_options_file(f)
     # anonymous_oneof is not in FIELD_OPTIONS → no entry should be produced
+    assert specific == {}
+    assert wildcard == {}
+
+
+@pytest.mark.unit
+def test_parse_skips_nanopb_c_only_type_option(tmp_path):
+    """Nanopb C field-type directives must not leak into Python descriptors."""
+    f = _write_options(
+        tmp_path,
+        "*EnvironmentMetrics.one_wire_temperature type:FT_IGNORE\n",
+    )
+    specific, wildcard = parse_options_file(f)
     assert specific == {}
     assert wildcard == {}
 
@@ -796,7 +809,33 @@ def test_descriptor_multilevel_nested_route_link_uid():
 
 
 @pytest.mark.unit
-def test_descriptor_telemetry_environment_one_wire_temperature():
+def test_descriptor_telemetry_environment_one_wire_temperature_transition():
+    """Validate both sides of the upstream one-wire telemetry migration."""
     env = telemetry_pb2.DESCRIPTOR.message_types_by_name["EnvironmentMetrics"]
-    opts = _field_opts(env, "one_wire_temperature")
-    assert opts.max_count == 8
+    legacy = env.fields_by_name["one_wire_temperature"]
+    legacy_options = legacy.GetOptions()
+    channel_names = tuple(f"one_wire_temperature_ch{index}" for index in range(8))
+    channel_presence = tuple(name in env.fields_by_name for name in channel_names)
+
+    assert legacy.number == 23
+    assert legacy.is_repeated is True
+    assert all(channel_presence) or not any(channel_presence), (
+        "one-wire migration must expose either all eight replacement channels "
+        "or none of them"
+    )
+
+    if not any(channel_presence):
+        assert legacy_options.deprecated is False
+        assert legacy_options.HasExtension(nanopb_pb2.nanopb)
+        opts = legacy_options.Extensions[nanopb_pb2.nanopb]
+        assert opts.max_count == 8
+        return
+
+    assert legacy_options.deprecated is True
+    assert not legacy_options.HasExtension(nanopb_pb2.nanopb)
+    for index, name in enumerate(channel_names, start=32):
+        channel = env.fields_by_name[name]
+        assert channel.number == index
+        assert channel.is_repeated is False
+        assert channel.type == FieldDescriptor.TYPE_FLOAT
+        assert channel.has_presence is True
