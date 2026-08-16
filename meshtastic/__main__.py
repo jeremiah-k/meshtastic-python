@@ -28,6 +28,7 @@ import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.dispatch as cli_dispatch
 import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
+import meshtastic.cli.invocation as cli_invocation
 import meshtastic.cli.preference_runtime as cli_preference_runtime
 import meshtastic.cli.runtime as cli_runtime
 import meshtastic.ota
@@ -283,6 +284,40 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
+def _current_invocation_args() -> argparse.Namespace | None:
+    """Return invocation-owned arguments, falling back to legacy ``mt_config``."""
+    invocation = cli_invocation.get_current_invocation()
+    return invocation.args if invocation is not None else mt_config.args
+
+
+def _current_camel_case() -> bool:
+    """Return the active naming mode with legacy-global fallback."""
+    invocation = cli_invocation.get_current_invocation()
+    return invocation.camel_case if invocation is not None else mt_config.camel_case
+
+
+def _current_channel_index() -> int | None:
+    """Return the invocation-selected channel index with legacy fallback."""
+    invocation = cli_invocation.get_current_invocation()
+    return invocation.channel_index if invocation is not None else mt_config.channel_index
+
+
+def _set_current_channel_index(value: int) -> None:
+    """Update invocation-owned channel selection and mirror the compatibility global."""
+    invocation = cli_invocation.get_current_invocation()
+    if invocation is not None:
+        invocation.channel_index = value
+    mt_config.channel_index = value
+
+
+def _set_current_logfile(value: Any) -> None:
+    """Update invocation-owned logfile state and mirror the compatibility global."""
+    invocation = cli_invocation.get_current_invocation()
+    if invocation is not None:
+        invocation.logfile = value
+    mt_config.logfile = value
+
+
 def _cli_print(message: str, *, force: bool = False) -> None:
     """Print a CLI message, optionally bypassing ``--quiet`` suppression.
 
@@ -294,7 +329,7 @@ def _cli_print(message: str, *, force: bool = False) -> None:
         When ``True``, print even if ``--quiet`` is active. Use this for
         validation output that must remain visible to the user.
     """
-    args = mt_config.args
+    args = _current_invocation_args()
     if not force and args and getattr(args, "quiet", False):
         return
     print(message)
@@ -519,7 +554,7 @@ def support_info() -> None:
 
 def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
     """Handle an incoming mesh packet, optionally send a text reply, and close the interface when appropriate."""
-    args = mt_config.args
+    args = _current_invocation_args()
     try:
         d = packet.get("decoded")
         logger.debug("in onReceive() d:%s", d)
@@ -592,7 +627,7 @@ _parse_bitfield_value = cli_preference_runtime.parse_bitfield_value
 
 def _display_pref_name(comp_name: str) -> str:
     """Format a canonical preference path for user-facing output."""
-    if not mt_config.camel_case:
+    if not _current_camel_case():
         return comp_name
     return ".".join(
         meshtastic.util.snake_to_camel(part) for part in comp_name.split(".")
@@ -701,9 +736,9 @@ def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
     camel_name = meshtastic.util.snake_to_camel(name[1])
     # Note: protobufs has the keys in snake_case, so snake internally
     snake_name = meshtastic.util.camel_to_snake(name[1])
-    uni_name = camel_name if mt_config.camel_case else snake_name
+    uni_name = camel_name if _current_camel_case() else snake_name
     logger.debug("snake_name:%s camel_name:%s", snake_name, camel_name)
-    logger.debug("use camel:%s", mt_config.camel_case)
+    logger.debug("use camel:%s", _current_camel_case())
 
     # First validate the input
     localConfig = node.localConfig
@@ -844,7 +879,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         config,
         comp_name,
         raw_val,
-        camel_case=mt_config.camel_case,
+        camel_case=_current_camel_case(),
         cli_print=_cli_print,
         is_repeated_field=_is_repeated_field,
     )
@@ -1210,8 +1245,8 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
     channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
         cli_exit=_cli_exit,
         cli_print=_cli_print,
-        get_channel_index=lambda: mt_config.channel_index,
-        set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
+        get_channel_index=_current_channel_index,
+        set_channel_index=_set_current_channel_index,
         resolve_pref=_resolve_pref,
         set_pref=setPref,
         fatal_preference_value_errors=_fatal_preference_value_errors,
@@ -1232,7 +1267,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
     service_hooks = cli_messaging_service_actions.MessagingServiceHooks(
         cli_exit=_cli_exit,
         cli_print=_cli_print,
-        get_channel_index=lambda: mt_config.channel_index,
+        get_channel_index=_current_channel_index,
         check_channel=checkChannel,
         remote_hardware_client=remote_hardware.RemoteHardwareClient,
         get_pref=getPref,
@@ -1258,7 +1293,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
 def onConnected(interface: MeshInterface) -> None:
     """Execute parsed connected CLI actions on an established interface."""
     try:
-        args = mt_config.args
+        args = _current_invocation_args()
         if args is None:
             raise RuntimeError("onConnected called without args being set up")
         context = CliContext(
@@ -1278,13 +1313,13 @@ def onConnected(interface: MeshInterface) -> None:
 
 def printConfig(config: Any) -> None:
     """COMPAT_STABLE_SHIM: print config fields through the CLI config I/O runtime."""
-    cli_config_io.print_config(config, camel_case=mt_config.camel_case)
+    cli_config_io.print_config(config, camel_case=_current_camel_case())
 
 
 def printAvailableConfigFields() -> None:
     """COMPAT_STABLE_SHIM: print config fields and aliases through the runtime."""
     cli_config_io.print_available_config_fields(
-        camel_case=mt_config.camel_case,
+        camel_case=_current_camel_case(),
         aliases=_PREFERENCE_FIELD_ALIASES,
         display_pref_name=_display_pref_name,
         local_config_factory=localonly_pb2.LocalConfig,
@@ -1332,7 +1367,7 @@ def exportConfig(interface: MeshInterface) -> str:
     """COMPAT_STABLE_SHIM: export configuration through the CLI config I/O runtime."""
     return cli_config_io.export_config(
         interface,
-        camel_case=mt_config.camel_case,
+        camel_case=_current_camel_case(),
         message_to_dict=MessageToDict,
         prefix_base64_bytes_fields_fn=_prefix_base64_bytes_fields,
         set_missing_flags_false_fn=_set_missing_flags_false,
@@ -1438,7 +1473,7 @@ def _create_power_meter() -> None:
         If ``mt_config.args`` is not initialized.
     """
     global meter  # pylint: disable=global-statement
-    args = mt_config.args
+    args = _current_invocation_args()
     if args is None:
         raise RuntimeError(
             "mt_config.args must be initialized before calling _create_power_meter()"
@@ -1512,7 +1547,10 @@ def _release_session_power_meter(active_meter: Any) -> None:
 
 
 def _clear_session_logfile(active_logfile: Any) -> None:
-    """Clear the legacy logfile reference when its owning invocation ends."""
+    """Clear invocation and legacy logfile references when ownership ends."""
+    invocation = cli_invocation.get_current_invocation()
+    if invocation is not None and invocation.logfile is active_logfile:
+        invocation.logfile = None
     if mt_config.logfile is active_logfile:
         mt_config.logfile = None
 
@@ -1534,14 +1572,14 @@ def _build_bootstrap_hooks() -> cli_bootstrap.BootstrapHooks:
         create_power_meter=_create_power_meter,
         get_power_meter=lambda: meter,
         release_power_meter=_release_session_power_meter,
-        set_logfile=lambda value: setattr(mt_config, "logfile", value),
+        set_logfile=_set_current_logfile,
         clear_session_logfile=_clear_session_logfile,
         subscribe=subscribe,
         unsubscribe_receive=_unsubscribe_cli_receive,
         on_connected=onConnected,
         parse_host_port=_parse_host_port,
         listen_loop_poll_once=cli_runtime._listen_loop_poll_once,
-        set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
+        set_channel_index=_set_current_channel_index,
         ble_interface=BLEInterface,
         tcp_interface=meshtastic.tcp_interface.TCPInterface,
         default_tcp_port=meshtastic.tcp_interface.DEFAULT_TCP_PORT,
@@ -1567,7 +1605,15 @@ def common() -> None:
         raise RuntimeError(
             "mt_config.parser must be initialized before calling common()"
         )
-    cli_bootstrap.run_common(args, parser, _build_bootstrap_hooks())
+    invocation = cli_invocation.CliInvocation(
+        args=args,
+        parser=parser,
+        channel_index=mt_config.channel_index,
+        camel_case=mt_config.camel_case,
+        logfile=mt_config.logfile,
+    )
+    with cli_invocation.activate_invocation(invocation):
+        cli_bootstrap.run_common(args, parser, _build_bootstrap_hooks())
 
 
 # ---------------------------------------------------------------------------
