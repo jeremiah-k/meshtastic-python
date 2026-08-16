@@ -17,6 +17,11 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import TypeAlias as _TypeAlias, Never as _Never
 
+if sys.version_info >= (3, 13):
+    from warnings import deprecated as _deprecated
+else:
+    from typing_extensions import deprecated as _deprecated
+
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class _TelemetrySensorType:
@@ -53,10 +58,12 @@ class _TelemetrySensorTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_T
     """
     High accuracy temperature and pressure
     """
-    SHTC3: _TelemetrySensorType.ValueType  # 7
-    """
-    TODO - REMOVE High accuracy temperature and humidity
-    """
+    @_builtins.property
+    @_deprecated("""This enum value has been marked as deprecated using proto enum value options.""")
+    def SHTC3(self) -> _TelemetrySensorType.ValueType:   # 7
+        """
+        TODO - REMOVE High accuracy temperature and humidity
+        """
     LPS22: _TelemetrySensorType.ValueType  # 8
     """
     High accuracy pressure
@@ -73,10 +80,12 @@ class _TelemetrySensorTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_T
     """
     3-Axis magnetic sensor
     """
-    SHT31: _TelemetrySensorType.ValueType  # 12
-    """
-    TODO - REMOVE High accuracy temperature and humidity
-    """
+    @_builtins.property
+    @_deprecated("""This enum value has been marked as deprecated using proto enum value options.""")
+    def SHT31(self) -> _TelemetrySensorType.ValueType:   # 12
+        """
+        TODO - REMOVE High accuracy temperature and humidity
+        """
     PMSA003I: _TelemetrySensorType.ValueType  # 13
     """
     PM2.5 air quality sensor
@@ -93,10 +102,12 @@ class _TelemetrySensorTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_T
     """
     RCWL-9620 Doppler Radar Distance Sensor, used for water level detection
     """
-    SHT4X: _TelemetrySensorType.ValueType  # 17
-    """
-    TODO - REMOVE Sensirion High accuracy temperature and humidity
-    """
+    @_builtins.property
+    @_deprecated("""This enum value has been marked as deprecated using proto enum value options.""")
+    def SHT4X(self) -> _TelemetrySensorType.ValueType:   # 17
+        """
+        TODO - REMOVE Sensirion High accuracy temperature and humidity
+        """
     VEML7700: _TelemetrySensorType.ValueType  # 18
     """
     VEML7700 high accuracy ambient light(Lux) digital 16-bit resolution sensor.
@@ -213,10 +224,12 @@ class _TelemetrySensorTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_T
     """
     HDC1080 Temperature and Humidity Sensor
     """
-    SHT21: _TelemetrySensorType.ValueType  # 47
-    """
-    TODO - REMOVE STH21 Temperature and R. Humidity sensor
-    """
+    @_builtins.property
+    @_deprecated("""This enum value has been marked as deprecated using proto enum value options.""")
+    def SHT21(self) -> _TelemetrySensorType.ValueType:   # 47
+        """
+        TODO - REMOVE STH21 Temperature and R. Humidity sensor
+        """
     STC31: _TelemetrySensorType.ValueType  # 48
     """
     Sensirion STC31 CO2 sensor
@@ -248,6 +261,10 @@ class _TelemetrySensorTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_T
     HM330X: _TelemetrySensorType.ValueType  # 55
     """
     HM330X PM SENSOR
+    """
+    SEN6X: _TelemetrySensorType.ValueType  # 56
+    """
+    Sensirion SEN6X PM/RHT/VOC/NOx/CO2/HCHO sensor family (SEN62, SEN63C, SEN65, SEN66, SEN68, SEN69C)
     """
 
 class TelemetrySensorType(_TelemetrySensorType, metaclass=_TelemetrySensorTypeEnumTypeWrapper):
@@ -479,6 +496,10 @@ HM330X: TelemetrySensorType.ValueType  # 55
 """
 HM330X PM SENSOR
 """
+SEN6X: TelemetrySensorType.ValueType  # 56
+"""
+Sensirion SEN6X PM/RHT/VOC/NOx/CO2/HCHO sensor family (SEN62, SEN63C, SEN65, SEN66, SEN68, SEN69C)
+"""
 Global___TelemetrySensorType: _TypeAlias = TelemetrySensorType  # noqa: Y015
 
 @_typing.final
@@ -581,6 +602,22 @@ class EnvironmentMetrics(_message.Message):
     SOIL_MOISTURE_FIELD_NUMBER: _builtins.int
     SOIL_TEMPERATURE_FIELD_NUMBER: _builtins.int
     ONE_WIRE_TEMPERATURE_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH0_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH1_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH2_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH3_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH4_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH5_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH6_FIELD_NUMBER: _builtins.int
+    ADC_VOLTAGE_CH7_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH0_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH1_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH2_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH3_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH4_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH5_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH6_FIELD_NUMBER: _builtins.int
+    ONE_WIRE_TEMPERATURE_CH7_FIELD_NUMBER: _builtins.int
     temperature: _builtins.float
     """
     Temperature measured
@@ -671,10 +708,75 @@ class EnvironmentMetrics(_message.Message):
     """
     Soil temperature measured (*C)
     """
+    adc_voltage_ch0: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 0 (V)
+    """
+    adc_voltage_ch1: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 1 (V)
+    """
+    adc_voltage_ch2: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 2 (V)
+    """
+    adc_voltage_ch3: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 3 (V)
+    """
+    adc_voltage_ch4: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 4 (V)
+    """
+    adc_voltage_ch5: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 5 (V)
+    """
+    adc_voltage_ch6: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 6 (V)
+    """
+    adc_voltage_ch7: _builtins.float
+    """
+    Multi-channel ADC Voltage Channel 7 (V)
+    """
+    one_wire_temperature_ch0: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 0 (*C)
+    """
+    one_wire_temperature_ch1: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 1 (*C)
+    """
+    one_wire_temperature_ch2: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 2 (*C)
+    """
+    one_wire_temperature_ch3: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 3 (*C)
+    """
+    one_wire_temperature_ch4: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 4 (*C)
+    """
+    one_wire_temperature_ch5: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 5 (*C)
+    """
+    one_wire_temperature_ch6: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 6 (*C)
+    """
+    one_wire_temperature_ch7: _builtins.float
+    """
+    Multi-channel One-Wire Temperature Channel 7 (*C)
+    """
     @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
     def one_wire_temperature(self) -> _containers.RepeatedScalarFieldContainer[_builtins.float]:
         """
-        One-wire temperature (*C)
+        Never implemented, but Voltage may be mis-interpreted by old clients as temperature
         """
 
     def __init__(
@@ -703,11 +805,43 @@ class EnvironmentMetrics(_message.Message):
         soil_moisture: _builtins.int | None = ...,
         soil_temperature: _builtins.float | None = ...,
         one_wire_temperature: _abc.Iterable[_builtins.float] | None = ...,
+        adc_voltage_ch0: _builtins.float | None = ...,
+        adc_voltage_ch1: _builtins.float | None = ...,
+        adc_voltage_ch2: _builtins.float | None = ...,
+        adc_voltage_ch3: _builtins.float | None = ...,
+        adc_voltage_ch4: _builtins.float | None = ...,
+        adc_voltage_ch5: _builtins.float | None = ...,
+        adc_voltage_ch6: _builtins.float | None = ...,
+        adc_voltage_ch7: _builtins.float | None = ...,
+        one_wire_temperature_ch0: _builtins.float | None = ...,
+        one_wire_temperature_ch1: _builtins.float | None = ...,
+        one_wire_temperature_ch2: _builtins.float | None = ...,
+        one_wire_temperature_ch3: _builtins.float | None = ...,
+        one_wire_temperature_ch4: _builtins.float | None = ...,
+        one_wire_temperature_ch5: _builtins.float | None = ...,
+        one_wire_temperature_ch6: _builtins.float | None = ...,
+        one_wire_temperature_ch7: _builtins.float | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["_barometric_pressure", b"_barometric_pressure", "_current", b"_current", "_distance", b"_distance", "_gas_resistance", b"_gas_resistance", "_iaq", b"_iaq", "_ir_lux", b"_ir_lux", "_lux", b"_lux", "_radiation", b"_radiation", "_rainfall_1h", b"_rainfall_1h", "_rainfall_24h", b"_rainfall_24h", "_relative_humidity", b"_relative_humidity", "_soil_moisture", b"_soil_moisture", "_soil_temperature", b"_soil_temperature", "_temperature", b"_temperature", "_uv_lux", b"_uv_lux", "_voltage", b"_voltage", "_weight", b"_weight", "_white_lux", b"_white_lux", "_wind_direction", b"_wind_direction", "_wind_gust", b"_wind_gust", "_wind_lull", b"_wind_lull", "_wind_speed", b"_wind_speed", "barometric_pressure", b"barometric_pressure", "current", b"current", "distance", b"distance", "gas_resistance", b"gas_resistance", "iaq", b"iaq", "ir_lux", b"ir_lux", "lux", b"lux", "radiation", b"radiation", "rainfall_1h", b"rainfall_1h", "rainfall_24h", b"rainfall_24h", "relative_humidity", b"relative_humidity", "soil_moisture", b"soil_moisture", "soil_temperature", b"soil_temperature", "temperature", b"temperature", "uv_lux", b"uv_lux", "voltage", b"voltage", "weight", b"weight", "white_lux", b"white_lux", "wind_direction", b"wind_direction", "wind_gust", b"wind_gust", "wind_lull", b"wind_lull", "wind_speed", b"wind_speed"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_adc_voltage_ch0", b"_adc_voltage_ch0", "_adc_voltage_ch1", b"_adc_voltage_ch1", "_adc_voltage_ch2", b"_adc_voltage_ch2", "_adc_voltage_ch3", b"_adc_voltage_ch3", "_adc_voltage_ch4", b"_adc_voltage_ch4", "_adc_voltage_ch5", b"_adc_voltage_ch5", "_adc_voltage_ch6", b"_adc_voltage_ch6", "_adc_voltage_ch7", b"_adc_voltage_ch7", "_barometric_pressure", b"_barometric_pressure", "_current", b"_current", "_distance", b"_distance", "_gas_resistance", b"_gas_resistance", "_iaq", b"_iaq", "_ir_lux", b"_ir_lux", "_lux", b"_lux", "_one_wire_temperature_ch0", b"_one_wire_temperature_ch0", "_one_wire_temperature_ch1", b"_one_wire_temperature_ch1", "_one_wire_temperature_ch2", b"_one_wire_temperature_ch2", "_one_wire_temperature_ch3", b"_one_wire_temperature_ch3", "_one_wire_temperature_ch4", b"_one_wire_temperature_ch4", "_one_wire_temperature_ch5", b"_one_wire_temperature_ch5", "_one_wire_temperature_ch6", b"_one_wire_temperature_ch6", "_one_wire_temperature_ch7", b"_one_wire_temperature_ch7", "_radiation", b"_radiation", "_rainfall_1h", b"_rainfall_1h", "_rainfall_24h", b"_rainfall_24h", "_relative_humidity", b"_relative_humidity", "_soil_moisture", b"_soil_moisture", "_soil_temperature", b"_soil_temperature", "_temperature", b"_temperature", "_uv_lux", b"_uv_lux", "_voltage", b"_voltage", "_weight", b"_weight", "_white_lux", b"_white_lux", "_wind_direction", b"_wind_direction", "_wind_gust", b"_wind_gust", "_wind_lull", b"_wind_lull", "_wind_speed", b"_wind_speed", "adc_voltage_ch0", b"adc_voltage_ch0", "adc_voltage_ch1", b"adc_voltage_ch1", "adc_voltage_ch2", b"adc_voltage_ch2", "adc_voltage_ch3", b"adc_voltage_ch3", "adc_voltage_ch4", b"adc_voltage_ch4", "adc_voltage_ch5", b"adc_voltage_ch5", "adc_voltage_ch6", b"adc_voltage_ch6", "adc_voltage_ch7", b"adc_voltage_ch7", "barometric_pressure", b"barometric_pressure", "current", b"current", "distance", b"distance", "gas_resistance", b"gas_resistance", "iaq", b"iaq", "ir_lux", b"ir_lux", "lux", b"lux", "one_wire_temperature_ch0", b"one_wire_temperature_ch0", "one_wire_temperature_ch1", b"one_wire_temperature_ch1", "one_wire_temperature_ch2", b"one_wire_temperature_ch2", "one_wire_temperature_ch3", b"one_wire_temperature_ch3", "one_wire_temperature_ch4", b"one_wire_temperature_ch4", "one_wire_temperature_ch5", b"one_wire_temperature_ch5", "one_wire_temperature_ch6", b"one_wire_temperature_ch6", "one_wire_temperature_ch7", b"one_wire_temperature_ch7", "radiation", b"radiation", "rainfall_1h", b"rainfall_1h", "rainfall_24h", b"rainfall_24h", "relative_humidity", b"relative_humidity", "soil_moisture", b"soil_moisture", "soil_temperature", b"soil_temperature", "temperature", b"temperature", "uv_lux", b"uv_lux", "voltage", b"voltage", "weight", b"weight", "white_lux", b"white_lux", "wind_direction", b"wind_direction", "wind_gust", b"wind_gust", "wind_lull", b"wind_lull", "wind_speed", b"wind_speed"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_barometric_pressure", b"_barometric_pressure", "_current", b"_current", "_distance", b"_distance", "_gas_resistance", b"_gas_resistance", "_iaq", b"_iaq", "_ir_lux", b"_ir_lux", "_lux", b"_lux", "_radiation", b"_radiation", "_rainfall_1h", b"_rainfall_1h", "_rainfall_24h", b"_rainfall_24h", "_relative_humidity", b"_relative_humidity", "_soil_moisture", b"_soil_moisture", "_soil_temperature", b"_soil_temperature", "_temperature", b"_temperature", "_uv_lux", b"_uv_lux", "_voltage", b"_voltage", "_weight", b"_weight", "_white_lux", b"_white_lux", "_wind_direction", b"_wind_direction", "_wind_gust", b"_wind_gust", "_wind_lull", b"_wind_lull", "_wind_speed", b"_wind_speed", "barometric_pressure", b"barometric_pressure", "current", b"current", "distance", b"distance", "gas_resistance", b"gas_resistance", "iaq", b"iaq", "ir_lux", b"ir_lux", "lux", b"lux", "one_wire_temperature", b"one_wire_temperature", "radiation", b"radiation", "rainfall_1h", b"rainfall_1h", "rainfall_24h", b"rainfall_24h", "relative_humidity", b"relative_humidity", "soil_moisture", b"soil_moisture", "soil_temperature", b"soil_temperature", "temperature", b"temperature", "uv_lux", b"uv_lux", "voltage", b"voltage", "weight", b"weight", "white_lux", b"white_lux", "wind_direction", b"wind_direction", "wind_gust", b"wind_gust", "wind_lull", b"wind_lull", "wind_speed", b"wind_speed"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_adc_voltage_ch0", b"_adc_voltage_ch0", "_adc_voltage_ch1", b"_adc_voltage_ch1", "_adc_voltage_ch2", b"_adc_voltage_ch2", "_adc_voltage_ch3", b"_adc_voltage_ch3", "_adc_voltage_ch4", b"_adc_voltage_ch4", "_adc_voltage_ch5", b"_adc_voltage_ch5", "_adc_voltage_ch6", b"_adc_voltage_ch6", "_adc_voltage_ch7", b"_adc_voltage_ch7", "_barometric_pressure", b"_barometric_pressure", "_current", b"_current", "_distance", b"_distance", "_gas_resistance", b"_gas_resistance", "_iaq", b"_iaq", "_ir_lux", b"_ir_lux", "_lux", b"_lux", "_one_wire_temperature_ch0", b"_one_wire_temperature_ch0", "_one_wire_temperature_ch1", b"_one_wire_temperature_ch1", "_one_wire_temperature_ch2", b"_one_wire_temperature_ch2", "_one_wire_temperature_ch3", b"_one_wire_temperature_ch3", "_one_wire_temperature_ch4", b"_one_wire_temperature_ch4", "_one_wire_temperature_ch5", b"_one_wire_temperature_ch5", "_one_wire_temperature_ch6", b"_one_wire_temperature_ch6", "_one_wire_temperature_ch7", b"_one_wire_temperature_ch7", "_radiation", b"_radiation", "_rainfall_1h", b"_rainfall_1h", "_rainfall_24h", b"_rainfall_24h", "_relative_humidity", b"_relative_humidity", "_soil_moisture", b"_soil_moisture", "_soil_temperature", b"_soil_temperature", "_temperature", b"_temperature", "_uv_lux", b"_uv_lux", "_voltage", b"_voltage", "_weight", b"_weight", "_white_lux", b"_white_lux", "_wind_direction", b"_wind_direction", "_wind_gust", b"_wind_gust", "_wind_lull", b"_wind_lull", "_wind_speed", b"_wind_speed", "adc_voltage_ch0", b"adc_voltage_ch0", "adc_voltage_ch1", b"adc_voltage_ch1", "adc_voltage_ch2", b"adc_voltage_ch2", "adc_voltage_ch3", b"adc_voltage_ch3", "adc_voltage_ch4", b"adc_voltage_ch4", "adc_voltage_ch5", b"adc_voltage_ch5", "adc_voltage_ch6", b"adc_voltage_ch6", "adc_voltage_ch7", b"adc_voltage_ch7", "barometric_pressure", b"barometric_pressure", "current", b"current", "distance", b"distance", "gas_resistance", b"gas_resistance", "iaq", b"iaq", "ir_lux", b"ir_lux", "lux", b"lux", "one_wire_temperature", b"one_wire_temperature", "one_wire_temperature_ch0", b"one_wire_temperature_ch0", "one_wire_temperature_ch1", b"one_wire_temperature_ch1", "one_wire_temperature_ch2", b"one_wire_temperature_ch2", "one_wire_temperature_ch3", b"one_wire_temperature_ch3", "one_wire_temperature_ch4", b"one_wire_temperature_ch4", "one_wire_temperature_ch5", b"one_wire_temperature_ch5", "one_wire_temperature_ch6", b"one_wire_temperature_ch6", "one_wire_temperature_ch7", b"one_wire_temperature_ch7", "radiation", b"radiation", "rainfall_1h", b"rainfall_1h", "rainfall_24h", b"rainfall_24h", "relative_humidity", b"relative_humidity", "soil_moisture", b"soil_moisture", "soil_temperature", b"soil_temperature", "temperature", b"temperature", "uv_lux", b"uv_lux", "voltage", b"voltage", "weight", b"weight", "white_lux", b"white_lux", "wind_direction", b"wind_direction", "wind_gust", b"wind_gust", "wind_lull", b"wind_lull", "wind_speed", b"wind_speed"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__adc_voltage_ch0: _TypeAlias = _typing.Literal["adc_voltage_ch0"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch0: _TypeAlias = _typing.Literal["_adc_voltage_ch0", b"_adc_voltage_ch0"]  # noqa: Y015
+    _WhichOneofReturnType__adc_voltage_ch1: _TypeAlias = _typing.Literal["adc_voltage_ch1"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch1: _TypeAlias = _typing.Literal["_adc_voltage_ch1", b"_adc_voltage_ch1"]  # noqa: Y015
+    _WhichOneofReturnType__adc_voltage_ch2: _TypeAlias = _typing.Literal["adc_voltage_ch2"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch2: _TypeAlias = _typing.Literal["_adc_voltage_ch2", b"_adc_voltage_ch2"]  # noqa: Y015
+    _WhichOneofReturnType__adc_voltage_ch3: _TypeAlias = _typing.Literal["adc_voltage_ch3"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch3: _TypeAlias = _typing.Literal["_adc_voltage_ch3", b"_adc_voltage_ch3"]  # noqa: Y015
+    _WhichOneofReturnType__adc_voltage_ch4: _TypeAlias = _typing.Literal["adc_voltage_ch4"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch4: _TypeAlias = _typing.Literal["_adc_voltage_ch4", b"_adc_voltage_ch4"]  # noqa: Y015
+    _WhichOneofReturnType__adc_voltage_ch5: _TypeAlias = _typing.Literal["adc_voltage_ch5"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch5: _TypeAlias = _typing.Literal["_adc_voltage_ch5", b"_adc_voltage_ch5"]  # noqa: Y015
+    _WhichOneofReturnType__adc_voltage_ch6: _TypeAlias = _typing.Literal["adc_voltage_ch6"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch6: _TypeAlias = _typing.Literal["_adc_voltage_ch6", b"_adc_voltage_ch6"]  # noqa: Y015
+    _WhichOneofReturnType__adc_voltage_ch7: _TypeAlias = _typing.Literal["adc_voltage_ch7"]  # noqa: Y015
+    _WhichOneofArgType__adc_voltage_ch7: _TypeAlias = _typing.Literal["_adc_voltage_ch7", b"_adc_voltage_ch7"]  # noqa: Y015
     _WhichOneofReturnType__barometric_pressure: _TypeAlias = _typing.Literal["barometric_pressure"]  # noqa: Y015
     _WhichOneofArgType__barometric_pressure: _TypeAlias = _typing.Literal["_barometric_pressure", b"_barometric_pressure"]  # noqa: Y015
     _WhichOneofReturnType__current: _TypeAlias = _typing.Literal["current"]  # noqa: Y015
@@ -722,6 +856,22 @@ class EnvironmentMetrics(_message.Message):
     _WhichOneofArgType__ir_lux: _TypeAlias = _typing.Literal["_ir_lux", b"_ir_lux"]  # noqa: Y015
     _WhichOneofReturnType__lux: _TypeAlias = _typing.Literal["lux"]  # noqa: Y015
     _WhichOneofArgType__lux: _TypeAlias = _typing.Literal["_lux", b"_lux"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch0: _TypeAlias = _typing.Literal["one_wire_temperature_ch0"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch0: _TypeAlias = _typing.Literal["_one_wire_temperature_ch0", b"_one_wire_temperature_ch0"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch1: _TypeAlias = _typing.Literal["one_wire_temperature_ch1"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch1: _TypeAlias = _typing.Literal["_one_wire_temperature_ch1", b"_one_wire_temperature_ch1"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch2: _TypeAlias = _typing.Literal["one_wire_temperature_ch2"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch2: _TypeAlias = _typing.Literal["_one_wire_temperature_ch2", b"_one_wire_temperature_ch2"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch3: _TypeAlias = _typing.Literal["one_wire_temperature_ch3"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch3: _TypeAlias = _typing.Literal["_one_wire_temperature_ch3", b"_one_wire_temperature_ch3"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch4: _TypeAlias = _typing.Literal["one_wire_temperature_ch4"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch4: _TypeAlias = _typing.Literal["_one_wire_temperature_ch4", b"_one_wire_temperature_ch4"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch5: _TypeAlias = _typing.Literal["one_wire_temperature_ch5"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch5: _TypeAlias = _typing.Literal["_one_wire_temperature_ch5", b"_one_wire_temperature_ch5"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch6: _TypeAlias = _typing.Literal["one_wire_temperature_ch6"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch6: _TypeAlias = _typing.Literal["_one_wire_temperature_ch6", b"_one_wire_temperature_ch6"]  # noqa: Y015
+    _WhichOneofReturnType__one_wire_temperature_ch7: _TypeAlias = _typing.Literal["one_wire_temperature_ch7"]  # noqa: Y015
+    _WhichOneofArgType__one_wire_temperature_ch7: _TypeAlias = _typing.Literal["_one_wire_temperature_ch7", b"_one_wire_temperature_ch7"]  # noqa: Y015
     _WhichOneofReturnType__radiation: _TypeAlias = _typing.Literal["radiation"]  # noqa: Y015
     _WhichOneofArgType__radiation: _TypeAlias = _typing.Literal["_radiation", b"_radiation"]  # noqa: Y015
     _WhichOneofReturnType__rainfall_1h: _TypeAlias = _typing.Literal["rainfall_1h"]  # noqa: Y015
@@ -753,6 +903,22 @@ class EnvironmentMetrics(_message.Message):
     _WhichOneofReturnType__wind_speed: _TypeAlias = _typing.Literal["wind_speed"]  # noqa: Y015
     _WhichOneofArgType__wind_speed: _TypeAlias = _typing.Literal["_wind_speed", b"_wind_speed"]  # noqa: Y015
     @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch0) -> _WhichOneofReturnType__adc_voltage_ch0 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch1) -> _WhichOneofReturnType__adc_voltage_ch1 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch2) -> _WhichOneofReturnType__adc_voltage_ch2 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch3) -> _WhichOneofReturnType__adc_voltage_ch3 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch4) -> _WhichOneofReturnType__adc_voltage_ch4 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch5) -> _WhichOneofReturnType__adc_voltage_ch5 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch6) -> _WhichOneofReturnType__adc_voltage_ch6 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__adc_voltage_ch7) -> _WhichOneofReturnType__adc_voltage_ch7 | None: ...
+    @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__barometric_pressure) -> _WhichOneofReturnType__barometric_pressure | None: ...
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__current) -> _WhichOneofReturnType__current | None: ...
@@ -766,6 +932,22 @@ class EnvironmentMetrics(_message.Message):
     def WhichOneof(self, oneof_group: _WhichOneofArgType__ir_lux) -> _WhichOneofReturnType__ir_lux | None: ...
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__lux) -> _WhichOneofReturnType__lux | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch0) -> _WhichOneofReturnType__one_wire_temperature_ch0 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch1) -> _WhichOneofReturnType__one_wire_temperature_ch1 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch2) -> _WhichOneofReturnType__one_wire_temperature_ch2 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch3) -> _WhichOneofReturnType__one_wire_temperature_ch3 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch4) -> _WhichOneofReturnType__one_wire_temperature_ch4 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch5) -> _WhichOneofReturnType__one_wire_temperature_ch5 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch6) -> _WhichOneofReturnType__one_wire_temperature_ch6 | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__one_wire_temperature_ch7) -> _WhichOneofReturnType__one_wire_temperature_ch7 | None: ...
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__radiation) -> _WhichOneofReturnType__radiation | None: ...
     @_typing.overload
@@ -847,46 +1029,146 @@ class PowerMetrics(_message.Message):
     """
     Current (Ch3)
     """
-    ch4_voltage: _builtins.float
-    """
-    Voltage (Ch4)
-    """
-    ch4_current: _builtins.float
-    """
-    Current (Ch4)
-    """
-    ch5_voltage: _builtins.float
-    """
-    Voltage (Ch5)
-    """
-    ch5_current: _builtins.float
-    """
-    Current (Ch5)
-    """
-    ch6_voltage: _builtins.float
-    """
-    Voltage (Ch6)
-    """
-    ch6_current: _builtins.float
-    """
-    Current (Ch6)
-    """
-    ch7_voltage: _builtins.float
-    """
-    Voltage (Ch7)
-    """
-    ch7_current: _builtins.float
-    """
-    Current (Ch7)
-    """
-    ch8_voltage: _builtins.float
-    """
-    Voltage (Ch8)
-    """
-    ch8_current: _builtins.float
-    """
-    Current (Ch8)
-    """
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch4_voltage(self) -> _builtins.float:
+        """
+        Voltage (Ch4) - TODO Remove
+        """
+
+    @ch4_voltage.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch4_voltage(self, value: _builtins.float) -> None:
+        """
+        Voltage (Ch4) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch4_current(self) -> _builtins.float:
+        """
+        Current (Ch4) - TODO Remove
+        """
+
+    @ch4_current.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch4_current(self, value: _builtins.float) -> None:
+        """
+        Current (Ch4) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch5_voltage(self) -> _builtins.float:
+        """
+        Voltage (Ch5) - TODO Remove
+        """
+
+    @ch5_voltage.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch5_voltage(self, value: _builtins.float) -> None:
+        """
+        Voltage (Ch5) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch5_current(self) -> _builtins.float:
+        """
+        Current (Ch5) - TODO Remove
+        """
+
+    @ch5_current.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch5_current(self, value: _builtins.float) -> None:
+        """
+        Current (Ch5) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch6_voltage(self) -> _builtins.float:
+        """
+        Voltage (Ch6) - TODO Remove
+        """
+
+    @ch6_voltage.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch6_voltage(self, value: _builtins.float) -> None:
+        """
+        Voltage (Ch6) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch6_current(self) -> _builtins.float:
+        """
+        Current (Ch6) - TODO Remove
+        """
+
+    @ch6_current.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch6_current(self, value: _builtins.float) -> None:
+        """
+        Current (Ch6) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch7_voltage(self) -> _builtins.float:
+        """
+        Voltage (Ch7) - TODO Remove
+        """
+
+    @ch7_voltage.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch7_voltage(self, value: _builtins.float) -> None:
+        """
+        Voltage (Ch7) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch7_current(self) -> _builtins.float:
+        """
+        Current (Ch7) - TODO Remove
+        """
+
+    @ch7_current.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch7_current(self, value: _builtins.float) -> None:
+        """
+        Current (Ch7) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch8_voltage(self) -> _builtins.float:
+        """
+        Voltage (Ch8) - TODO Remove
+        """
+
+    @ch8_voltage.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch8_voltage(self, value: _builtins.float) -> None:
+        """
+        Voltage (Ch8) - TODO Remove
+        """
+
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch8_current(self) -> _builtins.float:
+        """
+        Current (Ch8) - TODO Remove
+        """
+
+    @ch8_current.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def ch8_current(self, value: _builtins.float) -> None:
+        """
+        Current (Ch8) - TODO Remove
+        """
+
     def __init__(
         self,
         *,
@@ -1011,6 +1293,7 @@ class AirQualityMetrics(_message.Message):
     PM_VOC_IDX_FIELD_NUMBER: _builtins.int
     PM_NOX_IDX_FIELD_NUMBER: _builtins.int
     PARTICLES_TPS_FIELD_NUMBER: _builtins.int
+    PM_STATUS_FLAGS_FIELD_NUMBER: _builtins.int
     pm10_standard: _builtins.int
     """
     Concentration Units Standard PM1.0 in ug/m3
@@ -1111,6 +1394,13 @@ class AirQualityMetrics(_message.Message):
     """
     Typical Particle Size in um
     """
+    pm_status_flags: _builtins.int
+    """
+    Raw PM sensor device status/error register bitmask, as defined by the sensor's own datasheet
+    (currently populated by the SEN6X family: bit 4 fan error, bit 6 RH&T error, bit 7 gas/VOC-NOx
+    error, bit 9 CO2 error (SEN66), bit 10 HCHO error, bit 11 PM error, bit 12 CO2 error (SEN63C/SEN69C),
+    bit 21 fan speed warning)
+    """
     def __init__(
         self,
         *,
@@ -1139,10 +1429,11 @@ class AirQualityMetrics(_message.Message):
         pm_voc_idx: _builtins.float | None = ...,
         pm_nox_idx: _builtins.float | None = ...,
         particles_tps: _builtins.float | None = ...,
+        pm_status_flags: _builtins.int | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["_co2", b"_co2", "_co2_humidity", b"_co2_humidity", "_co2_temperature", b"_co2_temperature", "_form_formaldehyde", b"_form_formaldehyde", "_form_humidity", b"_form_humidity", "_form_temperature", b"_form_temperature", "_particles_03um", b"_particles_03um", "_particles_05um", b"_particles_05um", "_particles_100um", b"_particles_100um", "_particles_10um", b"_particles_10um", "_particles_25um", b"_particles_25um", "_particles_40um", b"_particles_40um", "_particles_50um", b"_particles_50um", "_particles_tps", b"_particles_tps", "_pm100_environmental", b"_pm100_environmental", "_pm100_standard", b"_pm100_standard", "_pm10_environmental", b"_pm10_environmental", "_pm10_standard", b"_pm10_standard", "_pm25_environmental", b"_pm25_environmental", "_pm25_standard", b"_pm25_standard", "_pm40_standard", b"_pm40_standard", "_pm_humidity", b"_pm_humidity", "_pm_nox_idx", b"_pm_nox_idx", "_pm_temperature", b"_pm_temperature", "_pm_voc_idx", b"_pm_voc_idx", "co2", b"co2", "co2_humidity", b"co2_humidity", "co2_temperature", b"co2_temperature", "form_formaldehyde", b"form_formaldehyde", "form_humidity", b"form_humidity", "form_temperature", b"form_temperature", "particles_03um", b"particles_03um", "particles_05um", b"particles_05um", "particles_100um", b"particles_100um", "particles_10um", b"particles_10um", "particles_25um", b"particles_25um", "particles_40um", b"particles_40um", "particles_50um", b"particles_50um", "particles_tps", b"particles_tps", "pm100_environmental", b"pm100_environmental", "pm100_standard", b"pm100_standard", "pm10_environmental", b"pm10_environmental", "pm10_standard", b"pm10_standard", "pm25_environmental", b"pm25_environmental", "pm25_standard", b"pm25_standard", "pm40_standard", b"pm40_standard", "pm_humidity", b"pm_humidity", "pm_nox_idx", b"pm_nox_idx", "pm_temperature", b"pm_temperature", "pm_voc_idx", b"pm_voc_idx"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_co2", b"_co2", "_co2_humidity", b"_co2_humidity", "_co2_temperature", b"_co2_temperature", "_form_formaldehyde", b"_form_formaldehyde", "_form_humidity", b"_form_humidity", "_form_temperature", b"_form_temperature", "_particles_03um", b"_particles_03um", "_particles_05um", b"_particles_05um", "_particles_100um", b"_particles_100um", "_particles_10um", b"_particles_10um", "_particles_25um", b"_particles_25um", "_particles_40um", b"_particles_40um", "_particles_50um", b"_particles_50um", "_particles_tps", b"_particles_tps", "_pm100_environmental", b"_pm100_environmental", "_pm100_standard", b"_pm100_standard", "_pm10_environmental", b"_pm10_environmental", "_pm10_standard", b"_pm10_standard", "_pm25_environmental", b"_pm25_environmental", "_pm25_standard", b"_pm25_standard", "_pm40_standard", b"_pm40_standard", "_pm_humidity", b"_pm_humidity", "_pm_nox_idx", b"_pm_nox_idx", "_pm_status_flags", b"_pm_status_flags", "_pm_temperature", b"_pm_temperature", "_pm_voc_idx", b"_pm_voc_idx", "co2", b"co2", "co2_humidity", b"co2_humidity", "co2_temperature", b"co2_temperature", "form_formaldehyde", b"form_formaldehyde", "form_humidity", b"form_humidity", "form_temperature", b"form_temperature", "particles_03um", b"particles_03um", "particles_05um", b"particles_05um", "particles_100um", b"particles_100um", "particles_10um", b"particles_10um", "particles_25um", b"particles_25um", "particles_40um", b"particles_40um", "particles_50um", b"particles_50um", "particles_tps", b"particles_tps", "pm100_environmental", b"pm100_environmental", "pm100_standard", b"pm100_standard", "pm10_environmental", b"pm10_environmental", "pm10_standard", b"pm10_standard", "pm25_environmental", b"pm25_environmental", "pm25_standard", b"pm25_standard", "pm40_standard", b"pm40_standard", "pm_humidity", b"pm_humidity", "pm_nox_idx", b"pm_nox_idx", "pm_status_flags", b"pm_status_flags", "pm_temperature", b"pm_temperature", "pm_voc_idx", b"pm_voc_idx"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_co2", b"_co2", "_co2_humidity", b"_co2_humidity", "_co2_temperature", b"_co2_temperature", "_form_formaldehyde", b"_form_formaldehyde", "_form_humidity", b"_form_humidity", "_form_temperature", b"_form_temperature", "_particles_03um", b"_particles_03um", "_particles_05um", b"_particles_05um", "_particles_100um", b"_particles_100um", "_particles_10um", b"_particles_10um", "_particles_25um", b"_particles_25um", "_particles_40um", b"_particles_40um", "_particles_50um", b"_particles_50um", "_particles_tps", b"_particles_tps", "_pm100_environmental", b"_pm100_environmental", "_pm100_standard", b"_pm100_standard", "_pm10_environmental", b"_pm10_environmental", "_pm10_standard", b"_pm10_standard", "_pm25_environmental", b"_pm25_environmental", "_pm25_standard", b"_pm25_standard", "_pm40_standard", b"_pm40_standard", "_pm_humidity", b"_pm_humidity", "_pm_nox_idx", b"_pm_nox_idx", "_pm_temperature", b"_pm_temperature", "_pm_voc_idx", b"_pm_voc_idx", "co2", b"co2", "co2_humidity", b"co2_humidity", "co2_temperature", b"co2_temperature", "form_formaldehyde", b"form_formaldehyde", "form_humidity", b"form_humidity", "form_temperature", b"form_temperature", "particles_03um", b"particles_03um", "particles_05um", b"particles_05um", "particles_100um", b"particles_100um", "particles_10um", b"particles_10um", "particles_25um", b"particles_25um", "particles_40um", b"particles_40um", "particles_50um", b"particles_50um", "particles_tps", b"particles_tps", "pm100_environmental", b"pm100_environmental", "pm100_standard", b"pm100_standard", "pm10_environmental", b"pm10_environmental", "pm10_standard", b"pm10_standard", "pm25_environmental", b"pm25_environmental", "pm25_standard", b"pm25_standard", "pm40_standard", b"pm40_standard", "pm_humidity", b"pm_humidity", "pm_nox_idx", b"pm_nox_idx", "pm_temperature", b"pm_temperature", "pm_voc_idx", b"pm_voc_idx"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_co2", b"_co2", "_co2_humidity", b"_co2_humidity", "_co2_temperature", b"_co2_temperature", "_form_formaldehyde", b"_form_formaldehyde", "_form_humidity", b"_form_humidity", "_form_temperature", b"_form_temperature", "_particles_03um", b"_particles_03um", "_particles_05um", b"_particles_05um", "_particles_100um", b"_particles_100um", "_particles_10um", b"_particles_10um", "_particles_25um", b"_particles_25um", "_particles_40um", b"_particles_40um", "_particles_50um", b"_particles_50um", "_particles_tps", b"_particles_tps", "_pm100_environmental", b"_pm100_environmental", "_pm100_standard", b"_pm100_standard", "_pm10_environmental", b"_pm10_environmental", "_pm10_standard", b"_pm10_standard", "_pm25_environmental", b"_pm25_environmental", "_pm25_standard", b"_pm25_standard", "_pm40_standard", b"_pm40_standard", "_pm_humidity", b"_pm_humidity", "_pm_nox_idx", b"_pm_nox_idx", "_pm_status_flags", b"_pm_status_flags", "_pm_temperature", b"_pm_temperature", "_pm_voc_idx", b"_pm_voc_idx", "co2", b"co2", "co2_humidity", b"co2_humidity", "co2_temperature", b"co2_temperature", "form_formaldehyde", b"form_formaldehyde", "form_humidity", b"form_humidity", "form_temperature", b"form_temperature", "particles_03um", b"particles_03um", "particles_05um", b"particles_05um", "particles_100um", b"particles_100um", "particles_10um", b"particles_10um", "particles_25um", b"particles_25um", "particles_40um", b"particles_40um", "particles_50um", b"particles_50um", "particles_tps", b"particles_tps", "pm100_environmental", b"pm100_environmental", "pm100_standard", b"pm100_standard", "pm10_environmental", b"pm10_environmental", "pm10_standard", b"pm10_standard", "pm25_environmental", b"pm25_environmental", "pm25_standard", b"pm25_standard", "pm40_standard", b"pm40_standard", "pm_humidity", b"pm_humidity", "pm_nox_idx", b"pm_nox_idx", "pm_status_flags", b"pm_status_flags", "pm_temperature", b"pm_temperature", "pm_voc_idx", b"pm_voc_idx"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType__co2: _TypeAlias = _typing.Literal["co2"]  # noqa: Y015
     _WhichOneofArgType__co2: _TypeAlias = _typing.Literal["_co2", b"_co2"]  # noqa: Y015
@@ -1190,6 +1481,8 @@ class AirQualityMetrics(_message.Message):
     _WhichOneofArgType__pm_humidity: _TypeAlias = _typing.Literal["_pm_humidity", b"_pm_humidity"]  # noqa: Y015
     _WhichOneofReturnType__pm_nox_idx: _TypeAlias = _typing.Literal["pm_nox_idx"]  # noqa: Y015
     _WhichOneofArgType__pm_nox_idx: _TypeAlias = _typing.Literal["_pm_nox_idx", b"_pm_nox_idx"]  # noqa: Y015
+    _WhichOneofReturnType__pm_status_flags: _TypeAlias = _typing.Literal["pm_status_flags"]  # noqa: Y015
+    _WhichOneofArgType__pm_status_flags: _TypeAlias = _typing.Literal["_pm_status_flags", b"_pm_status_flags"]  # noqa: Y015
     _WhichOneofReturnType__pm_temperature: _TypeAlias = _typing.Literal["pm_temperature"]  # noqa: Y015
     _WhichOneofArgType__pm_temperature: _TypeAlias = _typing.Literal["_pm_temperature", b"_pm_temperature"]  # noqa: Y015
     _WhichOneofReturnType__pm_voc_idx: _TypeAlias = _typing.Literal["pm_voc_idx"]  # noqa: Y015
@@ -1240,6 +1533,8 @@ class AirQualityMetrics(_message.Message):
     def WhichOneof(self, oneof_group: _WhichOneofArgType__pm_humidity) -> _WhichOneofReturnType__pm_humidity | None: ...
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__pm_nox_idx) -> _WhichOneofReturnType__pm_nox_idx | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__pm_status_flags) -> _WhichOneofReturnType__pm_status_flags | None: ...
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__pm_temperature) -> _WhichOneofReturnType__pm_temperature | None: ...
     @_typing.overload
@@ -1683,7 +1978,7 @@ Global___Nau7802Config: _TypeAlias = Nau7802Config  # noqa: Y015
 @_typing.final
 class SEN5XState(_message.Message):
     """
-    SEN5X State, for saving to flash
+    SEN5X State, for saving to flash (to be merged with SEN6XState)
     """
 
     DESCRIPTOR: _descriptor.Descriptor
@@ -1746,3 +2041,70 @@ class SEN5XState(_message.Message):
     def WhichOneof(self, oneof_group: _WhichOneofArgType__voc_state_valid) -> _WhichOneofReturnType__voc_state_valid | None: ...
 
 Global___SEN5XState: _TypeAlias = SEN5XState  # noqa: Y015
+
+@_typing.final
+class SEN6XState(_message.Message):
+    """
+    SEN6X State, for saving to flash
+    """
+
+    DESCRIPTOR: _descriptor.Descriptor
+
+    LAST_CLEANING_TIME_FIELD_NUMBER: _builtins.int
+    LAST_CLEANING_VALID_FIELD_NUMBER: _builtins.int
+    ONE_SHOT_MODE_FIELD_NUMBER: _builtins.int
+    VOC_STATE_TIME_FIELD_NUMBER: _builtins.int
+    VOC_STATE_VALID_FIELD_NUMBER: _builtins.int
+    VOC_STATE_ARRAY_FIELD_NUMBER: _builtins.int
+    last_cleaning_time: _builtins.int
+    """
+    Last cleaning time for SEN6X
+    """
+    last_cleaning_valid: _builtins.bool
+    """
+    Last cleaning time for SEN6X - valid flag
+    """
+    one_shot_mode: _builtins.bool
+    """
+    Config flag for one-shot mode (see admin.proto)
+    """
+    voc_state_time: _builtins.int
+    """
+    Last VOC state time, for models with a VOC sensor (SEN65, SEN66, SEN68, SEN69C)
+    """
+    voc_state_valid: _builtins.bool
+    """
+    Last VOC state validity flag, for models with a VOC sensor (SEN65, SEN66, SEN68, SEN69C)
+    """
+    voc_state_array: _builtins.int
+    """
+    VOC state array (8x uint8t), for models with a VOC sensor (SEN65, SEN66, SEN68, SEN69C)
+    """
+    def __init__(
+        self,
+        *,
+        last_cleaning_time: _builtins.int = ...,
+        last_cleaning_valid: _builtins.bool = ...,
+        one_shot_mode: _builtins.bool = ...,
+        voc_state_time: _builtins.int | None = ...,
+        voc_state_valid: _builtins.bool | None = ...,
+        voc_state_array: _builtins.int | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_voc_state_array", b"_voc_state_array", "_voc_state_time", b"_voc_state_time", "_voc_state_valid", b"_voc_state_valid", "voc_state_array", b"voc_state_array", "voc_state_time", b"voc_state_time", "voc_state_valid", b"voc_state_valid"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_voc_state_array", b"_voc_state_array", "_voc_state_time", b"_voc_state_time", "_voc_state_valid", b"_voc_state_valid", "last_cleaning_time", b"last_cleaning_time", "last_cleaning_valid", b"last_cleaning_valid", "one_shot_mode", b"one_shot_mode", "voc_state_array", b"voc_state_array", "voc_state_time", b"voc_state_time", "voc_state_valid", b"voc_state_valid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__voc_state_array: _TypeAlias = _typing.Literal["voc_state_array"]  # noqa: Y015
+    _WhichOneofArgType__voc_state_array: _TypeAlias = _typing.Literal["_voc_state_array", b"_voc_state_array"]  # noqa: Y015
+    _WhichOneofReturnType__voc_state_time: _TypeAlias = _typing.Literal["voc_state_time"]  # noqa: Y015
+    _WhichOneofArgType__voc_state_time: _TypeAlias = _typing.Literal["_voc_state_time", b"_voc_state_time"]  # noqa: Y015
+    _WhichOneofReturnType__voc_state_valid: _TypeAlias = _typing.Literal["voc_state_valid"]  # noqa: Y015
+    _WhichOneofArgType__voc_state_valid: _TypeAlias = _typing.Literal["_voc_state_valid", b"_voc_state_valid"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__voc_state_array) -> _WhichOneofReturnType__voc_state_array | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__voc_state_time) -> _WhichOneofReturnType__voc_state_time | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__voc_state_valid) -> _WhichOneofReturnType__voc_state_valid | None: ...
+
+Global___SEN6XState: _TypeAlias = SEN6XState  # noqa: Y015

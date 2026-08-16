@@ -1215,6 +1215,8 @@ class SensorConfig(_message.Message):
     SEN5X_CONFIG_FIELD_NUMBER: _builtins.int
     SCD30_CONFIG_FIELD_NUMBER: _builtins.int
     SHTXX_CONFIG_FIELD_NUMBER: _builtins.int
+    DS248X_CONFIG_FIELD_NUMBER: _builtins.int
+    SEN6X_CONFIG_FIELD_NUMBER: _builtins.int
     @_builtins.property
     def scd4x_config(self) -> Global___SCD4X_config:
         """
@@ -1239,6 +1241,18 @@ class SensorConfig(_message.Message):
         SHTXX temperature and relative humidity sensor configuration
         """
 
+    @_builtins.property
+    def ds248x_config(self) -> Global___DS248X_config:
+        """
+        DS248X-800 temperature sensor configuration
+        """
+
+    @_builtins.property
+    def sen6x_config(self) -> Global___SEN6X_config:
+        """
+        SEN6X PM/RHT/VOC/NOx/CO2/HCHO Sensor configuration
+        """
+
     def __init__(
         self,
         *,
@@ -1246,10 +1260,12 @@ class SensorConfig(_message.Message):
         sen5x_config: Global___SEN5X_config | None = ...,
         scd30_config: Global___SCD30_config | None = ...,
         shtxx_config: Global___SHTXX_config | None = ...,
+        ds248x_config: Global___DS248X_config | None = ...,
+        sen6x_config: Global___SEN6X_config | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["ds248x_config", b"ds248x_config", "scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "sen6x_config", b"sen6x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["ds248x_config", b"ds248x_config", "scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "sen6x_config", b"sen6x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1346,6 +1362,7 @@ class SEN5X_config(_message.Message):
 
     SET_TEMPERATURE_FIELD_NUMBER: _builtins.int
     SET_ONE_SHOT_MODE_FIELD_NUMBER: _builtins.int
+    START_FAN_CLEANING_FIELD_NUMBER: _builtins.int
     set_temperature: _builtins.float
     """
     Reference temperature in degC
@@ -1354,26 +1371,130 @@ class SEN5X_config(_message.Message):
     """
     One-shot mode (true for low power - one-shot mode, false for normal - continuous mode)
     """
+    start_fan_cleaning: _builtins.bool
+    """
+    Trigger a fan cleaning cycle
+    """
     def __init__(
         self,
         *,
         set_temperature: _builtins.float | None = ...,
         set_one_shot_mode: _builtins.bool | None = ...,
+        start_fan_cleaning: _builtins.bool | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["_set_one_shot_mode", b"_set_one_shot_mode", "_set_temperature", b"_set_temperature", "set_one_shot_mode", b"set_one_shot_mode", "set_temperature", b"set_temperature"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_set_one_shot_mode", b"_set_one_shot_mode", "_set_temperature", b"_set_temperature", "_start_fan_cleaning", b"_start_fan_cleaning", "set_one_shot_mode", b"set_one_shot_mode", "set_temperature", b"set_temperature", "start_fan_cleaning", b"start_fan_cleaning"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_set_one_shot_mode", b"_set_one_shot_mode", "_set_temperature", b"_set_temperature", "set_one_shot_mode", b"set_one_shot_mode", "set_temperature", b"set_temperature"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_set_one_shot_mode", b"_set_one_shot_mode", "_set_temperature", b"_set_temperature", "_start_fan_cleaning", b"_start_fan_cleaning", "set_one_shot_mode", b"set_one_shot_mode", "set_temperature", b"set_temperature", "start_fan_cleaning", b"start_fan_cleaning"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType__set_one_shot_mode: _TypeAlias = _typing.Literal["set_one_shot_mode"]  # noqa: Y015
     _WhichOneofArgType__set_one_shot_mode: _TypeAlias = _typing.Literal["_set_one_shot_mode", b"_set_one_shot_mode"]  # noqa: Y015
     _WhichOneofReturnType__set_temperature: _TypeAlias = _typing.Literal["set_temperature"]  # noqa: Y015
     _WhichOneofArgType__set_temperature: _TypeAlias = _typing.Literal["_set_temperature", b"_set_temperature"]  # noqa: Y015
+    _WhichOneofReturnType__start_fan_cleaning: _TypeAlias = _typing.Literal["start_fan_cleaning"]  # noqa: Y015
+    _WhichOneofArgType__start_fan_cleaning: _TypeAlias = _typing.Literal["_start_fan_cleaning", b"_start_fan_cleaning"]  # noqa: Y015
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__set_one_shot_mode) -> _WhichOneofReturnType__set_one_shot_mode | None: ...
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__set_temperature) -> _WhichOneofReturnType__set_temperature | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__start_fan_cleaning) -> _WhichOneofReturnType__start_fan_cleaning | None: ...
 
 Global___SEN5X_config: _TypeAlias = SEN5X_config  # noqa: Y015
+
+@_typing.final
+class SEN6X_config(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    SET_TEMPERATURE_FIELD_NUMBER: _builtins.int
+    SET_ONE_SHOT_MODE_FIELD_NUMBER: _builtins.int
+    START_FAN_CLEANING_FIELD_NUMBER: _builtins.int
+    SET_ASC_FIELD_NUMBER: _builtins.int
+    SET_TARGET_CO2_CONC_FIELD_NUMBER: _builtins.int
+    SET_ALTITUDE_FIELD_NUMBER: _builtins.int
+    SET_AMBIENT_PRESSURE_FIELD_NUMBER: _builtins.int
+    FACTORY_RESET_FIELD_NUMBER: _builtins.int
+    set_temperature: _builtins.float
+    """
+    Reference temperature in degC
+    """
+    set_one_shot_mode: _builtins.bool
+    """
+    One-shot mode (true for low power - one-shot mode, false for normal - continuous mode)
+    """
+    start_fan_cleaning: _builtins.bool
+    """
+    Trigger a fan cleaning cycle
+    """
+    set_asc: _builtins.bool
+    """
+    Set Automatic self-calibration enabled (CO2-capable variants only: SEN63C, SEN66, SEN69C)
+    """
+    set_target_co2_conc: _builtins.int
+    """
+    Recalibration target CO2 concentration in ppm (FRC only), CO2-capable variants only
+    """
+    set_altitude: _builtins.int
+    """
+    Altitude of sensor in meters above sea level. 0 - 3000m (overrides ambient pressure), CO2-capable variants only
+    """
+    set_ambient_pressure: _builtins.int
+    """
+    Sensor ambient pressure in Pa. 70000 - 120000 Pa (overrides altitude), CO2-capable variants only
+    """
+    factory_reset: _builtins.bool
+    """
+    Perform a factory reset of the CO2 sensor's calibration, CO2-capable variants only
+    """
+    def __init__(
+        self,
+        *,
+        set_temperature: _builtins.float | None = ...,
+        set_one_shot_mode: _builtins.bool | None = ...,
+        start_fan_cleaning: _builtins.bool | None = ...,
+        set_asc: _builtins.bool | None = ...,
+        set_target_co2_conc: _builtins.int | None = ...,
+        set_altitude: _builtins.int | None = ...,
+        set_ambient_pressure: _builtins.int | None = ...,
+        factory_reset: _builtins.bool | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_factory_reset", b"_factory_reset", "_set_altitude", b"_set_altitude", "_set_ambient_pressure", b"_set_ambient_pressure", "_set_asc", b"_set_asc", "_set_one_shot_mode", b"_set_one_shot_mode", "_set_target_co2_conc", b"_set_target_co2_conc", "_set_temperature", b"_set_temperature", "_start_fan_cleaning", b"_start_fan_cleaning", "factory_reset", b"factory_reset", "set_altitude", b"set_altitude", "set_ambient_pressure", b"set_ambient_pressure", "set_asc", b"set_asc", "set_one_shot_mode", b"set_one_shot_mode", "set_target_co2_conc", b"set_target_co2_conc", "set_temperature", b"set_temperature", "start_fan_cleaning", b"start_fan_cleaning"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_factory_reset", b"_factory_reset", "_set_altitude", b"_set_altitude", "_set_ambient_pressure", b"_set_ambient_pressure", "_set_asc", b"_set_asc", "_set_one_shot_mode", b"_set_one_shot_mode", "_set_target_co2_conc", b"_set_target_co2_conc", "_set_temperature", b"_set_temperature", "_start_fan_cleaning", b"_start_fan_cleaning", "factory_reset", b"factory_reset", "set_altitude", b"set_altitude", "set_ambient_pressure", b"set_ambient_pressure", "set_asc", b"set_asc", "set_one_shot_mode", b"set_one_shot_mode", "set_target_co2_conc", b"set_target_co2_conc", "set_temperature", b"set_temperature", "start_fan_cleaning", b"start_fan_cleaning"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__factory_reset: _TypeAlias = _typing.Literal["factory_reset"]  # noqa: Y015
+    _WhichOneofArgType__factory_reset: _TypeAlias = _typing.Literal["_factory_reset", b"_factory_reset"]  # noqa: Y015
+    _WhichOneofReturnType__set_altitude: _TypeAlias = _typing.Literal["set_altitude"]  # noqa: Y015
+    _WhichOneofArgType__set_altitude: _TypeAlias = _typing.Literal["_set_altitude", b"_set_altitude"]  # noqa: Y015
+    _WhichOneofReturnType__set_ambient_pressure: _TypeAlias = _typing.Literal["set_ambient_pressure"]  # noqa: Y015
+    _WhichOneofArgType__set_ambient_pressure: _TypeAlias = _typing.Literal["_set_ambient_pressure", b"_set_ambient_pressure"]  # noqa: Y015
+    _WhichOneofReturnType__set_asc: _TypeAlias = _typing.Literal["set_asc"]  # noqa: Y015
+    _WhichOneofArgType__set_asc: _TypeAlias = _typing.Literal["_set_asc", b"_set_asc"]  # noqa: Y015
+    _WhichOneofReturnType__set_one_shot_mode: _TypeAlias = _typing.Literal["set_one_shot_mode"]  # noqa: Y015
+    _WhichOneofArgType__set_one_shot_mode: _TypeAlias = _typing.Literal["_set_one_shot_mode", b"_set_one_shot_mode"]  # noqa: Y015
+    _WhichOneofReturnType__set_target_co2_conc: _TypeAlias = _typing.Literal["set_target_co2_conc"]  # noqa: Y015
+    _WhichOneofArgType__set_target_co2_conc: _TypeAlias = _typing.Literal["_set_target_co2_conc", b"_set_target_co2_conc"]  # noqa: Y015
+    _WhichOneofReturnType__set_temperature: _TypeAlias = _typing.Literal["set_temperature"]  # noqa: Y015
+    _WhichOneofArgType__set_temperature: _TypeAlias = _typing.Literal["_set_temperature", b"_set_temperature"]  # noqa: Y015
+    _WhichOneofReturnType__start_fan_cleaning: _TypeAlias = _typing.Literal["start_fan_cleaning"]  # noqa: Y015
+    _WhichOneofArgType__start_fan_cleaning: _TypeAlias = _typing.Literal["_start_fan_cleaning", b"_start_fan_cleaning"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__factory_reset) -> _WhichOneofReturnType__factory_reset | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__set_altitude) -> _WhichOneofReturnType__set_altitude | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__set_ambient_pressure) -> _WhichOneofReturnType__set_ambient_pressure | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__set_asc) -> _WhichOneofReturnType__set_asc | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__set_one_shot_mode) -> _WhichOneofReturnType__set_one_shot_mode | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__set_target_co2_conc) -> _WhichOneofReturnType__set_target_co2_conc | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__set_temperature) -> _WhichOneofReturnType__set_temperature | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__start_fan_cleaning) -> _WhichOneofReturnType__start_fan_cleaning | None: ...
+
+Global___SEN6X_config: _TypeAlias = SEN6X_config  # noqa: Y015
 
 @_typing.final
 class SCD30_config(_message.Message):
@@ -1473,3 +1594,27 @@ class SHTXX_config(_message.Message):
     def WhichOneof(self, oneof_group: _WhichOneofArgType__set_accuracy) -> _WhichOneofReturnType__set_accuracy | None: ...
 
 Global___SHTXX_config: _TypeAlias = SHTXX_config  # noqa: Y015
+
+@_typing.final
+class DS248X_config(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    MAIN_TEMPERATURE_CHANNEL_FIELD_NUMBER: _builtins.int
+    main_temperature_channel: _builtins.int
+    """
+    Main channel for temperature reporting (0-7)
+    """
+    def __init__(
+        self,
+        *,
+        main_temperature_channel: _builtins.int | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_main_temperature_channel", b"_main_temperature_channel", "main_temperature_channel", b"main_temperature_channel"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_main_temperature_channel", b"_main_temperature_channel", "main_temperature_channel", b"main_temperature_channel"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__main_temperature_channel: _TypeAlias = _typing.Literal["main_temperature_channel"]  # noqa: Y015
+    _WhichOneofArgType__main_temperature_channel: _TypeAlias = _typing.Literal["_main_temperature_channel", b"_main_temperature_channel"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__main_temperature_channel) -> _WhichOneofReturnType__main_temperature_channel | None: ...
+
+Global___DS248X_config: _TypeAlias = DS248X_config  # noqa: Y015

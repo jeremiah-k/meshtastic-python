@@ -3271,6 +3271,12 @@ class MeshPacket(_message.Message):
     Note: this field is _never_ sent on the radio link itself (to save space) Times
     are typically not sent over the mesh, but they will be added to any Packet
     (chain of SubPacket) sent to the phone (so the phone can know exact time of reception)
+    Explicit presence: firmware cannot always attach a trustworthy wall-clock timestamp at the
+    moment of reception - a node with no GPS and no phone connected yet has no time source at
+    all. has_rx_time disambiguates that state from a genuine (if coincidental) 1970-01-01
+    reading. A packet delivered with this field absent may still be re-timestamped once a valid
+    clock becomes available, before the phone ever sees it - "absent" is not guaranteed
+    permanent, only "not yet known at last observation".
     """
     rx_snr: _builtins.float
     """
@@ -3382,7 +3388,7 @@ class MeshPacket(_message.Message):
         decoded: Global___Data | None = ...,
         encrypted: _builtins.bytes = ...,
         id: _builtins.int = ...,
-        rx_time: _builtins.int = ...,
+        rx_time: _builtins.int | None = ...,
         rx_snr: _builtins.float = ...,
         hop_limit: _builtins.int = ...,
         want_ack: _builtins.bool = ...,
@@ -3399,16 +3405,20 @@ class MeshPacket(_message.Message):
         transport_mechanism: Global___MeshPacket.TransportMechanism.ValueType = ...,
         xeddsa_signed: _builtins.bool = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi", "decoded", b"decoded", "encrypted", b"encrypted", "payload_variant", b"payload_variant", "rx_rssi", b"rx_rssi"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi", "_rx_time", b"_rx_time", "decoded", b"decoded", "encrypted", b"encrypted", "payload_variant", b"payload_variant", "rx_rssi", b"rx_rssi", "rx_time", b"rx_time"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi", "channel", b"channel", "decoded", b"decoded", "delayed", b"delayed", "encrypted", b"encrypted", "from", b"from", "hop_limit", b"hop_limit", "hop_start", b"hop_start", "id", b"id", "next_hop", b"next_hop", "payload_variant", b"payload_variant", "pki_encrypted", b"pki_encrypted", "priority", b"priority", "public_key", b"public_key", "relay_node", b"relay_node", "rx_rssi", b"rx_rssi", "rx_snr", b"rx_snr", "rx_time", b"rx_time", "to", b"to", "transport_mechanism", b"transport_mechanism", "tx_after", b"tx_after", "via_mqtt", b"via_mqtt", "want_ack", b"want_ack", "xeddsa_signed", b"xeddsa_signed"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi", "_rx_time", b"_rx_time", "channel", b"channel", "decoded", b"decoded", "delayed", b"delayed", "encrypted", b"encrypted", "from", b"from", "hop_limit", b"hop_limit", "hop_start", b"hop_start", "id", b"id", "next_hop", b"next_hop", "payload_variant", b"payload_variant", "pki_encrypted", b"pki_encrypted", "priority", b"priority", "public_key", b"public_key", "relay_node", b"relay_node", "rx_rssi", b"rx_rssi", "rx_snr", b"rx_snr", "rx_time", b"rx_time", "to", b"to", "transport_mechanism", b"transport_mechanism", "tx_after", b"tx_after", "via_mqtt", b"via_mqtt", "want_ack", b"want_ack", "xeddsa_signed", b"xeddsa_signed"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType__rx_rssi: _TypeAlias = _typing.Literal["rx_rssi"]  # noqa: Y015
     _WhichOneofArgType__rx_rssi: _TypeAlias = _typing.Literal["_rx_rssi", b"_rx_rssi"]  # noqa: Y015
+    _WhichOneofReturnType__rx_time: _TypeAlias = _typing.Literal["rx_time"]  # noqa: Y015
+    _WhichOneofArgType__rx_time: _TypeAlias = _typing.Literal["_rx_time", b"_rx_time"]  # noqa: Y015
     _WhichOneofReturnType_payload_variant: _TypeAlias = _typing.Literal["decoded", "encrypted"]  # noqa: Y015
     _WhichOneofArgType_payload_variant: _TypeAlias = _typing.Literal["payload_variant", b"payload_variant"]  # noqa: Y015
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__rx_rssi) -> _WhichOneofReturnType__rx_rssi | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__rx_time) -> _WhichOneofReturnType__rx_time | None: ...
     @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType_payload_variant) -> _WhichOneofReturnType_payload_variant | None: ...
 
