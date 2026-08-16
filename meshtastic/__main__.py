@@ -8,10 +8,8 @@ import argparse
 import binascii
 import contextlib
 import contextvars
-import getpass
 import importlib
 import logging
-import os
 import platform
 import sys
 import textwrap
@@ -24,6 +22,7 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
+import meshtastic.cli.bootstrap as cli_bootstrap
 import meshtastic.cli.channel_contact_actions as cli_channel_contact_actions
 import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.configure_actions as cli_configure_actions
@@ -40,11 +39,8 @@ from meshtastic import mt_config, remote_hardware
 # COMPAT_STABLE_SHIM: LOCAL_ADDR remains importable from meshtastic.__main__.
 # pylint: disable=unused-import
 from meshtastic._core_constants import LOCAL_ADDR  # noqa: F401
-from meshtastic._core_constants import (
-    BROADCAST_ADDR,
-)
+from meshtastic._core_constants import BROADCAST_ADDR  # noqa: F401
 from meshtastic.cli.context import ActionOutcome, CliContext
-from meshtastic.cli.session_resources import CliSessionResources
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
@@ -1971,25 +1967,40 @@ def _unsubscribe_cli_receive() -> None:
         logger.debug("Unable to remove CLI receive subscription", exc_info=True)
 
 
+def _build_bootstrap_hooks() -> cli_bootstrap.BootstrapHooks:
+    """Build current entrypoint seams for the CLI bootstrap runtime."""
+    return cli_bootstrap.BootstrapHooks(
+        cli_exit=_cli_exit,
+        support_info=supportInfo,
+        print_available_config_fields=printAvailableConfigFields,
+        create_power_meter=_create_power_meter,
+        get_power_meter=lambda: meter,
+        release_power_meter=_release_session_power_meter,
+        set_logfile=lambda value: setattr(mt_config, "logfile", value),
+        clear_session_logfile=_clear_session_logfile,
+        subscribe=subscribe,
+        unsubscribe_receive=_unsubscribe_cli_receive,
+        on_connected=onConnected,
+        parse_host_port=_parse_host_port,
+        listen_loop_poll_once=cli_runtime._listen_loop_poll_once,
+        set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
+        ble_interface=BLEInterface,
+        tcp_interface=meshtastic.tcp_interface.TCPInterface,
+        default_tcp_port=meshtastic.tcp_interface.DEFAULT_TCP_PORT,
+        serial_interface=meshtastic.serial_interface.SerialInterface,
+        mesh_interface_error=MeshInterface.MeshInterfaceError,
+        test_module=meshtastic_test,
+    )
+
+
 def common() -> None:
-    """Configure logging, validate CLI arguments, establish the selected transport.
-
-    interface, invoke onConnected, and optionally enter the main event loop.
-
-    Performs argument validation, initializes optional subsystems (power meter, serial logging),
-    subscribes to message topics, opens the requested transport (BLE, TCP, or serial),
-    calls onConnected with the established MeshInterface, and blocks until interrupted when
-    a persistent session mode (listen, tunnel, noproto, or reply) is requested. On
-    fatal errors the CLI exits via _cli_exit with an explanatory message.
+    """Run the historical CLI bootstrap flow through the internal session runtime.
 
     Raises
     ------
     RuntimeError
-        If `mt_config.args` is not initialized before calling this function.
-    RuntimeError
-        If `mt_config.parser` is not initialized before calling this function.
+        If ``mt_config.args`` or ``mt_config.parser`` has not been initialized.
     """
-    logfile = None
     args = mt_config.args
     parser = mt_config.parser
     if args is None:
@@ -1998,279 +2009,7 @@ def common() -> None:
         raise RuntimeError(
             "mt_config.parser must be initialized before calling common()"
         )
-
-    # Validate that --quiet is not used with --debug, --listen, or --debuglib
-    if args.quiet and (args.debug or args.listen or args.debuglib):
-        parser.error("--quiet cannot be used with --debug, --listen, or --debuglib")
-
-    # Contact modifier flags require --contact-qr
-    if (args.contact_verified or args.contact_ignore) and not args.contact_qr:
-        parser.error("--contact-verified and --contact-ignore require --contact-qr")
-
-    if args.quiet:
-        log_level = logging.WARNING
-    elif args.debug or args.listen:
-        log_level = logging.DEBUG
-    else:
-        log_level = logging.INFO
-
-    logging.basicConfig(
-        level=log_level,
-        format="%(levelname)s file:%(filename)s %(funcName)s line:%(lineno)s %(message)s",
-    )
-
-    if not (args.debug or args.listen or args.quiet) and args.debuglib:
-        logging.getLogger("meshtastic").setLevel(logging.DEBUG)
-
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        _cli_exit("", 1)
-    else:
-        if args.support:
-            supportInfo()
-            _cli_exit("", 0)
-
-        if args.list_fields:
-            printAvailableConfigFields()
-            return
-
-        if args.configure and len(args.configure) != 1:
-            parser.error("--configure may be specified only once per invocation")
-
-        # Early validation for owner names before attempting device connection
-        if args.set_owner is not None:
-            stripped_long_name = args.set_owner.strip()
-            if not stripped_long_name:
-                _cli_exit(
-                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
-                )
-
-        if args.set_owner_short is not None:
-            stripped_short_name = args.set_owner_short.strip()
-            if not stripped_short_name:
-                _cli_exit(
-                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                )
-
-        if args.set_ham is not None:
-            stripped_ham_name = args.set_ham.strip()
-            if not stripped_ham_name:
-                _cli_exit(
-                    "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
-                )
-
-        # Fail fast before connecting if the OTA firmware file does not exist.
-        if args.ota_update is not None and not os.path.isfile(args.ota_update):
-            _cli_exit(f"Error: OTA firmware file not found: {args.ota_update}")
-
-        if args.ch_index is not None:
-            channelIndex = int(args.ch_index)
-            mt_config.channel_index = channelIndex
-
-        if not args.dest:
-            args.dest = BROADCAST_ADDR
-
-        if not args.seriallog:
-            if args.noproto:
-                args.seriallog = "stdout"
-            else:
-                args.seriallog = "none"  # assume no debug output in this case
-
-        if args.deprecated is not None:
-            logger.error(
-                "This option has been deprecated, see help below for the correct replacement..."
-            )
-            parser.print_help(sys.stderr)
-            _cli_exit("", 1)
-        elif args.test:
-            if meshtastic_test is None:
-                _cli_exit(
-                    "Test module could not be imported. Ensure you have the 'dotmap' module installed."
-                )
-            else:
-                result = meshtastic_test.testAll()
-                if not result:
-                    _cli_exit("Warning: Test was not successful.")
-                else:
-                    _cli_exit("Test was a success.", 0)
-        else:
-            # Use one invocation stack to own transports, files, meters, and
-            # long-running services through success, failure, or interruption.
-            with contextlib.ExitStack() as stack:
-                session_resources = CliSessionResources(stack)
-                session_resources.activate()
-
-                if _power_meter_requested(args):
-                    _create_power_meter()
-                    active_meter = meter
-                    if active_meter is not None:
-                        session_resources.register_cleanup(
-                            lambda: _release_session_power_meter(active_meter)
-                        )
-
-                mt_config.logfile = None
-                if args.seriallog == "stdout":
-                    logfile = sys.stdout
-                elif args.seriallog == "none":
-                    args.seriallog = None
-                    logger.debug("Not logging serial output")
-                    logfile = None
-                else:
-                    logger.info("Logging serial output to %s", args.seriallog)
-                    # Note: using line buffering.
-                    logfile = session_resources.enter_context(
-                        # The invocation ExitStack owns this file; Pylint cannot
-                        # infer that ownership transfer through enter_context().
-                        open(  # pylint: disable=consider-using-with
-                            args.seriallog, "w+", buffering=1, encoding="utf8"
-                        )
-                    )
-                    mt_config.logfile = logfile
-                    session_resources.register_cleanup(
-                        lambda: _clear_session_logfile(logfile)
-                    )
-
-                subscribe()
-                session_resources.register_cleanup(_unsubscribe_cli_receive)
-                if args.ble_scan:
-                    logger.debug("BLE scan starting")
-                    for x in BLEInterface.scan():
-                        print(f"Found: name='{x.name}' address='{x.address}'")
-                    _cli_exit("BLE scan finished", 0)
-
-                client: MeshInterface | None = None
-                if args.ble:
-                    try:
-                        client = session_resources.enter_context(
-                            BLEInterface(
-                                args.ble if args.ble != "any" else None,
-                                debugOut=logfile,
-                                noProto=args.noproto,
-                                noNodes=args.no_nodes,
-                                timeout=args.timeout,
-                                auto_reconnect=args.ble_auto_reconnect,
-                            )
-                        )
-                    except BLEInterface.BLEError as e:
-                        _cli_exit(f"[BLE] {e}", 1)
-                    except MeshInterface.MeshInterfaceError as e:
-                        _cli_exit(f"[BLE] {e}", 1)
-                elif args.host:
-                    tcp_hostname: str = args.host
-                    tcp_port: int = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                    try:
-                        tcp_hostname, tcp_port = _parse_host_port(
-                            args.host,
-                            meshtastic.tcp_interface.DEFAULT_TCP_PORT,
-                        )
-                        client = session_resources.enter_context(
-                            meshtastic.tcp_interface.TCPInterface(
-                                tcp_hostname,
-                                portNumber=tcp_port,
-                                debugOut=logfile,
-                                noProto=args.noproto,
-                                noNodes=args.no_nodes,
-                                timeout=args.timeout,
-                            )
-                        )
-                    except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(
-                            f"Error connecting to {tcp_hostname}:{tcp_port}: {ex}", 1
-                        )
-                    except OSError as ex:
-                        _cli_exit(
-                            f"Error connecting to {tcp_hostname}:{tcp_port}: {ex}", 1
-                        )
-                else:
-                    try:
-                        client = session_resources.enter_context(
-                            meshtastic.serial_interface.SerialInterface(
-                                args.port,
-                                debugOut=logfile,
-                                noProto=args.noproto,
-                                noNodes=args.no_nodes,
-                                timeout=args.timeout,
-                            )
-                        )
-                    except FileNotFoundError:
-                        # Handle the case where the serial device is not found
-                        message = "File Not Found Error:\n"
-                        message += (
-                            f"  The serial device at '{args.port}' was not found.\n"
-                        )
-                        message += "  Please check the following:\n"
-                        message += "    1. Is the device connected properly?\n"
-                        message += "    2. Is the correct serial port specified?\n"
-                        message += "    3. Are the necessary drivers installed?\n"
-                        message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
-                        message += "       Ensure you are using a **data-capable USB cable**.\n"
-                        _cli_exit(message, 1)
-                    except PermissionError as ex:
-                        try:
-                            username = os.getlogin()
-                        except OSError:
-                            username = getpass.getuser()
-                        message = "Permission Error:\n"
-                        message += "  Need to add yourself to the 'dialout' group by running:\n"
-                        message += f"     sudo usermod -a -G dialout {username}\n"
-                        message += "  After running that command, log out and re-login for it to take effect.\n"
-                        message += f"Error was: {ex}"
-                        _cli_exit(message)
-                    except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(f"[Serial] {ex}", 1)
-                    except OSError as ex:
-                        message = "OS Error:\n"
-                        message += "  The serial device couldn't be opened, it might be in use by another process.\n"
-                        message += "  Please close any applications or webpages that may be using the device and try again.\n"
-                        message += f"\nOriginal error: {ex}"
-                        _cli_exit(message)
-                    if client is None or client.devPath is None:
-                        logger.info(
-                            "Serial device unavailable after initialization; falling back to localhost TCP interface."
-                        )
-                        try:
-                            client = session_resources.enter_context(
-                                meshtastic.tcp_interface.TCPInterface(
-                                    "localhost",
-                                    debugOut=logfile,
-                                    noProto=args.noproto,
-                                    noNodes=args.no_nodes,
-                                    timeout=args.timeout,
-                                )
-                            )
-                        except MeshInterface.MeshInterfaceError as ex:
-                            _cli_exit(f"[TCP localhost] {ex}", 1)
-                        except OSError as ex:
-                            _cli_exit(
-                                f"No Meshtastic device detected and no TCP listener on localhost: {ex}",
-                                1,
-                            )
-
-                if client is None:
-                    _cli_exit(
-                        "Error: No interface was established. "
-                        "Check connection parameters (BLE address, TCP host, or serial port).",
-                        1,
-                    )
-                # We assume client is fully connected now
-                onConnected(client)
-
-                have_tunnel = platform.system() == "Linux"
-                if (
-                    args.noproto
-                    or args.reply
-                    or (have_tunnel and args.tunnel)
-                    or args.listen
-                ):  # loop until someone presses ctrlc
-                    try:
-                        while True:
-                            if cli_runtime._listen_loop_poll_once(client):
-                                continue
-                    except KeyboardInterrupt:
-                        logger.info("Exiting due to keyboard interrupt")
-
-        # don't call exit, background threads might be running still
-        # sys.exit(0)
+    cli_bootstrap.run_common(args, parser, _build_bootstrap_hooks())
 
 
 # ---------------------------------------------------------------------------
