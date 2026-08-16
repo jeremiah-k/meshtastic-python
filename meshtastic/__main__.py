@@ -7,7 +7,6 @@
 import argparse
 import binascii
 import contextlib
-import contextvars
 import importlib
 import logging
 import platform
@@ -29,6 +28,7 @@ import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.dispatch as cli_dispatch
 import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
+import meshtastic.cli.preference_runtime as cli_preference_runtime
 import meshtastic.cli.runtime as cli_runtime
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -61,7 +61,6 @@ from meshtastic.cli.values import is_local_destination as _is_local_destination
 from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
     looks_like_integer_literal as _looks_like_integer_literal,
 )
-from meshtastic.cli.values import parse_bitfield_value as _parse_bitfield_value
 from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
     parse_integer_literal as _parse_integer_literal,
 )
@@ -175,40 +174,13 @@ except (ImportError, AttributeError) as exc:
 
 logger = logging.getLogger(__name__)
 
-_CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "configure_preflight_mode", default=False
-)
-_SET_PREF_VALUE_ERRORS_FATAL: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "set_pref_value_errors_fatal", default=False
-)
+_CONFIGURE_PREFLIGHT_MODE = cli_preference_runtime.CONFIGURE_PREFLIGHT_MODE
+_SET_PREF_VALUE_ERRORS_FATAL = cli_preference_runtime.SET_PREF_VALUE_ERRORS_FATAL
+_PREF_VALIDATION_REPORTER = cli_preference_runtime.PREF_VALIDATION_REPORTER
+_PreferenceValueError = cli_preference_runtime.PreferenceValueError
+_fatal_preference_value_errors = cli_preference_runtime.fatal_preference_value_errors
+BITFIELD_ENUMS = cli_preference_runtime.BITFIELD_ENUMS
 
-
-class _PreferenceValueError(ValueError):
-    """Raised internally when CLI preference assignment has an invalid scalar value."""
-
-
-@contextlib.contextmanager
-def _fatal_preference_value_errors() -> Iterator[None]:
-    """Temporarily make scalar preference validation failures fatal to the CLI."""
-    token = _SET_PREF_VALUE_ERRORS_FATAL.set(True)
-    try:
-        yield
-    finally:
-        _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
-
-
-_PREF_VALIDATION_REPORTER: contextvars.ContextVar[Callable[[str], None] | None] = (
-    contextvars.ContextVar("pref_validation_reporter", default=None)
-)
-
-# Map dotted preference paths to the protobuf enum that defines their flags.
-# These fields are stored as uint32 bitmasks in the protobuf but have an
-# associated enum that names the individual flags. Add new bitfield-enum
-# fields here as protobufs grow.
-BITFIELD_ENUMS = {
-    "network.enabled_protocols": config_pb2.Config.NetworkConfig.ProtocolFlags,
-    "position.position_flags": config_pb2.Config.PositionConfig.PositionFlags,
-}
 
 # Public CLI shorthands for common modem presets. Keep this ordered to preserve
 # the historical behavior when callers supply more than one shorthand: later
@@ -290,15 +262,8 @@ OTA_MAX_RETRIES = cli_device_actions.OTA_MAX_RETRIES
 
 # COMPAT_STABLE_SHIM: accept historical config field spellings.
 # Backward-compatible aliases for renamed config fields.
-_PREFERENCE_FIELD_ALIASES: dict[str, str] = {
-    "display.use_12_hour": "display.use_12h_clock",
-    "display.use12_hour": "display.use_12h_clock",
-    # Exported configs can contain camelCase keys from MessageToDict(),
-    # and camel_to_snake("use12hClock") yields "use12h_clock". Normalize
-    # these compatibility spellings to the canonical protobuf field name.
-    "display.use12h_clock": "display.use_12h_clock",
-    "display.use12_h_clock": "display.use_12h_clock",
-}
+_PREFERENCE_FIELD_ALIASES = cli_preference_runtime.PREFERENCE_FIELD_ALIASES
+
 
 
 def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
@@ -336,24 +301,9 @@ def _cli_print(message: str, *, force: bool = False) -> None:
 
 
 def _report_pref_validation(message: str) -> None:
-    """Print preference validation output through the shared CLI path.
+    """Report preference validation through the extracted runtime."""
+    cli_preference_runtime.report_pref_validation(message, cli_print=_cli_print)
 
-    Parameters
-    ----------
-    message : str
-        User-facing validation diagnostic.
-
-    Notes
-    -----
-    Outside preflight, validation messages retain their historical direct stdout
-    behavior, including visibility under ``--quiet``. Batch preflight installs a
-    reporter so diagnostics can be emitted coherently after all entries are checked.
-    """
-    reporter = _PREF_VALIDATION_REPORTER.get()
-    if reporter is not None:
-        reporter(message)
-        return
-    _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
 
 
 def supportInfo() -> None:
@@ -636,19 +586,8 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
 
-def _normalize_pref_name(comp_name: str) -> str:
-    """Normalize a preference path to canonical snake_case and apply aliases."""
-    canonical = ".".join(
-        meshtastic.util.camel_to_snake(part.strip()) for part in comp_name.split(".")
-    )
-    normalized = _PREFERENCE_FIELD_ALIASES.get(canonical, canonical)
-    if normalized != canonical:
-        logger.debug(
-            "Using compatibility alias for config field %s -> %s",
-            comp_name,
-            normalized,
-        )
-    return normalized
+_normalize_pref_name = cli_preference_runtime.normalize_pref_name
+_parse_bitfield_value = cli_preference_runtime.parse_bitfield_value
 
 
 def _display_pref_name(comp_name: str) -> str:
@@ -660,31 +599,10 @@ def _display_pref_name(comp_name: str) -> str:
     )
 
 
-_SECRET_PREF_FIELDS: frozenset[str] = frozenset(
-    {
-        "psk",
-        "channel_psk",
-        "private_key",
-        "public_key",
-        "admin_key",
-        "session_passkey",
-        "secret",
-        "api_key",
-        "auth_token",
-    }
-)
-_SECRET_PREF_PATHS: frozenset[str] = frozenset(
-    {
-        "network.wifi_ssid",
-        "network.wifi_psk",
-        "mqtt.username",
-        "mqtt.password",
-        "bluetooth.fixed_pin",
-        "security.session_passkey",
-    }
-)
-_REDACTED_PREF_VALUE = "<redacted>"
-_SET_VALUE_REJECTED_MESSAGE = "value rejected by validation"
+_SECRET_PREF_FIELDS = cli_preference_runtime.SECRET_PREF_FIELDS
+_SECRET_PREF_PATHS = cli_preference_runtime.SECRET_PREF_PATHS
+_REDACTED_PREF_VALUE = cli_preference_runtime.REDACTED_PREF_VALUE
+_SET_VALUE_REJECTED_MESSAGE = cli_preference_runtime.SET_VALUE_REJECTED_MESSAGE
 
 
 class _DescriptorLike(Protocol):
@@ -701,16 +619,9 @@ class _NamedConfigType(Protocol):
     name: str
 
 
-def _is_secret_pref(name: str) -> bool:
-    """Return whether a preference path is classified as secret-bearing."""
-    normalized = _normalize_pref_name(name)
-    field_name = normalized.rsplit(".", maxsplit=1)[-1]
-    return normalized in _SECRET_PREF_PATHS or field_name in _SECRET_PREF_FIELDS
+_is_secret_pref = cli_preference_runtime.is_secret_pref
+_redact_pref_value = cli_preference_runtime.redact_pref_value
 
-
-def _redact_pref_value(name: str, value: str) -> str:
-    """Return a redacted placeholder for secret-bearing preference paths."""
-    return _REDACTED_PREF_VALUE if _is_secret_pref(name) else value
 
 
 def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
@@ -856,26 +767,7 @@ def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
     return True
 
 
-def splitCompoundName(comp_name: str) -> list[str]:
-    """Split a dotted preference name into segments, guaranteeing at least two elements.
-
-    If `comp_name` contains one or more dots, returns the list produced by splitting on
-    '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
-
-    Parameters
-    ----------
-    comp_name : str
-        The dotted preference name to split.
-
-    Returns
-    -------
-    list[str]
-        Segments from splitting `comp_name` on '.', or `[comp_name, comp_name]` when no dot is present.
-    """
-    name: list[str] = comp_name.split(".")
-    if len(name) < 2:
-        name.append(comp_name)
-    return name
+splitCompoundName = cli_preference_runtime.split_compound_name
 
 
 def traverseConfig(
@@ -884,203 +776,47 @@ def traverseConfig(
     interface_config: Any,
     failed_fields: list[str] | None = None,
 ) -> bool:
-    """Recursively apply values from a nested mapping onto a target configuration by walking dot-separated paths.
-
-    Parameters
-    ----------
-    config_root : str
-        Dot-separated prefix for the current configuration path (e.g., "channel.0").
-    config : dict[str, Any]
-        Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
-    interface_config : Any
-        Target configuration object that will receive the applied leaf values.
-    failed_fields : list[str] | None
-        Optional mutable list to collect failing fully-qualified field paths
-        when a leaf assignment fails. (Default value = None)
-
-    Returns
-    -------
-    bool
-        `True` when traversal completes and all leaf values are successfully
-        applied, `False` if any leaf assignment fails validation.
-    """
-    skipped_by_section: dict[str, list[str]] = {}
-
-    def _traverse(root: str, cfg: dict[str, Any], icfg: Any) -> bool:
-        s_name = meshtastic.util.camel_to_snake(root)
-        for pref in cfg:
-            pref_name = f"{s_name}.{pref}"
-            if isinstance(cfg[pref], dict):
-                if not _traverse(pref_name, cfg[pref], icfg):
-                    return False
-            else:
-                if not _resolve_pref(icfg, pref_name):
-                    parts = pref_name.split(".")
-                    section = parts[0]
-                    relative = ".".join(parts[1:]) if len(parts) > 1 else pref_name
-                    skipped_by_section.setdefault(section, []).append(relative)
-                    continue
-                try:
-                    ok = setPref(icfg, pref_name, cfg[pref])
-                except (ValueError, TypeError, OverflowError, binascii.Error):
-                    if failed_fields is not None:
-                        failed_fields.append(pref_name)
-                    return False
-                if not ok:
-                    if failed_fields is not None:
-                        failed_fields.append(pref_name)
-                    return False
-        return True
-
-    success = _traverse(config_root, config, interface_config)
-
-    if not _CONFIGURE_PREFLIGHT_MODE.get():
-        for section, fields in skipped_by_section.items():
-            field_list = ", ".join(fields)
-            logger.warning(
-                "Skipping %d unknown field(s) from %s: %s",
-                len(fields),
-                section,
-                field_list,
-            )
-
-    return success
+    """COMPAT_STABLE_SHIM: apply a nested configure mapping to a protobuf message."""
+    return cli_preference_runtime.traverse_config(
+        config_root,
+        config,
+        interface_config,
+        resolve_pref_fn=_resolve_pref,
+        set_pref_fn=setPref,
+        failed_fields=failed_fields,
+    )
 
 
-def _walk_config_path(config: Any, name_parts: list[str]) -> tuple[Any, Any | None]:
-    """Return the parent message and descriptor for a dotted config path."""
-    if not name_parts:
-        return config, None
-
-    normalized_parts = [
-        meshtastic.util.camel_to_snake(name_part) for name_part in name_parts
-    ]
-    config_part = config
-    config_type = config.DESCRIPTOR.fields_by_name.get(normalized_parts[0])
-    for name_part in normalized_parts[1:-1]:
-        if config_type is None or config_type.message_type is None:
-            return config_part, None
-        config_part = getattr(config_part, config_type.name)
-        config_type = config_type.message_type.fields_by_name.get(name_part)
-    if (
-        len(normalized_parts) > 2
-        and config_type is not None
-        and config_type.message_type is None
-    ):
-        return config_part, None
-    return config_part, config_type
+_walk_config_path = cli_preference_runtime.walk_config_path
+_resolve_pref = cli_preference_runtime.resolve_pref
+_protobuf_field_type_label = cli_preference_runtime.protobuf_field_type_label
 
 
-def _resolve_pref(config: Any, comp_name: str) -> bool:
-    """Check whether a dotted field path resolves to a valid protobuf field."""
-    comp_name = _normalize_pref_name(comp_name)
-    name = splitCompoundName(comp_name)
-    snake_name = meshtastic.util.camel_to_snake(name[-1])
-    _config_part, config_type = _walk_config_path(config, name)
-    if config_type and config_type.message_type is not None:
-        return config_type.message_type.fields_by_name.get(snake_name) is not None
-    return config_type is not None
-
-
-def _protobuf_field_type_label(field: FieldDescriptor) -> str:
-    """Return a concise user-facing type label for a protobuf field.
-
-    Parameters
-    ----------
-    field : FieldDescriptor
-        Protobuf field whose expected CLI value type should be described.
-
-    Returns
-    -------
-    str
-        Concise user-facing label for the field type.
-    """
-    integer_types = {
-        FieldDescriptor.TYPE_INT32,
-        FieldDescriptor.TYPE_INT64,
-        FieldDescriptor.TYPE_UINT32,
-        FieldDescriptor.TYPE_UINT64,
-        FieldDescriptor.TYPE_SINT32,
-        FieldDescriptor.TYPE_SINT64,
-        FieldDescriptor.TYPE_FIXED32,
-        FieldDescriptor.TYPE_FIXED64,
-        FieldDescriptor.TYPE_SFIXED32,
-        FieldDescriptor.TYPE_SFIXED64,
-    }
-    if field.type in integer_types:
-        return "integer"
-
-    type_labels = {
-        FieldDescriptor.TYPE_ENUM: "enum name or integer",
-        FieldDescriptor.TYPE_FLOAT: "number",
-        FieldDescriptor.TYPE_DOUBLE: "number",
-        FieldDescriptor.TYPE_BOOL: "boolean",
-        FieldDescriptor.TYPE_BYTES: "bytes (hex/base64)",
-        FieldDescriptor.TYPE_STRING: "string",
-    }
-    return type_labels.get(field.type, "compatible value")
 
 
 def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
-    """Print available channel-setting fields after an unknown --ch-set name.
-
-    Parameters
-    ----------
-    settings : Any
-        Channel settings protobuf whose fields should be listed.
-    pref_name : str
-        Unknown preference name supplied to ``--ch-set``.
-    """
+    """Print available channel-setting fields after an unknown --ch-set name."""
     print(f"{settings.__class__.__name__} does not have an attribute {pref_name}.")
     print("Choices are...")
     for field in settings.DESCRIPTOR.fields:
         if field.name != "module_settings":
             print(field.name)
             continue
-
         print(f"{field.name}:")
         if field.message_type is None:
             continue
         for sub_field in sorted(field.message_type.fields, key=lambda item: item.name):
             print(f"    {field.name}.{sub_field.name}")
-
-
 def _reject_pref_value(
-    field: FieldDescriptor,
-    *,
-    field_path: str,
-    raw_value: Any,
+    field: FieldDescriptor, *, field_path: str, raw_value: Any
 ) -> bool:
-    """Report one invalid preference value without exposing secret input.
-
-    Parameters
-    ----------
-    field : FieldDescriptor
-        Descriptor for the field whose value was rejected.
-    field_path : str
-        Canonical dotted preference path used in diagnostics and redaction.
-    raw_value : Any
-        Original caller-supplied value used for safe diagnostic rendering.
-
-    Returns
-    -------
-    bool
-        Always ``False`` for convenient use from validation branches.
-
-    Raises
-    ------
-    _PreferenceValueError
-        If fatal preference-value handling is active.
-    """
-    display_value = _redact_pref_value(field_path, repr(raw_value))
-    message = (
-        f"Invalid value {display_value} for {field_path}; "
-        f"expected {_protobuf_field_type_label(field)}."
+    """Compatibility wrapper for preference value rejection/reporting."""
+    return cli_preference_runtime.reject_pref_value(
+        field,
+        field_path=field_path,
+        raw_value=raw_value,
+        cli_print=_cli_print,
     )
-    if _SET_PREF_VALUE_ERRORS_FATAL.get():
-        raise _PreferenceValueError(message)
-    _report_pref_validation(message)
-    return False
 
 
 def _assign_scalar_pref_value(
@@ -1091,206 +827,28 @@ def _assign_scalar_pref_value(
     field_path: str,
     raw_value: Any,
 ) -> bool:
-    """Assign one non-repeated protobuf field without leaking conversion errors.
-
-    Parameters
-    ----------
-    target : Any
-        Protobuf message instance that owns ``field``.
-    field : FieldDescriptor
-        Descriptor for the scalar field being assigned.
-    value : Any
-        Converted value to assign to the protobuf field.
-    field_path : str
-        Canonical dotted preference path used in diagnostics and redaction.
-    raw_value : Any
-        Original caller-supplied value used for safe diagnostic rendering.
-
-    Returns
-    -------
-    bool
-        ``True`` when assignment succeeds; ``False`` when a non-fatal
-        validation failure is reported.
-
-    Raises
-    ------
-    _PreferenceValueError
-        If assignment fails while fatal preference-value handling is active.
-    """
-    try:
-        setattr(target, field.name, value)
-        return True
-    except (TypeError, ValueError, OverflowError):
-        if field.type == FieldDescriptor.TYPE_STRING and not isinstance(value, str):
-            try:
-                setattr(target, field.name, str(value))
-                return True
-            except (TypeError, ValueError, OverflowError):
-                pass
-    return _reject_pref_value(field, field_path=field_path, raw_value=raw_value)
+    """Compatibility wrapper for scalar protobuf preference assignment."""
+    return cli_preference_runtime.assign_scalar_pref_value(
+        target,
+        field,
+        value,
+        field_path=field_path,
+        raw_value=raw_value,
+        cli_print=_cli_print,
+    )
 
 
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
-    """Set a protobuf configuration or channel field identified by a dot-separated path.
+    """COMPAT_STABLE_SHIM: set a protobuf preference through the CLI runtime."""
+    return cli_preference_runtime.set_pref(
+        config,
+        comp_name,
+        raw_val,
+        camel_case=mt_config.camel_case,
+        cli_print=_cli_print,
+        is_repeated_field=_is_repeated_field,
+    )
 
-    This updates the target field on the given protobuf-like message, converting the provided
-    value to the field's expected type when possible, resolving enum names, validating
-    certain fields (for example, `wifi_psk` requires length >= 8), and handling
-    repeated fields (replace, append, or clear) according to the supplied value.
-
-    Parameters
-    ----------
-    config : Any
-        The protobuf configuration or channel message to modify.
-    comp_name : str
-        Dot-separated field path (e.g., "channel.security.wifi_psk" or "node.name").
-    raw_val : Any
-        Value to assign; may be a string, number, list (for repeated fields), or already-typed value.
-
-    Returns
-    -------
-    bool
-        `True` if the named field was found and successfully set or updated, `False` otherwise.
-    """
-
-    comp_name = _normalize_pref_name(comp_name)
-    name = splitCompoundName(comp_name)
-
-    snake_name = meshtastic.util.camel_to_snake(name[-1])
-    camel_name = meshtastic.util.snake_to_camel(name[-1])
-    uni_name = camel_name if mt_config.camel_case else snake_name
-    logger.debug("snake_name:%s", snake_name)
-    logger.debug("camel_name:%s", camel_name)
-
-    config_part, config_type = _walk_config_path(config, name)
-    pref = None
-    if config_type and config_type.message_type is not None:
-        pref = config_type.message_type.fields_by_name.get(snake_name)
-    # Others like ChannelSettings are standalone
-    elif config_type:
-        pref = config_type
-
-    if (not pref) or (not config_type):
-        return False
-
-    # Handle uint32 bitfields that have an associated enum of flag names.
-    bitfield_enum = None
-    if config_type.message_type is not None:
-        bitfield_path = f"{config_type.name}.{pref.name}"
-        bitfield_enum = BITFIELD_ENUMS.get(bitfield_path)
-
-    if bitfield_enum:
-        try:
-            val = _parse_bitfield_value(bitfield_enum, raw_val)
-        except ValueError as e:
-            _report_pref_validation(f"ERROR: {e}")
-            return False
-    elif isinstance(raw_val, str):
-        try:
-            val = meshtastic.util.fromStr(raw_val)
-        except (ValueError, binascii.Error):
-            return _reject_pref_value(
-                pref,
-                field_path=comp_name,
-                raw_value=raw_val,
-            )
-    else:
-        val = raw_val
-    logger.debug("val:%s", _redact_pref_value(comp_name, meshtastic.util.toStr(val)))
-
-    if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
-        _report_pref_validation(
-            "Warning: network.wifi_psk must be 8 or more characters."
-        )
-        return False
-
-    enumType = pref.enum_type
-    if enumType and isinstance(val, str):
-        # We've failed so far to convert this string into an enum, try to find it by reflection
-        ev = enumType.values_by_name.get(val)
-        if ev:
-            val = ev.number
-        else:
-            _report_pref_validation(
-                f"{name[0]}.{uni_name} does not have an enum called {val}, so you can not set it."
-            )
-            _report_pref_validation("Choices in sorted order are:")
-            names = []
-            for f in enumType.values:
-                # Note: We must use the value of the enum (regardless if camel or snake case)
-                names.append(f"{f.name}")
-            for temp_name in sorted(names):
-                _report_pref_validation(f"    {temp_name}")
-            return False
-
-    # repeating fields need to be handled with append, not setattr
-    assignment_ok = True
-    print_assignment = True
-    if not _is_repeated_field(pref):
-        target = (
-            getattr(config_part, config_type.name)
-            if config_type.message_type is not None
-            else config_part
-        )
-        assignment_ok = _assign_scalar_pref_value(
-            target,
-            pref,
-            val,
-            field_path=comp_name,
-            raw_value=raw_val,
-        )
-    else:
-        target = (
-            getattr(config_part, config_type.name)
-            if config_type.message_type is not None
-            else config_part
-        )
-        candidate = type(target)()
-        candidate.CopyFrom(target)
-        candidate_values = getattr(candidate, pref.name)
-        try:
-            if isinstance(val, list):
-                new_vals = [
-                    meshtastic.util.fromStr(item) if isinstance(item, str) else item
-                    for item in val
-                ]
-                candidate_values[:] = new_vals
-            elif val == 0:
-                del candidate_values[:]
-            else:
-                cur_vals = [x for x in candidate_values if x not in [0, "", b""]]
-                if val not in cur_vals:
-                    cur_vals.append(val)
-                candidate_values[:] = cur_vals
-        except (TypeError, ValueError, OverflowError, binascii.Error):
-            assignment_ok = _reject_pref_value(
-                pref,
-                field_path=comp_name,
-                raw_value=raw_val,
-            )
-        else:
-            target.CopyFrom(candidate)
-            if not isinstance(val, list):
-                if val == 0:
-                    if not _CONFIGURE_PREFLIGHT_MODE.get():
-                        _cli_print(f"Clearing {pref.name} list")
-                else:
-                    display_value = _redact_pref_value(
-                        comp_name, meshtastic.util.toStr(raw_val)
-                    )
-                    if not _CONFIGURE_PREFLIGHT_MODE.get():
-                        _cli_print(f"Adding '{display_value}' to the {pref.name} list")
-                print_assignment = False
-
-    if assignment_ok and print_assignment:
-        prefix = (
-            f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-        )
-        display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
-        if not _CONFIGURE_PREFLIGHT_MODE.get():
-            _cli_print(f"Set {prefix}{uni_name} to {display_value}")
-
-    return assignment_ok
 
 
 def _handle_ota_update(
