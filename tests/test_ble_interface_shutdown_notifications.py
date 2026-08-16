@@ -921,12 +921,150 @@ def test_execute_optional_registration_tolerates_optional_start_failure(
             from_num_handler=lambda _sender, _data: None,
         )
 
+        assert (
+            dispatcher._notification_manager._get_callback(LEGACY_LOGRADIO_UUID) is None
+        )
         assert dispatcher._execute_optional_registration(
             iface, cast(BLEClient, client), plan
         )
         assert client.start_notify_calls == [LEGACY_LOGRADIO_UUID]
         assert LEGACY_LOGRADIO_UUID not in dispatcher._started_notify_characteristics
+        assert (
+            dispatcher._notification_manager._get_callback(LEGACY_LOGRADIO_UUID) is None
+        )
         assert dispatcher.fromnum_notify_enabled is False
+    finally:
+        iface.close()
+
+
+def test_execute_optional_registration_tracks_only_after_backend_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional callbacks should become locally visible only after backend startup."""
+
+    class _OptionalSuccessClient(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.before_start_notify: Callable[[str], None] = lambda _uuid: None
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == LEGACY_LOGRADIO_UUID
+
+        def start_notify(self, *args: object, **_kwargs: object) -> None:
+            self.before_start_notify(cast(str, args[0]))
+
+    client = _OptionalSuccessClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    dispatcher = iface._notification_dispatcher
+
+    def _assert_untracked(uuid: str) -> None:
+        assert dispatcher._notification_manager._get_callback(uuid) is None
+
+    client.before_start_notify = _assert_untracked
+    try:
+        plan = dispatcher._prepare_registration_plan(
+            iface,
+            cast(BLEClient, client),
+            legacy_log_handler=lambda _sender, _data: None,
+            log_handler=lambda _sender, _data: None,
+            from_num_handler=lambda _sender, _data: None,
+        )
+
+        assert dispatcher._execute_optional_registration(
+            iface, cast(BLEClient, client), plan
+        )
+        assert (
+            dispatcher._notification_manager._get_callback(LEGACY_LOGRADIO_UUID)
+            is plan.optional_starts[0].handler
+        )
+        assert LEGACY_LOGRADIO_UUID in dispatcher._started_notify_characteristics
+    finally:
+        iface.close()
+
+
+def test_execute_optional_registration_stops_backend_when_tracking_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local tracking failure must not leave an optional backend notify active."""
+
+    class _OptionalTrackingClient(DummyClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.stop_notify_calls: list[str] = []
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == LEGACY_LOGRADIO_UUID
+
+        def stop_notify(self, characteristic: str, **_kwargs: object) -> None:
+            self.stop_notify_calls.append(characteristic)
+
+    def _fail_subscribe(*_args: object, **_kwargs: object) -> int:
+        raise RuntimeError("tracking failed")
+
+    client = _OptionalTrackingClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    dispatcher = iface._notification_dispatcher
+    try:
+        plan = dispatcher._prepare_registration_plan(
+            iface,
+            cast(BLEClient, client),
+            legacy_log_handler=lambda _sender, _data: None,
+            log_handler=lambda _sender, _data: None,
+            from_num_handler=lambda _sender, _data: None,
+        )
+        monkeypatch.setattr(
+            dispatcher._notification_manager, "_subscribe", _fail_subscribe
+        )
+
+        assert dispatcher._execute_optional_registration(
+            iface, cast(BLEClient, client), plan
+        )
+        assert client.stop_notify_calls == [LEGACY_LOGRADIO_UUID]
+        assert LEGACY_LOGRADIO_UUID not in dispatcher._started_notify_characteristics
+        assert (
+            dispatcher._notification_manager._get_callback(LEGACY_LOGRADIO_UUID) is None
+        )
+    finally:
+        iface.close()
+
+
+def test_execute_optional_registration_retains_started_state_when_compensation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failed compensation should preserve backend-started state for later cleanup."""
+
+    class _OptionalUnstoppableClient(DummyClient):
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == LEGACY_LOGRADIO_UUID
+
+        def stop_notify(self, _characteristic: str, **_kwargs: object) -> None:
+            raise RuntimeError("stop failed")
+
+    def _fail_subscribe(*_args: object, **_kwargs: object) -> int:
+        raise RuntimeError("tracking failed")
+
+    client = _OptionalUnstoppableClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    dispatcher = iface._notification_dispatcher
+    try:
+        plan = dispatcher._prepare_registration_plan(
+            iface,
+            cast(BLEClient, client),
+            legacy_log_handler=lambda _sender, _data: None,
+            log_handler=lambda _sender, _data: None,
+            from_num_handler=lambda _sender, _data: None,
+        )
+        monkeypatch.setattr(
+            dispatcher._notification_manager, "_subscribe", _fail_subscribe
+        )
+
+        assert dispatcher._execute_optional_registration(
+            iface, cast(BLEClient, client), plan
+        )
+        assert LEGACY_LOGRADIO_UUID in dispatcher._started_notify_characteristics
+        assert (
+            dispatcher._notification_manager._get_callback(LEGACY_LOGRADIO_UUID) is None
+        )
     finally:
         iface.close()
 

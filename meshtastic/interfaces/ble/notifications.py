@@ -437,7 +437,6 @@ class BLENotificationDispatcher:
     @staticmethod
     # Signature probing deliberately exits immediately once handler execution is known.
     def invoke_safe_execute_compat(  # pylint: disable=too-many-return-statements
-
         safe_execute: Callable[..., Any],
         handler_thunk: Callable[[], None],
         *,
@@ -845,7 +844,7 @@ class BLENotificationDispatcher:
             if not supported or uuid in self._started_notify_characteristics:
                 continue
             handler = self._get_or_create_registration_handler(
-                uuid, cache_attr=cache_attr, handler=candidate_handler
+                uuid, cache_attr=cache_attr, handler=candidate_handler, track=False
             )
             optional_starts.append(
                 _OptionalNotificationStart(
@@ -889,9 +888,67 @@ class BLENotificationDispatcher:
                 )
                 continue
             self._started_notify_characteristics.add(start.characteristic)
+            if not self._track_optional_handler(client, start):
+                continue
             if not self._registration_still_current(client, plan.session_epoch):
                 self._rollback_registration_state(stop_client=client)
                 return False
+        return True
+
+    def _track_optional_handler(
+        self, client: BLEClient, start: _OptionalNotificationStart
+    ) -> bool:
+        """Track one started optional callback or compensate its backend start.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Client whose backend notification has already started.
+        start : _OptionalNotificationStart
+            Optional registration descriptor containing the characteristic and callback.
+
+        Returns
+        -------
+        bool
+            ``True`` when local callback tracking converges with backend state;
+            ``False`` when tracking fails and compensating cleanup is attempted.
+
+        Notes
+        -----
+        If compensating ``stop_notify`` also fails, the characteristic remains in
+        ``_started_notify_characteristics`` so later lifecycle cleanup can retry it.
+        """
+        try:
+            active_handler = self._notification_manager._get_callback(
+                start.characteristic
+            )
+            if active_handler is not start.handler:
+                self._notification_manager._subscribe(
+                    start.characteristic, start.handler
+                )
+        except Exception as err:  # noqa: BLE001 - local/backend state must converge
+            logger.warning(
+                "Unable to track optional %s notification callback for %s: %s; "
+                "stopping the backend notification.",
+                start.label,
+                start.characteristic,
+                err,
+            )
+            try:
+                client.stop_notify(
+                    start.characteristic, timeout=NOTIFICATION_START_TIMEOUT
+                )
+            except Exception:  # noqa: BLE001 - later cleanup must retain retry state
+                logger.debug(
+                    "Failed to stop untracked optional notification %s; retaining "
+                    "backend-started state for later cleanup.",
+                    start.characteristic,
+                    exc_info=True,
+                )
+            else:
+                self._started_notify_characteristics.discard(start.characteristic)
+            return False
+
         return True
 
     def _track_fromnum_handler(
@@ -966,9 +1023,7 @@ class BLENotificationDispatcher:
                     max_attempts,
                 )
                 with contextlib.suppress(*optional_errors):
-                    client.stop_notify(
-                        FROMNUM_UUID, timeout=NOTIFICATION_START_TIMEOUT
-                    )
+                    client.stop_notify(FROMNUM_UUID, timeout=NOTIFICATION_START_TIMEOUT)
                 if attempt + 1 < max_attempts:
                     _sleep(BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY * (attempt + 1))
                     continue
