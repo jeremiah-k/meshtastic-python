@@ -79,6 +79,18 @@ def test_retry_delay_helpers_bound_backoff() -> None:
     assert _linear_retry_delay(retry_number=4, base_delay=0.1, max_delay=0.25) == 0.25
 
 
+def test_interruptible_sleep_rejects_non_positive_slice() -> None:
+    """A non-positive sleep slice should be rejected before the loop starts."""
+    with pytest.raises(ValueError, match="sleep_slice must be positive"):
+        _sleep_interruptibly(
+            1.0,
+            should_abort=lambda: False,
+            sleep_slice=0.0,
+            monotonic=lambda: 0.0,
+            sleep=lambda _: None,
+        )
+
+
 def test_interruptible_sleep_stops_when_abort_becomes_true() -> None:
     """Interruptible retry delay should return immediately after an abort signal."""
     now = [0.0]

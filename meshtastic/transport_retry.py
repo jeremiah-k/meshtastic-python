@@ -23,7 +23,13 @@ class _RetryDecision:
 
     @property
     def should_retry(self) -> bool:
-        """Return whether the failed operation should be retried."""
+        """Return whether the failed operation should be retried.
+
+        Returns
+        -------
+        bool
+            True when the planner schedules another attempt.
+        """
         return self.disposition is _RetryDisposition.RETRY
 
 
@@ -38,14 +44,45 @@ class _RetryWindow:
     def start(
         cls, *, now: float, duration: float | None, max_attempts: int
     ) -> "_RetryWindow":
-        """Create a retry window from a monotonic timestamp and duration."""
+        """Create a retry window from a monotonic timestamp and duration.
+
+        Parameters
+        ----------
+        now : float
+            Current monotonic timestamp.
+        duration : float | None
+            Window length in seconds; None means an unbounded window.
+        max_attempts : int
+            Upper bound on retry attempts.
+
+        Returns
+        -------
+        _RetryWindow
+            The new retry window.
+        """
         deadline = None if duration is None else now + max(0.0, duration)
         return cls(deadline=deadline, max_attempts=max_attempts)
 
     def after_failure(
         self, *, attempt: int, retry_delay: float, now: float
     ) -> _RetryDecision:
-        """Plan the retry following a failed one-based attempt."""
+        """Plan the retry following a failed one-based attempt.
+
+        Parameters
+        ----------
+        attempt : int
+            One-based number of the attempt that just failed.
+        retry_delay : float
+            Suggested delay before the next attempt.
+        now : float
+            Current monotonic timestamp.
+
+        Returns
+        -------
+        _RetryDecision
+            A decision to retry with a bounded delay, or exhausted when the
+            attempt limit or deadline has been reached.
+        """
         remaining = None if self.deadline is None else self.deadline - now
         exhausted = attempt >= self.max_attempts or (
             remaining is not None and remaining <= 0.0
@@ -70,7 +107,24 @@ class _RetryWindow:
 def _exponential_retry_delay(
     *, attempt: int, base_delay: float, backoff: float, max_delay: float
 ) -> float:
-    """Return bounded exponential delay for a one-based retry attempt."""
+    """Return bounded exponential delay for a one-based retry attempt.
+
+    Parameters
+    ----------
+    attempt : int
+        One-based retry attempt number.
+    base_delay : float
+        Delay for the first retry attempt.
+    backoff : float
+        Multiplier applied to the delay for each additional attempt.
+    max_delay : float
+        Upper bound on the returned delay.
+
+    Returns
+    -------
+    float
+        The bounded exponential delay in seconds.
+    """
     exponent = max(0, attempt - 1)
     return min(max_delay, base_delay * (backoff**exponent))
 
@@ -82,6 +136,20 @@ def _linear_retry_delay(
 
     A zero retry counter produces zero delay, preserving the raw
     ``base_delay * retry_number`` semantics used by the original stream loop.
+
+    Parameters
+    ----------
+    retry_number : int
+        Number of completed retries.
+    base_delay : float
+        Delay per retry, in seconds.
+    max_delay : float | None
+        Optional upper bound on the returned delay.
+
+    Returns
+    -------
+    float
+        The linear delay in seconds.
     """
     delay = max(0.0, base_delay * retry_number)
     if max_delay is not None:
@@ -98,7 +166,29 @@ def _plan_counted_retry(
     max_delay: float,
     immediate_first_attempt: bool = True,
 ) -> _RetryDecision:
-    """Plan the next attempt for a retry counter owned by a transport."""
+    """Plan the next attempt for a retry counter owned by a transport.
+
+    Parameters
+    ----------
+    completed_attempts : int
+        Number of attempts already completed.
+    max_attempts : int
+        Upper bound on total attempts.
+    base_delay : float
+        Delay for the first retry attempt.
+    backoff : float
+        Multiplier applied to the delay for each additional attempt.
+    max_delay : float
+        Upper bound on the returned delay.
+    immediate_first_attempt : bool
+        When True, the first attempt is scheduled with no delay.
+
+    Returns
+    -------
+    _RetryDecision
+        A decision to retry with the next attempt number, or exhausted when
+        the attempt limit has been reached.
+    """
     if completed_attempts >= max_attempts:
         return _RetryDecision(
             _RetryDisposition.EXHAUSTED,
@@ -124,7 +214,33 @@ def _sleep_interruptibly(
     monotonic: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> bool:
-    """Sleep until a retry deadline while polling an abort predicate."""
+    """Sleep until a retry deadline while polling an abort predicate.
+
+    Parameters
+    ----------
+    delay : float
+        Desired sleep duration in seconds; negative values are clamped to zero.
+    should_abort : Callable[[], bool]
+        Predicate polled between slices; when True the sleep stops early.
+    sleep_slice : float
+        Maximum duration of a single sleep slice in seconds; must be positive.
+    monotonic : Callable[[], float]
+        Monotonic clock source returning seconds.
+    sleep : Callable[[float], None]
+        Sleep implementation receiving a duration in seconds.
+
+    Returns
+    -------
+    bool
+        True when the full deadline elapsed; False when aborted early.
+
+    Raises
+    ------
+    ValueError
+        When sleep_slice is not positive.
+    """
+    if sleep_slice <= 0.0:
+        raise ValueError("sleep_slice must be positive")
     deadline = monotonic() + max(0.0, delay)
     while True:
         if should_abort():
