@@ -9,75 +9,44 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  RELEASE_TAG: ${{ github.event.release.tag_name }}
 
 jobs:
   build:
     if: ${{ github.event.release.target_commitish != 'master' }}
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.release_tag.outputs.tag }}
-      version: ${{ steps.release_tag.outputs.version }}
+      tag: ${{ steps.release_source.outputs.tag }}
+      version: ${{ steps.release_source.outputs.version }}
     permissions:
       contents: read
     steps:
-      - name: Resolve release tag
-        id: release_tag
-        run: |
-          TAG="${{ github.event.release.tag_name }}"
-          if [[ -z "${TAG}" ]]; then
-            echo "::error::Unable to resolve release tag."
-            exit 1
-          fi
-          if [[ ! "${TAG}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
-            echo "::error::Resolved tag '${TAG}' does not look like a release tag/version."
-            exit 1
-          fi
-          VERSION="${TAG#v}"
-          if [[ -z "${VERSION}" ]]; then
-            echo "::error::Resolved empty version from tag '${TAG}'."
-            exit 1
-          fi
-          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-
-      - name: Checkout tag
+      - name: Checkout trusted develop
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.release_tag.outputs.tag }}
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
 
-      - name: Read package metadata
-        id: package_metadata
+      - name: Refresh trusted develop and release tags
         run: |
-          python - <<'PY' >> "${GITHUB_OUTPUT}"
-          from pathlib import Path
-          import tomllib
+          git fetch --force --tags origin '+refs/heads/develop:refs/remotes/origin/develop'
+          git checkout --detach refs/remotes/origin/develop
 
-          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
-          poetry_data = pyproject["tool"]["poetry"]
-          print(f"name={poetry_data['name']}")
-          print(f"version={poetry_data['version']}")
-          PY
+      - name: Verify release source and package metadata
+        id: release_source
+        run: >-
+          python bin/verify_release_source.py
+          --tag "${RELEASE_TAG}"
+          --github-output "${GITHUB_OUTPUT}"
 
-      - name: Validate package name and tag/version match
-        run: |
-          PACKAGE_NAME="${{ steps.package_metadata.outputs.name }}"
-          PACKAGE_VERSION="${{ steps.package_metadata.outputs.version }}"
-          TAG_VERSION="${{ steps.release_tag.outputs.version }}"
-
-          if [[ "${PACKAGE_NAME}" != "mtjk" ]]; then
-            echo "::error::Expected tool.poetry.name to be 'mtjk', got '${PACKAGE_NAME}'."
-            exit 1
-          fi
-
-          if [[ "${PACKAGE_VERSION}" != "${TAG_VERSION}" ]]; then
-            echo "::error::Version mismatch: tag '${{ steps.release_tag.outputs.tag }}' -> '${TAG_VERSION}', pyproject -> '${PACKAGE_VERSION}'."
-            exit 1
-          fi
+      - name: Checkout validated release commit
+        run: git checkout --detach "${{ steps.release_source.outputs.commit }}"
 
       - name: Install build dependencies
         run: |
@@ -93,7 +62,7 @@ jobs:
       - name: Upload built distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pypi-dist-${{ steps.release_tag.outputs.tag }}
+          name: pypi-dist-${{ steps.release_source.outputs.tag }}
           path: dist/*
           if-no-files-found: error
           retention-days: 7
