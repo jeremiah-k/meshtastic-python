@@ -47,7 +47,8 @@
       "matchManagers": ["git-submodules"],
       "matchDepNames": ["protobufs"],
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
-      "automerge": false
+      "automerge": false,
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
     },
     {
       "description": "Automerge meshtasticd Docker image updates (digest + version)",
