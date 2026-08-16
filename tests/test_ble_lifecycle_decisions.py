@@ -4,16 +4,18 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from bleak import BleakClient as BleakRootClient
 
 from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.lifecycle_decisions import (
+    _decide_disconnect_ownership,
+    _decide_receive_start,
     _DisconnectDisposition,
     _DisconnectOwnershipSnapshot,
     _ReceiveStartDisposition,
     _ReceiveStartSnapshot,
     _ReceiveThreadProbe,
-    _decide_disconnect_ownership,
-    _decide_receive_start,
 )
 from meshtastic.interfaces.ble.state import ConnectionState
 
@@ -37,6 +39,16 @@ def _receive_probe(
     )
 
 
+def _receive_thread_double() -> ThreadLike:
+    """Return a minimal thread-like identity for decision snapshots."""
+    return cast(ThreadLike, SimpleNamespace())
+
+
+def _bleak_client_double() -> BleakRootClient:
+    """Return a minimal BleakClient identity for disconnect snapshots."""
+    return cast(BleakRootClient, SimpleNamespace())
+
+
 @pytest.mark.parametrize(
     ("snapshot", "probe", "expected"),
     [
@@ -46,37 +58,37 @@ def _receive_probe(
             _ReceiveStartDisposition.PROCEED,
         ),
         (
-            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), False, None),
+            _ReceiveStartSnapshot(_receive_thread_double(), False, None),
             _receive_probe(alive=True),
             _ReceiveStartDisposition.SKIP_RUNNING,
         ),
         (
-            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), True, 9.5),
+            _ReceiveStartSnapshot(_receive_thread_double(), True, 9.5),
             _receive_probe(ident=17),
             _ReceiveStartDisposition.REPLACE_STALE_PENDING,
         ),
         (
-            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), False, None),
+            _ReceiveStartSnapshot(_receive_thread_double(), False, None),
             _receive_probe(ident=17),
             _ReceiveStartDisposition.REPLACE_DEAD,
         ),
         (
-            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), False, None),
+            _ReceiveStartSnapshot(_receive_thread_double(), False, None),
             _receive_probe(),
             _ReceiveStartDisposition.WAIT_INCONCLUSIVE,
         ),
         (
-            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), True, 9.5),
+            _ReceiveStartSnapshot(_receive_thread_double(), True, 9.5),
             _receive_probe(),
             _ReceiveStartDisposition.WAIT_PENDING,
         ),
         (
-            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), True, 8.0),
+            _ReceiveStartSnapshot(_receive_thread_double(), True, 8.0),
             _receive_probe(),
             _ReceiveStartDisposition.REPLACE_STALE_PENDING_TIMEOUT,
         ),
         (
-            _ReceiveStartSnapshot(cast(object, SimpleNamespace()), False, None),
+            _ReceiveStartSnapshot(_receive_thread_double(), False, None),
             _receive_probe(failed=True),
             _ReceiveStartDisposition.CLEAR_FAILED_START,
         ),
@@ -100,7 +112,7 @@ def test_decide_receive_start_classifies_stable_snapshot(
 
 def test_decide_receive_start_current_thread_without_timeout_defers_restart() -> None:
     """A current receive thread should defer replacement and initialize pending time."""
-    existing = cast(object, SimpleNamespace())
+    existing = _receive_thread_double()
     decision = _decide_receive_start(
         _ReceiveStartSnapshot(existing, False, None),
         _receive_probe(current=True),
@@ -114,9 +126,28 @@ def test_decide_receive_start_current_thread_without_timeout_defers_restart() ->
     assert decision.pending_age == 0.0
 
 
-def test_decide_receive_start_current_thread_timeout_requests_deferred_restart() -> None:
+def test_decide_receive_start_current_thread_pending_within_timeout_skips_restart() -> (
+    None
+):
+    """A pending current thread inside the timeout must not schedule another restart."""
+    decision = _decide_receive_start(
+        _ReceiveStartSnapshot(_receive_thread_double(), True, 9.5),
+        _receive_probe(current=True),
+        now=10.0,
+        pending_timeout=1.0,
+    )
+
+    assert decision.disposition is _ReceiveStartDisposition.DEFER_CURRENT
+    assert decision.initialize_pending_since is False
+    assert decision.schedule_deferred_restart is False
+    assert decision.pending_age == 0.5
+
+
+def test_decide_receive_start_current_thread_timeout_requests_deferred_restart() -> (
+    None
+):
     """A current receive thread stuck pending past the timeout should defer replacement."""
-    existing = cast(object, SimpleNamespace())
+    existing = _receive_thread_double()
     decision = _decide_receive_start(
         _ReceiveStartSnapshot(existing, True, 8.0),
         _receive_probe(current=True),
@@ -128,21 +159,21 @@ def test_decide_receive_start_current_thread_timeout_requests_deferred_restart()
     assert decision.pending_age == 2.0
 
 
-def _client_with_bleak(bleak_client: object) -> BLEClient:
+def _client_with_bleak(bleak_client: BleakRootClient) -> BLEClient:
     """Return a minimal typed client double with one bleak-client identity."""
     return cast(BLEClient, SimpleNamespace(bleak_client=bleak_client))
 
 
 def test_decide_disconnect_ownership_resolves_bleak_callback_to_owned_client() -> None:
     """A bleak callback matching the owned transport should resolve to its BLEClient."""
-    bleak_client = SimpleNamespace()
+    bleak_client = _bleak_client_double()
     current_client = _client_with_bleak(bleak_client)
     decision = _decide_disconnect_ownership(
         _DisconnectOwnershipSnapshot(
             current_state=ConnectionState.CONNECTED,
             current_client=current_client,
             target_client=None,
-            bleak_client=cast(object, bleak_client),
+            bleak_client=bleak_client,
             is_closing=False,
             publish_pending=False,
             replacement_pending=False,
@@ -156,8 +187,8 @@ def test_decide_disconnect_ownership_resolves_bleak_callback_to_owned_client() -
 
 def test_decide_disconnect_ownership_rejects_stale_client() -> None:
     """A disconnect for a non-owned client must not claim the current session."""
-    current_client = _client_with_bleak(SimpleNamespace())
-    stale_client = _client_with_bleak(SimpleNamespace())
+    current_client = _client_with_bleak(_bleak_client_double())
+    stale_client = _client_with_bleak(_bleak_client_double())
     decision = _decide_disconnect_ownership(
         _DisconnectOwnershipSnapshot(
             current_state=ConnectionState.CONNECTED,

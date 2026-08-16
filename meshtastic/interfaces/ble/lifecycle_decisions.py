@@ -80,7 +80,11 @@ def _decide_receive_start(
     if existing is None:
         decision = _ReceiveStartDecision(_ReceiveStartDisposition.PROCEED)
     elif probe.is_current:
-        if snapshot.start_pending and has_pending_since and pending_age >= pending_timeout:
+        if (
+            snapshot.start_pending
+            and has_pending_since
+            and pending_age >= pending_timeout
+        ):
             decision = _ReceiveStartDecision(
                 _ReceiveStartDisposition.DEFER_CURRENT_TIMEOUT,
                 pending_age=pending_age,
@@ -210,10 +214,7 @@ def _decide_disconnect_ownership(
     ):
         disposition = _DisconnectDisposition.IGNORE_STALE
 
-    if (
-        disposition is _DisconnectDisposition.ACCEPT
-        and snapshot.disconnect_notified
-    ):
+    if disposition is _DisconnectDisposition.ACCEPT and snapshot.disconnect_notified:
         disposition = _DisconnectDisposition.IGNORE_DUPLICATE
 
     return _DisconnectOwnershipDecision(disposition, target_client)

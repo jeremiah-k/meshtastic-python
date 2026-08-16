@@ -18,9 +18,9 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.coordination import ThreadLike
 from meshtastic.interfaces.ble.gating import _addr_key
 from meshtastic.interfaces.ble.lifecycle_decisions import (
+    _decide_disconnect_ownership,
     _DisconnectDisposition,
     _DisconnectOwnershipSnapshot,
-    _decide_disconnect_ownership,
 )
 from meshtastic.interfaces.ble.lifecycle_primitives import (
     RECONNECT_SCHEDULER_MISSING_MSG,

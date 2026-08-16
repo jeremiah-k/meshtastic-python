@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 
 from meshtastic.interfaces.ble.constants import logger
 from meshtastic.interfaces.ble.coordination import ThreadLike
-from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleThreadAccess
 from meshtastic.interfaces.ble.lifecycle_decisions import (
+    _decide_receive_start,
     _ReceiveStartDecision,
     _ReceiveStartDisposition,
     _ReceiveStartSnapshot,
     _ReceiveThreadProbe,
-    _decide_receive_start,
 )
+from meshtastic.interfaces.ble.lifecycle_primitives import _LifecycleThreadAccess
 from meshtastic.interfaces.ble.ports import _BLESessionStatePort
 from meshtastic.interfaces.ble.session_state import _session_state_for
 from meshtastic.interfaces.ble.utils import _thread_start_probe
@@ -426,7 +426,8 @@ class BLEReceiveLifecycleCoordinator:
                 if (
                     self._session.receive_thread is not snapshot.existing
                     or self._session.receive_start_pending != snapshot.start_pending
-                    or self._session.receive_start_pending_since != snapshot.pending_since
+                    or self._session.receive_start_pending_since
+                    != snapshot.pending_since
                 ):
                     continue
 
@@ -476,7 +477,11 @@ class BLEReceiveLifecycleCoordinator:
             )
             return None, None
         if should_return_after_decision:
-            deferred_target = schedule_deferred_restart_for or deferred_current_thread
+            deferred_target = (
+                schedule_deferred_restart_for
+                if schedule_deferred_restart_for is not None
+                else deferred_current_thread
+            )
             if deferred_target is not None:
                 self._schedule_deferred_receive_restart(
                     existing_thread=deferred_target,
