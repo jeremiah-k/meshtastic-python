@@ -1,35 +1,34 @@
 """Main Meshtastic."""
 
-# We just hit the 1600 line limit for main.py, but I currently have a huge set of powermon/structured logging changes
-# later we can have a separate changelist to refactor main.py into smaller files
 # pylint: disable=R0917,C0302
 
 import argparse
 import binascii
 import contextlib
-import contextvars
-import getpass
+import getpass  # noqa: F401  # pylint: disable=unused-import  # compatibility seam
 import importlib
 import logging
-import os
 import platform
 import sys
 import textwrap
 import time
 from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
-from typing import Any, NoReturn, Protocol
+from typing import IO, Any, NoReturn, Protocol
 
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
+import meshtastic.cli.bootstrap as cli_bootstrap
 import meshtastic.cli.channel_contact_actions as cli_channel_contact_actions
 import meshtastic.cli.config_io as cli_config_io
 import meshtastic.cli.configure_actions as cli_configure_actions
 import meshtastic.cli.device_actions as cli_device_actions
 import meshtastic.cli.dispatch as cli_dispatch
+import meshtastic.cli.invocation as cli_invocation
 import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
+import meshtastic.cli.preference_runtime as cli_preference_runtime
 import meshtastic.cli.runtime as cli_runtime
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -39,12 +38,9 @@ from meshtastic import mt_config, remote_hardware
 
 # COMPAT_STABLE_SHIM: LOCAL_ADDR remains importable from meshtastic.__main__.
 # pylint: disable=unused-import
+from meshtastic._core_constants import BROADCAST_ADDR  # noqa: F401
 from meshtastic._core_constants import LOCAL_ADDR  # noqa: F401
-from meshtastic._core_constants import (
-    BROADCAST_ADDR,
-)
 from meshtastic.cli.context import ActionOutcome, CliContext
-from meshtastic.cli.session_resources import CliSessionResources
 
 # COMPAT_STABLE_SHIM: Preserve legacy imports from meshtastic.cli.parser.
 # pylint: disable=unused-import
@@ -65,7 +61,6 @@ from meshtastic.cli.values import is_local_destination as _is_local_destination
 from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
     looks_like_integer_literal as _looks_like_integer_literal,
 )
-from meshtastic.cli.values import parse_bitfield_value as _parse_bitfield_value
 from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
     parse_integer_literal as _parse_integer_literal,
 )
@@ -179,40 +174,13 @@ except (ImportError, AttributeError) as exc:
 
 logger = logging.getLogger(__name__)
 
-_CONFIGURE_PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "configure_preflight_mode", default=False
-)
-_SET_PREF_VALUE_ERRORS_FATAL: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "set_pref_value_errors_fatal", default=False
-)
+_CONFIGURE_PREFLIGHT_MODE = cli_preference_runtime.CONFIGURE_PREFLIGHT_MODE
+_SET_PREF_VALUE_ERRORS_FATAL = cli_preference_runtime.SET_PREF_VALUE_ERRORS_FATAL
+_PREF_VALIDATION_REPORTER = cli_preference_runtime.PREF_VALIDATION_REPORTER
+_PreferenceValueError = cli_preference_runtime.PreferenceValueError
+_fatal_preference_value_errors = cli_preference_runtime.fatal_preference_value_errors
+BITFIELD_ENUMS = cli_preference_runtime.BITFIELD_ENUMS
 
-
-class _PreferenceValueError(ValueError):
-    """Raised internally when CLI preference assignment has an invalid scalar value."""
-
-
-@contextlib.contextmanager
-def _fatal_preference_value_errors() -> Iterator[None]:
-    """Temporarily make scalar preference validation failures fatal to the CLI."""
-    token = _SET_PREF_VALUE_ERRORS_FATAL.set(True)
-    try:
-        yield
-    finally:
-        _SET_PREF_VALUE_ERRORS_FATAL.reset(token)
-
-
-_PREF_VALIDATION_REPORTER: contextvars.ContextVar[Callable[[str], None] | None] = (
-    contextvars.ContextVar("pref_validation_reporter", default=None)
-)
-
-# Map dotted preference paths to the protobuf enum that defines their flags.
-# These fields are stored as uint32 bitmasks in the protobuf but have an
-# associated enum that names the individual flags. Add new bitfield-enum
-# fields here as protobufs grow.
-BITFIELD_ENUMS = {
-    "network.enabled_protocols": config_pb2.Config.NetworkConfig.ProtocolFlags,
-    "position.position_flags": config_pb2.Config.PositionConfig.PositionFlags,
-}
 
 # Public CLI shorthands for common modem presets. Keep this ordered to preserve
 # the historical behavior when callers supply more than one shorthand: later
@@ -294,15 +262,7 @@ OTA_MAX_RETRIES = cli_device_actions.OTA_MAX_RETRIES
 
 # COMPAT_STABLE_SHIM: accept historical config field spellings.
 # Backward-compatible aliases for renamed config fields.
-_PREFERENCE_FIELD_ALIASES: dict[str, str] = {
-    "display.use_12_hour": "display.use_12h_clock",
-    "display.use12_hour": "display.use_12h_clock",
-    # Exported configs can contain camelCase keys from MessageToDict(),
-    # and camel_to_snake("use12hClock") yields "use12h_clock". Normalize
-    # these compatibility spellings to the canonical protobuf field name.
-    "display.use12h_clock": "display.use_12h_clock",
-    "display.use12_h_clock": "display.use_12h_clock",
-}
+_PREFERENCE_FIELD_ALIASES = cli_preference_runtime.PREFERENCE_FIELD_ALIASES
 
 
 def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
@@ -322,6 +282,42 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
+def _current_invocation_args() -> argparse.Namespace | None:
+    """Return invocation-owned arguments, falling back to legacy ``mt_config``."""
+    invocation = cli_invocation.get_current_invocation()
+    return invocation.args if invocation is not None else mt_config.args
+
+
+def _current_camel_case() -> bool:
+    """Return the active naming mode with legacy-global fallback."""
+    invocation = cli_invocation.get_current_invocation()
+    return invocation.camel_case if invocation is not None else mt_config.camel_case
+
+
+def _current_channel_index() -> int | None:
+    """Return the invocation-selected channel index with legacy fallback."""
+    invocation = cli_invocation.get_current_invocation()
+    return (
+        invocation.channel_index if invocation is not None else mt_config.channel_index
+    )
+
+
+def _set_current_channel_index(value: int) -> None:
+    """Update invocation-owned channel selection and mirror the compatibility global."""
+    invocation = cli_invocation.get_current_invocation()
+    if invocation is not None:
+        invocation.channel_index = value
+    mt_config.channel_index = value
+
+
+def _set_current_logfile(value: IO[str] | None) -> None:
+    """Update invocation-owned logfile state and mirror the compatibility global."""
+    invocation = cli_invocation.get_current_invocation()
+    if invocation is not None:
+        invocation.logfile = value
+    mt_config.logfile = value
+
+
 def _cli_print(message: str, *, force: bool = False) -> None:
     """Print a CLI message, optionally bypassing ``--quiet`` suppression.
 
@@ -333,31 +329,15 @@ def _cli_print(message: str, *, force: bool = False) -> None:
         When ``True``, print even if ``--quiet`` is active. Use this for
         validation output that must remain visible to the user.
     """
-    args = mt_config.args
+    args = _current_invocation_args()
     if not force and args and getattr(args, "quiet", False):
         return
     print(message)
 
 
 def _report_pref_validation(message: str) -> None:
-    """Print preference validation output through the shared CLI path.
-
-    Parameters
-    ----------
-    message : str
-        User-facing validation diagnostic.
-
-    Notes
-    -----
-    Outside preflight, validation messages retain their historical direct stdout
-    behavior, including visibility under ``--quiet``. Batch preflight installs a
-    reporter so diagnostics can be emitted coherently after all entries are checked.
-    """
-    reporter = _PREF_VALIDATION_REPORTER.get()
-    if reporter is not None:
-        reporter(message)
-        return
-    _cli_print(message, force=not _CONFIGURE_PREFLIGHT_MODE.get())
+    """Report preference validation through the extracted runtime."""
+    cli_preference_runtime.report_pref_validation(message, cli_print=_cli_print)
 
 
 def supportInfo() -> None:
@@ -573,7 +553,7 @@ def support_info() -> None:
 
 def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
     """Handle an incoming mesh packet, optionally send a text reply, and close the interface when appropriate."""
-    args = mt_config.args
+    args = _current_invocation_args()
     try:
         d = packet.get("decoded")
         logger.debug("in onReceive() d:%s", d)
@@ -640,55 +620,23 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
 
-def _normalize_pref_name(comp_name: str) -> str:
-    """Normalize a preference path to canonical snake_case and apply aliases."""
-    canonical = ".".join(
-        meshtastic.util.camel_to_snake(part.strip()) for part in comp_name.split(".")
-    )
-    normalized = _PREFERENCE_FIELD_ALIASES.get(canonical, canonical)
-    if normalized != canonical:
-        logger.debug(
-            "Using compatibility alias for config field %s -> %s",
-            comp_name,
-            normalized,
-        )
-    return normalized
+_normalize_pref_name = cli_preference_runtime.normalize_pref_name
+_parse_bitfield_value = cli_preference_runtime.parse_bitfield_value
 
 
 def _display_pref_name(comp_name: str) -> str:
     """Format a canonical preference path for user-facing output."""
-    if not mt_config.camel_case:
+    if not _current_camel_case():
         return comp_name
     return ".".join(
         meshtastic.util.snake_to_camel(part) for part in comp_name.split(".")
     )
 
 
-_SECRET_PREF_FIELDS: frozenset[str] = frozenset(
-    {
-        "psk",
-        "channel_psk",
-        "private_key",
-        "public_key",
-        "admin_key",
-        "session_passkey",
-        "secret",
-        "api_key",
-        "auth_token",
-    }
-)
-_SECRET_PREF_PATHS: frozenset[str] = frozenset(
-    {
-        "network.wifi_ssid",
-        "network.wifi_psk",
-        "mqtt.username",
-        "mqtt.password",
-        "bluetooth.fixed_pin",
-        "security.session_passkey",
-    }
-)
-_REDACTED_PREF_VALUE = "<redacted>"
-_SET_VALUE_REJECTED_MESSAGE = "value rejected by validation"
+_SECRET_PREF_FIELDS = cli_preference_runtime.SECRET_PREF_FIELDS
+_SECRET_PREF_PATHS = cli_preference_runtime.SECRET_PREF_PATHS
+_REDACTED_PREF_VALUE = cli_preference_runtime.REDACTED_PREF_VALUE
+_SET_VALUE_REJECTED_MESSAGE = cli_preference_runtime.SET_VALUE_REJECTED_MESSAGE
 
 
 class _DescriptorLike(Protocol):
@@ -705,16 +653,8 @@ class _NamedConfigType(Protocol):
     name: str
 
 
-def _is_secret_pref(name: str) -> bool:
-    """Return whether a preference path is classified as secret-bearing."""
-    normalized = _normalize_pref_name(name)
-    field_name = normalized.rsplit(".", maxsplit=1)[-1]
-    return normalized in _SECRET_PREF_PATHS or field_name in _SECRET_PREF_FIELDS
-
-
-def _redact_pref_value(name: str, value: str) -> str:
-    """Return a redacted placeholder for secret-bearing preference paths."""
-    return _REDACTED_PREF_VALUE if _is_secret_pref(name) else value
+_is_secret_pref = cli_preference_runtime.is_secret_pref
+_redact_pref_value = cli_preference_runtime.redact_pref_value
 
 
 def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
@@ -794,9 +734,9 @@ def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
     camel_name = meshtastic.util.snake_to_camel(name[1])
     # Note: protobufs has the keys in snake_case, so snake internally
     snake_name = meshtastic.util.camel_to_snake(name[1])
-    uni_name = camel_name if mt_config.camel_case else snake_name
+    uni_name = camel_name if _current_camel_case() else snake_name
     logger.debug("snake_name:%s camel_name:%s", snake_name, camel_name)
-    logger.debug("use camel:%s", mt_config.camel_case)
+    logger.debug("use camel:%s", _current_camel_case())
 
     # First validate the input
     localConfig = node.localConfig
@@ -860,26 +800,7 @@ def getPref(node: Any, comp_name: str, *, allow_secrets: bool = False) -> bool:
     return True
 
 
-def splitCompoundName(comp_name: str) -> list[str]:
-    """Split a dotted preference name into segments, guaranteeing at least two elements.
-
-    If `comp_name` contains one or more dots, returns the list produced by splitting on
-    '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
-
-    Parameters
-    ----------
-    comp_name : str
-        The dotted preference name to split.
-
-    Returns
-    -------
-    list[str]
-        Segments from splitting `comp_name` on '.', or `[comp_name, comp_name]` when no dot is present.
-    """
-    name: list[str] = comp_name.split(".")
-    if len(name) < 2:
-        name.append(comp_name)
-    return name
+splitCompoundName = cli_preference_runtime.split_compound_name
 
 
 def traverseConfig(
@@ -888,160 +809,30 @@ def traverseConfig(
     interface_config: Any,
     failed_fields: list[str] | None = None,
 ) -> bool:
-    """Recursively apply values from a nested mapping onto a target configuration by walking dot-separated paths.
-
-    Parameters
-    ----------
-    config_root : str
-        Dot-separated prefix for the current configuration path (e.g., "channel.0").
-    config : dict[str, Any]
-        Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
-    interface_config : Any
-        Target configuration object that will receive the applied leaf values.
-    failed_fields : list[str] | None
-        Optional mutable list to collect failing fully-qualified field paths
-        when a leaf assignment fails. (Default value = None)
-
-    Returns
-    -------
-    bool
-        `True` when traversal completes and all leaf values are successfully
-        applied, `False` if any leaf assignment fails validation.
-    """
-    skipped_by_section: dict[str, list[str]] = {}
-
-    def _traverse(root: str, cfg: dict[str, Any], icfg: Any) -> bool:
-        s_name = meshtastic.util.camel_to_snake(root)
-        for pref in cfg:
-            pref_name = f"{s_name}.{pref}"
-            if isinstance(cfg[pref], dict):
-                if not _traverse(pref_name, cfg[pref], icfg):
-                    return False
-            else:
-                if not _resolve_pref(icfg, pref_name):
-                    parts = pref_name.split(".")
-                    section = parts[0]
-                    relative = ".".join(parts[1:]) if len(parts) > 1 else pref_name
-                    skipped_by_section.setdefault(section, []).append(relative)
-                    continue
-                try:
-                    ok = setPref(icfg, pref_name, cfg[pref])
-                except (ValueError, TypeError, OverflowError, binascii.Error):
-                    if failed_fields is not None:
-                        failed_fields.append(pref_name)
-                    return False
-                if not ok:
-                    if failed_fields is not None:
-                        failed_fields.append(pref_name)
-                    return False
-        return True
-
-    success = _traverse(config_root, config, interface_config)
-
-    if not _CONFIGURE_PREFLIGHT_MODE.get():
-        for section, fields in skipped_by_section.items():
-            field_list = ", ".join(fields)
-            logger.warning(
-                "Skipping %d unknown field(s) from %s: %s",
-                len(fields),
-                section,
-                field_list,
-            )
-
-    return success
+    """COMPAT_STABLE_SHIM: apply a nested configure mapping to a protobuf message."""
+    return cli_preference_runtime.traverse_config(
+        config_root,
+        config,
+        interface_config,
+        resolve_pref_fn=_resolve_pref,
+        set_pref_fn=setPref,
+        failed_fields=failed_fields,
+    )
 
 
-def _walk_config_path(config: Any, name_parts: list[str]) -> tuple[Any, Any | None]:
-    """Return the parent message and descriptor for a dotted config path."""
-    if not name_parts:
-        return config, None
-
-    normalized_parts = [
-        meshtastic.util.camel_to_snake(name_part) for name_part in name_parts
-    ]
-    config_part = config
-    config_type = config.DESCRIPTOR.fields_by_name.get(normalized_parts[0])
-    for name_part in normalized_parts[1:-1]:
-        if config_type is None or config_type.message_type is None:
-            return config_part, None
-        config_part = getattr(config_part, config_type.name)
-        config_type = config_type.message_type.fields_by_name.get(name_part)
-    if (
-        len(normalized_parts) > 2
-        and config_type is not None
-        and config_type.message_type is None
-    ):
-        return config_part, None
-    return config_part, config_type
-
-
-def _resolve_pref(config: Any, comp_name: str) -> bool:
-    """Check whether a dotted field path resolves to a valid protobuf field."""
-    comp_name = _normalize_pref_name(comp_name)
-    name = splitCompoundName(comp_name)
-    snake_name = meshtastic.util.camel_to_snake(name[-1])
-    _config_part, config_type = _walk_config_path(config, name)
-    if config_type and config_type.message_type is not None:
-        return config_type.message_type.fields_by_name.get(snake_name) is not None
-    return config_type is not None
-
-
-def _protobuf_field_type_label(field: FieldDescriptor) -> str:
-    """Return a concise user-facing type label for a protobuf field.
-
-    Parameters
-    ----------
-    field : FieldDescriptor
-        Protobuf field whose expected CLI value type should be described.
-
-    Returns
-    -------
-    str
-        Concise user-facing label for the field type.
-    """
-    integer_types = {
-        FieldDescriptor.TYPE_INT32,
-        FieldDescriptor.TYPE_INT64,
-        FieldDescriptor.TYPE_UINT32,
-        FieldDescriptor.TYPE_UINT64,
-        FieldDescriptor.TYPE_SINT32,
-        FieldDescriptor.TYPE_SINT64,
-        FieldDescriptor.TYPE_FIXED32,
-        FieldDescriptor.TYPE_FIXED64,
-        FieldDescriptor.TYPE_SFIXED32,
-        FieldDescriptor.TYPE_SFIXED64,
-    }
-    if field.type in integer_types:
-        return "integer"
-
-    type_labels = {
-        FieldDescriptor.TYPE_ENUM: "enum name or integer",
-        FieldDescriptor.TYPE_FLOAT: "number",
-        FieldDescriptor.TYPE_DOUBLE: "number",
-        FieldDescriptor.TYPE_BOOL: "boolean",
-        FieldDescriptor.TYPE_BYTES: "bytes (hex/base64)",
-        FieldDescriptor.TYPE_STRING: "string",
-    }
-    return type_labels.get(field.type, "compatible value")
+_walk_config_path = cli_preference_runtime.walk_config_path
+_resolve_pref = cli_preference_runtime.resolve_pref
+_protobuf_field_type_label = cli_preference_runtime.protobuf_field_type_label
 
 
 def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
-    """Print available channel-setting fields after an unknown --ch-set name.
-
-    Parameters
-    ----------
-    settings : Any
-        Channel settings protobuf whose fields should be listed.
-    pref_name : str
-        Unknown preference name supplied to ``--ch-set``.
-    """
+    """Print available channel-setting fields after an unknown --ch-set name."""
     print(f"{settings.__class__.__name__} does not have an attribute {pref_name}.")
     print("Choices are...")
     for field in settings.DESCRIPTOR.fields:
         if field.name != "module_settings":
             print(field.name)
             continue
-
         print(f"{field.name}:")
         if field.message_type is None:
             continue
@@ -1050,41 +841,15 @@ def _print_channel_field_choices(settings: Any, pref_name: str) -> None:
 
 
 def _reject_pref_value(
-    field: FieldDescriptor,
-    *,
-    field_path: str,
-    raw_value: Any,
+    field: FieldDescriptor, *, field_path: str, raw_value: Any
 ) -> bool:
-    """Report one invalid preference value without exposing secret input.
-
-    Parameters
-    ----------
-    field : FieldDescriptor
-        Descriptor for the field whose value was rejected.
-    field_path : str
-        Canonical dotted preference path used in diagnostics and redaction.
-    raw_value : Any
-        Original caller-supplied value used for safe diagnostic rendering.
-
-    Returns
-    -------
-    bool
-        Always ``False`` for convenient use from validation branches.
-
-    Raises
-    ------
-    _PreferenceValueError
-        If fatal preference-value handling is active.
-    """
-    display_value = _redact_pref_value(field_path, repr(raw_value))
-    message = (
-        f"Invalid value {display_value} for {field_path}; "
-        f"expected {_protobuf_field_type_label(field)}."
+    """Compatibility wrapper for preference value rejection/reporting."""
+    return cli_preference_runtime.reject_pref_value(
+        field,
+        field_path=field_path,
+        raw_value=raw_value,
+        cli_print=_cli_print,
     )
-    if _SET_PREF_VALUE_ERRORS_FATAL.get():
-        raise _PreferenceValueError(message)
-    _report_pref_validation(message)
-    return False
 
 
 def _assign_scalar_pref_value(
@@ -1095,206 +860,27 @@ def _assign_scalar_pref_value(
     field_path: str,
     raw_value: Any,
 ) -> bool:
-    """Assign one non-repeated protobuf field without leaking conversion errors.
-
-    Parameters
-    ----------
-    target : Any
-        Protobuf message instance that owns ``field``.
-    field : FieldDescriptor
-        Descriptor for the scalar field being assigned.
-    value : Any
-        Converted value to assign to the protobuf field.
-    field_path : str
-        Canonical dotted preference path used in diagnostics and redaction.
-    raw_value : Any
-        Original caller-supplied value used for safe diagnostic rendering.
-
-    Returns
-    -------
-    bool
-        ``True`` when assignment succeeds; ``False`` when a non-fatal
-        validation failure is reported.
-
-    Raises
-    ------
-    _PreferenceValueError
-        If assignment fails while fatal preference-value handling is active.
-    """
-    try:
-        setattr(target, field.name, value)
-        return True
-    except (TypeError, ValueError, OverflowError):
-        if field.type == FieldDescriptor.TYPE_STRING and not isinstance(value, str):
-            try:
-                setattr(target, field.name, str(value))
-                return True
-            except (TypeError, ValueError, OverflowError):
-                pass
-    return _reject_pref_value(field, field_path=field_path, raw_value=raw_value)
+    """Compatibility wrapper for scalar protobuf preference assignment."""
+    return cli_preference_runtime.assign_scalar_pref_value(
+        target,
+        field,
+        value,
+        field_path=field_path,
+        raw_value=raw_value,
+        cli_print=_cli_print,
+    )
 
 
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
-    """Set a protobuf configuration or channel field identified by a dot-separated path.
-
-    This updates the target field on the given protobuf-like message, converting the provided
-    value to the field's expected type when possible, resolving enum names, validating
-    certain fields (for example, `wifi_psk` requires length >= 8), and handling
-    repeated fields (replace, append, or clear) according to the supplied value.
-
-    Parameters
-    ----------
-    config : Any
-        The protobuf configuration or channel message to modify.
-    comp_name : str
-        Dot-separated field path (e.g., "channel.security.wifi_psk" or "node.name").
-    raw_val : Any
-        Value to assign; may be a string, number, list (for repeated fields), or already-typed value.
-
-    Returns
-    -------
-    bool
-        `True` if the named field was found and successfully set or updated, `False` otherwise.
-    """
-
-    comp_name = _normalize_pref_name(comp_name)
-    name = splitCompoundName(comp_name)
-
-    snake_name = meshtastic.util.camel_to_snake(name[-1])
-    camel_name = meshtastic.util.snake_to_camel(name[-1])
-    uni_name = camel_name if mt_config.camel_case else snake_name
-    logger.debug("snake_name:%s", snake_name)
-    logger.debug("camel_name:%s", camel_name)
-
-    config_part, config_type = _walk_config_path(config, name)
-    pref = None
-    if config_type and config_type.message_type is not None:
-        pref = config_type.message_type.fields_by_name.get(snake_name)
-    # Others like ChannelSettings are standalone
-    elif config_type:
-        pref = config_type
-
-    if (not pref) or (not config_type):
-        return False
-
-    # Handle uint32 bitfields that have an associated enum of flag names.
-    bitfield_enum = None
-    if config_type.message_type is not None:
-        bitfield_path = f"{config_type.name}.{pref.name}"
-        bitfield_enum = BITFIELD_ENUMS.get(bitfield_path)
-
-    if bitfield_enum:
-        try:
-            val = _parse_bitfield_value(bitfield_enum, raw_val)
-        except ValueError as e:
-            _report_pref_validation(f"ERROR: {e}")
-            return False
-    elif isinstance(raw_val, str):
-        try:
-            val = meshtastic.util.fromStr(raw_val)
-        except (ValueError, binascii.Error):
-            return _reject_pref_value(
-                pref,
-                field_path=comp_name,
-                raw_value=raw_val,
-            )
-    else:
-        val = raw_val
-    logger.debug("val:%s", _redact_pref_value(comp_name, meshtastic.util.toStr(val)))
-
-    if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
-        _report_pref_validation(
-            "Warning: network.wifi_psk must be 8 or more characters."
-        )
-        return False
-
-    enumType = pref.enum_type
-    if enumType and isinstance(val, str):
-        # We've failed so far to convert this string into an enum, try to find it by reflection
-        ev = enumType.values_by_name.get(val)
-        if ev:
-            val = ev.number
-        else:
-            _report_pref_validation(
-                f"{name[0]}.{uni_name} does not have an enum called {val}, so you can not set it."
-            )
-            _report_pref_validation("Choices in sorted order are:")
-            names = []
-            for f in enumType.values:
-                # Note: We must use the value of the enum (regardless if camel or snake case)
-                names.append(f"{f.name}")
-            for temp_name in sorted(names):
-                _report_pref_validation(f"    {temp_name}")
-            return False
-
-    # repeating fields need to be handled with append, not setattr
-    assignment_ok = True
-    print_assignment = True
-    if not _is_repeated_field(pref):
-        target = (
-            getattr(config_part, config_type.name)
-            if config_type.message_type is not None
-            else config_part
-        )
-        assignment_ok = _assign_scalar_pref_value(
-            target,
-            pref,
-            val,
-            field_path=comp_name,
-            raw_value=raw_val,
-        )
-    else:
-        target = (
-            getattr(config_part, config_type.name)
-            if config_type.message_type is not None
-            else config_part
-        )
-        candidate = type(target)()
-        candidate.CopyFrom(target)
-        candidate_values = getattr(candidate, pref.name)
-        try:
-            if isinstance(val, list):
-                new_vals = [
-                    meshtastic.util.fromStr(item) if isinstance(item, str) else item
-                    for item in val
-                ]
-                candidate_values[:] = new_vals
-            elif val == 0:
-                del candidate_values[:]
-            else:
-                cur_vals = [x for x in candidate_values if x not in [0, "", b""]]
-                if val not in cur_vals:
-                    cur_vals.append(val)
-                candidate_values[:] = cur_vals
-        except (TypeError, ValueError, OverflowError, binascii.Error):
-            assignment_ok = _reject_pref_value(
-                pref,
-                field_path=comp_name,
-                raw_value=raw_val,
-            )
-        else:
-            target.CopyFrom(candidate)
-            if not isinstance(val, list):
-                if val == 0:
-                    if not _CONFIGURE_PREFLIGHT_MODE.get():
-                        _cli_print(f"Clearing {pref.name} list")
-                else:
-                    display_value = _redact_pref_value(
-                        comp_name, meshtastic.util.toStr(raw_val)
-                    )
-                    if not _CONFIGURE_PREFLIGHT_MODE.get():
-                        _cli_print(f"Adding '{display_value}' to the {pref.name} list")
-                print_assignment = False
-
-    if assignment_ok and print_assignment:
-        prefix = (
-            f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-        )
-        display_value = _redact_pref_value(comp_name, meshtastic.util.toStr(raw_val))
-        if not _CONFIGURE_PREFLIGHT_MODE.get():
-            _cli_print(f"Set {prefix}{uni_name} to {display_value}")
-
-    return assignment_ok
+    """COMPAT_STABLE_SHIM: set a protobuf preference through the CLI runtime."""
+    return cli_preference_runtime.set_pref(
+        config,
+        comp_name,
+        raw_val,
+        camel_case=_current_camel_case(),
+        cli_print=_cli_print,
+        is_repeated_field=_is_repeated_field,
+    )
 
 
 def _handle_ota_update(
@@ -1656,8 +1242,8 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
     channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
         cli_exit=_cli_exit,
         cli_print=_cli_print,
-        get_channel_index=lambda: mt_config.channel_index,
-        set_channel_index=lambda value: setattr(mt_config, "channel_index", value),
+        get_channel_index=_current_channel_index,
+        set_channel_index=_set_current_channel_index,
         resolve_pref=_resolve_pref,
         set_pref=setPref,
         fatal_preference_value_errors=_fatal_preference_value_errors,
@@ -1678,7 +1264,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
     service_hooks = cli_messaging_service_actions.MessagingServiceHooks(
         cli_exit=_cli_exit,
         cli_print=_cli_print,
-        get_channel_index=lambda: mt_config.channel_index,
+        get_channel_index=_current_channel_index,
         check_channel=checkChannel,
         remote_hardware_client=remote_hardware.RemoteHardwareClient,
         get_pref=getPref,
@@ -1704,7 +1290,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
 def onConnected(interface: MeshInterface) -> None:
     """Execute parsed connected CLI actions on an established interface."""
     try:
-        args = mt_config.args
+        args = _current_invocation_args()
         if args is None:
             raise RuntimeError("onConnected called without args being set up")
         context = CliContext(
@@ -1724,13 +1310,13 @@ def onConnected(interface: MeshInterface) -> None:
 
 def printConfig(config: Any) -> None:
     """COMPAT_STABLE_SHIM: print config fields through the CLI config I/O runtime."""
-    cli_config_io.print_config(config, camel_case=mt_config.camel_case)
+    cli_config_io.print_config(config, camel_case=_current_camel_case())
 
 
 def printAvailableConfigFields() -> None:
     """COMPAT_STABLE_SHIM: print config fields and aliases through the runtime."""
     cli_config_io.print_available_config_fields(
-        camel_case=mt_config.camel_case,
+        camel_case=_current_camel_case(),
         aliases=_PREFERENCE_FIELD_ALIASES,
         display_pref_name=_display_pref_name,
         local_config_factory=localonly_pb2.LocalConfig,
@@ -1778,7 +1364,7 @@ def exportConfig(interface: MeshInterface) -> str:
     """COMPAT_STABLE_SHIM: export configuration through the CLI config I/O runtime."""
     return cli_config_io.export_config(
         interface,
-        camel_case=mt_config.camel_case,
+        camel_case=_current_camel_case(),
         message_to_dict=MessageToDict,
         prefix_base64_bytes_fields_fn=_prefix_base64_bytes_fields,
         set_missing_flags_false_fn=_set_missing_flags_false,
@@ -1881,13 +1467,14 @@ def _create_power_meter() -> None:
     Raises
     ------
     RuntimeError
-        If ``mt_config.args`` is not initialized.
+        If no parsed CLI arguments are available from the active invocation
+        or the legacy ``mt_config`` fallback.
     """
     global meter  # pylint: disable=global-statement
-    args = mt_config.args
+    args = _current_invocation_args()
     if args is None:
         raise RuntimeError(
-            "mt_config.args must be initialized before calling _create_power_meter()"
+            "CLI arguments must be initialized before calling _create_power_meter()"
         )
 
     if not have_powermon:
@@ -1958,7 +1545,10 @@ def _release_session_power_meter(active_meter: Any) -> None:
 
 
 def _clear_session_logfile(active_logfile: Any) -> None:
-    """Clear the legacy logfile reference when its owning invocation ends."""
+    """Clear invocation and legacy logfile references when ownership ends."""
+    invocation = cli_invocation.get_current_invocation()
+    if invocation is not None and invocation.logfile is active_logfile:
+        invocation.logfile = None
     if mt_config.logfile is active_logfile:
         mt_config.logfile = None
 
@@ -1971,25 +1561,40 @@ def _unsubscribe_cli_receive() -> None:
         logger.debug("Unable to remove CLI receive subscription", exc_info=True)
 
 
+def _build_bootstrap_hooks() -> cli_bootstrap.BootstrapHooks:
+    """Build current entrypoint seams for the CLI bootstrap runtime."""
+    return cli_bootstrap.BootstrapHooks(
+        cli_exit=_cli_exit,
+        support_info=supportInfo,
+        print_available_config_fields=printAvailableConfigFields,
+        create_power_meter=_create_power_meter,
+        get_power_meter=lambda: meter,
+        release_power_meter=_release_session_power_meter,
+        set_logfile=_set_current_logfile,
+        clear_session_logfile=_clear_session_logfile,
+        subscribe=subscribe,
+        unsubscribe_receive=_unsubscribe_cli_receive,
+        on_connected=onConnected,
+        parse_host_port=_parse_host_port,
+        listen_loop_poll_once=cli_runtime._listen_loop_poll_once,
+        set_channel_index=_set_current_channel_index,
+        ble_interface=BLEInterface,
+        tcp_interface=meshtastic.tcp_interface.TCPInterface,
+        default_tcp_port=meshtastic.tcp_interface.DEFAULT_TCP_PORT,
+        serial_interface=meshtastic.serial_interface.SerialInterface,
+        mesh_interface_error=MeshInterface.MeshInterfaceError,
+        test_module=meshtastic_test,
+    )
+
+
 def common() -> None:
-    """Configure logging, validate CLI arguments, establish the selected transport.
-
-    interface, invoke onConnected, and optionally enter the main event loop.
-
-    Performs argument validation, initializes optional subsystems (power meter, serial logging),
-    subscribes to message topics, opens the requested transport (BLE, TCP, or serial),
-    calls onConnected with the established MeshInterface, and blocks until interrupted when
-    a persistent session mode (listen, tunnel, noproto, or reply) is requested. On
-    fatal errors the CLI exits via _cli_exit with an explanatory message.
+    """Run the historical CLI bootstrap flow through the internal session runtime.
 
     Raises
     ------
     RuntimeError
-        If `mt_config.args` is not initialized before calling this function.
-    RuntimeError
-        If `mt_config.parser` is not initialized before calling this function.
+        If ``mt_config.args`` or ``mt_config.parser`` has not been initialized.
     """
-    logfile = None
     args = mt_config.args
     parser = mt_config.parser
     if args is None:
@@ -1998,279 +1603,15 @@ def common() -> None:
         raise RuntimeError(
             "mt_config.parser must be initialized before calling common()"
         )
-
-    # Validate that --quiet is not used with --debug, --listen, or --debuglib
-    if args.quiet and (args.debug or args.listen or args.debuglib):
-        parser.error("--quiet cannot be used with --debug, --listen, or --debuglib")
-
-    # Contact modifier flags require --contact-qr
-    if (args.contact_verified or args.contact_ignore) and not args.contact_qr:
-        parser.error("--contact-verified and --contact-ignore require --contact-qr")
-
-    if args.quiet:
-        log_level = logging.WARNING
-    elif args.debug or args.listen:
-        log_level = logging.DEBUG
-    else:
-        log_level = logging.INFO
-
-    logging.basicConfig(
-        level=log_level,
-        format="%(levelname)s file:%(filename)s %(funcName)s line:%(lineno)s %(message)s",
+    invocation = cli_invocation.CliInvocation(
+        args=args,
+        parser=parser,
+        channel_index=mt_config.channel_index,
+        camel_case=mt_config.camel_case,
+        logfile=mt_config.logfile,
     )
-
-    if not (args.debug or args.listen or args.quiet) and args.debuglib:
-        logging.getLogger("meshtastic").setLevel(logging.DEBUG)
-
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        _cli_exit("", 1)
-    else:
-        if args.support:
-            supportInfo()
-            _cli_exit("", 0)
-
-        if args.list_fields:
-            printAvailableConfigFields()
-            return
-
-        if args.configure and len(args.configure) != 1:
-            parser.error("--configure may be specified only once per invocation")
-
-        # Early validation for owner names before attempting device connection
-        if args.set_owner is not None:
-            stripped_long_name = args.set_owner.strip()
-            if not stripped_long_name:
-                _cli_exit(
-                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
-                )
-
-        if args.set_owner_short is not None:
-            stripped_short_name = args.set_owner_short.strip()
-            if not stripped_short_name:
-                _cli_exit(
-                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
-                )
-
-        if args.set_ham is not None:
-            stripped_ham_name = args.set_ham.strip()
-            if not stripped_ham_name:
-                _cli_exit(
-                    "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
-                )
-
-        # Fail fast before connecting if the OTA firmware file does not exist.
-        if args.ota_update is not None and not os.path.isfile(args.ota_update):
-            _cli_exit(f"Error: OTA firmware file not found: {args.ota_update}")
-
-        if args.ch_index is not None:
-            channelIndex = int(args.ch_index)
-            mt_config.channel_index = channelIndex
-
-        if not args.dest:
-            args.dest = BROADCAST_ADDR
-
-        if not args.seriallog:
-            if args.noproto:
-                args.seriallog = "stdout"
-            else:
-                args.seriallog = "none"  # assume no debug output in this case
-
-        if args.deprecated is not None:
-            logger.error(
-                "This option has been deprecated, see help below for the correct replacement..."
-            )
-            parser.print_help(sys.stderr)
-            _cli_exit("", 1)
-        elif args.test:
-            if meshtastic_test is None:
-                _cli_exit(
-                    "Test module could not be imported. Ensure you have the 'dotmap' module installed."
-                )
-            else:
-                result = meshtastic_test.testAll()
-                if not result:
-                    _cli_exit("Warning: Test was not successful.")
-                else:
-                    _cli_exit("Test was a success.", 0)
-        else:
-            # Use one invocation stack to own transports, files, meters, and
-            # long-running services through success, failure, or interruption.
-            with contextlib.ExitStack() as stack:
-                session_resources = CliSessionResources(stack)
-                session_resources.activate()
-
-                if _power_meter_requested(args):
-                    _create_power_meter()
-                    active_meter = meter
-                    if active_meter is not None:
-                        session_resources.register_cleanup(
-                            lambda: _release_session_power_meter(active_meter)
-                        )
-
-                mt_config.logfile = None
-                if args.seriallog == "stdout":
-                    logfile = sys.stdout
-                elif args.seriallog == "none":
-                    args.seriallog = None
-                    logger.debug("Not logging serial output")
-                    logfile = None
-                else:
-                    logger.info("Logging serial output to %s", args.seriallog)
-                    # Note: using line buffering.
-                    logfile = session_resources.enter_context(
-                        # The invocation ExitStack owns this file; Pylint cannot
-                        # infer that ownership transfer through enter_context().
-                        open(  # pylint: disable=consider-using-with
-                            args.seriallog, "w+", buffering=1, encoding="utf8"
-                        )
-                    )
-                    mt_config.logfile = logfile
-                    session_resources.register_cleanup(
-                        lambda: _clear_session_logfile(logfile)
-                    )
-
-                subscribe()
-                session_resources.register_cleanup(_unsubscribe_cli_receive)
-                if args.ble_scan:
-                    logger.debug("BLE scan starting")
-                    for x in BLEInterface.scan():
-                        print(f"Found: name='{x.name}' address='{x.address}'")
-                    _cli_exit("BLE scan finished", 0)
-
-                client: MeshInterface | None = None
-                if args.ble:
-                    try:
-                        client = session_resources.enter_context(
-                            BLEInterface(
-                                args.ble if args.ble != "any" else None,
-                                debugOut=logfile,
-                                noProto=args.noproto,
-                                noNodes=args.no_nodes,
-                                timeout=args.timeout,
-                                auto_reconnect=args.ble_auto_reconnect,
-                            )
-                        )
-                    except BLEInterface.BLEError as e:
-                        _cli_exit(f"[BLE] {e}", 1)
-                    except MeshInterface.MeshInterfaceError as e:
-                        _cli_exit(f"[BLE] {e}", 1)
-                elif args.host:
-                    tcp_hostname: str = args.host
-                    tcp_port: int = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                    try:
-                        tcp_hostname, tcp_port = _parse_host_port(
-                            args.host,
-                            meshtastic.tcp_interface.DEFAULT_TCP_PORT,
-                        )
-                        client = session_resources.enter_context(
-                            meshtastic.tcp_interface.TCPInterface(
-                                tcp_hostname,
-                                portNumber=tcp_port,
-                                debugOut=logfile,
-                                noProto=args.noproto,
-                                noNodes=args.no_nodes,
-                                timeout=args.timeout,
-                            )
-                        )
-                    except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(
-                            f"Error connecting to {tcp_hostname}:{tcp_port}: {ex}", 1
-                        )
-                    except OSError as ex:
-                        _cli_exit(
-                            f"Error connecting to {tcp_hostname}:{tcp_port}: {ex}", 1
-                        )
-                else:
-                    try:
-                        client = session_resources.enter_context(
-                            meshtastic.serial_interface.SerialInterface(
-                                args.port,
-                                debugOut=logfile,
-                                noProto=args.noproto,
-                                noNodes=args.no_nodes,
-                                timeout=args.timeout,
-                            )
-                        )
-                    except FileNotFoundError:
-                        # Handle the case where the serial device is not found
-                        message = "File Not Found Error:\n"
-                        message += (
-                            f"  The serial device at '{args.port}' was not found.\n"
-                        )
-                        message += "  Please check the following:\n"
-                        message += "    1. Is the device connected properly?\n"
-                        message += "    2. Is the correct serial port specified?\n"
-                        message += "    3. Are the necessary drivers installed?\n"
-                        message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
-                        message += "       Ensure you are using a **data-capable USB cable**.\n"
-                        _cli_exit(message, 1)
-                    except PermissionError as ex:
-                        try:
-                            username = os.getlogin()
-                        except OSError:
-                            username = getpass.getuser()
-                        message = "Permission Error:\n"
-                        message += "  Need to add yourself to the 'dialout' group by running:\n"
-                        message += f"     sudo usermod -a -G dialout {username}\n"
-                        message += "  After running that command, log out and re-login for it to take effect.\n"
-                        message += f"Error was: {ex}"
-                        _cli_exit(message)
-                    except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(f"[Serial] {ex}", 1)
-                    except OSError as ex:
-                        message = "OS Error:\n"
-                        message += "  The serial device couldn't be opened, it might be in use by another process.\n"
-                        message += "  Please close any applications or webpages that may be using the device and try again.\n"
-                        message += f"\nOriginal error: {ex}"
-                        _cli_exit(message)
-                    if client is None or client.devPath is None:
-                        logger.info(
-                            "Serial device unavailable after initialization; falling back to localhost TCP interface."
-                        )
-                        try:
-                            client = session_resources.enter_context(
-                                meshtastic.tcp_interface.TCPInterface(
-                                    "localhost",
-                                    debugOut=logfile,
-                                    noProto=args.noproto,
-                                    noNodes=args.no_nodes,
-                                    timeout=args.timeout,
-                                )
-                            )
-                        except MeshInterface.MeshInterfaceError as ex:
-                            _cli_exit(f"[TCP localhost] {ex}", 1)
-                        except OSError as ex:
-                            _cli_exit(
-                                f"No Meshtastic device detected and no TCP listener on localhost: {ex}",
-                                1,
-                            )
-
-                if client is None:
-                    _cli_exit(
-                        "Error: No interface was established. "
-                        "Check connection parameters (BLE address, TCP host, or serial port).",
-                        1,
-                    )
-                # We assume client is fully connected now
-                onConnected(client)
-
-                have_tunnel = platform.system() == "Linux"
-                if (
-                    args.noproto
-                    or args.reply
-                    or (have_tunnel and args.tunnel)
-                    or args.listen
-                ):  # loop until someone presses ctrlc
-                    try:
-                        while True:
-                            if cli_runtime._listen_loop_poll_once(client):
-                                continue
-                    except KeyboardInterrupt:
-                        logger.info("Exiting due to keyboard interrupt")
-
-        # don't call exit, background threads might be running still
-        # sys.exit(0)
+    with cli_invocation.activate_invocation(invocation):
+        cli_bootstrap.run_common(args, parser, _build_bootstrap_hooks())
 
 
 # ---------------------------------------------------------------------------

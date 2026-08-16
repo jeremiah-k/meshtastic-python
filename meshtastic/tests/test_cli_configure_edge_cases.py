@@ -1047,3 +1047,50 @@ def test_configure_command_rejects_multiple_documents_before_device_access() -> 
 
     assert "only once" in str(cli_exit.call_args)
     interface.getNode.assert_not_called()
+
+
+@pytest.mark.unit
+def test_prepare_configure_execution_classifies_local_channel_url_only(
+    tmp_path: Path,
+) -> None:
+    """A local channel-URL-only document should not require a settings transaction."""
+    path = tmp_path / "local-url.yaml"
+    path.write_text("channel_url: https://meshtastic.org/e/#local\n", encoding="utf-8")
+    interface = _interface()
+    hooks = _hooks(is_local_destination=MagicMock(return_value=True))
+    args = argparse.Namespace(configure=[str(path)], dest="^local")
+
+    plan = configure_actions._prepare_configure_execution(hooks, interface, args)
+
+    assert plan.destination == "^local"
+    assert plan.is_local_target is True
+    assert plan.has_config_writes is False
+    assert plan.prepared.direct_values.channel_url == "https://meshtastic.org/e/#local"
+
+
+@pytest.mark.unit
+def test_prepare_configure_execution_rejects_remote_mixed_writes_before_node_lookup(
+    tmp_path: Path,
+) -> None:
+    """Unsupported remote setURL/config mixes should fail before target-node access."""
+    path = tmp_path / "remote-mixed.yaml"
+    path.write_text(
+        "channel_url: https://meshtastic.org/e/#remote\n"
+        "config:\n"
+        "  bluetooth:\n"
+        "    enabled: true\n",
+        encoding="utf-8",
+    )
+    interface = _interface()
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    hooks = _hooks(
+        cli_exit=cast(CliExit, cli_exit),
+        is_local_destination=MagicMock(return_value=False),
+    )
+    args = argparse.Namespace(configure=[str(path)], dest="!87654321")
+
+    with pytest.raises(SystemExit):
+        configure_actions._handle_configure_command(hooks, interface, args, {})
+
+    assert "separate operations" in str(cli_exit.call_args)
+    interface.getNode.assert_not_called()

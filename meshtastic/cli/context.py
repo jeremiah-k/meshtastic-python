@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
+from meshtastic.cli.invocation import CliInvocation, get_current_invocation
 from meshtastic.cli.session_resources import (
     CliSessionResources,
     SessionCleanup,
@@ -100,6 +101,8 @@ class CliContext:
         Keyword arguments historically forwarded to ``MeshInterface.getNode``.
     outcome : ActionOutcome
         Mutable lifecycle outcome accumulated across compatible actions.
+    invocation : CliInvocation | None
+        Top-level invocation state when connected dispatch runs inside ``common()``.
     session_resources : CliSessionResources | None
         Invocation owner for resources that must survive successful action dispatch.
     """
@@ -108,6 +111,7 @@ class CliContext:
     args: argparse.Namespace
     get_node_kwargs: dict[str, Any]
     outcome: ActionOutcome = field(default_factory=ActionOutcome)
+    invocation: CliInvocation | None = field(default_factory=get_current_invocation)
     session_resources: CliSessionResources | None = field(
         default_factory=get_current_session_resources
     )
