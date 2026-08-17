@@ -1217,6 +1217,7 @@ class SensorConfig(_message.Message):
     SHTXX_CONFIG_FIELD_NUMBER: _builtins.int
     DS248X_CONFIG_FIELD_NUMBER: _builtins.int
     SEN6X_CONFIG_FIELD_NUMBER: _builtins.int
+    AS3935_CONFIG_FIELD_NUMBER: _builtins.int
     @_builtins.property
     def scd4x_config(self) -> Global___SCD4X_config:
         """
@@ -1253,6 +1254,12 @@ class SensorConfig(_message.Message):
         SEN6X PM/RHT/VOC/NOx/CO2/HCHO Sensor configuration
         """
 
+    @_builtins.property
+    def as3935_config(self) -> Global___AS3935_config:
+        """
+        AS3935 lightning sensor configuration
+        """
+
     def __init__(
         self,
         *,
@@ -1262,10 +1269,11 @@ class SensorConfig(_message.Message):
         shtxx_config: Global___SHTXX_config | None = ...,
         ds248x_config: Global___DS248X_config | None = ...,
         sen6x_config: Global___SEN6X_config | None = ...,
+        as3935_config: Global___AS3935_config | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["ds248x_config", b"ds248x_config", "scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "sen6x_config", b"sen6x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["as3935_config", b"as3935_config", "ds248x_config", b"ds248x_config", "scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "sen6x_config", b"sen6x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["ds248x_config", b"ds248x_config", "scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "sen6x_config", b"sen6x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["as3935_config", b"as3935_config", "ds248x_config", b"ds248x_config", "scd30_config", b"scd30_config", "scd4x_config", b"scd4x_config", "sen5x_config", b"sen5x_config", "sen6x_config", b"sen6x_config", "shtxx_config", b"shtxx_config"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1618,3 +1626,28 @@ class DS248X_config(_message.Message):
     def WhichOneof(self, oneof_group: _WhichOneofArgType__main_temperature_channel) -> _WhichOneofReturnType__main_temperature_channel | None: ...
 
 Global___DS248X_config: _TypeAlias = DS248X_config  # noqa: Y015
+
+@_typing.final
+class AS3935_config(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    SET_TUNING_CAP_PF_FIELD_NUMBER: _builtins.int
+    set_tuning_cap_pf: _builtins.int
+    """
+    Antenna tuning capacitance in pF, 0 to 120 in steps of 8. The antenna tank must
+    resonate within 3.5% of 500kHz; the correct trim is specific to the sensor board.
+    """
+    def __init__(
+        self,
+        *,
+        set_tuning_cap_pf: _builtins.int | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_set_tuning_cap_pf", b"_set_tuning_cap_pf", "set_tuning_cap_pf", b"set_tuning_cap_pf"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_set_tuning_cap_pf", b"_set_tuning_cap_pf", "set_tuning_cap_pf", b"set_tuning_cap_pf"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__set_tuning_cap_pf: _TypeAlias = _typing.Literal["set_tuning_cap_pf"]  # noqa: Y015
+    _WhichOneofArgType__set_tuning_cap_pf: _TypeAlias = _typing.Literal["_set_tuning_cap_pf", b"_set_tuning_cap_pf"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__set_tuning_cap_pf) -> _WhichOneofReturnType__set_tuning_cap_pf | None: ...
+
+Global___AS3935_config: _TypeAlias = AS3935_config  # noqa: Y015
