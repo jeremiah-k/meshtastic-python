@@ -4399,18 +4399,18 @@ testing = ["process-tests", "pytest-xdist", "virtualenv"]
 
 [[package]]
 name = "pytest-timeout"
-version = "2.4.0"
+version = "2.5.0"
 description = "pytest plugin to abort hanging tests"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.10"
 groups = ["dev"]
 files = [
-    {file = "pytest_timeout-2.4.0-py3-none-any.whl", hash = "sha256:c42667e5cdadb151aeb5b26d114aff6bdf5a907f176a007a30b940d3d865b5c2"},
-    {file = "pytest_timeout-2.4.0.tar.gz", hash = "sha256:7e68e90b01f9eff71332b25001f85c75495fc4e3a836701876183c4bcfd0540a"},
+    {file = "pytest_timeout-2.5.0-py3-none-any.whl", hash = "sha256:030217c22532b6cb88917518f07afa7e3623476ab5afb5a8c0d0dccf6cd9b2de"},
+    {file = "pytest_timeout-2.5.0.tar.gz", hash = "sha256:68c9d82dfe95fa65712e107010c9344e7d8b4afe8c975a7be0d273d939583a93"},
 ]
 
 [package.dependencies]
-pytest = ">=7.0.0"
+pytest = ">=8.4.0"
 
 [[package]]
 name = "python-dateutil"
@@ -5897,4 +5897,4 @@ tunnel = ["pytap2"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10,<3.15"
-content-hash = "6199ce57a221677100f4bba173be51dee45615a464b430c9a80b8abadbcd1f1a"
+content-hash = "51b9333e13333769fdae819445b54b2b248cc087e33e916e15ba767074f8238b"
