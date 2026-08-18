@@ -1447,6 +1447,14 @@ class _FirmwareEditionEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Firmw
     """
     FAB, the international Fab Lab digital fabrication conference
     """
+    DRAGON_CON: _FirmwareEdition.ValueType  # 21
+    """
+    Dragon Con, the yearly pop culture convention in Atlanta, GA
+    """
+    CCC: _FirmwareEdition.ValueType  # 22
+    """
+    Chaos Communication Congress, the hacker conference held yearly in Germany
+    """
     DIY_EDITION: _FirmwareEdition.ValueType  # 127
     """
     Placeholder for DIY and unofficial events
@@ -1485,6 +1493,14 @@ Hamvention, the Dayton amateur radio convention
 FAB: FirmwareEdition.ValueType  # 20
 """
 FAB, the international Fab Lab digital fabrication conference
+"""
+DRAGON_CON: FirmwareEdition.ValueType  # 21
+"""
+Dragon Con, the yearly pop culture convention in Atlanta, GA
+"""
+CCC: FirmwareEdition.ValueType  # 22
+"""
+Chaos Communication Congress, the hacker conference held yearly in Germany
 """
 DIY_EDITION: FirmwareEdition.ValueType  # 127
 """
