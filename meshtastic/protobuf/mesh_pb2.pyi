@@ -627,6 +627,10 @@ class _HardwareModelEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Hardwar
     """
     Heltec ESP32C6 + SX1262
     """
+    SEEED_WIO_TRACKER_L1_PRO_1W: _HardwareModel.ValueType  # 144
+    """
+    Seeed Wio Tracker L1 Pro 1W, nRF52840 + SX1262 with 1 W external PA
+    """
     PRIVATE_HW: _HardwareModel.ValueType  # 255
     """
     ------------------------------------------------------------------------------------------------------------------------------------------
@@ -1231,6 +1235,10 @@ Heltec NRF52840 + SX1262
 HELTEC_RCC6: HardwareModel.ValueType  # 143
 """
 Heltec ESP32C6 + SX1262
+"""
+SEEED_WIO_TRACKER_L1_PRO_1W: HardwareModel.ValueType  # 144
+"""
+Seeed Wio Tracker L1 Pro 1W, nRF52840 + SX1262 with 1 W external PA
 """
 PRIVATE_HW: HardwareModel.ValueType  # 255
 """
