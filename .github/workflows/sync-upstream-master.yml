@@ -1,11 +1,16 @@
 name: Sync Upstream Master
 
-# Daily: mirror upstream/master to origin/upstream-master (the fork-side ref
-# used for local `make api-baseline-master` runs) and refresh the committed
-# meshtastic/tests/api_baselines/api_baseline_master.json snapshot when the
-# upstream API surface changed. develop is protected (PRs required), so the
-# refreshed snapshot lands via an automated PR. The JSON is opt-in test data
+# Daily: regenerate meshtastic/tests/api_baselines/api_baseline_master.json from
+# upstream/master and open a PR against develop when the upstream API surface
+# changed. develop is protected (PRs required), so the refreshed snapshot lands
+# via an automated PR. The JSON is opt-in test data
 # (MESHTASTIC_API_BASELINE_SOURCE=master) and never gates CI.
+#
+# Note: this job intentionally does NOT mirror upstream/master to a fork-side
+# branch. GITHUB_TOKEN cannot push a tree that creates/updates workflow files
+# (upstream ships .github/workflows/* we lack) — `workflows` is not a grantable
+# GITHUB_TOKEN scope. Local baseline regen reads upstream/master directly via
+# the `upstream` remote instead.
 
 on:
   schedule:
@@ -15,21 +20,16 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  # The mirrored upstream tree contains workflow files the fork may not have
-  # (e.g. update_protobufs.yml); GITHUB_TOKEN pushes that create or update
-  # workflow files are rejected without this permission.
-  workflows: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   UPSTREAM_URL: https://github.com/meshtastic/python.git
   UPSTREAM_REF: master
-  MIRROR_BRANCH: upstream-master
   BASELINE_FILE: meshtastic/tests/api_baselines/api_baseline_master.json
 
 jobs:
   sync-upstream-master:
-    name: Mirror upstream/master and refresh baseline
+    name: Refresh upstream API baseline
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -38,15 +38,14 @@ jobs:
         with:
           ref: develop
           fetch-depth: 0
-      - name: Mirror upstream/master to origin/upstream-master
+      - name: Fetch upstream/master and pin SHA
         run: |
           git fetch "${UPSTREAM_URL}" "${UPSTREAM_REF}"
           # Pin the synced commit immediately: later steps use UPSTREAM_SHA,
           # never FETCH_HEAD, so an intervening fetch cannot change the
           # baseline source silently.
           upstream_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
-          echo "Mirroring ${UPSTREAM_URL}@${UPSTREAM_REF} -> origin/${MIRROR_BRANCH} (${upstream_sha})"
-          git push origin "${upstream_sha}:refs/heads/${MIRROR_BRANCH}" --force
+          echo "Upstream ${UPSTREAM_URL}@${UPSTREAM_REF} is ${upstream_sha}"
           echo "UPSTREAM_SHA=${upstream_sha}" >> "$GITHUB_ENV"
       - name: Regenerate upstream API baseline snapshot
         run: |
