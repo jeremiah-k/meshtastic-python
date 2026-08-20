@@ -37,14 +37,19 @@ jobs:
       - name: Mirror upstream/master to origin/upstream-master
         run: |
           git fetch "${UPSTREAM_URL}" "${UPSTREAM_REF}"
-          git push origin "FETCH_HEAD:refs/heads/${MIRROR_BRANCH}" --force
+          # Pin the synced commit immediately: later steps use UPSTREAM_SHA,
+          # never FETCH_HEAD, so an intervening fetch cannot change the
+          # baseline source silently.
+          upstream_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          echo "Mirroring ${UPSTREAM_URL}@${UPSTREAM_REF} -> origin/${MIRROR_BRANCH} (${upstream_sha})"
+          git push origin "${upstream_sha}:refs/heads/${MIRROR_BRANCH}" --force
+          echo "UPSTREAM_SHA=${upstream_sha}" >> "$GITHUB_ENV"
       - name: Regenerate upstream API baseline snapshot
         run: |
           tmpdir="$(mktemp -d)"
-          git archive FETCH_HEAD meshtastic | tar -x -C "${tmpdir}"
+          git archive "${UPSTREAM_SHA}" meshtastic | tar -x -C "${tmpdir}"
           python3 bin/extract_api_surface.py "${tmpdir}/meshtastic" > "${BASELINE_FILE}"
-          short_sha="$(git rev-parse --short FETCH_HEAD)"
-          echo "UPSTREAM_SHORT_SHA=${short_sha}" >> "$GITHUB_ENV"
+          echo "UPSTREAM_SHORT_SHA=$(git rev-parse --short "${UPSTREAM_SHA}")" >> "$GITHUB_ENV"
       - name: Open baseline refresh PR (if changed)
         env:
           GH_TOKEN: ${{ github.token }}
