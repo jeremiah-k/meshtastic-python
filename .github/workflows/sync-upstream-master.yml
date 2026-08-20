@@ -3,9 +3,9 @@ name: Sync Upstream Master
 # Daily: mirror upstream/master to origin/upstream-master (the fork-side ref
 # used for local `make api-baseline-master` runs) and refresh the committed
 # meshtastic/tests/api_baselines/api_baseline_master.json snapshot when the
-# upstream API surface changed. The JSON is opt-in test data
-# (MESHTASTIC_API_BASELINE_SOURCE=master), so auto-committing it never gates
-# CI; [skip ci] avoids redundant pipeline runs.
+# upstream API surface changed. develop is protected (PRs required), so the
+# refreshed snapshot lands via an automated PR. The JSON is opt-in test data
+# (MESHTASTIC_API_BASELINE_SOURCE=master) and never gates CI.
 
 on:
   schedule:
@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -44,14 +45,24 @@ jobs:
           python3 bin/extract_api_surface.py "${tmpdir}/meshtastic" > "${BASELINE_FILE}"
           short_sha="$(git rev-parse --short FETCH_HEAD)"
           echo "UPSTREAM_SHORT_SHA=${short_sha}" >> "$GITHUB_ENV"
-      - name: Commit refreshed baseline (if changed)
+      - name: Open baseline refresh PR (if changed)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "${BASELINE_FILE}"
           if git diff --cached --quiet; then
-            echo "Baseline unchanged; nothing to commit."
+            echo "Baseline unchanged; nothing to do."
             exit 0
           fi
-          git commit -m "[skip ci] Refresh api_baseline_master.json from upstream/master@${UPSTREAM_SHORT_SHA}"
-          git push origin HEAD:develop
+          git checkout -B bot/upstream-baseline
+          git commit -m "Refresh api_baseline_master.json from upstream/master@${UPSTREAM_SHORT_SHA}"
+          git push origin bot/upstream-baseline --force
+          if gh pr view bot/upstream-baseline >/dev/null 2>&1; then
+            echo "PR already open; branch push updated it."
+          else
+            gh pr create --base develop --head bot/upstream-baseline \
+              --title "Refresh api_baseline_master.json from upstream/master@${UPSTREAM_SHORT_SHA}" \
+              --body "Automated refresh of the upstream API baseline snapshot (mirror of upstream/master at \`${UPSTREAM_SHORT_SHA}\`). Merges with no checks expected: PRs opened by the workflow token do not trigger CI, and develop requires no approvals."
+          fi
