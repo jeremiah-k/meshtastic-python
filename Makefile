@@ -2,7 +2,7 @@
 
 POETRY_RUN := poetry run
 API_BASELINE_FILE := meshtastic/tests/api_baselines/api_baseline.json
-API_BASELINE_REF ?= origin/master
+API_BASELINE_REF ?= origin/upstream-master
 
 all: test
 
@@ -30,7 +30,8 @@ ci:
 api-baseline:
 	$(POETRY_RUN) python bin/extract_api_surface.py meshtastic > $(API_BASELINE_FILE)
 
-# generate API baseline from origin/master source snapshot
+# generate API baseline from upstream source snapshot (origin/upstream-master,
+# mirrored daily by .github/workflows/sync-upstream-master.yml)
 api-baseline-master:
 	./bin/generate_master_api_baseline.sh "$(API_BASELINE_REF)"
 

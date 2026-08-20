@@ -1,0 +1,73 @@
+name: Sync Upstream Master
+
+# Daily: mirror upstream/master to origin/upstream-master (the fork-side ref
+# used for local `make api-baseline-master` runs) and refresh the committed
+# meshtastic/tests/api_baselines/api_baseline_master.json snapshot when the
+# upstream API surface changed. develop is protected (PRs required), so the
+# refreshed snapshot lands via an automated PR. The JSON is opt-in test data
+# (MESHTASTIC_API_BASELINE_SOURCE=master) and never gates CI.
+
+on:
+  schedule:
+    - cron: 0 7 * * *
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  UPSTREAM_URL: https://github.com/meshtastic/python.git
+  UPSTREAM_REF: master
+  MIRROR_BRANCH: upstream-master
+  BASELINE_FILE: meshtastic/tests/api_baselines/api_baseline_master.json
+
+jobs:
+  sync-upstream-master:
+    name: Mirror upstream/master and refresh baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: develop
+          fetch-depth: 0
+      - name: Mirror upstream/master to origin/upstream-master
+        run: |
+          git fetch "${UPSTREAM_URL}" "${UPSTREAM_REF}"
+          # Pin the synced commit immediately: later steps use UPSTREAM_SHA,
+          # never FETCH_HEAD, so an intervening fetch cannot change the
+          # baseline source silently.
+          upstream_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          echo "Mirroring ${UPSTREAM_URL}@${UPSTREAM_REF} -> origin/${MIRROR_BRANCH} (${upstream_sha})"
+          git push origin "${upstream_sha}:refs/heads/${MIRROR_BRANCH}" --force
+          echo "UPSTREAM_SHA=${upstream_sha}" >> "$GITHUB_ENV"
+      - name: Regenerate upstream API baseline snapshot
+        run: |
+          tmpdir="$(mktemp -d)"
+          git archive "${UPSTREAM_SHA}" meshtastic | tar -x -C "${tmpdir}"
+          python3 bin/extract_api_surface.py "${tmpdir}/meshtastic" > "${BASELINE_FILE}"
+          echo "UPSTREAM_SHORT_SHA=$(git rev-parse --short "${UPSTREAM_SHA}")" >> "$GITHUB_ENV"
+      - name: Open baseline refresh PR (if changed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${BASELINE_FILE}"
+          if git diff --cached --quiet; then
+            echo "Baseline unchanged; nothing to do."
+            exit 0
+          fi
+          git checkout -B bot/upstream-baseline
+          git commit -m "Refresh api_baseline_master.json from upstream/master@${UPSTREAM_SHORT_SHA}"
+          git push origin bot/upstream-baseline --force
+          if gh pr view bot/upstream-baseline >/dev/null 2>&1; then
+            echo "PR already open; branch push updated it."
+          else
+            gh pr create --base develop --head bot/upstream-baseline \
+              --title "Refresh api_baseline_master.json from upstream/master@${UPSTREAM_SHORT_SHA}" \
+              --body "Automated refresh of the upstream API baseline snapshot (mirror of upstream/master at \`${UPSTREAM_SHORT_SHA}\`). Merges with no checks expected: PRs opened by the workflow token do not trigger CI, and develop requires no approvals."
+          fi

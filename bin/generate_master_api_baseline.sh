@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate a baseline from a git ref (default: origin/master) using the current
-# extractor script, without checking out that ref in the working tree.
+# Generate a baseline from a git ref (default: origin/upstream-master, the
+# fork-side mirror of upstream/master) using the current extractor script,
+# without checking out that ref in the working tree.
 
-MASTER_REF="${1:-origin/master}"
+MASTER_REF="${1:-origin/upstream-master}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 OUT_FILE="${REPO_ROOT}/meshtastic/tests/api_baselines/api_baseline_master.json"
