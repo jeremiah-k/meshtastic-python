@@ -15,11 +15,12 @@ env:
 
 jobs:
   api-baseline-master:
-    name: API Baseline vs Master (py3.14)
+    name: API Baseline vs Upstream Master (py3.14)
     runs-on: ubuntu-latest
     env:
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
-      API_BASELINE_REF: master
+      UPSTREAM_REPO: meshtastic/python
+      UPSTREAM_REF: master
     steps:
       - name: Checkout PR branch (current)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,17 +47,18 @@ jobs:
           poetry install ${{ env.POETRY_INSTALL_ARGS }}
           primary_cli="$(poetry run python -c 'from meshtastic._branding import PRIMARY_CLI_NAME; print(PRIMARY_CLI_NAME)')"
           poetry run "${primary_cli}" --version
-      - name: Checkout API baseline branch (master)
+      - name: Checkout API baseline branch (upstream master)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.API_BASELINE_REF }}
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ env.UPSTREAM_REF }}
           path: base-checkout
-      - name: Extract base API surface (master)
+      - name: Extract base API surface (upstream master)
         run: poetry run python3 bin/extract_api_surface.py base-checkout/meshtastic > base_surface.json
       - name: Extract PR API surface
         run: poetry run python3 bin/extract_api_surface.py meshtastic > pr_surface.json
-      - name: Compare API surfaces vs master
-        run: python3 bin/compare_api_surfaces.py base_surface.json pr_surface.json --base-label "${{ env.API_BASELINE_REF }}"
+      - name: Compare API surfaces vs upstream master
+        run: python3 bin/compare_api_surfaces.py base_surface.json pr_surface.json --base-label "upstream/master"
 
   api-baseline-develop:
     name: API Baseline vs Develop (py3.14)

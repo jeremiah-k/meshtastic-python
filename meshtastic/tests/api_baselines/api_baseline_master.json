@@ -34,6 +34,7 @@
     "waitForWaypoint": "(self)"
   },
   "node_methods": {
+    "addContactURL": "(self, url:str)",
     "beginSettingsTransaction": "(self)",
     "commitSettingsTransaction": "(self)",
     "deleteChannel": "(self, channelIndex)",
@@ -44,6 +45,7 @@
     "factoryReset": "(self, full:bool=False)",
     "getChannelByChannelIndex": "(self, channelIndex)",
     "getChannelByName": "(self, name)",
+    "getContactURL": "(self, node_id:Union[int, str], should_ignore:bool=False, manually_verified:bool=False)",
     "getDisabledChannel": "(self)",
     "getMetadata": "(self)",
     "getURL": "(self, includeAll:bool=True)",

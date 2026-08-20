@@ -1,0 +1,57 @@
+name: Sync Upstream Master
+
+# Daily: mirror upstream/master to origin/upstream-master (the fork-side ref
+# used for local `make api-baseline-master` runs) and refresh the committed
+# meshtastic/tests/api_baselines/api_baseline_master.json snapshot when the
+# upstream API surface changed. The JSON is opt-in test data
+# (MESHTASTIC_API_BASELINE_SOURCE=master), so auto-committing it never gates
+# CI; [skip ci] avoids redundant pipeline runs.
+
+on:
+  schedule:
+    - cron: 0 7 * * *
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  UPSTREAM_URL: https://github.com/meshtastic/python.git
+  UPSTREAM_REF: master
+  MIRROR_BRANCH: upstream-master
+  BASELINE_FILE: meshtastic/tests/api_baselines/api_baseline_master.json
+
+jobs:
+  sync-upstream-master:
+    name: Mirror upstream/master and refresh baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: develop
+          fetch-depth: 0
+      - name: Mirror upstream/master to origin/upstream-master
+        run: |
+          git fetch "${UPSTREAM_URL}" "${UPSTREAM_REF}"
+          git push origin "FETCH_HEAD:refs/heads/${MIRROR_BRANCH}" --force
+      - name: Regenerate upstream API baseline snapshot
+        run: |
+          tmpdir="$(mktemp -d)"
+          git archive FETCH_HEAD meshtastic | tar -x -C "${tmpdir}"
+          python3 bin/extract_api_surface.py "${tmpdir}/meshtastic" > "${BASELINE_FILE}"
+          short_sha="$(git rev-parse --short FETCH_HEAD)"
+          echo "UPSTREAM_SHORT_SHA=${short_sha}" >> "$GITHUB_ENV"
+      - name: Commit refreshed baseline (if changed)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${BASELINE_FILE}"
+          if git diff --cached --quiet; then
+            echo "Baseline unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -m "[skip ci] Refresh api_baseline_master.json from upstream/master@${UPSTREAM_SHORT_SHA}"
+          git push origin HEAD:develop
