@@ -1858,7 +1858,7 @@ class Position(_message.Message):
     """
     ground_speed: _builtins.int
     """
-    Ground speed in m/s and True North TRACK in 1/100 degrees
+    Ground speed in km/h and True North TRACK in 1/100 degrees
     Clarification of terms:
     - "track" is the direction of motion (measured in horizontal plane)
     - "heading" is where the fuselage points (measured in horizontal plane)
