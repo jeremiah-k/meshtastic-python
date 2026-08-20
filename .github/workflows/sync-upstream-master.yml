@@ -15,6 +15,10 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # The mirrored upstream tree contains workflow files the fork may not have
+  # (e.g. update_protobufs.yml); GITHUB_TOKEN pushes that create or update
+  # workflow files are rejected without this permission.
+  workflows: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
