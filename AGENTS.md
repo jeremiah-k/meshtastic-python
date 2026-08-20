@@ -241,7 +241,8 @@ make api-baseline-master
 ```
 
 - `make api-baseline` writes `meshtastic/tests/api_baselines/api_baseline.json` from the current tree via `bin/extract_api_surface.py`.
-- `make api-baseline-master` writes `meshtastic/tests/api_baselines/api_baseline_master.json` from `origin/upstream-master` via `bin/generate_master_api_baseline.sh`.
-  - `origin/upstream-master` is a fork-side mirror of `meshtastic/python` `master`, refreshed daily by `.github/workflows/sync-upstream-master.yml` (which also opens a PR against `develop` with a refreshed baseline snapshot when the upstream surface changes — `develop` is protected, so the bot cannot push directly). If it is missing or stale locally, run `git fetch origin upstream-master`.
+- `make api-baseline-master` writes `meshtastic/tests/api_baselines/api_baseline_master.json` from `upstream/master` via `bin/generate_master_api_baseline.sh`.
+  - Requires an `upstream` remote pointing at `meshtastic/python` (`git remote add upstream https://github.com/meshtastic/python.git` if missing).
+  - A nightly workflow (`.github/workflows/sync-upstream-master.yml`) refreshes the committed snapshot and opens a PR against `develop` when the upstream surface changes. Note: CI cannot mirror `upstream/master` to a fork branch because `GITHUB_TOKEN` cannot push trees containing workflow files; local runs fetch `upstream` directly.
 
 Running without poetry may miss modules like `slog` and `tunnel` that depend on optional packages.
