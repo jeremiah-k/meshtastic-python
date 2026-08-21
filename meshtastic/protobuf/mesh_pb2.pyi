@@ -635,6 +635,10 @@ class _HardwareModelEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Hardwar
     """
     Meshnology W12
     """
+    MESHPAGER_X2: _HardwareModel.ValueType  # 146
+    """
+    Seeed Studio MeshPager X2
+    """
     PRIVATE_HW: _HardwareModel.ValueType  # 255
     """
     ------------------------------------------------------------------------------------------------------------------------------------------
@@ -1247,6 +1251,10 @@ Seeed Wio Tracker L1 Pro 1W, nRF52840 + SX1262 with 1 W external PA
 MESHNOLOGY_W12: HardwareModel.ValueType  # 145
 """
 Meshnology W12
+"""
+MESHPAGER_X2: HardwareModel.ValueType  # 146
+"""
+Seeed Studio MeshPager X2
 """
 PRIVATE_HW: HardwareModel.ValueType  # 255
 """
