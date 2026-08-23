@@ -15,6 +15,7 @@ from typing import TypeGuard as _TypeGuard
 from meshtastic._core_constants import DECODE_ERROR_KEY
 from meshtastic.protobuf import (
     admin_pb2,
+    mesh_beacon_pb2,
     mesh_pb2,
     mqtt_pb2,
     paxcount_pb2,
@@ -520,4 +521,9 @@ protocols = {
         "neighborinfo", mesh_pb2.NeighborInfo
     ),
     portnums_pb2.PortNum.MAP_REPORT_APP: KnownProtocol("mapreport", mqtt_pb2.MapReport),
+    # Firmware 2.8 mesh beacons carry a text message plus optional
+    # channel/preset offers for client apps (see portnums.proto).
+    portnums_pb2.PortNum.MESH_BEACON_APP: KnownProtocol(
+        "meshbeacon", mesh_beacon_pb2.MeshBeacon
+    ),
 }

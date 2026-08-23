@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from meshtastic import DECODE_ERROR_KEY
+from meshtastic._protocol_runtime import protocols
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime.ports import _ReceivePipelinePort
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
@@ -23,6 +25,7 @@ from meshtastic.mesh_interface_runtime.receive_pipeline import (
 from meshtastic.protobuf import (
     channel_pb2,
     config_pb2,
+    mesh_beacon_pb2,
     mesh_pb2,
     module_config_pb2,
     portnums_pb2,
@@ -1310,3 +1313,69 @@ class TestCorrelatePacketResponseHandler:
         receive_pipeline._correlate_packet_response_handler(packet_context)
 
         mock_interface._request_wait_runtime.correlate_inbound_response.assert_not_called()
+
+
+class TestMeshBeaconProtocolRegistry:
+    """Registry coverage for firmware 2.8 mesh-beacon payload decoding."""
+
+    @pytest.mark.unit
+    def test_mesh_beacon_protocol_is_registered(self) -> None:
+        """Firmware 2.8 beacon offers should be decoded as MeshBeacon payloads."""
+        protocol = protocols[portnums_pb2.PortNum.MESH_BEACON_APP]
+
+        assert protocol.name == "meshbeacon"
+        assert protocol.protobufFactory is mesh_beacon_pb2.MeshBeacon
+
+
+class TestMeshBeaconReceivePipeline:
+    """Behavioral coverage for firmware 2.8 mesh-beacon payload decoding."""
+
+    @staticmethod
+    def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        packet = mesh_pb2.MeshPacket(id=8128, to=456)
+        setattr(packet, "from", 123)
+        packet.decoded.portnum = portnums_pb2.PortNum.MESH_BEACON_APP
+        packet.decoded.payload = payload
+        return packet
+
+    @pytest.mark.unit
+    def test_real_mesh_beacon_packet_decodes_and_selects_topic(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        beacon = mesh_beacon_pb2.MeshBeacon(
+            message="Meet on the offered channel",
+            offer_region=config_pb2.Config.LoRaConfig.RegionCode.US,
+            offer_preset=config_pb2.Config.LoRaConfig.ModemPreset.LONG_FAST,
+        )
+        beacon.offer_channel.name = "Beacon offer"
+        beacon.offer_channel.psk = b"\x01" * 16
+
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet(beacon.SerializeToString()),
+            emit_publication=False,
+        )
+
+        assert len(intents) == 1
+        assert intents[0].topic == "meshtastic.receive.meshbeacon"
+        decoded = intents[0].payload["packet"]["decoded"]["meshbeacon"]
+        assert decoded["message"] == "Meet on the offered channel"
+        assert decoded["offerChannel"]["name"] == "Beacon offer"
+        assert decoded["offerRegion"] == "US"
+        assert decoded["offerPreset"] == "LONG_FAST"
+        assert isinstance(decoded["raw"], mesh_beacon_pb2.MeshBeacon)
+        assert decoded["raw"] == beacon
+
+    @pytest.mark.unit
+    def test_malformed_mesh_beacon_uses_standard_decode_error(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet(b"\x0a\x08short"),
+            emit_publication=False,
+        )
+
+        assert len(intents) == 1
+        assert intents[0].topic == "meshtastic.receive.meshbeacon"
+        decoded = intents[0].payload["packet"]["decoded"]["meshbeacon"]
+        assert decoded[DECODE_ERROR_KEY].startswith("decode-failed: ")
+        assert "raw" not in decoded
