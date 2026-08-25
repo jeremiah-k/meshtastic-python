@@ -526,4 +526,18 @@ protocols = {
     portnums_pb2.PortNum.MESH_BEACON_APP: KnownProtocol(
         "meshbeacon", mesh_beacon_pb2.MeshBeacon
     ),
+    # Firmware 2.8 status broadcasts carry a single status string per node
+    # (StatusMessageModule); clients surface it alongside node metadata.
+    portnums_pb2.PortNum.NODE_STATUS_APP: KnownProtocol(
+        "nodestatus", mesh_pb2.StatusMessage
+    ),
+    # Firmware 2.8 PKI key-verification handshakes (KeyVerificationModule):
+    # nonce plus hash1/hash2 challenge-response pairs.
+    portnums_pb2.PortNum.KEY_VERIFICATION_APP: KnownProtocol(
+        "keyverification",  # gitleaks:allow
+        mesh_pb2.KeyVerification,
+    ),
+    # Critical alerts carry a plain UTF-8 text payload, like detection
+    # sensor messages; they break through client notification suppression.
+    portnums_pb2.PortNum.ALERT_APP: KnownProtocol("alert", onReceive=_on_text_receive),
 }

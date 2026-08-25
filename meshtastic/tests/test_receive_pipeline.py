@@ -4,12 +4,13 @@
 
 import logging
 import threading
+from base64 import b64encode
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from meshtastic import DECODE_ERROR_KEY
-from meshtastic._protocol_runtime import protocols
+from meshtastic._protocol_runtime import _on_text_receive, protocols
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime.ports import _ReceivePipelinePort
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
@@ -1379,3 +1380,175 @@ class TestMeshBeaconReceivePipeline:
         decoded = intents[0].payload["packet"]["decoded"]["meshbeacon"]
         assert decoded[DECODE_ERROR_KEY].startswith("decode-failed: ")
         assert "raw" not in decoded
+
+
+class TestNodeStatusProtocolRegistry:
+    """Registry coverage for firmware 2.8 node-status payload decoding."""
+
+    @pytest.mark.unit
+    def test_node_status_protocol_is_registered(self) -> None:
+        """Firmware 2.8 status broadcasts should decode as StatusMessage payloads."""
+        protocol = protocols[portnums_pb2.PortNum.NODE_STATUS_APP]
+
+        assert protocol.name == "nodestatus"
+        assert protocol.protobufFactory is mesh_pb2.StatusMessage
+
+
+class TestNodeStatusReceivePipeline:
+    """Behavioral coverage for firmware 2.8 node-status payload decoding."""
+
+    @staticmethod
+    def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        packet = mesh_pb2.MeshPacket(id=8129, to=456)
+        setattr(packet, "from", 123)
+        packet.decoded.portnum = portnums_pb2.PortNum.NODE_STATUS_APP
+        packet.decoded.payload = payload
+        return packet
+
+    @pytest.mark.unit
+    def test_real_node_status_packet_decodes_and_selects_topic(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        status = mesh_pb2.StatusMessage(status="Bravo: solar powered")
+
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet(status.SerializeToString()),
+            emit_publication=False,
+        )
+
+        assert len(intents) == 1
+        assert intents[0].topic == "meshtastic.receive.nodestatus"
+        decoded = intents[0].payload["packet"]["decoded"]["nodestatus"]
+        assert decoded["status"] == "Bravo: solar powered"
+        assert isinstance(decoded["raw"], mesh_pb2.StatusMessage)
+        assert decoded["raw"] == status
+
+    @pytest.mark.unit
+    def test_malformed_node_status_uses_standard_decode_error(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet(b"\x0a\x08short"),
+            emit_publication=False,
+        )
+
+        assert len(intents) == 1
+        assert intents[0].topic == "meshtastic.receive.nodestatus"
+        decoded = intents[0].payload["packet"]["decoded"]["nodestatus"]
+        assert decoded[DECODE_ERROR_KEY].startswith("decode-failed: ")
+        assert "raw" not in decoded
+
+
+class TestKeyVerificationProtocolRegistry:
+    """Registry coverage for firmware 2.8 key-verification payload decoding."""
+
+    @pytest.mark.unit
+    def test_key_verification_protocol_is_registered(self) -> None:
+        """Firmware 2.8 PKI verification handshakes decode as KeyVerification payloads."""
+        protocol = protocols[portnums_pb2.PortNum.KEY_VERIFICATION_APP]
+
+        assert protocol.name == "keyverification"
+        assert protocol.protobufFactory is mesh_pb2.KeyVerification
+
+
+class TestKeyVerificationReceivePipeline:
+    """Behavioral coverage for firmware 2.8 key-verification payload decoding."""
+
+    @staticmethod
+    def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        packet = mesh_pb2.MeshPacket(id=8130, to=456)
+        setattr(packet, "from", 123)
+        packet.decoded.portnum = portnums_pb2.PortNum.KEY_VERIFICATION_APP
+        packet.decoded.payload = payload
+        return packet
+
+    @pytest.mark.unit
+    def test_real_key_verification_packet_decodes_and_selects_topic(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        verification = mesh_pb2.KeyVerification(nonce=0x0123456789ABCDEF)
+        verification.hash1 = b"\x11" * 32
+
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet(verification.SerializeToString()),
+            emit_publication=False,
+        )
+
+        assert len(intents) == 1
+        assert intents[0].topic == "meshtastic.receive.keyverification"
+        decoded = intents[0].payload["packet"]["decoded"]["keyverification"]
+        assert decoded["nonce"] == str(0x0123456789ABCDEF)
+        assert decoded["hash1"] == b64encode(b"\x11" * 32).decode()
+        assert isinstance(decoded["raw"], mesh_pb2.KeyVerification)
+        assert decoded["raw"] == verification
+
+    @pytest.mark.unit
+    def test_malformed_key_verification_uses_standard_decode_error(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet(b"\x12\x20short"),
+            emit_publication=False,
+        )
+
+        assert len(intents)
+        assert intents[0].topic == "meshtastic.receive.keyverification"
+        decoded = intents[0].payload["packet"]["decoded"]["keyverification"]
+        assert decoded[DECODE_ERROR_KEY].startswith("decode-failed: ")
+        assert "raw" not in decoded
+
+
+class TestAlertProtocolRegistry:
+    """Registry coverage for critical-alert payload decoding."""
+
+    @pytest.mark.unit
+    def test_alert_protocol_is_registered_with_text_handler(self) -> None:
+        """Critical alerts carry UTF-8 text and share the text-receive handler."""
+        protocol = protocols[portnums_pb2.PortNum.ALERT_APP]
+
+        assert protocol.name == "alert"
+        assert protocol.protobufFactory is None
+        assert protocol.onReceive is _on_text_receive
+
+
+class TestAlertReceivePipeline:
+    """Behavioral coverage for critical-alert payload decoding."""
+
+    @staticmethod
+    def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        packet = mesh_pb2.MeshPacket(id=8131, to=456)
+        setattr(packet, "from", 123)
+        assert packet.decoded.portnum == portnums_pb2.PortNum.UNKNOWN_APP
+        packet.decoded.portnum = portnums_pb2.PortNum.ALERT_APP
+        packet.decoded.payload = payload
+        return packet
+
+    @pytest.mark.unit
+    def test_alert_packet_selects_text_topic_and_stores_decoded_text(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet("Tornado warning for grid EG13".encode()),
+            emit_publication=False,
+        )
+
+        assert len(intents) == 1
+        assert intents[0].topic == "meshtastic.receive.alert"
+        decoded = intents[0].payload["packet"]["decoded"]
+        assert decoded["text"] == "Tornado warning for grid EG13"
+
+    @pytest.mark.unit
+    def test_alert_packet_with_non_utf8_payload_still_publishes(
+        self, receive_pipeline: ReceivePipeline
+    ) -> None:
+        intents = receive_pipeline._handle_packet_from_radio(
+            self._packet(b"\xff\xfe\x00\x01"),
+            emit_publication=False,
+        )
+
+        assert len(intents) == 1
+        assert intents[0].topic == "meshtastic.receive.alert"
+        # _on_text_receive is invoked at delivery time (not during decode), so
+        # no "text" key is expected during the decode-only phase tested here.
+        decoded = intents[0].payload["packet"]["decoded"]
+        assert "text" not in decoded
