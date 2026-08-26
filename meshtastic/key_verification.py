@@ -11,7 +11,7 @@ reports progress through ``ClientNotification`` payloads published on the
 from __future__ import annotations
 
 import threading
-
+from typing import Literal
 from pubsub import pub
 
 from meshtastic._topics import CLIENT_NOTIFICATION_TOPIC
@@ -35,7 +35,11 @@ _STAGE_MESSAGE_TYPES = {
 
 _SECURITY_NUMBER_MAX = 9999
 _NODE_NUM_MAX = 0xFFFFFFFF
-_NOTIFICATION_PAYLOAD_FIELDS = (
+_NOTIFICATION_PAYLOAD_FIELDS: tuple[
+    Literal["key_verification_number_inform"],
+    Literal["key_verification_number_request"],
+    Literal["key_verification_final"],
+] = (
     "key_verification_number_inform",
     "key_verification_number_request",
     "key_verification_final",

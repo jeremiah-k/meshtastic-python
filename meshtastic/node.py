@@ -116,7 +116,7 @@ MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
 
 
 
-def _backup_location_value(location: str) -> int:
+def _backup_location_value(location: str) -> admin_pb2.AdminMessage.BackupLocation.ValueType:
     """Convert a backup location name to its ``BackupLocation`` enum value.
 
     Parameters
@@ -126,7 +126,7 @@ def _backup_location_value(location: str) -> int:
 
     Returns
     -------
-    int
+    admin_pb2.AdminMessage.BackupLocation.ValueType
         The matching ``AdminMessage.BackupLocation`` enum value.
 
     Raises
@@ -1747,7 +1747,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
                 )
             except (TypeError, ValueError):
                 has_status = False
-            if has_status:
+            if has_status and raw_admin is not None:
                 result["status"] = raw_admin.get_device_connection_status_response
                 completed.set()
 
@@ -1798,7 +1798,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
                 has_ui = callable(has_field) and has_field("get_ui_config_response")
             except (TypeError, ValueError):
                 has_ui = False
-            if has_ui:
+            if has_ui and raw_admin is not None:
                 result["config"] = raw_admin.get_ui_config_response
                 completed.set()
 
