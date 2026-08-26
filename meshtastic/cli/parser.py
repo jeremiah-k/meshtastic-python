@@ -938,6 +938,16 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         action="store_true",
         help="Report the node's WiFi, Ethernet, Bluetooth, and serial status",
     )
+    outer.add_argument(
+        "--get-ui-config",
+        action="store_true",
+        help="Print the node's device UI configuration as YAML",
+    )
+    outer.add_argument(
+        "--store-ui-config",
+        metavar="FILE",
+        help="Store a device UI configuration from YAML (as printed by --get-ui-config)",
+    )
 
     return parser
 
