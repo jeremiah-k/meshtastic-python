@@ -1145,7 +1145,7 @@ def _render_key_verification_notification(
         cli_print(
             "Compare the final confirmation on both nodes, then accept with "
             f"--key-verify verify --key-verify-nonce {final.nonce} (or reject with "
-            "--key-verify no-verify)."
+            f"--key-verify no-verify --key-verify-nonce {final.nonce})."
         )
     else:
         cli_print(f"Key-verification notification: {notification.message}")

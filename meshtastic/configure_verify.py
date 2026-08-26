@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 import base64
+import enum
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import meshtastic.util
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import apponly_pb2, channel_pb2
 
 logger = logging.getLogger(__name__)
+
+
+class ConfigureReconnectResult(enum.Enum):
+    """Outcome of local reconnect/config reload verification after configure."""
+
+    RECONNECT_FAILED = "reconnect_failed"
+    CONFIG_RELOAD_FAILED = "config_reload_failed"
+    VERIFICATION_INCOMPLETE = "verification_incomplete"
+    VERIFIED = "verified"
 
 
 def _is_repeated_field(field_desc: Any) -> bool:
@@ -382,3 +394,240 @@ def _verify_channel_sets_match(
         _settings_match(requested_settings, device_lookup[name])
         for name, requested_settings in requested_lookup.items()
     )
+
+
+def _refresh_no_disconnect_verify_state(
+    target_node: Any,
+    *,
+    verify_channel_url: str | None,
+    verify_config_fields: dict[str, dict[str, Any]] | None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None,
+) -> None:
+    """Invalidate touched cached state before post-reconnect verification."""
+    request_config = getattr(target_node, "requestConfig", None)
+
+    for section_name in verify_config_fields or {}:
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(
+            section_snake
+        )
+        if field_desc is None:
+            logger.warning(
+                "Skipping config refresh for unknown section %r.",
+                section_name,
+            )
+            continue
+        target_node.localConfig.ClearField(section_snake)
+        if callable(request_config):
+            request_config(field_desc)
+
+    for section_name in verify_module_config_fields or {}:
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        field_desc = target_node.moduleConfig.DESCRIPTOR.fields_by_name.get(
+            section_snake
+        )
+        if field_desc is None:
+            logger.warning(
+                "Skipping module_config refresh for unknown section %r.",
+                section_name,
+            )
+            continue
+        target_node.moduleConfig.ClearField(section_snake)
+        if callable(request_config):
+            request_config(field_desc)
+
+    if verify_channel_url:
+        invalidate_channel_cache = getattr(
+            target_node, "_invalidate_channel_cache", None
+        )
+        if callable(invalidate_channel_cache):
+            invalidate_channel_cache()  # noqa: SLF001 - Node cache owner API
+        request_channels = getattr(target_node, "requestChannels", None)
+        if callable(request_channels):
+            request_channels(0)
+
+
+def _device_lora_config(target_node: Any) -> Any | None:
+    """Return the loaded device LoRa config, or ``None`` when unavailable.
+
+    Parameters
+    ----------
+    target_node : Any
+        Node whose loaded local configuration is inspected.
+
+    Returns
+    -------
+    Any | None
+        Loaded LoRa protobuf message when present, otherwise ``None``.
+    """
+    local_config = getattr(target_node, "localConfig", None)
+    has_field = getattr(local_config, "HasField", None)
+    if local_config is None or not callable(has_field) or not has_field("lora"):
+        return None
+    return local_config.lora
+
+
+def _channel_url_matches_current_device_state(
+    target_node: Any,
+    requested_channel_url: str,
+    *,
+    verify_channel_url_against_state: Callable[..., bool] = (
+        _verify_channel_url_against_state
+    ),
+) -> bool:
+    """Return True when requested channel URL already matches loaded device state."""
+    device_lora_config = _device_lora_config(target_node)
+    if device_lora_config is None:
+        return False
+    return verify_channel_url_against_state(
+        requested_channel_url,
+        device_channels=getattr(target_node, "channels", None),
+        device_lora_config=device_lora_config,
+        emit_warnings=False,
+    )
+
+
+def _flatten_leaf_paths(prefix: str, mapping: dict[str, Any]) -> list[str]:
+    """Recursively flatten a nested mapping into dotted leaf paths."""
+    paths: list[str] = []
+    for key, value in mapping.items():
+        dotted = f"{prefix}.{key}"
+        if isinstance(value, dict) and value:
+            paths.extend(_flatten_leaf_paths(dotted, value))
+        else:
+            paths.append(dotted)
+    return paths
+
+
+def _verify_config_sections(
+    config_fields: dict[str, dict[str, Any]],
+    proto_config: Any,
+    label: str,
+    verified_fields: list[str] | None = None,
+) -> bool:
+    """Verify requested configuration sections against a reloaded protobuf.
+
+    Parameters
+    ----------
+    config_fields : dict[str, dict[str, Any]]
+        Requested section/value mappings from the configure document.
+    proto_config : Any
+        Reloaded protobuf configuration root.
+    label : str
+        Human-readable label used in diagnostics.
+    verified_fields : list[str] | None
+        Optional list mutated in place with verified dotted leaf paths.
+
+    Returns
+    -------
+    bool
+        ``True`` only when every requested section and field matches.
+    """
+    for section_name, yaml_values in config_fields.items():
+        section_snake = meshtastic.util.camel_to_snake(section_name)
+        if not proto_config.HasField(section_snake):
+            logger.warning(
+                "%s section %r not present after reload.",
+                label,
+                section_name,
+            )
+            return False
+        proto_section = getattr(proto_config, section_snake)
+        mismatches = _verify_requested_fields(yaml_values, proto_section, section_name)
+        if mismatches:
+            logger.warning(
+                "%s section %r field mismatches: %s",
+                label,
+                section_name,
+                ", ".join(mismatches),
+            )
+            return False
+        if verified_fields is not None:
+            verified_fields.extend(_flatten_leaf_paths(section_snake, yaml_values))
+        logger.debug(
+            "%s section %r verified (all requested field values match).",
+            label,
+            section_name,
+        )
+    return True
+
+
+def _verify_post_reconnect_config(
+    interface: MeshInterface,
+    node_dest: str,
+    *,
+    verify_channel_url: str | None = None,
+    verify_config_fields: dict[str, dict[str, Any]] | None = None,
+    verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
+    verify_channel_url_against_state: Callable[..., bool] = (
+        _verify_channel_url_against_state
+    ),
+) -> ConfigureReconnectResult:
+    """Verify requested values after reconnect/config reload.
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        Reconnected interface containing refreshed device state.
+    node_dest : str
+        Destination whose configuration is verified.
+    verify_channel_url : str | None
+        Normalized channel URL expected after reload.
+    verify_config_fields : dict[str, dict[str, Any]] | None
+        Requested local-config sections/fields to compare.
+    verify_module_config_fields : dict[str, dict[str, Any]] | None
+        Requested module-config sections/fields to compare.
+    verify_channel_url_against_state : Callable[..., bool]
+        Channel-state comparison seam.
+
+    Returns
+    -------
+    ConfigureReconnectResult
+        ``VERIFIED`` on a complete match, otherwise ``VERIFICATION_INCOMPLETE``.
+    """
+    if not interface.isConnected.is_set():
+        logger.warning("Post-reconnect verification skipped: transport disconnected.")
+        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    target_node = interface.getNode(node_dest)
+    verified_fields: list[str] = []
+
+    if verify_channel_url:
+        device_lora_config = _device_lora_config(target_node)
+        if not verify_channel_url_against_state(
+            verify_channel_url,
+            device_channels=getattr(target_node, "channels", None),
+            device_lora_config=device_lora_config,
+        ):
+            logger.warning(
+                "Channel URL verification: device state does not match requested URL."
+            )
+            return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+        verified_fields.append("channel_url")
+
+    if verify_config_fields and not _verify_config_sections(
+        verify_config_fields,
+        target_node.localConfig,
+        "Config",
+        verified_fields=verified_fields,
+    ):
+        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    if verify_module_config_fields and not _verify_config_sections(
+        verify_module_config_fields,
+        target_node.moduleConfig,
+        "Module config",
+        verified_fields=verified_fields,
+    ):
+        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    if not interface.isConnected.is_set():
+        logger.warning(
+            "Post-reconnect verification did not complete: transport disconnected."
+        )
+        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+    if verified_fields:
+        logger.info("Verified: %s", ", ".join(verified_fields))
+
+    return ConfigureReconnectResult.VERIFIED

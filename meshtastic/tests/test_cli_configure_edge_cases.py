@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, call, create_autospec
 
 import pytest
 
+from meshtastic import configure_verify
 from meshtastic.cli import configure_actions, configure_values
 from meshtastic.cli.configure_actions import (
     ConfigureActionHooks,
@@ -727,7 +728,7 @@ def test_post_reconnect_local_config_mismatch_is_incomplete(
     iface = _interface()
     iface.getNode.return_value = MagicMock()
     verifier = MagicMock(return_value=False)
-    monkeypatch.setattr(configure_actions, "_verify_config_sections", verifier)
+    monkeypatch.setattr(configure_verify, "_verify_config_sections", verifier)
 
     result = configure_actions._verify_post_reconnect_config(
         iface,
@@ -1006,7 +1007,6 @@ def test_set_ack_wait_survives_later_configure_noop() -> None:
             set=[["lora.hop_limit", "3"]],
             configure=["config.yaml"],
             export_config=None,
-            export_profile=MagicMock(return_value=b""),
             dest="^local",
         ),
         get_node_kwargs={},
