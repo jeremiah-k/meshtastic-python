@@ -107,6 +107,10 @@ def _validate_and_normalize_args(
         _terminate_cli(
             hooks, f"Error: OTA firmware file not found: {args.ota_update}", 1
         )
+    if args.ota_update is not None:
+        # Fetching the node DB while a large OTA transfer starts races the
+        # admin request; skip it unless the operator explicitly asked.
+        args.no_nodes = True
 
     if args.ch_index is not None:
         hooks.set_channel_index(int(args.ch_index))
