@@ -11,7 +11,6 @@ import contextlib
 import contextvars
 import json
 import logging
-
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -19,9 +18,7 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import ParseDict, ParseError
 
 import meshtastic.util
-
 from meshtastic.cli.values import parse_bitfield_value
-
 from meshtastic.protobuf import config_pb2
 
 # Preserve the historical CLI logger name even though implementation moved here.
@@ -383,9 +380,12 @@ def _assign_repeated_message_pref_value(
     )
     if parsed is None:
         # Caller routed here in error; treat the raw payload as invalid.
-        return reject_pref_value(
-            pref, field_path=field_path, raw_value=raw_value, cli_print=cli_print
-        ), True
+        return (
+            reject_pref_value(
+                pref, field_path=field_path, raw_value=raw_value, cli_print=cli_print
+            ),
+            True,
+        )
     ok, elements = parsed
     if not ok:
         return False, True

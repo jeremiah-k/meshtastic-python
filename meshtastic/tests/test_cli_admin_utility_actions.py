@@ -74,7 +74,9 @@ def _context(interface: MagicMock, args: dict[str, object]) -> CliContext:
 @pytest.mark.unit
 def test_backup_location_value_accepts_names_case_insensitively() -> None:
     """flash/SD names map to BackupLocation enum values."""
-    assert _backup_location_value("flash") == admin_pb2.AdminMessage.BackupLocation.FLASH
+    assert (
+        _backup_location_value("flash") == admin_pb2.AdminMessage.BackupLocation.FLASH
+    )
     assert _backup_location_value("SD") == admin_pb2.AdminMessage.BackupLocation.SD
 
 
@@ -151,6 +153,7 @@ def test_toggle_muted_node_uses_nodedb_action_path() -> None:
     interface.getNode.return_value.toggleMutedNode.assert_called_once_with("!abcd1234")
     assert context.outcome.close_now is True
 
+
 @pytest.mark.unit
 def test_connection_status_prints_each_transport() -> None:
     """The status printer reports present transports with their details."""
@@ -171,7 +174,6 @@ def test_connection_status_prints_each_transport() -> None:
     assert "bluetooth" not in joined
 
 
-
 @pytest.mark.unit
 def test_connection_status_missing_response_terminates() -> None:
     """A missing status response exits with the firmware-version hint."""
@@ -180,7 +182,8 @@ def test_connection_status_missing_response_terminates() -> None:
     exits: list[tuple[str, int]] = []
     with pytest.raises(SystemExit):
         device_actions._handle_admin_utility_actions(
-            _context(interface, {"request_connection_status": True}), _hooks(exits=exits)
+            _context(interface, {"request_connection_status": True}),
+            _hooks(exits=exits),
         )
     assert exits and exits[0][1] == 1
     assert "firmware 2.5+" in exits[0][0]

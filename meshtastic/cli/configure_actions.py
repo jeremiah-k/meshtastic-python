@@ -1026,7 +1026,6 @@ def _load_and_validate_configure_document(
         )
     configuration = _decode_configure_document(hooks, raw_bytes, path)
 
-
     if configuration is None:
         _terminate_cli(hooks.cli_exit, "ERROR: YAML configuration file is empty")
     if not isinstance(configuration, dict):
@@ -1580,4 +1579,3 @@ def _handle_configure_actions(
     except OSError as exc:
         _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
     hooks.cli_print(f"Exported configuration to {args.export_config}")
-

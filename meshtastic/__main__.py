@@ -77,15 +77,15 @@ from meshtastic.configure_verify import (  # noqa: F401 - legacy __main__ compat
 )
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble.interface import BLEInterface
+from meshtastic.key_verification import (
+    build_key_verification_admin,
+    send_key_verification,
+)
 from meshtastic.lockdown import (
     build_lockdown_auth,
     read_lockdown_passphrase_file,
     send_lockdown_auth,
     validate_lockdown_passphrase,
-)
-from meshtastic.key_verification import (
-    build_key_verification_admin,
-    send_key_verification,
 )
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime import node_data
@@ -1389,7 +1389,6 @@ def exportConfig(interface: MeshInterface) -> str:
 export_config = exportConfig
 
 
-
 def exportProfile(interface: MeshInterface) -> bytes:
     """Export the local node configuration as a binary DeviceProfile."""
     return cli_config_io.export_profile(interface)
@@ -1397,6 +1396,7 @@ def exportProfile(interface: MeshInterface) -> bytes:
 
 # COMPAT_STABLE_SHIM: snake_case alias for exportProfile
 export_profile = exportProfile
+
 
 def _close_power_meter_quietly(candidate: Any) -> None:
     """Best-effort close used while rolling back meter construction/configuration."""

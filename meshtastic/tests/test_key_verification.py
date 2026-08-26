@@ -39,9 +39,7 @@ def test_build_initiate_requires_remote_nodenum() -> None:
 def test_build_initiate_sets_type_and_peer() -> None:
     """Initiation records the message type and the peer being verified."""
     message = build_key_verification_admin("initiate", remote_nodenum=0xABCD1234)
-    assert (
-        message.message_type == admin_pb2.KeyVerificationAdmin.INITIATE_VERIFICATION
-    )
+    assert message.message_type == admin_pb2.KeyVerificationAdmin.INITIATE_VERIFICATION
     assert message.remote_nodenum == 0xABCD1234
 
 
@@ -60,13 +58,10 @@ def test_build_provide_requires_four_digit_security_number() -> None:
         build_key_verification_admin("provide", nonce=5)
     with pytest.raises(ValueError, match="four digits"):
         build_key_verification_admin("provide", nonce=5, security_number=10000)
-    message = build_key_verification_admin(
-        "provide", nonce=5, security_number=4242
-    )
+    message = build_key_verification_admin("provide", nonce=5, security_number=4242)
     assert message.security_number == 4242
     assert (
-        message.message_type
-        == admin_pb2.KeyVerificationAdmin.PROVIDE_SECURITY_NUMBER
+        message.message_type == admin_pb2.KeyVerificationAdmin.PROVIDE_SECURITY_NUMBER
     )
 
 
@@ -110,7 +105,9 @@ def test_send_targets_local_node_over_admin_app() -> None:
     assert kwargs["wantAck"] is True
 
 
-def _inform_notification(nonce: int, security_number: int) -> mesh_pb2.ClientNotification:
+def _inform_notification(
+    nonce: int, security_number: int
+) -> mesh_pb2.ClientNotification:
     notification = mesh_pb2.ClientNotification()
     notification.key_verification_number_inform.nonce = nonce
     notification.key_verification_number_inform.remote_longname = "Repeater"
@@ -176,7 +173,6 @@ def test_send_ignores_foreign_notifications() -> None:
         )
 
     threading.Thread(target=_valid_reply, daemon=True).start()
-
 
     interface.sendData.side_effect = _send
     request = build_key_verification_admin("initiate", remote_nodenum=0xABCD1234)

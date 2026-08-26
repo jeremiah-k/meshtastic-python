@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from typing import Any, Protocol
 
@@ -14,9 +13,9 @@ from google.protobuf.message import DecodeError, Message
 
 import meshtastic.util
 from meshtastic.cli.context import CliExit, _terminate_cli
-
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import clientonly_pb2, localonly_pb2
+
 
 class DescriptorLike(Protocol):
     """Structural descriptor type shared by pure-Python and upb protobuf runtimes."""
@@ -564,4 +563,3 @@ def write_binary_profile(
     except OSError as exc:
         _terminate_cli(cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
     cli_print(f"Exported configuration to {export_path}")
-

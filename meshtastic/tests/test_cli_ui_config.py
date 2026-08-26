@@ -17,7 +17,6 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import Node
 from meshtastic.protobuf import admin_pb2, device_ui_pb2, mesh_pb2
 
-
 # ---------------------------------------------------------------------------
 # Helpers mirroring test_cli_admin_utility_actions.py
 # ---------------------------------------------------------------------------
@@ -68,7 +67,8 @@ def _context(interface: MagicMock, args: dict[str, object]) -> CliContext:
 
 
 def _build_response_packet(
-    *, config: device_ui_pb2.DeviceUIConfig | None = None,
+    *,
+    config: device_ui_pb2.DeviceUIConfig | None = None,
 ) -> dict[str, Any]:
     """Build a decoded admin packet mirroring the real wire shape."""
     raw = admin_pb2.AdminMessage()
@@ -78,7 +78,8 @@ def _build_response_packet(
 
 
 def _stub_node_for_request(
-    captured: dict[str, Any], iface: MagicMock,
+    captured: dict[str, Any],
+    iface: MagicMock,
 ) -> Node:
     """Create a Node double that captures ``_send_admin`` arguments."""
 
@@ -126,7 +127,9 @@ def test_requestUiConfig_returns_config_when_response_fires(
             on_response(_build_response_packet(config=expected))
 
     monkeypatch.setattr(
-        "meshtastic.node._wait_for_admin_ack", _fake_ack_wait, raising=True,
+        "meshtastic.node._wait_for_admin_ack",
+        _fake_ack_wait,
+        raising=True,
     )
 
     result = node.requestUiConfig(response_timeout_seconds=2.0)
@@ -149,7 +152,9 @@ def test_requestUiConfig_returns_none_when_response_times_out(
         return None
 
     monkeypatch.setattr(
-        "meshtastic.node._wait_for_admin_ack", _fake_ack_wait, raising=True,
+        "meshtastic.node._wait_for_admin_ack",
+        _fake_ack_wait,
+        raising=True,
     )
 
     result = node.requestUiConfig(response_timeout_seconds=0.05)
@@ -218,7 +223,8 @@ def test_load_ui_config_document_terminates_on_missing_file() -> None:
     exits: list[tuple[str, int]] = []
     with pytest.raises(SystemExit):
         device_actions._load_ui_config_document(
-            "/no/such/path/ui_config.yaml", _hooks(exits=exits),
+            "/no/such/path/ui_config.yaml",
+            _hooks(exits=exits),
         )
     assert exits and exits[0][1] == 1
     assert "Failed to read UI config" in exits[0][0]
@@ -284,7 +290,8 @@ def test_handle_get_ui_config_missing_response_terminates() -> None:
     exits: list[tuple[str, int]] = []
     with pytest.raises(SystemExit):
         device_actions._handle_admin_utility_actions(
-            _context(iface, {"get_ui_config": True}), _hooks(exits=exits),
+            _context(iface, {"get_ui_config": True}),
+            _hooks(exits=exits),
         )
     assert exits and exits[0][1] == 1
     assert "firmware 2.7+" in exits[0][0]
