@@ -34,8 +34,10 @@ _STAGE_MESSAGE_TYPES = {
     STAGE_NO_VERIFY: admin_pb2.KeyVerificationAdmin.DO_NOT_VERIFY,
 }
 
-_SECURITY_NUMBER_MAX = 9999
+_SECURITY_NUMBER_MIN = 1
+_SECURITY_NUMBER_MAX = 999999
 _NODE_NUM_MAX = 0xFFFFFFFF
+_NONCE_MAX = 0xFFFFFFFFFFFFFFFF
 _NOTIFICATION_PAYLOAD_FIELDS: tuple[
     Literal["key_verification_number_inform"],
     Literal["key_verification_number_request"],
@@ -45,9 +47,15 @@ _NOTIFICATION_PAYLOAD_FIELDS: tuple[
     "key_verification_number_request",
     "key_verification_final",
 )
+_EXPECTED_NOTIFICATION_FIELDS = {
+    admin_pb2.KeyVerificationAdmin.INITIATE_VERIFICATION: (
+        "key_verification_number_request"
+    ),
+    admin_pb2.KeyVerificationAdmin.PROVIDE_SECURITY_NUMBER: ("key_verification_final"),
+}
 
 
-def build_key_verification_admin(
+def _build_key_verification_admin(
     stage: str,
     *,
     remote_nodenum: int = 0,
@@ -66,7 +74,7 @@ def build_key_verification_admin(
         Handshake nonce echoed from the device notification; required for
         every stage after ``initiate``.
     security_number : int | None
-        The four digit number compared out of band; required for ``provide``.
+        The six-digit number compared out of band; required for ``provide``.
 
     Returns
     -------
@@ -82,8 +90,8 @@ def build_key_verification_admin(
         raise ValueError(f"unknown key-verification stage: {stage!r}")
     if not 0 <= remote_nodenum <= _NODE_NUM_MAX:
         raise ValueError("remote_nodenum must be a 32-bit node number")
-    if nonce < 0:
-        raise ValueError("nonce must be non-negative")
+    if not 0 <= nonce <= _NONCE_MAX:
+        raise ValueError("nonce must be an unsigned 64-bit value")
 
     message = admin_pb2.KeyVerificationAdmin()
     message.message_type = _STAGE_MESSAGE_TYPES[stage]
@@ -102,9 +110,10 @@ def build_key_verification_admin(
             raise ValueError(
                 "provide requires the security number shown on the remote node"
             )
-        if not 0 <= security_number <= _SECURITY_NUMBER_MAX:
+        if not _SECURITY_NUMBER_MIN <= security_number <= _SECURITY_NUMBER_MAX:
             raise ValueError(
-                f"security_number must be 0..{_SECURITY_NUMBER_MAX} (four digits)"
+                "security_number must be "
+                f"{_SECURITY_NUMBER_MIN}..{_SECURITY_NUMBER_MAX} (six digits)"
             )
         message.security_number = security_number
     return message
@@ -118,7 +127,7 @@ def _notification_nonce(notification: mesh_pb2.ClientNotification) -> int | None
     return None
 
 
-def send_key_verification(
+def _send_key_verification(
     interface: MeshInterface,
     request: admin_pb2.KeyVerificationAdmin,
     *,
@@ -131,20 +140,24 @@ def send_key_verification(
     interface : MeshInterface
         Connected mesh interface owning the local node.
     request : admin_pb2.KeyVerificationAdmin
-        Handshake stage built by :func:`build_key_verification_admin`.
+        Handshake stage built by :func:`_build_key_verification_admin`.
     timeout : float
         Seconds to wait for the device's key-verification notification.
 
     Returns
     -------
     mesh_pb2.ClientNotification | None
-        The first matching key-verification notification received, or `None`
-        when the device completes the stage without one.
+        The stage-specific key-verification notification for ``initiate`` or
+        ``provide``. Returns ``None`` immediately after sending ``verify`` or
+        ``no-verify``, because firmware emits no notification for decisions.
 
     Raises
     ------
+    ValueError
+        If ``timeout`` is not positive.
     TimeoutError
-        If no key-verification notification arrives before ``timeout``.
+        If an expected stage-specific notification does not arrive before
+        ``timeout``.
     RuntimeError
         If the interface has not completed its initial node handshake.
     """
@@ -154,6 +167,9 @@ def send_key_verification(
     if my_info is None:
         raise RuntimeError("device did not provide my_info")
 
+    expected_notification_field = _EXPECTED_NOTIFICATION_FIELDS.get(
+        request.message_type
+    )
     event = threading.Event()
     result: mesh_pb2.ClientNotification | None = None
 
@@ -165,6 +181,8 @@ def send_key_verification(
     ) -> None:
         nonlocal result
         if interface is not local_interface:
+            return
+        if notification.WhichOneof("payload_variant") != expected_notification_field:
             return
         nonce = _notification_nonce(notification)
         if nonce is None:
@@ -179,7 +197,8 @@ def send_key_verification(
         event.set()
 
     local_interface: object = interface
-    pub.subscribe(_on_notification, CLIENT_NOTIFICATION_TOPIC)
+    if expected_notification_field is not None:
+        pub.subscribe(_on_notification, CLIENT_NOTIFICATION_TOPIC)
     try:
         admin = admin_pb2.AdminMessage()
         admin.key_verification.CopyFrom(request)
@@ -192,8 +211,11 @@ def send_key_verification(
             pkiEncrypted=False,
             priority=mesh_pb2.MeshPacket.Priority.RELIABLE,
         )
+        if expected_notification_field is None:
+            return None
         if event.wait(timeout):
             return result
         raise TimeoutError("no key-verification notification received before timeout")
     finally:
-        pub.unsubscribe(_on_notification, CLIENT_NOTIFICATION_TOPIC)
+        if expected_notification_field is not None:
+            pub.unsubscribe(_on_notification, CLIENT_NOTIFICATION_TOPIC)

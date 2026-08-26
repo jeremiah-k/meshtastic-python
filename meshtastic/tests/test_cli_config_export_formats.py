@@ -66,7 +66,7 @@ def _context(
 )
 def test_resolve_export_format(fmt: str, destination: str, expected: str) -> None:
     """Format resolution honors explicit choices and extension auto-detection."""
-    assert config_io.resolve_export_format(fmt, destination) == expected
+    assert config_io._resolve_export_format(fmt, destination) == expected
 
 
 @pytest.mark.unit
@@ -138,8 +138,21 @@ def test_decode_accepts_binary_profiles() -> None:
         MagicMock(), payload.SerializeToString(), "node.cfg"
     )
 
+    assert decoded is not None
     assert decoded["owner"] == "Binary Owner"
     assert decoded["config"]
+
+
+@pytest.mark.unit
+def test_decode_accepts_printable_binary_profile_without_cfg_extension() -> None:
+    """A protobuf made only of YAML-safe UTF-8 bytes still auto-detects."""
+    payload = clientonly_pb2.DeviceProfile(long_name="123456789")
+
+    decoded = configure_actions._decode_configure_document(
+        MagicMock(), payload.SerializeToString(), "profile.data"
+    )
+
+    assert decoded == {"owner": "123456789"}
 
 
 @pytest.mark.unit
@@ -182,6 +195,10 @@ def test_profile_export_round_trip() -> None:
     mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
     mock.getCannedMessage.return_value = "ping||pong"
     mock.getRingtone.return_value = ""
+    mock.getMyUser.return_value = {
+        "isUnmessagable": False,
+        "isLicensed": True,
+    }
     mock.getMyNodeInfo.return_value = {
         "position": {"latitude": 37.5, "longitude": -122.1, "altitude": 52}
     }
@@ -190,9 +207,9 @@ def test_profile_export_round_trip() -> None:
     mock.localNode.moduleConfig = localonly_pb2.LocalModuleConfig()
     interface = cast(MeshInterface, mock)
 
-    raw = config_io.export_profile(interface)
-    configuration = config_io.profile_to_configuration(
-        config_io.parse_profile_bytes(raw)
+    raw = config_io._export_profile(interface)
+    configuration = config_io._profile_to_configuration(
+        config_io._parse_profile_bytes(raw)
     )
 
     assert configuration["owner"] == "Jeremiah K"
@@ -200,5 +217,34 @@ def test_profile_export_round_trip() -> None:
     assert configuration["channel_url"] == "https://meshtastic.org/e/#ABC"
     assert configuration["canned_messages"] == "ping||pong"
     assert "ringtone" not in configuration
+    assert configuration["is_unmessagable"] is False
+    assert configuration["is_licensed"] is True
     assert configuration["location"]["alt"] == 52
     assert configuration["config"]
+
+
+@pytest.mark.unit
+def test_profile_conversion_preserves_present_zero_fixed_position() -> None:
+    """An explicitly stored (0, 0, 0) position is not mistaken for absence."""
+    profile = clientonly_pb2.DeviceProfile()
+    profile.fixed_position.SetInParent()
+
+    configuration = config_io._profile_to_configuration(profile)
+
+    assert configuration["location"] == {"lat": 0.0, "lon": 0.0, "alt": 0}
+
+
+@pytest.mark.unit
+def test_profile_conversion_normalizes_bytes_and_true_defaults() -> None:
+    """Binary config sections use the same bytes/default normalization as YAML."""
+    profile = clientonly_pb2.DeviceProfile()
+    profile.config.security.private_key = b"\x01\x02"
+    profile.module_config.mqtt.address = "mqtt.example"
+
+    configuration = config_io._profile_to_configuration(profile)
+
+    security = configuration["config"]["security"]
+    assert security["privateKey"] == "base64:AQI="
+    assert security["serialEnabled"] is False
+    mqtt = configuration["module_config"]["mqtt"]
+    assert mqtt["encryptionEnabled"] is False

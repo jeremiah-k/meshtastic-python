@@ -478,6 +478,8 @@ def test_close_failed_settings_transaction_reports_close_failure() -> None:
         {"location": {"lat": 0, "lon": 0, "alt": 1 << 31}},
         {"canned_messages": 123},
         {"ringtone": object()},
+        {"is_unmessagable": "false"},
+        {"is_licensed": 1},
         {"channel_url": 123},
         {"channel_url": "   "},
     ],
@@ -502,12 +504,16 @@ def test_direct_write_validation_preserves_alias_and_altitude_metadata() -> None
             "channelUrl": " https://example.invalid/#abc ",
             "canned_messages": "hello",
             "ringtone": "tone",
+            "is_unmessagable": False,
+            "is_licensed": True,
         },
     )
     assert values.owner == "Owner"
     assert values.owner_short == "OS"
     assert values.location == (90.0, 180.0, -(1 << 31))
     assert values.altitude_specified is True
+    assert values.is_unmessagable is False
+    assert values.is_licensed is True
     assert values.channel_url_key == "channelUrl"
     assert values.channel_url == "https://example.invalid/#abc"
 
@@ -571,6 +577,8 @@ def test_apply_direct_configuration_prints_explicit_altitude_and_applies_all_val
         direct_values=configure_values._DirectConfigureValues(
             owner="Owner",
             owner_short="OS",
+            is_unmessagable=False,
+            is_licensed=True,
             location=(1.0, 2.0, 3),
             altitude_specified=True,
             canned_messages="hello",
@@ -586,6 +594,12 @@ def test_apply_direct_configuration_prints_explicit_altitude_and_applies_all_val
     result = configure_actions._apply_direct_configuration(hooks, node, prepared)
 
     assert result is True
+    node.setOwner.assert_called_once_with(
+        long_name="Owner",
+        short_name="OS",
+        is_licensed=True,
+        is_unmessagable=False,
+    )
     node.setFixedPosition.assert_called_once_with(1.0, 2.0, 3)
     node.setURL.assert_called_once_with("https://example.invalid/#abc")
     assert "Fixing altitude at 3 meters" in [

@@ -4,66 +4,24 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 import meshtastic.cli.device_actions as device_actions
 import meshtastic.cli.parser as cli_parser
-from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
-from meshtastic.cli.device_actions import DeviceActionHooks
-from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import Node
 from meshtastic.protobuf import admin_pb2, device_ui_pb2, mesh_pb2
-
-# ---------------------------------------------------------------------------
-# Helpers mirroring test_cli_admin_utility_actions.py
-# ---------------------------------------------------------------------------
-
-
-def _hooks(
-    prints: list[str] | None = None,
-    exits: list[tuple[str, int]] | None = None,
-) -> DeviceActionHooks:
-    """Build a DeviceActionHooks stand-in capturing CLI exit and print output."""
-
-    def fake_exit(message: str, code: int = 0) -> None:
-        if exits is not None:
-            exits.append((message, code))
-        raise SystemExit(code)
-
-    return DeviceActionHooks(
-        cli_exit=cast(CliExit, fake_exit),
-        cli_print=(prints.append if prints is not None else (lambda _s: None)),
-        set_pref=MagicMock(return_value=True),
-        is_local_destination=MagicMock(return_value=True),
-        send_local_factory_reset_and_wait=MagicMock(),
-        post_factory_reset_ready_probe=MagicMock(),
-        handle_ota_update=MagicMock(),
-        build_lockdown_auth=MagicMock(),
-        read_lockdown_passphrase_file=MagicMock(return_value=b"x"),
-        send_lockdown_auth=MagicMock(),
-        validate_lockdown_passphrase=MagicMock(return_value=b"x"),
-        build_key_verification_admin=MagicMock(),
-        send_key_verification=MagicMock(),
-    )
-
-
-def _context(interface: MagicMock, args: dict[str, object]) -> CliContext:
-    """Build a connected CLI context carrying the given argument overrides."""
-    defaults: dict[str, object] = {
-        "dest": "^local",
-        "get_ui_config": False,
-        "store_ui_config": None,
-    }
-    defaults.update(args)
-    return CliContext(
-        interface=cast(MeshInterface, interface),
-        args=argparse.Namespace(**defaults),
-        get_node_kwargs={},
-        outcome=ActionOutcome(),
-    )
+from meshtastic.tests.cli_device_action_test_helpers import (
+    device_action_context as _context,
+)
+from meshtastic.tests.cli_device_action_test_helpers import (
+    device_action_hooks as _hooks,
+)
+from meshtastic.tests.cli_device_action_test_helpers import (
+    device_interface_mock as _interface,
+)
 
 
 def _build_response_packet(
@@ -116,7 +74,7 @@ def test_requestUiConfig_returns_config_when_response_fires(
 
     expected = device_ui_pb2.DeviceUIConfig(version=3, screen_brightness=85)
     captured: dict[str, Any] = {}
-    iface = MagicMock()
+    iface = _interface()
     node = _stub_node_for_request(captured, iface)
 
     def _fake_ack_wait(node_obj: Node, request: Any) -> None:
@@ -144,7 +102,7 @@ def test_requestUiConfig_returns_none_when_response_times_out(
     """A response that never fires surfaces as ``None`` after the bounded wait."""
 
     captured: dict[str, Any] = {}
-    iface = MagicMock()
+    iface = _interface()
     node = _stub_node_for_request(captured, iface)
 
     def _fake_ack_wait(node_obj: Node, request: Any) -> None:
@@ -159,6 +117,18 @@ def test_requestUiConfig_returns_none_when_response_times_out(
 
     result = node.requestUiConfig(response_timeout_seconds=0.05)
     assert result is None
+
+
+@pytest.mark.unit
+def test_requestUiConfig_rejects_non_positive_timeout() -> None:
+    """Invalid bounded-wait values fail before sending an admin request."""
+    captured: dict[str, Any] = {}
+    node = _stub_node_for_request(captured, _interface())
+
+    with pytest.raises(ValueError, match="response timeout must be positive"):
+        node.requestUiConfig(response_timeout_seconds=0)
+
+    assert captured == {}
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +173,7 @@ def test_yaml_round_trip_preserves_fields(tmp_path: Path) -> None:
     config.theme = device_ui_pb2.Theme.DARK
     config.language = device_ui_pb2.Language.ENGLISH
 
-    dumped = device_actions.yaml_dump_ui_config(config)
+    dumped = device_actions._yaml_dump_ui_config(config)
     payload = tmp_path / "ui_config.yaml"
     payload.write_text(dumped, encoding="utf8")
 
@@ -269,7 +239,7 @@ def test_handle_get_ui_config_prints_yaml() -> None:
     """``--get-ui-config`` prints the dumped YAML and closes the interface."""
 
     expected = device_ui_pb2.DeviceUIConfig(version=2, screen_brightness=99)
-    iface = MagicMock()
+    iface = _interface()
     iface.getNode.return_value.requestUiConfig.return_value = expected
     prints: list[str] = []
     context = _context(iface, {"get_ui_config": True})
@@ -285,7 +255,7 @@ def test_handle_get_ui_config_prints_yaml() -> None:
 @pytest.mark.unit
 def test_handle_get_ui_config_missing_response_terminates() -> None:
     """Missing response exits 1 with the firmware-2.7+ hint."""
-    iface = MagicMock()
+    iface = _interface()
     iface.getNode.return_value.requestUiConfig.return_value = None
     exits: list[tuple[str, int]] = []
     with pytest.raises(SystemExit):
@@ -304,11 +274,11 @@ def test_handle_store_ui_config_reads_file_and_calls_node(tmp_path: Path) -> Non
     config = device_ui_pb2.DeviceUIConfig()
     config.version = 5
     config.screen_brightness = 123
-    dumped = device_actions.yaml_dump_ui_config(config)
+    dumped = device_actions._yaml_dump_ui_config(config)
     payload = tmp_path / "ui.yaml"
     payload.write_text(dumped, encoding="utf8")
 
-    iface = MagicMock()
+    iface = _interface()
     context = _context(iface, {"store_ui_config": str(payload)})
     device_actions._handle_admin_utility_actions(context, _hooks())
 

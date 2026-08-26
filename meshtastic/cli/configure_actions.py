@@ -13,7 +13,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, NoReturn
 
 import yaml
 
@@ -51,6 +51,8 @@ ALLOWED_CONFIGURE_KEYS = frozenset(
         "owner",
         "owner_short",
         "ownerShort",
+        "is_unmessagable",
+        "is_licensed",
         "channel_url",
         "channelUrl",
         "canned_messages",
@@ -945,69 +947,90 @@ def _close_failed_settings_transaction(
 
 
 def _decode_configure_document(
-    hooks: ConfigureHooks, raw_bytes: bytes, path: str
-) -> dict[str, Any]:
+    hooks: ConfigureHooks, raw_bytes: bytes | str, path: str
+) -> dict[str, Any] | None:
     """Decode one configure document, auto-detecting YAML or binary profiles.
 
     Parameters
     ----------
     hooks : ConfigureHooks
         CLI reporting and validation hooks.
-    raw_bytes : bytes
-        Raw file contents.
+    raw_bytes : bytes | str
+        Raw file contents. Strings remain accepted for historical mocked and
+        text-mode file seams.
     path : str
         Source path used for error reporting.
 
     Returns
     -------
-    dict[str, Any]
-        Parsed configuration mapping.
+    dict[str, Any] | None
+        Parsed configuration mapping, or ``None`` for an empty YAML document.
     """
     if isinstance(raw_bytes, str):
         # Legacy compatibility seams (text-mode reads, mocked opens) may
         # supply decoded content directly; normalize before detection.
-        raw_bytes = raw_bytes.encode("utf8")
-    try:
-        text = raw_bytes.decode("utf8")
-    except UnicodeDecodeError:
-        text = None
-    if text is not None and _config_io.has_yaml_forbidden_control_chars(text):
-        # Protobuf wire payloads are dense in C0 control bytes that YAML
-        # forbids; route such payloads to the DeviceProfile parser instead.
-        text = None
-    if text is not None:
-        try:
-            configuration = yaml.safe_load(text)
-        except yaml.YAMLError as exc:
-            # Printable content that still fails YAML parsing is a malformed
-            # YAML document, not a candidate binary profile. Preserve the
-            # historical error over the DeviceProfile fallback.
-            _terminate_cli(
-                hooks.cli_exit,
-                f"ERROR: Failed to parse YAML configuration: {exc}",
-                1,
-            )
-        else:
-            if isinstance(configuration, dict):
-                return configuration
-            if configuration is not None:
-                # Decoded YAML that is not a mapping is a YAML shape error,
-                # not a candidate binary profile.
-                _terminate_cli(
-                    hooks.cli_exit,
-                    "ERROR: YAML configuration must be a mapping/dictionary, got "
-                    f"{type(configuration).__name__}",
-                    1,
-                )
-    try:
-        return _config_io.profile_to_configuration(
-            _config_io.parse_profile_bytes(raw_bytes)
+        raw = raw_bytes.encode("utf8")
+    else:
+        raw = raw_bytes
+
+    def _decode_profile() -> dict[str, Any]:
+        return _config_io._profile_to_configuration(  # noqa: SLF001
+            _config_io._parse_profile_bytes(raw)  # noqa: SLF001
         )
-    except ValueError as exc:
+
+    def _fail_invalid_profile(exc: ValueError) -> NoReturn:
         _terminate_cli(
             hooks.cli_exit,
             f"ERROR: {path} is not a valid YAML config or DeviceProfile "
             f"(.cfg) file: {exc}",
+            1,
+        )
+
+    if path.lower().endswith((".cfg", ".bin")):
+        try:
+            return _decode_profile()
+        except ValueError as exc:
+            _fail_invalid_profile(exc)
+
+    try:
+        text = raw.decode("utf8")
+    except UnicodeDecodeError:
+        text = None
+    if text is not None and _config_io._has_yaml_forbidden_control_chars(
+        text
+    ):  # noqa: SLF001
+        # Protobuf wire payloads are dense in C0 control bytes that YAML
+        # forbids; route such payloads to the DeviceProfile parser instead.
+        text = None
+    if text is None:
+        try:
+            return _decode_profile()
+        except ValueError as exc:
+            _fail_invalid_profile(exc)
+
+    try:
+        configuration = yaml.safe_load(text)
+    except yaml.YAMLError as yaml_error:
+        # A valid protobuf can occasionally contain only YAML-permitted UTF-8
+        # bytes. Accept it only when it has recognized DeviceProfile fields;
+        # otherwise preserve the historical malformed-YAML diagnostic.
+        try:
+            return _decode_profile()
+        except ValueError:
+            _terminate_cli(
+                hooks.cli_exit,
+                f"ERROR: Failed to parse YAML configuration: {yaml_error}",
+                1,
+            )
+    if isinstance(configuration, dict) or configuration is None:
+        return configuration
+    try:
+        return _decode_profile()
+    except ValueError:
+        _terminate_cli(
+            hooks.cli_exit,
+            "ERROR: YAML configuration must be a mapping/dictionary, got "
+            f"{type(configuration).__name__}",
             1,
         )
 
@@ -1147,16 +1170,32 @@ def _apply_direct_configuration(
             hooks.cli_print(CONFIGURE_DIRECT_SETTINGS_HEADER)
             direct_writes_started = True
 
-    if values.owner is not None:
+    if any(
+        value is not None
+        for value in (
+            values.owner,
+            values.owner_short,
+            values.is_unmessagable,
+            values.is_licensed,
+        )
+    ):
         _begin_direct_writes()
-        hooks.cli_print(f"Setting device owner to {values.owner}")
-        target_node.setOwner(long_name=values.owner)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if values.owner_short is not None:
-        _begin_direct_writes()
-        hooks.cli_print(f"Setting device owner short to {values.owner_short}")
-        target_node.setOwner(long_name=None, short_name=values.owner_short)
+        if values.owner is not None:
+            hooks.cli_print(f"Setting device owner to {values.owner}")
+        if values.owner_short is not None:
+            hooks.cli_print(f"Setting device owner short to {values.owner_short}")
+        if values.is_licensed is not None:
+            hooks.cli_print(f"Setting licensed mode to {values.is_licensed}")
+        if values.is_unmessagable is not None:
+            hooks.cli_print(
+                f"Setting owner unmessagable flag to {values.is_unmessagable}"
+            )
+        target_node.setOwner(
+            long_name=values.owner,
+            short_name=values.owner_short,
+            is_licensed=bool(values.is_licensed),
+            is_unmessagable=values.is_unmessagable,
+        )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if values.location is not None:
@@ -1555,11 +1594,11 @@ def _handle_configure_actions(
         outcome.stop_processing = True
         return
 
-    export_format = _config_io.resolve_export_format(
+    export_format = _config_io._resolve_export_format(  # noqa: SLF001
         getattr(args, "export_format", "auto"), args.export_config
     )
     if export_format == "binary":
-        _config_io.write_binary_profile(
+        _config_io._write_binary_profile(  # noqa: SLF001
             args.export_config,
             lambda: hooks.export_profile(context.interface),
             hooks.cli_exit,
