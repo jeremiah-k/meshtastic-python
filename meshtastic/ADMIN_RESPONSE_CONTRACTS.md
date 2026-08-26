@@ -14,10 +14,10 @@ unchanged, and the two-field public `ResponseHandler` tuple stays backward compa
 The firmware 2.8 CLI additions reuse the same typed response-correlation path for
 these request/response pairs:
 
-| Request field | Expected response field |
-| --- | --- |
+| Request field                          | Expected response field                 |
+| -------------------------------------- | --------------------------------------- |
 | `get_device_connection_status_request` | `get_device_connection_status_response` |
-| `get_ui_config_request` | `get_ui_config_response` |
+| `get_ui_config_request`                | `get_ui_config_response`                |
 
 `Node.requestDeviceConnectionStatus()` and `Node.requestUiConfig()` therefore accept
 only the named admin response from the requested source. A routing ACK is necessary

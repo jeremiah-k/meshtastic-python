@@ -303,14 +303,22 @@ def test_node_admin_utility_methods_build_expected_admin_fields() -> None:
     node.restorePreferences("sd")
     assert sender.call_args.args[0].restore_preferences == admin_pb2.AdminMessage.SD
     node.removeBackupPreferences("flash")
-    assert sender.call_args.args[0].remove_backup_preferences == admin_pb2.AdminMessage.FLASH
+    assert (
+        sender.call_args.args[0].remove_backup_preferences
+        == admin_pb2.AdminMessage.FLASH
+    )
     node.toggleMutedNode("!0000002a")
     assert sender.call_args.args[0].toggle_muted_node == 42
     node.deleteFile("/prefs/uiconfig.proto")
     assert sender.call_args.args[0].delete_file_request == "/prefs/uiconfig.proto"
     node.sendInputEvent(17, kb_char=65, touch_x=10, touch_y=20)
     event = sender.call_args.args[0].send_input_event
-    assert (event.event_code, event.kb_char, event.touch_x, event.touch_y) == (17, 65, 10, 20)
+    assert (event.event_code, event.kb_char, event.touch_x, event.touch_y) == (
+        17,
+        65,
+        10,
+        20,
+    )
 
 
 @pytest.mark.unit

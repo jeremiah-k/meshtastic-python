@@ -1,5 +1,6 @@
 """CLI orchestration and rendering tests for firmware key verification."""
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,12 +15,12 @@ from meshtastic.tests.cli_device_action_test_helpers import (
 )
 
 
-
 def _interface() -> MagicMock:
     """Build a permissive interface double for key-verification CLI orchestration."""
     interface = MagicMock()
     interface.myInfo = MagicMock(my_node_num=1)
     return interface
+
 
 def _args(stage: str | None, **overrides: object) -> dict[str, object]:
     values: dict[str, object] = {
@@ -43,7 +44,8 @@ def test_key_verification_action_noop_without_stage() -> None:
     device_actions._handle_key_verification_action(context, hooks)
 
     assert context.outcome.close_now is False
-    hooks.build_key_verification_admin.assert_not_called()
+    build_admin = cast(MagicMock, hooks.build_key_verification_admin)
+    build_admin.assert_not_called()
 
 
 @pytest.mark.unit
@@ -53,23 +55,27 @@ def test_key_verification_initiate_resolves_peer_sends_and_reports() -> None:
     interface.myInfo.my_node_num = 1
     context = _context(interface, _args("initiate", key_verify_wait=2.5))
     prints: list[str] = []
-    hooks = _hooks(prints)
     request = admin_pb2.KeyVerificationAdmin(
         message_type=admin_pb2.KeyVerificationAdmin.INITIATE_VERIFICATION,
         remote_nodenum=7,
     )
-    hooks.build_key_verification_admin.return_value = request
+    build_admin = MagicMock(return_value=request)
     notification = mesh_pb2.ClientNotification()
     notification.key_verification_number_request.remote_longname = "Repeater"
     notification.key_verification_number_request.nonce = 91
-    hooks.send_key_verification.return_value = notification
+    send_notification = MagicMock(return_value=notification)
+    hooks = _hooks(
+        prints,
+        build_key_verification_admin=build_admin,
+        send_key_verification=send_notification,
+    )
 
     device_actions._handle_key_verification_action(context, hooks)
 
-    hooks.build_key_verification_admin.assert_called_once_with(
+    build_admin.assert_called_once_with(
         "initiate", remote_nodenum=7, nonce=0, security_number=None
     )
-    hooks.send_key_verification.assert_called_once_with(interface, request, timeout=2.5)
+    send_notification.assert_called_once_with(interface, request, timeout=2.5)
     assert context.outcome.close_now is True
     assert any("Repeater requests the security number" in line for line in prints)
     assert any("--key-verify-nonce 91" in line for line in prints)
@@ -77,7 +83,9 @@ def test_key_verification_initiate_resolves_peer_sends_and_reports() -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize("dest", [None, "^all", "^local"])
-def test_key_verification_initiate_rejects_non_peer_destinations(dest: str | None) -> None:
+def test_key_verification_initiate_rejects_non_peer_destinations(
+    dest: str | None,
+) -> None:
     """Initiation requires one actual remote peer rather than local/broadcast aliases."""
     interface = _interface()
     exits: list[tuple[str, int]] = []
@@ -106,8 +114,8 @@ def test_key_verification_reports_build_and_send_failures() -> None:
     """Validation and runtime errors use the stable CLI termination surface."""
     interface = _interface()
     exits: list[tuple[str, int]] = []
-    hooks = _hooks(exits=exits)
-    hooks.build_key_verification_admin.side_effect = ValueError("bad nonce")
+    build_admin = MagicMock(side_effect=ValueError("bad nonce"))
+    hooks = _hooks(exits=exits, build_key_verification_admin=build_admin)
     with pytest.raises(SystemExit):
         device_actions._handle_key_verification_action(
             _context(interface, _args("verify", key_verify_nonce=-1)), hooks
@@ -115,8 +123,8 @@ def test_key_verification_reports_build_and_send_failures() -> None:
     assert exits[-1] == ("Invalid key-verification options: bad nonce", 1)
 
     exits.clear()
-    hooks = _hooks(exits=exits)
-    hooks.send_key_verification.side_effect = TimeoutError("no notification")
+    send_notification = MagicMock(side_effect=TimeoutError("no notification"))
+    hooks = _hooks(exits=exits, send_key_verification=send_notification)
     with pytest.raises(SystemExit):
         device_actions._handle_key_verification_action(
             _context(interface, _args("verify", key_verify_nonce=5)), hooks
@@ -149,7 +157,9 @@ def test_key_verification_reporter_covers_progress_and_decision_variants() -> No
     final_no_chars = mesh_pb2.ClientNotification()
     final_no_chars.key_verification_final.remote_longname = "Responder"
     final_no_chars.key_verification_final.nonce = 13
-    device_actions._report_key_verification_notification(final_no_chars, "provide", hooks)
+    device_actions._report_key_verification_notification(
+        final_no_chars, "provide", hooks
+    )
 
     plain = mesh_pb2.ClientNotification(message="device note")
     device_actions._report_key_verification_notification(plain, "provide", hooks)

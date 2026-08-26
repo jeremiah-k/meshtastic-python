@@ -8,11 +8,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from meshtastic.__main__ import setPref
 from meshtastic.cli import config_io, configure_actions
 from meshtastic.cli.configure_actions import ConfigureActionHooks
 from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.__main__ import setPref
 from meshtastic.protobuf import clientonly_pb2, config_pb2, localonly_pb2
 
 
@@ -352,12 +352,16 @@ def test_decode_control_byte_garbage_without_profile_suffix_exits_cleanly() -> N
         raise SystemExit(code)
 
     with pytest.raises(SystemExit):
-        config_io._decode_configure_document(b"\x00", "profile.data", cli_exit=fake_exit)
+        config_io._decode_configure_document(
+            b"\x00", "profile.data", cli_exit=cast(CliExit, fake_exit)
+        )
     assert any("DeviceProfile" in message for message in exits)
 
 
 @pytest.mark.unit
-def test_binary_profile_write_reports_open_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_binary_profile_write_reports_open_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Filesystem open errors terminate through the CLI error surface."""
     exits: list[str] = []
 
@@ -368,7 +372,10 @@ def test_binary_profile_write_reports_open_failure(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(config_io.os, "open", MagicMock(side_effect=OSError("disk")))
     with pytest.raises(SystemExit):
         config_io._write_binary_profile(
-            "/bad/profile.cfg", lambda: b"payload", fake_exit, MagicMock()
+            "/bad/profile.cfg",
+            lambda: b"payload",
+            cast(CliExit, fake_exit),
+            MagicMock(),
         )
     assert "Failed to write config file" in exits[0]
 
@@ -386,13 +393,15 @@ def test_binary_profile_write_closes_raw_descriptor_on_fdopen_failure(
 
     monkeypatch.setattr(config_io.os, "open", MagicMock(return_value=77))
     monkeypatch.setattr(config_io.os, "fchmod", MagicMock())
-    monkeypatch.setattr(config_io.os, "fdopen", MagicMock(side_effect=OSError("fdopen")))
+    monkeypatch.setattr(
+        config_io.os, "fdopen", MagicMock(side_effect=OSError("fdopen"))
+    )
     close = MagicMock()
     monkeypatch.setattr(config_io.os, "close", close)
 
     with pytest.raises(SystemExit):
         config_io._write_binary_profile(
-            "profile.cfg", lambda: b"payload", fake_exit, MagicMock()
+            "profile.cfg", lambda: b"payload", cast(CliExit, fake_exit), MagicMock()
         )
 
     close.assert_called_once_with(77)

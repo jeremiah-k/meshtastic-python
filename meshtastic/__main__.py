@@ -30,12 +30,11 @@ import meshtastic.cli.invocation as cli_invocation
 import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.preference_runtime as cli_preference_runtime
 import meshtastic.cli.runtime as cli_runtime
-from meshtastic import _topics
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic import mt_config, remote_hardware
+from meshtastic import _topics, mt_config, remote_hardware
 from meshtastic._branding import (
     PRIMARY_CLI_NAME,
     PROJECT_ISSUE_URL,
