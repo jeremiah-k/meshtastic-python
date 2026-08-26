@@ -9,14 +9,19 @@ from __future__ import annotations
 import binascii
 import contextlib
 import contextvars
+import json
 import logging
+
 from collections.abc import Callable, Iterator
 from typing import Any
 
 from google.protobuf.descriptor import FieldDescriptor
+from google.protobuf.json_format import ParseDict, ParseError
 
 import meshtastic.util
+
 from meshtastic.cli.values import parse_bitfield_value
+
 from meshtastic.protobuf import config_pb2
 
 # Preserve the historical CLI logger name even though implementation moved here.
@@ -312,6 +317,115 @@ def _resolve_enum_value(
     return False, value
 
 
+def _parse_repeated_message_value(
+    pref: FieldDescriptor,
+    raw_value: Any,
+    *,
+    field_path: str,
+    cli_print: Callable[..., None],
+) -> tuple[bool, list[Any]] | None:
+    """Parse one raw CLI value into the list-of-dict form expected by a repeated-message field.
+
+    Returns ``None`` when the raw value is not in the expected JSON-array form
+    (so the caller can fall back to its normal validation path).  Returns
+    ``(False, [])`` on a malformed payload, after reporting through the same
+    diagnostic surface used elsewhere for bad preference values.  Otherwise
+    returns ``(True, parsed_list)``.
+    """
+
+    if pref.message_type is None or not isinstance(raw_value, str):
+        return None
+
+    text = raw_value.strip()
+    if not (text.startswith("[") and text.endswith("]")):
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        report_pref_validation(
+            f"Invalid JSON value for {field_path}: {exc.msg} (line {exc.lineno}, column {exc.colno}).",
+            cli_print=cli_print,
+        )
+        return False, []
+    if not isinstance(parsed, list):
+        report_pref_validation(
+            f"Invalid value {text!r} for {field_path}; expected a JSON array of objects.",
+            cli_print=cli_print,
+        )
+        return False, []
+    for index, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            report_pref_validation(
+                f"Invalid value {text!r} for {field_path}; element {index} is not a JSON object.",
+                cli_print=cli_print,
+            )
+            return False, []
+    return True, parsed
+
+
+def _assign_repeated_message_pref_value(
+    target: Any,
+    pref: FieldDescriptor,
+    raw_value: Any,
+    *,
+    field_path: str,
+    cli_print: Callable[..., None],
+) -> tuple[bool, bool]:
+    """Apply one repeated-message-field update transactionally on a message copy.
+
+    Each JSON object element is parsed into a fresh submessage via
+    :func:`google.protobuf.json_format.ParseDict`; ``ignore_unknown_fields``
+    is left at its strict default so unknown keys surface a validation error.
+    An empty array clears the field.
+    """
+    parsed = _parse_repeated_message_value(
+        pref, raw_value, field_path=field_path, cli_print=cli_print
+    )
+    if parsed is None:
+        # Caller routed here in error; treat the raw payload as invalid.
+        return reject_pref_value(
+            pref, field_path=field_path, raw_value=raw_value, cli_print=cli_print
+        ), True
+    ok, elements = parsed
+    if not ok:
+        return False, True
+
+    candidate = type(target)()
+    candidate.CopyFrom(target)
+    field_container = getattr(candidate, pref.name)
+    del field_container[:]
+    submsg_class = pref.message_type._concrete_class  # type: ignore[union-attr]
+    try:
+        for index, element in enumerate(elements):
+            submsg = submsg_class()
+            try:
+                ParseDict(element, submsg)
+            except ParseError as exc:
+                report_pref_validation(
+                    f"Invalid value for {field_path}; element {index}: {exc}.",
+                    cli_print=cli_print,
+                )
+                return False, True
+            field_container.append(submsg)
+    except (TypeError, ValueError, OverflowError) as exc:
+        report_pref_validation(
+            f"Invalid value for {field_path}: {exc}.",
+            cli_print=cli_print,
+        )
+        return False, True
+
+    target.CopyFrom(candidate)
+    if not CONFIGURE_PREFLIGHT_MODE.get():
+        if elements:
+            cli_print(
+                f"Set {pref.name} to {len(elements)} entr"
+                f"{'y' if len(elements) == 1 else 'ies'} from JSON"
+            )
+        else:
+            cli_print(f"Clearing {pref.name} list")
+    return True, False
+
+
 def _assign_repeated_pref_value(
     target: Any,
     pref: FieldDescriptor,
@@ -334,6 +448,12 @@ def _assign_repeated_pref_value(
             candidate_values[:] = new_values
         elif value == 0:
             del candidate_values[:]
+        elif isinstance(value, str) and "," in value:
+            parts = [part.strip() for part in value.split(",")]
+            new_values = [
+                meshtastic.util.fromStr(part) if part else part for part in parts
+            ]
+            candidate_values[:] = new_values
         else:
             current_values = [x for x in candidate_values if x not in [0, "", b""]]
             if value not in current_values:
@@ -352,6 +472,8 @@ def _assign_repeated_pref_value(
 
     target.CopyFrom(candidate)
     if isinstance(value, list):
+        return True, True
+    if isinstance(value, str) and "," in value:
         return True, True
     if not CONFIGURE_PREFLIGHT_MODE.get():
         if value == 0:
@@ -419,7 +541,15 @@ def set_pref(
         else config_part
     )
     print_assignment = True
-    if is_repeated_field(pref):
+    if is_repeated_field(pref) and pref.message_type is not None:
+        assignment_ok, print_assignment = _assign_repeated_message_pref_value(
+            target,
+            pref,
+            raw_value,
+            field_path=normalized,
+            cli_print=cli_print,
+        )
+    elif is_repeated_field(pref):
         assignment_ok, print_assignment = _assign_repeated_pref_value(
             target,
             pref,
@@ -445,6 +575,7 @@ def set_pref(
         display_value = redact_pref_value(normalized, meshtastic.util.toStr(raw_value))
         if not CONFIGURE_PREFLIGHT_MODE.get():
             cli_print(f"Set {prefix}{display_name} to {display_value}")
+
     return assignment_ok
 
 
