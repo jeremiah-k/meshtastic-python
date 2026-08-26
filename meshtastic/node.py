@@ -20,6 +20,7 @@ from typing import (
 )
 
 from google.protobuf.descriptor import FieldDescriptor
+from google.protobuf.message import Message
 
 from meshtastic._interface_errors import MeshInterfaceError as _MeshInterfaceError
 from meshtastic.node_runtime import contact_runtime
@@ -102,6 +103,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _ResultT = TypeVar("_ResultT")
+_AdminResponseT = TypeVar("_AdminResponseT", bound=Message)
+ADMIN_RESPONSE_WAIT_SECONDS = 12.0
 # COMPAT_STABLE_SHIM: Compatibility re-exports preserved for callers/tests importing constants from meshtastic.node.
 EMPTY_LONG_NAME_MSG = _EMPTY_LONG_NAME_MSG
 EMPTY_SHORT_NAME_MSG = _EMPTY_SHORT_NAME_MSG
@@ -1583,8 +1586,17 @@ class Node:  # pylint: disable=too-many-instance-attributes
     ) -> mesh_pb2.MeshPacket | None:
         """Send a one-shot admin message, waiting for ACK/NAK on remote nodes."""
         self.ensureSessionKey()
-        onResponse = None if self is self.iface.localNode else self.onAckNak
-        return self._send_admin(message, onResponse=onResponse)
+        if self is self.iface.localNode:
+            return self._send_admin(message)
+        request = _send_admin_with_ack_scope(
+            self,
+            message,
+            scope_ack=True,
+            onResponse=self.onAckNak,
+        )
+        if request is not None:
+            _wait_for_admin_ack(self, request)
+        return request
 
     def backupPreferences(self, location: str = "flash") -> mesh_pb2.MeshPacket | None:
         """Back up the device's preferences to internal flash or SD storage.
@@ -1695,8 +1707,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
             Firmware input event code.
         kb_char : int
             Keyboard character code for key events.
-        touch_x : int, touch_y : int
-            Touch coordinates for touch events.
+        touch_x : int
+            Horizontal touch coordinate for touch events.
+        touch_y : int
+            Vertical touch coordinate for touch events.
 
         Returns
         -------
@@ -1711,8 +1725,56 @@ class Node:  # pylint: disable=too-many-instance-attributes
         logger.info("Sending input event %d", event_code)
         return self._send_admin_op(message)
 
+    def _request_admin_response(
+        self,
+        message: admin_pb2.AdminMessage,
+        response_field_name: str,
+        response_type: type[_AdminResponseT],
+        *,
+        response_timeout_seconds: float,
+    ) -> _AdminResponseT | None:
+        """Send an admin request and return a copied named response field."""
+        if response_timeout_seconds <= 0:
+            raise ValueError("response timeout must be positive")
+
+        result: _AdminResponseT | None = None
+        completed = threading.Event()
+
+        def _on_response(packet: dict[str, Any]) -> None:
+            nonlocal result
+            decoded = packet.get("decoded") if isinstance(packet, dict) else None
+            admin_section = decoded.get("admin") if isinstance(decoded, dict) else None
+            raw_admin = (
+                admin_section.get("raw") if isinstance(admin_section, dict) else None
+            )
+            has_field = getattr(raw_admin, "HasField", None)
+            try:
+                present = callable(has_field) and bool(has_field(response_field_name))
+            except (TypeError, ValueError):
+                present = False
+            if not present or raw_admin is None:
+                return
+            response = response_type()
+            response.CopyFrom(getattr(raw_admin, response_field_name))
+            result = response
+            completed.set()
+
+        request = _send_admin_with_ack_scope(
+            self,
+            message,
+            scope_ack=True,
+            wantResponse=True,
+            onResponse=_on_response,
+        )
+        if request is None:
+            return None
+        _wait_for_admin_ack(self, request)
+        if not completed.wait(timeout=response_timeout_seconds):
+            return None
+        return result
+
     def requestDeviceConnectionStatus(
-        self, *, response_timeout_seconds: float = 12.0
+        self, *, response_timeout_seconds: float = ADMIN_RESPONSE_WAIT_SECONDS
     ) -> connection_status_pb2.DeviceConnectionStatus | None:
         """Request the node's connectivity status and wait for the response.
 
@@ -1721,7 +1783,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         response_timeout_seconds : float, optional
             Seconds to wait for the admin RESPONSE packet to arrive after the
             ACK. ``None`` is returned if the wait expires before the device
-            reports back. (Default value = 12.0)
+            reports back. Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
 
         Returns
         -------
@@ -1731,40 +1793,15 @@ class Node:  # pylint: disable=too-many-instance-attributes
         message = admin_pb2.AdminMessage()
         message.get_device_connection_status_request = True
         logger.info("Requesting device connection status")
-        result: dict[str, connection_status_pb2.DeviceConnectionStatus] = {}
-        completed = threading.Event()
-
-        def _on_response(packet: dict[str, Any]) -> None:
-            decoded = packet.get("decoded") if isinstance(packet, dict) else None
-            admin_section = decoded.get("admin") if isinstance(decoded, dict) else None
-            raw_admin = (
-                admin_section.get("raw") if isinstance(admin_section, dict) else None
-            )
-            has_field = getattr(raw_admin, "HasField", None)
-            try:
-                has_status = callable(has_field) and has_field(
-                    "get_device_connection_status_response"
-                )
-            except (TypeError, ValueError):
-                has_status = False
-            if has_status and raw_admin is not None:
-                result["status"] = raw_admin.get_device_connection_status_response
-                completed.set()
-
-        request = _send_admin_with_ack_scope(
-            self,
+        return self._request_admin_response(
             message,
-            scope_ack=True,
-            wantResponse=True,
-            onResponse=_on_response,
+            "get_device_connection_status_response",
+            connection_status_pb2.DeviceConnectionStatus,
+            response_timeout_seconds=response_timeout_seconds,
         )
-        _wait_for_admin_ack(self, request)
-        if not completed.wait(timeout=response_timeout_seconds):
-            return None
-        return result.get("status")
 
     def requestUiConfig(
-        self, *, response_timeout_seconds: float = 12.0
+        self, *, response_timeout_seconds: float = ADMIN_RESPONSE_WAIT_SECONDS
     ) -> device_ui_pb2.DeviceUIConfig | None:
         """Request the node's device UI configuration and wait for the response.
 
@@ -1773,7 +1810,7 @@ class Node:  # pylint: disable=too-many-instance-attributes
         response_timeout_seconds : float, optional
             Seconds to wait for the admin RESPONSE packet to arrive after the
             ACK. ``None`` is returned if the wait expires before the device
-            reports back. (Default value = 12.0)
+            reports back. Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
 
         Returns
         -------
@@ -1783,35 +1820,12 @@ class Node:  # pylint: disable=too-many-instance-attributes
         message = admin_pb2.AdminMessage()
         message.get_ui_config_request = True
         logger.info("Requesting device UI configuration")
-        result: dict[str, device_ui_pb2.DeviceUIConfig] = {}
-        completed = threading.Event()
-
-        def _on_ui_response(packet: dict[str, Any]) -> None:
-            decoded = packet.get("decoded") if isinstance(packet, dict) else None
-            admin_section = decoded.get("admin") if isinstance(decoded, dict) else None
-            raw_admin = (
-                admin_section.get("raw") if isinstance(admin_section, dict) else None
-            )
-            has_field = getattr(raw_admin, "HasField", None)
-            try:
-                has_ui = callable(has_field) and has_field("get_ui_config_response")
-            except (TypeError, ValueError):
-                has_ui = False
-            if has_ui and raw_admin is not None:
-                result["config"] = raw_admin.get_ui_config_response
-                completed.set()
-
-        request = _send_admin_with_ack_scope(
-            self,
+        return self._request_admin_response(
             message,
-            scope_ack=True,
-            wantResponse=True,
-            onResponse=_on_ui_response,
+            "get_ui_config_response",
+            device_ui_pb2.DeviceUIConfig,
+            response_timeout_seconds=response_timeout_seconds,
         )
-        _wait_for_admin_ack(self, request)
-        if not completed.wait(timeout=response_timeout_seconds):
-            return None
-        return result.get("config")
 
     def storeUiConfig(
         self, config: device_ui_pb2.DeviceUIConfig

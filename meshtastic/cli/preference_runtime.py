@@ -321,13 +321,24 @@ def _parse_repeated_message_value(
     field_path: str,
     cli_print: Callable[..., None],
 ) -> tuple[bool, list[Any]] | None:
-    """Parse one raw CLI value into the list-of-dict form expected by a repeated-message field.
+    """Parse a raw CLI value for a repeated-message field.
 
-    Returns ``None`` when the raw value is not in the expected JSON-array form
-    (so the caller can fall back to its normal validation path).  Returns
-    ``(False, [])`` on a malformed payload, after reporting through the same
-    diagnostic surface used elsewhere for bad preference values.  Otherwise
-    returns ``(True, parsed_list)``.
+    Parameters
+    ----------
+    pref : FieldDescriptor
+        Descriptor for the repeated-message field.
+    raw_value : Any
+        Candidate JSON-array value from the CLI or configure document.
+    field_path : str
+        Fully qualified preference path used in validation messages.
+    cli_print : Callable[..., None]
+        CLI diagnostic reporter.
+
+    Returns
+    -------
+    tuple[bool, list[Any]] | None
+        ``None`` when the input is not a JSON-array candidate, ``(False, [])``
+        after reporting malformed input, or ``(True, parsed_list)`` on success.
     """
 
     if pref.message_type is None or not isinstance(raw_value, str):
@@ -368,12 +379,27 @@ def _assign_repeated_message_pref_value(
     field_path: str,
     cli_print: Callable[..., None],
 ) -> tuple[bool, bool]:
-    """Apply one repeated-message-field update transactionally on a message copy.
+    """Apply one repeated-message-field update transactionally.
 
-    Each JSON object element is parsed into a fresh submessage via
-    :func:`google.protobuf.json_format.ParseDict`; ``ignore_unknown_fields``
-    is left at its strict default so unknown keys surface a validation error.
-    An empty array clears the field.
+    Parameters
+    ----------
+    target : Any
+        Protobuf message containing the repeated field.
+    pref : FieldDescriptor
+        Descriptor for the repeated-message field.
+    raw_value : Any
+        Candidate JSON-array value.
+    field_path : str
+        Fully qualified preference path used in validation messages.
+    cli_print : Callable[..., None]
+        CLI diagnostic reporter.
+
+    Returns
+    -------
+    tuple[bool, bool]
+        Assignment success and whether the caller should print its generic
+        assignment message. Each object is parsed strictly on a message copy,
+        and an empty array clears the field.
     """
     parsed = _parse_repeated_message_value(
         pref, raw_value, field_path=field_path, cli_print=cli_print
@@ -449,10 +475,8 @@ def _assign_repeated_pref_value(
         elif value == 0:
             del candidate_values[:]
         elif isinstance(value, str) and "," in value:
-            parts = [part.strip() for part in value.split(",")]
-            new_values = [
-                meshtastic.util.fromStr(part) if part else part for part in parts
-            ]
+            parts = [part.strip() for part in value.split(",") if part.strip()]
+            new_values = [meshtastic.util.fromStr(part) for part in parts]
             candidate_values[:] = new_values
         else:
             current_values = [x for x in candidate_values if x not in [0, "", b""]]

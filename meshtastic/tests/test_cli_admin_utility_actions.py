@@ -1,74 +1,22 @@
 """Tests for the firmware 2.5-2.8 admin utility CLI actions."""
 
-import argparse
-from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 
 import meshtastic.cli.device_actions as device_actions
 from meshtastic._interface_errors import MeshInterfaceError
-from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
-from meshtastic.cli.device_actions import DeviceActionHooks
-from meshtastic.mesh_interface import MeshInterface
-from meshtastic.node import _backup_location_value
-from meshtastic.protobuf import admin_pb2, connection_status_pb2
-
-
-def _hooks(
-    prints: list[str] | None = None,
-    exits: list[tuple[str, int]] | None = None,
-) -> DeviceActionHooks:
-    def fake_exit(message: str, code: int = 0) -> None:
-        if exits is not None:
-            exits.append((message, code))
-        raise SystemExit(code)
-
-    return DeviceActionHooks(
-        cli_exit=cast(CliExit, fake_exit),
-        cli_print=(prints.append if prints is not None else (lambda _s: None)),
-        set_pref=MagicMock(return_value=True),
-        is_local_destination=MagicMock(return_value=True),
-        send_local_factory_reset_and_wait=MagicMock(),
-        post_factory_reset_ready_probe=MagicMock(),
-        handle_ota_update=MagicMock(),
-        build_lockdown_auth=MagicMock(),
-        read_lockdown_passphrase_file=MagicMock(return_value=b"x"),
-        send_lockdown_auth=MagicMock(),
-        validate_lockdown_passphrase=MagicMock(return_value=b"x"),
-        build_key_verification_admin=MagicMock(),
-        send_key_verification=MagicMock(),
-    )
-
-
-def _context(interface: MagicMock, args: dict[str, object]) -> CliContext:
-    """Build a connected CLI context carrying the given argument overrides."""
-    defaults: dict[str, object] = {
-        "dest": "^local",
-        "remove_node": None,
-        "set_favorite_node": None,
-        "remove_favorite_node": None,
-        "set_ignored_node": None,
-        "remove_ignored_node": None,
-        "reset_nodedb": False,
-        "backup_preferences": None,
-        "restore_preferences": None,
-        "remove_backup_preferences": None,
-        "toggle_muted_node": None,
-        "delete_file": None,
-        "send_input_event": None,
-        "input_kb_char": None,
-        "input_touch_x": 0,
-        "input_touch_y": 0,
-        "request_connection_status": False,
-    }
-    defaults.update(args)
-    return CliContext(
-        interface=cast(MeshInterface, interface),
-        args=argparse.Namespace(**defaults),
-        get_node_kwargs={},
-        outcome=ActionOutcome(),
-    )
+from meshtastic.node import Node, _backup_location_value
+from meshtastic.protobuf import admin_pb2, connection_status_pb2, mesh_pb2
+from meshtastic.tests.cli_device_action_test_helpers import (
+    device_action_context as _context,
+)
+from meshtastic.tests.cli_device_action_test_helpers import (
+    device_action_hooks as _hooks,
+)
+from meshtastic.tests.cli_device_action_test_helpers import (
+    device_interface_mock as _interface,
+)
 
 
 @pytest.mark.unit
@@ -90,7 +38,7 @@ def test_backup_location_value_rejects_unknown_names() -> None:
 @pytest.mark.unit
 def test_preference_backup_actions_call_node_methods() -> None:
     """Each backup flag drives the matching Node method with its location."""
-    interface = MagicMock()
+    interface = _interface()
     prints: list[str] = []
     context = _context(
         interface,
@@ -107,13 +55,13 @@ def test_preference_backup_actions_call_node_methods() -> None:
 @pytest.mark.unit
 def test_restore_and_remove_backup_actions() -> None:
     """Restore/remove flags route through their Node methods."""
-    interface = MagicMock()
+    interface = _interface()
     device_actions._handle_admin_utility_actions(
         _context(interface, {"restore_preferences": "flash"}), _hooks()
     )
     interface.getNode.return_value.restorePreferences.assert_called_once_with("flash")
 
-    interface2 = MagicMock()
+    interface2 = _interface()
     device_actions._handle_admin_utility_actions(
         _context(interface2, {"remove_backup_preferences": "sd"}), _hooks()
     )
@@ -125,13 +73,13 @@ def test_restore_and_remove_backup_actions() -> None:
 @pytest.mark.unit
 def test_delete_file_and_input_event_actions() -> None:
     """File deletion and input events forward their arguments verbatim."""
-    interface = MagicMock()
+    interface = _interface()
     device_actions._handle_admin_utility_actions(
         _context(interface, {"delete_file": "/fs/old.cfg"}), _hooks()
     )
     interface.getNode.return_value.deleteFile.assert_called_once_with("/fs/old.cfg")
 
-    interface2 = MagicMock()
+    interface2 = _interface()
     device_actions._handle_admin_utility_actions(
         _context(
             interface2,
@@ -145,9 +93,85 @@ def test_delete_file_and_input_event_actions() -> None:
 
 
 @pytest.mark.unit
+def test_input_event_rejects_multiple_keyboard_characters() -> None:
+    """The scalar protobuf keyboard field cannot accept a multi-character token."""
+    interface = _interface()
+    exits: list[tuple[str, int]] = []
+
+    with pytest.raises(SystemExit):
+        device_actions._handle_admin_utility_actions(
+            _context(
+                interface,
+                {"send_input_event": 212, "input_kb_char": "escape"},
+            ),
+            _hooks(exits=exits),
+        )
+
+    assert exits == [("ERROR: --input-kb-char accepts exactly one character.", 1)]
+    interface.getNode.assert_not_called()
+
+
+def _node_with_admin_sender(
+    *, local: bool
+) -> tuple[Node, MagicMock, MagicMock, MagicMock]:
+    """Build a minimal Node whose admin transport records one-shot operations."""
+    node = object.__new__(Node)
+    interface = MagicMock()
+    interface.localNode = node if local else object()
+    node.iface = interface
+    ensure_session_key = MagicMock()
+    node.ensureSessionKey = ensure_session_key  # type: ignore[method-assign]
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=17))
+    node._send_admin = sender  # type: ignore[method-assign]
+    return node, interface, sender, ensure_session_key
+
+
+@pytest.mark.unit
+def test_send_admin_op_waits_for_remote_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote one-shot admin operations do not report success before ACK/NAK."""
+    node, _interface_mock, sender, ensure_session_key = _node_with_admin_sender(
+        local=False
+    )
+    wait_for_ack = MagicMock()
+    monkeypatch.setattr("meshtastic.node._wait_for_admin_ack", wait_for_ack)
+    message = admin_pb2.AdminMessage(
+        backup_preferences=admin_pb2.AdminMessage.BackupLocation.FLASH
+    )
+
+    request = node._send_admin_op(message)
+
+    ensure_session_key.assert_called_once_with()
+    sender.assert_called_once_with(message, onResponse=node.onAckNak)
+    wait_for_ack.assert_called_once_with(node, request)
+
+
+@pytest.mark.unit
+def test_send_admin_op_keeps_local_send_nonblocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A directly connected local admin operation sends without an ACK wait."""
+    node, _interface_mock, sender, _ensure_session_key = _node_with_admin_sender(
+        local=True
+    )
+    wait_for_ack = MagicMock()
+    monkeypatch.setattr("meshtastic.node._wait_for_admin_ack", wait_for_ack)
+    message = admin_pb2.AdminMessage(
+        backup_preferences=admin_pb2.AdminMessage.BackupLocation.FLASH
+    )
+
+    request = node._send_admin_op(message)
+
+    sender.assert_called_once_with(message)
+    wait_for_ack.assert_not_called()
+    assert request is sender.return_value
+
+
+@pytest.mark.unit
 def test_toggle_muted_node_uses_nodedb_action_path() -> None:
     """ToggleMutedNode rides the shared node-database action table."""
-    interface = MagicMock()
+    interface = _interface()
     context = _context(interface, {"toggle_muted_node": "!abcd1234"})
     device_actions._handle_node_database_actions(context)
     interface.getNode.return_value.toggleMutedNode.assert_called_once_with("!abcd1234")
@@ -177,7 +201,7 @@ def test_connection_status_prints_each_transport() -> None:
 @pytest.mark.unit
 def test_connection_status_missing_response_terminates() -> None:
     """A missing status response exits with the firmware-version hint."""
-    interface = MagicMock()
+    interface = _interface()
     interface.getNode.return_value.requestDeviceConnectionStatus.return_value = None
     exits: list[tuple[str, int]] = []
     with pytest.raises(SystemExit):

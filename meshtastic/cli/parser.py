@@ -196,7 +196,7 @@ def addSelectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Register CLI options for importing a YAML configuration file and exporting device configuration as YAML.
+    """Register CLI options for importing and exporting device configuration.
 
     Parameters
     ----------
@@ -215,7 +215,10 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
 
     group.add_argument(
         "--configure",
-        help="Specify a path to a yaml(.yml) file containing the desired settings for the connected device.",
+        help=(
+            "Specify a YAML (.yaml/.yml) or binary DeviceProfile (.cfg/.bin) "
+            "file containing settings for the connected device."
+        ),
         action="append",
     )
     group.add_argument(
@@ -648,7 +651,7 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     group.add_argument(
         "--key-verify-security-number",
         type=int,
-        help="Four digit security number shown on the remote node (provide stage)",
+        help="Six-digit security number shown on the remote node (provide stage)",
     )
     group.add_argument(
         "--key-verify-wait",

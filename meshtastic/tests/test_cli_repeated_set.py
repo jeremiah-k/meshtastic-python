@@ -86,14 +86,17 @@ def test_malformed_json_uses_same_validation_surface(
 ) -> None:
     """Bad JSON payloads report through the standard ``setPref`` diagnostic."""
     config = localonly_pb2.LocalModuleConfig()
+    seed = '[{"preset":"SHORT_FAST","channel_index":7}]'
+    assert setPref(config, "mesh_beacon.broadcast_targets", seed) is True
+    before = config.SerializeToString()
 
     assert setPref(config, "mesh_beacon.broadcast_targets", payload) is False
 
     out, err = capsys.readouterr()
     combined = out + err
     assert expected_substring in combined
-    # The repeated-submessage field must not be partially mutated.
-    assert len(config.mesh_beacon.broadcast_targets) == 0
+    # The repeated-submessage field must not be cleared or partially mutated.
+    assert config.SerializeToString() == before
 
 
 @pytest.mark.unit
@@ -102,6 +105,9 @@ def test_unknown_key_inside_element_reports_element_diagnostic(
 ) -> None:
     """An unknown key inside an object surfaces a per-element diagnostic."""
     config = localonly_pb2.LocalModuleConfig()
+    seed = '[{"preset":"SHORT_FAST","channel_index":7}]'
+    assert setPref(config, "mesh_beacon.broadcast_targets", seed) is True
+    before = config.SerializeToString()
 
     assert (
         setPref(
@@ -115,7 +121,7 @@ def test_unknown_key_inside_element_reports_element_diagnostic(
     out, err = capsys.readouterr()
     combined = out + err
     assert "element 0" in combined
-    assert len(config.mesh_beacon.broadcast_targets) == 0
+    assert config.SerializeToString() == before
 
 
 @pytest.mark.unit
@@ -124,6 +130,16 @@ def test_repeated_scalar_field_accepts_comma_separated_string() -> None:
     config = localonly_pb2.LocalConfig()
 
     assert setPref(config, "lora.ignore_incoming", "11, 22, 33") is True
+
+    assert list(config.lora.ignore_incoming) == [11, 22, 33]
+
+
+@pytest.mark.unit
+def test_repeated_scalar_ignores_empty_comma_elements() -> None:
+    """Accidental duplicate separators do not synthesize invalid scalar values."""
+    config = localonly_pb2.LocalConfig()
+
+    assert setPref(config, "lora.ignore_incoming", "11,, 22, ,33") is True
 
     assert list(config.lora.ignore_incoming) == [11, 22, 33]
 

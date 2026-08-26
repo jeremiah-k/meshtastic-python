@@ -108,8 +108,8 @@ def _validate_and_normalize_args(
             hooks, f"Error: OTA firmware file not found: {args.ota_update}", 1
         )
     if args.ota_update is not None:
-        # Fetching the node DB while a large OTA transfer starts races the
-        # admin request; skip it unless the operator explicitly asked.
+        # Always skip node loading for OTA. The OTA path resolves LOCAL_ADDR
+        # directly to local_node and does not need the node database.
         args.no_nodes = True
 
     if args.ch_index is not None:

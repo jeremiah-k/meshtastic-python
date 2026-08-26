@@ -25,6 +25,8 @@ class _DirectConfigureValues:
 
     owner: str | None = None
     owner_short: str | None = None
+    is_unmessagable: bool | None = None
+    is_licensed: bool | None = None
     location: tuple[float, float, int] | None = None
     altitude_specified: bool = False
     canned_messages: str | None = None
@@ -40,6 +42,8 @@ class _DirectConfigureValues:
             for value in (
                 self.owner,
                 self.owner_short,
+                self.is_unmessagable,
+                self.is_licensed,
                 self.location,
                 self.canned_messages,
                 self.ringtone,
@@ -173,6 +177,20 @@ def _optional_string(
     return value
 
 
+def _optional_bool(
+    hooks: _ConfigureValueHooks,
+    configuration: dict[str, Any],
+    key: str,
+) -> bool | None:
+    """Return one optional top-level value after boolean type validation."""
+    if key not in configuration:
+        return None
+    value = configuration[key]
+    if not isinstance(value, bool):
+        _terminate_cli(hooks.cli_exit, f"ERROR: {key} must be a boolean.")
+    return value
+
+
 def _normalize_channel_url(
     hooks: _ConfigureValueHooks,
     configuration: dict[str, Any],
@@ -228,6 +246,8 @@ def _validate_direct_configuration(
     return _DirectConfigureValues(
         owner=owner,
         owner_short=owner_short,
+        is_unmessagable=_optional_bool(hooks, configuration, "is_unmessagable"),
+        is_licensed=_optional_bool(hooks, configuration, "is_licensed"),
         location=location,
         altitude_specified=altitude_specified,
         canned_messages=_optional_string(hooks, configuration, "canned_messages"),

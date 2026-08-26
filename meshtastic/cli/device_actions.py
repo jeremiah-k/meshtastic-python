@@ -28,6 +28,8 @@ import meshtastic.util
 from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.key_verification import STAGE_INITIATE as _KV_STAGE_INITIATE
+from meshtastic.key_verification import STAGE_NO_VERIFY as _KV_STAGE_NO_VERIFY
+from meshtastic.key_verification import STAGE_VERIFY as _KV_STAGE_VERIFY
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
     admin_pb2,
@@ -1043,7 +1045,7 @@ def _handle_key_verification_action(
     except (TimeoutError, RuntimeError, ValueError) as exc:
         _terminate_cli(hooks.cli_exit, f"Key verification failed: {exc}", 1)
 
-    _report_key_verification_notification(notification, hooks)
+    _report_key_verification_notification(notification, stage, hooks)
 
 
 def _resolve_key_verification_peer(
@@ -1093,7 +1095,9 @@ def _resolve_key_verification_peer(
 
 
 def _report_key_verification_notification(
-    notification: mesh_pb2.ClientNotification | None, hooks: DeviceActionHooks
+    notification: mesh_pb2.ClientNotification | None,
+    stage: str,
+    hooks: DeviceActionHooks,
 ) -> None:
     """Print the device's key-verification progress notification, if any.
 
@@ -1101,19 +1105,25 @@ def _report_key_verification_notification(
     ----------
     notification : mesh_pb2.ClientNotification | None
         Notification returned by the handshake stage, if the device sent one.
+    stage : str
+        Stage sent to the device.
     hooks : DeviceActionHooks
         Quiet-aware CLI reporter.
     """
     if notification is None:
-        hooks.cli_print(
-            "Key-verification stage sent; the device reported no notification."
-        )
+        decision = "accepted" if stage == _KV_STAGE_VERIFY else "rejected"
+        if stage in (_KV_STAGE_VERIFY, _KV_STAGE_NO_VERIFY):
+            hooks.cli_print(f"Key-verification decision sent: {decision}.")
+        else:
+            hooks.cli_print(
+                "Key-verification stage sent; the device reported no notification."
+            )
         return
     if notification.HasField("key_verification_number_inform"):
         inform = notification.key_verification_number_inform
         hooks.cli_print(
             f"Security number for {inform.remote_longname}: "
-            f"{inform.security_number:04d}"
+            f"{inform.security_number:06d}"
         )
         hooks.cli_print(
             "Compare it out of band with the remote operator, then confirm with "
@@ -1125,11 +1135,21 @@ def _report_key_verification_notification(
         hooks.cli_print(
             f"{request.remote_longname} requests the security number shown on "
             "that node; reply with --key-verify provide "
-            f"--key-verify-nonce {request.nonce} --key-verify-security-number NNNN."
+            f"--key-verify-nonce {request.nonce} "
+            "--key-verify-security-number NNNNNN."
         )
     elif notification.HasField("key_verification_final"):
         final = notification.key_verification_final
-        hooks.cli_print(f"Key verification with {final.remote_longname} completed.")
+        hooks.cli_print(
+            f"Final key-verification confirmation with {final.remote_longname} is ready."
+        )
+        if final.verification_characters:
+            hooks.cli_print(f"Verification characters: {final.verification_characters}")
+        hooks.cli_print(
+            "Compare the final confirmation on both nodes, then accept with "
+            f"--key-verify verify --key-verify-nonce {final.nonce} (or reject with "
+            "--key-verify no-verify)."
+        )
     else:
         hooks.cli_print(f"Key-verification notification: {notification.message}")
 
@@ -1181,7 +1201,15 @@ def _handle_admin_utility_actions(
         outcome.close_now = True
         outcome.wait_for_ack_nak = True
         kb_char = getattr(args, "input_kb_char", None)
-        char_code = ord(kb_char) if kb_char else 0
+        char_code = 0
+        if kb_char:
+            if len(kb_char) != 1:
+                _terminate_cli(
+                    hooks.cli_exit,
+                    "ERROR: --input-kb-char accepts exactly one character.",
+                    1,
+                )
+            char_code = ord(kb_char)
         interface.getNode(args.dest, False, **kwargs).sendInputEvent(
             input_event,
             kb_char=char_code,
@@ -1213,7 +1241,7 @@ def _handle_admin_utility_actions(
                 "firmware 2.7+ is required.",
                 1,
             )
-        hooks.cli_print(yaml_dump_ui_config(ui_config))
+        hooks.cli_print(_yaml_dump_ui_config(ui_config))
 
     store_ui = getattr(args, "store_ui_config", None)
     if store_ui:
@@ -1274,7 +1302,7 @@ def _ip4_to_str(address: int) -> str:
     return ".".join(str((address >> shift) & 0xFF) for shift in (24, 16, 8, 0))
 
 
-def yaml_dump_ui_config(config: device_ui_pb2.DeviceUIConfig) -> str:
+def _yaml_dump_ui_config(config: device_ui_pb2.DeviceUIConfig) -> str:
     """Render a DeviceUIConfig as YAML for display and later re-import."""
     return yaml.safe_dump(MessageToDict(config), sort_keys=False)
 

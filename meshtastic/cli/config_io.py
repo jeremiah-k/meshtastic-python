@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import yaml
@@ -37,6 +38,47 @@ CONFIG_TRUE_DEFAULTS: set[tuple[str, ...]] = {
 MODULE_TRUE_DEFAULTS: set[tuple[str, ...]] = {
     ("mqtt", "encryptionEnabled"),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _LocalConfigurationSnapshot:
+    """Values shared by YAML and binary local-configuration exports."""
+
+    owner: str | None
+    owner_short: str | None
+    channel_url: str | None
+    canned_messages: str | None
+    ringtone: str | None
+    latitude: float | None
+    longitude: float | None
+    altitude: int | None
+    is_unmessagable: bool | None
+    is_licensed: bool | None
+
+
+def _collect_local_configuration(
+    interface: MeshInterface,
+) -> _LocalConfigurationSnapshot:
+    """Collect the local values represented by both export formats."""
+    my_info = interface.getMyNodeInfo()
+    position = my_info.get("position") if my_info else None
+    user = interface.getMyUser() or {}
+    is_unmessagable = user.get("isUnmessagable")
+    is_licensed = user.get("isLicensed")
+    return _LocalConfigurationSnapshot(
+        owner=interface.getLongName(),
+        owner_short=interface.getShortName(),
+        channel_url=interface.localNode.getURL(),
+        canned_messages=interface.getCannedMessage(),
+        ringtone=interface.getRingtone(),
+        latitude=position.get("latitude") if position else None,
+        longitude=position.get("longitude") if position else None,
+        altitude=position.get("altitude") if position else None,
+        is_unmessagable=(
+            is_unmessagable if isinstance(is_unmessagable, bool) else None
+        ),
+        is_licensed=is_licensed if isinstance(is_licensed, bool) else None,
+    )
 
 
 def print_config(config: Any, *, camel_case: bool) -> None:
@@ -315,34 +357,29 @@ def export_config(
 
     config_obj: dict[str, Any] = {}
 
-    owner = interface.getLongName()
-    owner_short = interface.getShortName()
-    channel_url = interface.localNode.getURL()
-    my_info = interface.getMyNodeInfo()
-    canned_messages = interface.getCannedMessage()
-    ringtone = interface.getRingtone()
-    position = my_info.get("position") if my_info else None
-    latitude = position.get("latitude") if position else None
-    longitude = position.get("longitude") if position else None
-    altitude = position.get("altitude") if position else None
+    snapshot = _collect_local_configuration(interface)
 
-    if owner:
-        config_obj["owner"] = owner
-    if owner_short:
-        config_obj["owner_short"] = owner_short
-    if channel_url:
-        config_obj["channelUrl" if camel_case else "channel_url"] = channel_url
-    if canned_messages:
-        config_obj["canned_messages"] = canned_messages
-    if ringtone:
-        config_obj["ringtone"] = ringtone
-    if latitude is not None or longitude is not None:
+    if snapshot.owner:
+        config_obj["owner"] = snapshot.owner
+    if snapshot.owner_short:
+        config_obj["owner_short"] = snapshot.owner_short
+    if snapshot.channel_url:
+        config_obj["channelUrl" if camel_case else "channel_url"] = snapshot.channel_url
+    if snapshot.canned_messages:
+        config_obj["canned_messages"] = snapshot.canned_messages
+    if snapshot.ringtone:
+        config_obj["ringtone"] = snapshot.ringtone
+    if snapshot.is_unmessagable is not None:
+        config_obj["is_unmessagable"] = snapshot.is_unmessagable
+    if snapshot.is_licensed is not None:
+        config_obj["is_licensed"] = snapshot.is_licensed
+    if snapshot.latitude is not None or snapshot.longitude is not None:
         config_obj["location"] = {
-            "lat": latitude if latitude is not None else 0.0,
-            "lon": longitude if longitude is not None else 0.0,
+            "lat": snapshot.latitude if snapshot.latitude is not None else 0.0,
+            "lon": snapshot.longitude if snapshot.longitude is not None else 0.0,
         }
-        if altitude is not None:
-            config_obj["location"]["alt"] = altitude
+        if snapshot.altitude is not None:
+            config_obj["location"]["alt"] = snapshot.altitude
 
     config = message_to_dict(interface.localNode.localConfig)
     prefix_base64_bytes_fields_fn(interface.localNode.localConfig, config)
@@ -361,7 +398,7 @@ def export_config(
     return "# start of Meshtastic configure yaml\n" + yaml.dump(config_obj)
 
 
-def export_profile(
+def _export_profile(
     interface: MeshInterface,
 ) -> bytes:
     """Export local node configuration as a binary DeviceProfile (.cfg).
@@ -383,37 +420,38 @@ def export_profile(
     configurations are always copied so firmware defaults round-trip.
     """
     profile = clientonly_pb2.DeviceProfile()
-    owner = interface.getLongName()
-    owner_short = interface.getShortName()
-    channel_url = interface.localNode.getURL()
-    canned_messages = interface.getCannedMessage()
-    ringtone = interface.getRingtone()
-    my_info = interface.getMyNodeInfo()
-    position = my_info.get("position") if my_info else None
-    latitude = position.get("latitude") if position else None
-    longitude = position.get("longitude") if position else None
-    altitude = position.get("altitude") if position else None
+    snapshot = _collect_local_configuration(interface)
 
-    if owner:
-        profile.long_name = owner
-    if owner_short:
-        profile.short_name = owner_short
-    if channel_url:
-        profile.channel_url = channel_url
-    if canned_messages:
-        profile.canned_messages = canned_messages
-    if ringtone:
-        profile.ringtone = ringtone
-    if latitude is not None or longitude is not None or altitude is not None:
-        profile.fixed_position.latitude_i = int(round((latitude or 0.0) * 1e7))
-        profile.fixed_position.longitude_i = int(round((longitude or 0.0) * 1e7))
-        profile.fixed_position.altitude = int(altitude or 0)
+    if snapshot.owner:
+        profile.long_name = snapshot.owner
+    if snapshot.owner_short:
+        profile.short_name = snapshot.owner_short
+    if snapshot.channel_url:
+        profile.channel_url = snapshot.channel_url
+    if snapshot.canned_messages:
+        profile.canned_messages = snapshot.canned_messages
+    if snapshot.ringtone:
+        profile.ringtone = snapshot.ringtone
+    if snapshot.is_unmessagable is not None:
+        profile.is_unmessagable = snapshot.is_unmessagable
+    if snapshot.is_licensed is not None:
+        profile.is_licensed = snapshot.is_licensed
+    if (
+        snapshot.latitude is not None
+        or snapshot.longitude is not None
+        or snapshot.altitude is not None
+    ):
+        profile.fixed_position.latitude_i = int(round((snapshot.latitude or 0.0) * 1e7))
+        profile.fixed_position.longitude_i = int(
+            round((snapshot.longitude or 0.0) * 1e7)
+        )
+        profile.fixed_position.altitude = int(snapshot.altitude or 0)
     profile.config.CopyFrom(interface.localNode.localConfig)
     profile.module_config.CopyFrom(interface.localNode.moduleConfig)
     return profile.SerializeToString()
 
 
-def parse_profile_bytes(raw: bytes) -> clientonly_pb2.DeviceProfile:
+def _parse_profile_bytes(raw: bytes) -> clientonly_pb2.DeviceProfile:
     """Parse raw bytes as a DeviceProfile protobuf.
 
     Parameters
@@ -436,13 +474,15 @@ def parse_profile_bytes(raw: bytes) -> clientonly_pb2.DeviceProfile:
         profile.ParseFromString(raw)
     except DecodeError as exc:
         raise ValueError(f"invalid DeviceProfile payload: {exc}") from exc
+    if not profile.ListFields():
+        raise ValueError("invalid DeviceProfile payload: no recognized fields")
     return profile
 
 
 _YAML_ALLOWED_CONTROL_CHARS = frozenset("\t\n\r")
 
 
-def has_yaml_forbidden_control_chars(text: str) -> bool:
+def _has_yaml_forbidden_control_chars(text: str) -> bool:
     """Detect control characters that YAML forbids inside decoded bytes.
 
     Parameters
@@ -462,7 +502,7 @@ def has_yaml_forbidden_control_chars(text: str) -> bool:
     )
 
 
-def profile_to_configuration(
+def _profile_to_configuration(
     profile: clientonly_pb2.DeviceProfile,
 ) -> dict[str, Any]:
     """Convert a DeviceProfile into the equivalent YAML configure document.
@@ -479,38 +519,48 @@ def profile_to_configuration(
         through the standard configure pipeline unchanged.
     """
     configuration: dict[str, Any] = {}
-    if profile.long_name:
+    if profile.HasField("long_name"):
         configuration["owner"] = profile.long_name
-    if profile.short_name:
+    if profile.HasField("short_name"):
         configuration["owner_short"] = profile.short_name
-    if profile.channel_url:
+    if profile.HasField("channel_url"):
         configuration["channel_url"] = profile.channel_url
-    if profile.canned_messages:
+    if profile.HasField("canned_messages"):
         configuration["canned_messages"] = profile.canned_messages
-    if profile.ringtone:
+    if profile.HasField("ringtone"):
         configuration["ringtone"] = profile.ringtone
-    fixed = profile.fixed_position
-    if fixed.latitude_i or fixed.longitude_i or fixed.altitude:
+    if profile.HasField("is_unmessagable"):
+        configuration["is_unmessagable"] = profile.is_unmessagable
+    if profile.HasField("is_licensed"):
+        configuration["is_licensed"] = profile.is_licensed
+    if profile.HasField("fixed_position"):
+        fixed = profile.fixed_position
         configuration["location"] = {
             "lat": fixed.latitude_i / 1e7,
             "lon": fixed.longitude_i / 1e7,
             "alt": fixed.altitude,
         }
-    config = MessageToDict(profile.config)
-    if config:
-        configuration["config"] = _converted_section_keys(config, camel_case=False)
-    module_config = MessageToDict(profile.module_config)
-    if module_config:
-        configuration["module_config"] = _converted_section_keys(
-            module_config, camel_case=False
-        )
+    if profile.HasField("config"):
+        config = MessageToDict(profile.config)
+        prefix_base64_bytes_fields(profile.config, config)
+        set_missing_flags_false(config, CONFIG_TRUE_DEFAULTS)
+        if config:
+            configuration["config"] = _converted_section_keys(config, camel_case=False)
+    if profile.HasField("module_config"):
+        module_config = MessageToDict(profile.module_config)
+        prefix_base64_bytes_fields(profile.module_config, module_config)
+        set_missing_flags_false(module_config, MODULE_TRUE_DEFAULTS)
+        if module_config:
+            configuration["module_config"] = _converted_section_keys(
+                module_config, camel_case=False
+            )
     return configuration
 
 
 EXPORT_FILE_MODE: int = 0o600
 
 
-def resolve_export_format(fmt: str, destination: str) -> str:
+def _resolve_export_format(fmt: str, destination: str) -> str:
     """Resolve the effective export format for a destination.
 
     Parameters
@@ -535,7 +585,7 @@ def resolve_export_format(fmt: str, destination: str) -> str:
     return "yaml"
 
 
-def write_binary_profile(
+def _write_binary_profile(
     export_path: str,
     get_payload: Callable[[], bytes],
     cli_exit: CliExit,
