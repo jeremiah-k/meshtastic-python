@@ -121,6 +121,9 @@ def test_unknown_key_inside_element_reports_element_diagnostic(
     out, err = capsys.readouterr()
     combined = out + err
     assert "element 0" in combined
+    # Strict protobuf parsing must name the offending unknown key, not merely
+    # identify an element index.
+    assert "bogus" in combined
     assert config.SerializeToString() == before
 
 
@@ -217,6 +220,26 @@ def test_repeated_message_accepts_configure_mapping_list() -> None:
         {"preset": "SHORT_FAST", "region": "US", "channelIndex": 1},
         {"preset": "MEDIUM_FAST", "channelIndex": 2},
     ]
+
+    assert setPref(config, "mesh_beacon.broadcast_targets", payload) is True
+
+    targets = list(config.mesh_beacon.broadcast_targets)
+    assert len(targets) == 2
+    assert targets[0].preset == config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST
+    assert targets[0].region == config_pb2.Config.LoRaConfig.RegionCode.US
+    assert targets[0].channel_index == 1
+    assert targets[1].preset == config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_FAST
+    assert targets[1].channel_index == 2
+
+
+@pytest.mark.unit
+def test_repeated_message_accepts_configure_mapping_tuple() -> None:
+    """Tuple-of-mapping values take the same strict repeated-message path."""
+    config = localonly_pb2.LocalModuleConfig()
+    payload = (
+        {"preset": "SHORT_FAST", "region": "US", "channelIndex": 1},
+        {"preset": "MEDIUM_FAST", "channelIndex": 2},
+    )
 
     assert setPref(config, "mesh_beacon.broadcast_targets", payload) is True
 
