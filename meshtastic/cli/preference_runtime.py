@@ -328,7 +328,7 @@ def _parse_repeated_message_value(
     pref : FieldDescriptor
         Descriptor for the repeated-message field.
     raw_value : Any
-        Candidate JSON-array value from the CLI or configure document.
+        Candidate JSON-array string or array of mappings from CLI/configure input.
     field_path : str
         Fully qualified preference path used in validation messages.
     cli_print : Callable[..., None]
@@ -337,34 +337,39 @@ def _parse_repeated_message_value(
     Returns
     -------
     tuple[bool, list[Any]] | None
-        ``None`` when the input is not a JSON-array candidate, ``(False, [])``
-        after reporting malformed input, or ``(True, parsed_list)`` on success.
+        ``None`` when the input is not an array candidate, ``(False, [])`` after
+        reporting malformed input, or ``(True, parsed_list)`` on success.
     """
 
-    if pref.message_type is None or not isinstance(raw_value, str):
+    if pref.message_type is None:
         return None
 
-    text = raw_value.strip()
-    if not (text.startswith("[") and text.endswith("]")):
+    rendered_value: str
+    if isinstance(raw_value, (list, tuple)):
+        parsed = list(raw_value)
+        rendered_value = repr(raw_value)
+    elif isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not (text.startswith("[") and text.endswith("]")):
+            return None
+        rendered_value = text
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            report_pref_validation(
+                f"Invalid JSON value for {field_path}: {exc.msg} "
+                f"(line {exc.lineno}, column {exc.colno}).",
+                cli_print=cli_print,
+            )
+            return False, []
+    else:
         return None
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as exc:
-        report_pref_validation(
-            f"Invalid JSON value for {field_path}: {exc.msg} (line {exc.lineno}, column {exc.colno}).",
-            cli_print=cli_print,
-        )
-        return False, []
-    if not isinstance(parsed, list):
-        report_pref_validation(
-            f"Invalid value {text!r} for {field_path}; expected a JSON array of objects.",
-            cli_print=cli_print,
-        )
-        return False, []
+
     for index, item in enumerate(parsed):
         if not isinstance(item, dict):
             report_pref_validation(
-                f"Invalid value {text!r} for {field_path}; element {index} is not a JSON object.",
+                f"Invalid value {rendered_value!r} for {field_path}; "
+                f"element {index} is not an object/mapping.",
                 cli_print=cli_print,
             )
             return False, []
@@ -388,7 +393,7 @@ def _assign_repeated_message_pref_value(
     pref : FieldDescriptor
         Descriptor for the repeated-message field.
     raw_value : Any
-        Candidate JSON-array value.
+        Candidate JSON-array string or array of mappings.
     field_path : str
         Fully qualified preference path used in validation messages.
     cli_print : Callable[..., None]
@@ -421,31 +426,24 @@ def _assign_repeated_message_pref_value(
     field_container = getattr(candidate, pref.name)
     del field_container[:]
     submsg_class = pref.message_type._concrete_class  # type: ignore[union-attr]
-    try:
-        for index, element in enumerate(elements):
-            submsg = submsg_class()
-            try:
-                ParseDict(element, submsg)
-            except ParseError as exc:
-                report_pref_validation(
-                    f"Invalid value for {field_path}; element {index}: {exc}.",
-                    cli_print=cli_print,
-                )
-                return False, True
-            field_container.append(submsg)
-    except (TypeError, ValueError, OverflowError) as exc:
-        report_pref_validation(
-            f"Invalid value for {field_path}: {exc}.",
-            cli_print=cli_print,
-        )
-        return False, True
+    for index, element in enumerate(elements):
+        submsg = submsg_class()
+        try:
+            ParseDict(element, submsg)
+        except ParseError as exc:
+            report_pref_validation(
+                f"Invalid value for {field_path}; element {index}: {exc}.",
+                cli_print=cli_print,
+            )
+            return False, True
+        field_container.append(submsg)
 
     target.CopyFrom(candidate)
     if not CONFIGURE_PREFLIGHT_MODE.get():
         if elements:
             cli_print(
                 f"Set {pref.name} to {len(elements)} entr"
-                f"{'y' if len(elements) == 1 else 'ies'} from JSON"
+                f"{'y' if len(elements) == 1 else 'ies'} from array input"
             )
         else:
             cli_print(f"Clearing {pref.name} list")

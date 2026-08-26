@@ -1057,6 +1057,39 @@ def _load_and_validate_configure_document(
     )
 
 
+def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
+    """Return the target's current licensed flag for partial owner-profile writes.
+
+    Protobuf JSON omits scalar ``False`` values, so a missing ``isLicensed`` key
+    means ``False``. Abort if owner state is unavailable rather than clearing HAM mode.
+    """
+    node_num = getattr(target_node, "nodeNum", None)
+    interface = getattr(target_node, "iface", None)
+    node_db_lock = getattr(interface, "_node_db_lock", None)
+    if not isinstance(node_num, int) or isinstance(node_num, bool) or node_db_lock is None:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current licensed flag: target owner state is unavailable.",
+        )
+    with node_db_lock:
+        nodes_by_num = getattr(interface, "nodesByNum", None)
+        node_data = nodes_by_num.get(node_num) if isinstance(nodes_by_num, dict) else None
+        stored_user = node_data.get("user") if isinstance(node_data, dict) else None
+        user = dict(stored_user) if isinstance(stored_user, dict) else None
+    if user is None:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current licensed flag: target owner state is unavailable.",
+        )
+    current = user.get("isLicensed", False)
+    if not isinstance(current, bool):
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current licensed flag: target owner state is invalid.",
+        )
+    return current
+
+
 def _apply_direct_configuration(
     hooks: ConfigureHooks,
     target_node: Any,
@@ -1103,10 +1136,15 @@ def _apply_direct_configuration(
             hooks.cli_print(
                 f"Setting owner unmessagable flag to {values.is_unmessagable}"
             )
+        is_licensed = (
+            values.is_licensed
+            if values.is_licensed is not None
+            else _current_owner_is_licensed(hooks, target_node)
+        )
         target_node.setOwner(
             long_name=values.owner,
             short_name=values.owner_short,
-            is_licensed=bool(values.is_licensed),
+            is_licensed=is_licensed,
             is_unmessagable=values.is_unmessagable,
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)

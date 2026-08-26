@@ -12,6 +12,7 @@ from meshtastic.cli import config_io, configure_actions
 from meshtastic.cli.configure_actions import ConfigureActionHooks
 from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.__main__ import setPref
 from meshtastic.protobuf import clientonly_pb2, config_pb2, localonly_pb2
 
 
@@ -228,7 +229,7 @@ def test_profile_export_round_trip() -> None:
     mock.getShortName.return_value = "JK"
     mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
     mock.getCannedMessage.return_value = "ping||pong"
-    mock.getRingtone.return_value = ""
+    mock.getRingtone.return_value = "ring"
     mock.getMyUser.return_value = {
         "isUnmessagable": False,
         "isLicensed": True,
@@ -250,7 +251,7 @@ def test_profile_export_round_trip() -> None:
     assert configuration["owner_short"] == "JK"
     assert configuration["channel_url"] == "https://meshtastic.org/e/#ABC"
     assert configuration["canned_messages"] == "ping||pong"
-    assert "ringtone" not in configuration
+    assert configuration["ringtone"] == "ring"
     assert configuration["is_unmessagable"] is False
     assert configuration["is_licensed"] is True
     assert configuration["location"]["alt"] == 52
@@ -303,3 +304,122 @@ def test_profile_conversion_normalizes_bytes_and_true_defaults() -> None:
     assert security["serialEnabled"] is False
     mqtt = configuration["module_config"]["mqtt"]
     assert mqtt["encryptionEnabled"] is False
+
+
+@pytest.mark.unit
+def test_profile_repeated_message_section_reapplies_through_configure_engine() -> None:
+    """DeviceProfile repeated submessages survive conversion and preference apply."""
+    profile = clientonly_pb2.DeviceProfile()
+    target = profile.module_config.mesh_beacon.broadcast_targets.add()
+    target.preset = config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST
+    target.region = config_pb2.Config.LoRaConfig.RegionCode.US
+    target.channel_index = 4
+
+    configuration = config_io._profile_to_configuration(profile)
+    raw_targets = configuration["module_config"]["mesh_beacon"]["broadcastTargets"]
+    local = localonly_pb2.LocalModuleConfig()
+
+    assert setPref(local, "mesh_beacon.broadcastTargets", raw_targets) is True
+
+    assert len(local.mesh_beacon.broadcast_targets) == 1
+    restored = local.mesh_beacon.broadcast_targets[0]
+    assert restored.preset == config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST
+    assert restored.region == config_pb2.Config.LoRaConfig.RegionCode.US
+    assert restored.channel_index == 4
+
+
+@pytest.mark.unit
+def test_profile_conversion_preserves_optional_ringtone() -> None:
+    """An explicitly present ringtone survives DeviceProfile conversion."""
+    profile = clientonly_pb2.DeviceProfile(ringtone="ring")
+    assert config_io._profile_to_configuration(profile)["ringtone"] == "ring"
+
+
+@pytest.mark.unit
+def test_parse_profile_rejects_empty_payload() -> None:
+    """An empty protobuf payload is not accepted as a valid DeviceProfile."""
+    with pytest.raises(ValueError, match="no recognized fields"):
+        config_io._parse_profile_bytes(b"")
+
+
+@pytest.mark.unit
+def test_decode_control_byte_garbage_without_profile_suffix_exits_cleanly() -> None:
+    """Binary-looking garbage without a profile extension still gets a clear failure."""
+    exits: list[str] = []
+
+    def fake_exit(message: str, code: int = 0) -> None:
+        exits.append(message)
+        raise SystemExit(code)
+
+    with pytest.raises(SystemExit):
+        config_io._decode_configure_document(b"\x00", "profile.data", cli_exit=fake_exit)
+    assert any("DeviceProfile" in message for message in exits)
+
+
+@pytest.mark.unit
+def test_binary_profile_write_reports_open_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Filesystem open errors terminate through the CLI error surface."""
+    exits: list[str] = []
+
+    def fake_exit(message: str, code: int = 0) -> None:
+        exits.append(message)
+        raise SystemExit(code)
+
+    monkeypatch.setattr(config_io.os, "open", MagicMock(side_effect=OSError("disk")))
+    with pytest.raises(SystemExit):
+        config_io._write_binary_profile(
+            "/bad/profile.cfg", lambda: b"payload", fake_exit, MagicMock()
+        )
+    assert "Failed to write config file" in exits[0]
+
+
+@pytest.mark.unit
+def test_binary_profile_write_closes_raw_descriptor_on_fdopen_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A descriptor acquired before fdopen failure is closed exactly once."""
+    exits: list[str] = []
+
+    def fake_exit(message: str, code: int = 0) -> None:
+        exits.append(message)
+        raise SystemExit(code)
+
+    monkeypatch.setattr(config_io.os, "open", MagicMock(return_value=77))
+    monkeypatch.setattr(config_io.os, "fchmod", MagicMock())
+    monkeypatch.setattr(config_io.os, "fdopen", MagicMock(side_effect=OSError("fdopen")))
+    close = MagicMock()
+    monkeypatch.setattr(config_io.os, "close", close)
+
+    with pytest.raises(SystemExit):
+        config_io._write_binary_profile(
+            "profile.cfg", lambda: b"payload", fake_exit, MagicMock()
+        )
+
+    close.assert_called_once_with(77)
+    assert "Failed to write config file" in exits[0]
+
+
+@pytest.mark.unit
+def test_yaml_export_includes_all_optional_local_snapshot_fields() -> None:
+    """YAML export exercises every populated direct-state field from one snapshot."""
+    mock = MagicMock()
+    mock.getLongName.return_value = "Owner"
+    mock.getShortName.return_value = "OS"
+    mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
+    mock.getCannedMessage.return_value = "one|two"
+    mock.getRingtone.return_value = "ring"
+    mock.getMyUser.return_value = {"isUnmessagable": True, "isLicensed": False}
+    mock.getMyNodeInfo.return_value = {
+        "position": {"latitude": 1.25, "longitude": -2.5, "altitude": 33}
+    }
+    mock.localNode.localConfig = localonly_pb2.LocalConfig()
+    mock.localNode.moduleConfig = localonly_pb2.LocalModuleConfig()
+
+    rendered = config_io.export_config(cast(MeshInterface, mock), camel_case=False)
+    configuration = config_io.yaml.safe_load(rendered.split("\n", 1)[1])
+
+    assert configuration["canned_messages"] == "one|two"
+    assert configuration["ringtone"] == "ring"
+    assert configuration["is_unmessagable"] is True
+    assert configuration["is_licensed"] is False
+    assert configuration["location"] == {"lat": 1.25, "lon": -2.5, "alt": 33}
