@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import platform
 import sys
 from collections.abc import Sequence
@@ -25,6 +26,8 @@ class _ArgcompleteModule(Protocol):
 
 
 _UINT32_MAX = (1 << 32) - 1
+_UINT64_MAX = (1 << 64) - 1
+_KEY_VERIFICATION_SECURITY_NUMBER_MAX = 999_999
 
 
 def _parse_uint32(value: str) -> int:
@@ -38,6 +41,53 @@ def _parse_uint32(value: str) -> int:
             f"value must be between 0 and {_UINT32_MAX}, got {parsed}"
         )
     return parsed
+
+
+def _parse_uint64(value: str) -> int:
+    """Parse one CLI integer constrained to an unsigned protobuf 64-bit field."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not 0 <= parsed <= _UINT64_MAX:
+        raise argparse.ArgumentTypeError(
+            f"value must be between 0 and {_UINT64_MAX}, got {parsed}"
+        )
+    return parsed
+
+
+def _parse_key_verification_security_number(value: str) -> int:
+    """Parse the six-digit firmware key-verification security number."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not 1 <= parsed <= _KEY_VERIFICATION_SECURITY_NUMBER_MAX:
+        raise argparse.ArgumentTypeError(
+            "security number must be between 1 and "
+            f"{_KEY_VERIFICATION_SECURITY_NUMBER_MAX}, got {parsed}"
+        )
+    return parsed
+
+
+def _parse_positive_finite_float(value: str) -> float:
+    """Parse one positive finite floating-point CLI value."""
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a number, got {value!r}") from exc
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be finite and greater than zero")
+    return parsed
+
+
+def _parse_firmware_keyboard_char(value: str) -> str:
+    """Validate one character representable by the firmware's 8-bit input field."""
+    if len(value) != 1 or ord(value) > 0xFF:
+        raise argparse.ArgumentTypeError(
+            "keyboard input must be exactly one character with code point <= 255"
+        )
+    return value
 
 
 def _parse_absolute_device_path(value: str) -> str:
@@ -659,26 +709,25 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         help="Skip typed confirmation for destructive lockdown actions",
     )
 
-    key_verify_actions = group.add_mutually_exclusive_group()
-    key_verify_actions.add_argument(
+    group.add_argument(
         "--key-verify",
         choices=_KEY_VERIFICATION_STAGES,
         help="Run one stage of the firmware 2.8 PKI key-verification handshake",
     )
     group.add_argument(
         "--key-verify-nonce",
-        type=int,
+        type=_parse_uint64,
         default=0,
         help="Handshake nonce from the device notification (stages after initiate)",
     )
     group.add_argument(
         "--key-verify-security-number",
-        type=int,
+        type=_parse_key_verification_security_number,
         help="Six-digit security number shown on the remote node (provide stage)",
     )
     group.add_argument(
         "--key-verify-wait",
-        type=float,
+        type=_parse_positive_finite_float,
         default=_DEFAULT_KEY_VERIFY_WAIT,
         help="Seconds to wait for the device key-verification notification",
     )
@@ -910,7 +959,7 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         default=None,
         choices=["flash", "sd"],
         metavar="LOCATION",
-        help="Back up preferences to flash or SD storage (default: flash)",
+        help="Back up preferences (default: flash); current firmware does not implement SD backups",
     )
     backup_group.add_argument(
         "--restore-preferences",
@@ -919,7 +968,7 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         default=None,
         choices=["flash", "sd"],
         metavar="LOCATION",
-        help="Restore preferences from flash or SD storage (default: flash)",
+        help="Restore preferences (default: flash); SD support depends on firmware",
     )
     backup_group.add_argument(
         "--remove-backup-preferences",
@@ -928,7 +977,7 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         default=None,
         choices=["flash", "sd"],
         metavar="LOCATION",
-        help="Remove a preferences backup from flash or SD (default: flash)",
+        help="Remove a preferences backup (default: flash); current firmware does not implement SD removal",
     )
     outer.add_argument(
         "--toggle-muted-node",
@@ -949,6 +998,7 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
     outer.add_argument(
         "--input-kb-char",
+        type=_parse_firmware_keyboard_char,
         help="Single keyboard character paired with --send-input-event",
     )
     outer.add_argument(

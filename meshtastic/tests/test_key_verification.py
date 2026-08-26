@@ -84,7 +84,7 @@ def test_send_validates_timeout_and_my_info() -> None:
     """Non-positive timeouts and missing my_info fail before any send."""
     interface = _interface_with_node_num(42)
     request = _build_key_verification_admin("initiate", remote_nodenum=7)
-    with pytest.raises(ValueError, match="timeout must be positive"):
+    with pytest.raises(ValueError, match="finite and positive"):
         _send_key_verification(interface, request, timeout=0)
     missing = MagicMock(spec=MeshInterface)
     missing.myInfo = None
@@ -244,3 +244,47 @@ def test_send_ignores_wrong_key_verification_variant() -> None:
     request = _build_key_verification_admin("provide", nonce=5, security_number=424242)
     with pytest.raises(TimeoutError):
         _send_key_verification(interface, request, timeout=0.2)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan")])
+def test_send_rejects_non_finite_timeout(timeout: float) -> None:
+    """Non-finite waits cannot become an accidental infinite/blocking CLI session."""
+    interface = _interface_with_node_num(42)
+    request = _build_key_verification_admin("initiate", remote_nodenum=7)
+
+    with pytest.raises(ValueError, match="finite and positive"):
+        _send_key_verification(interface, request, timeout=timeout)
+
+    interface.sendData.assert_not_called()
+
+
+@pytest.mark.unit
+def test_notification_nonce_returns_none_for_unrelated_notification() -> None:
+    """The nonce helper explicitly identifies notifications outside the handshake."""
+    from meshtastic.key_verification import _notification_nonce
+
+    assert _notification_nonce(mesh_pb2.ClientNotification(message="other")) is None
+
+
+@pytest.mark.unit
+def test_send_ignores_expected_variant_when_nonce_extraction_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A malformed expected notification cannot complete the handshake wait."""
+    interface = _interface_with_node_num(2478223698)
+
+    def _send(payload: object, target: int, **_kwargs: object) -> None:
+        _ = (payload, target)
+        pub.sendMessage(
+            CLIENT_NOTIFICATION_TOPIC,
+            interface=interface,
+            notification=_number_request_notification(9),
+        )
+
+    interface.sendData.side_effect = _send
+    monkeypatch.setattr("meshtastic.key_verification._notification_nonce", lambda _n: None)
+    request = _build_key_verification_admin("initiate", remote_nodenum=0xABCD1234)
+
+    with pytest.raises(TimeoutError):
+        _send_key_verification(interface, request, timeout=0.02)

@@ -1102,45 +1102,34 @@ def _resolve_key_verification_peer(
     return nodenum
 
 
-def _report_key_verification_notification(
+def _render_key_verification_notification(
     notification: mesh_pb2.ClientNotification | None,
     stage: str,
-    hooks: DeviceActionHooks,
+    cli_print: Callable[[str], None],
 ) -> None:
-    """Print the device's key-verification progress notification, if any.
-
-    Parameters
-    ----------
-    notification : mesh_pb2.ClientNotification | None
-        Notification returned by the handshake stage, if the device sent one.
-    stage : str
-        Stage sent to the device.
-    hooks : DeviceActionHooks
-        Quiet-aware CLI reporter.
-    """
+    """Render one key-verification notification through a CLI print function."""
     if notification is None:
         decision = "accepted" if stage == _KV_STAGE_VERIFY else "rejected"
         if stage in (_KV_STAGE_VERIFY, _KV_STAGE_NO_VERIFY):
-            hooks.cli_print(f"Key-verification decision sent: {decision}.")
+            cli_print(f"Key-verification decision sent: {decision}.")
         else:
-            hooks.cli_print(
+            cli_print(
                 "Key-verification stage sent; the device reported no notification."
             )
         return
     if notification.HasField("key_verification_number_inform"):
         inform = notification.key_verification_number_inform
-        hooks.cli_print(
+        cli_print(
             f"Security number for {inform.remote_longname}: "
             f"{inform.security_number:06d}"
         )
-        hooks.cli_print(
-            "Compare it out of band with the remote operator, then confirm with "
-            f"--key-verify verify --key-verify-nonce {inform.nonce} (or cancel with "
-            "--key-verify no-verify)."
+        cli_print(
+            "Share this number out of band with the remote operator, then wait for "
+            "the final verification-character confirmation before accepting or rejecting."
         )
     elif notification.HasField("key_verification_number_request"):
         request = notification.key_verification_number_request
-        hooks.cli_print(
+        cli_print(
             f"{request.remote_longname} requests the security number shown on "
             "that node; reply with --key-verify provide "
             f"--key-verify-nonce {request.nonce} "
@@ -1148,18 +1137,27 @@ def _report_key_verification_notification(
         )
     elif notification.HasField("key_verification_final"):
         final = notification.key_verification_final
-        hooks.cli_print(
+        cli_print(
             f"Final key-verification confirmation with {final.remote_longname} is ready."
         )
         if final.verification_characters:
-            hooks.cli_print(f"Verification characters: {final.verification_characters}")
-        hooks.cli_print(
+            cli_print(f"Verification characters: {final.verification_characters}")
+        cli_print(
             "Compare the final confirmation on both nodes, then accept with "
             f"--key-verify verify --key-verify-nonce {final.nonce} (or reject with "
             "--key-verify no-verify)."
         )
     else:
-        hooks.cli_print(f"Key-verification notification: {notification.message}")
+        cli_print(f"Key-verification notification: {notification.message}")
+
+
+def _report_key_verification_notification(
+    notification: mesh_pb2.ClientNotification | None,
+    stage: str,
+    hooks: DeviceActionHooks,
+) -> None:
+    """Print the device's key-verification progress notification, if any."""
+    _render_key_verification_notification(notification, stage, hooks.cli_print)
 
 
 def _handle_admin_utility_actions(
@@ -1218,6 +1216,12 @@ def _handle_admin_utility_actions(
                     1,
                 )
             char_code = ord(kb_char)
+            if char_code > 0xFF:
+                _terminate_cli(
+                    hooks.cli_exit,
+                    "ERROR: --input-kb-char must fit the firmware 8-bit keyboard field.",
+                    1,
+                )
         interface.getNode(args.dest, False, **kwargs).sendInputEvent(
             input_event,
             kb_char=char_code,
@@ -1234,7 +1238,7 @@ def _handle_admin_utility_actions(
             _terminate_cli(
                 hooks.cli_exit,
                 "No device connection status response received; "
-                "firmware 2.5+ is required.",
+                "firmware must support device connection-status queries.",
                 1,
             )
         _print_device_connection_status(status, hooks)
@@ -1246,7 +1250,7 @@ def _handle_admin_utility_actions(
             _terminate_cli(
                 hooks.cli_exit,
                 "No device UI configuration response received; "
-                "firmware 2.7+ is required.",
+                "firmware must support device UI configuration.",
                 1,
             )
         hooks.cli_print(_yaml_dump_ui_config(ui_config))
@@ -1307,7 +1311,7 @@ def _print_device_connection_status(
 
 def _ip4_to_str(address: int) -> str:
     """Format a packed 32-bit IPv4 address as dotted quad text."""
-    return ".".join(str((address >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+    return ".".join(str((address >> shift) & 0xFF) for shift in (0, 8, 16, 24))
 
 
 def _yaml_dump_ui_config(config: device_ui_pb2.DeviceUIConfig) -> str:

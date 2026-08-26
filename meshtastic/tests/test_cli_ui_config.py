@@ -1,4 +1,4 @@
-"""Tests for the firmware 2.7+ device UI configuration CLI surface."""
+"""Tests for the device UI configuration CLI surface."""
 
 from __future__ import annotations
 
@@ -254,7 +254,7 @@ def test_handle_get_ui_config_prints_yaml() -> None:
 
 @pytest.mark.unit
 def test_handle_get_ui_config_missing_response_terminates() -> None:
-    """Missing response exits 1 with the firmware-2.7+ hint."""
+    """Missing response exits 1 with a capability-oriented firmware hint."""
     iface = _interface()
     iface.getNode.return_value.requestUiConfig.return_value = None
     exits: list[tuple[str, int]] = []
@@ -264,7 +264,7 @@ def test_handle_get_ui_config_missing_response_terminates() -> None:
             _hooks(exits=exits),
         )
     assert exits and exits[0][1] == 1
-    assert "firmware 2.7+" in exits[0][0]
+    assert "device UI configuration" in exits[0][0]
 
 
 @pytest.mark.unit
@@ -305,3 +305,37 @@ def test_parser_accepts_get_ui_config_with_reboot_argument() -> None:
     args = parser.parse_args(["--get-ui-config", "--reboot"])
     assert args.get_ui_config is True
     assert args.reboot is True
+
+
+@pytest.mark.unit
+def test_request_admin_response_ignores_malformed_has_field_and_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed response doubles cannot consume/complete the pending admin getter."""
+    captured: dict[str, Any] = {}
+    node = _stub_node_for_request(captured, _interface())
+
+    def _fake_ack_wait(node_obj: Node, request: Any) -> None:
+        _ = (node_obj, request)
+        raw = MagicMock()
+        raw.HasField.side_effect = ValueError("bad oneof")
+        callback = captured["onResponse"]
+        callback({"decoded": {"admin": {"raw": raw}}})
+
+    monkeypatch.setattr("meshtastic.node._wait_for_admin_ack", _fake_ack_wait)
+
+    assert node.requestUiConfig(response_timeout_seconds=0.01) is None
+
+
+@pytest.mark.unit
+def test_request_admin_response_returns_none_when_transport_returns_no_packet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sender that produces no request packet exits without entering ACK/response waits."""
+    node = object.__new__(Node)
+    wait = MagicMock()
+    monkeypatch.setattr("meshtastic.node._send_admin_with_ack_scope", MagicMock(return_value=None))
+    monkeypatch.setattr("meshtastic.node._wait_for_admin_ack", wait)
+
+    assert node.requestUiConfig(response_timeout_seconds=1.0) is None
+    wait.assert_not_called()

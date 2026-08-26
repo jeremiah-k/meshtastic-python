@@ -199,7 +199,7 @@ def test_connection_status_prints_each_transport() -> None:
     """The status printer reports present transports with their details."""
     status = connection_status_pb2.DeviceConnectionStatus()
     status.wifi.status.is_connected = True
-    status.wifi.status.ip_address = 0xC0A8012A
+    status.wifi.status.ip_address = 0x2A01A8C0
     status.wifi.status.is_mqtt_connected = True
     status.wifi.ssid = "meshnet"
     status.serial.is_connected = True
@@ -226,11 +226,133 @@ def test_connection_status_missing_response_terminates() -> None:
             _hooks(exits=exits),
         )
     assert exits and exits[0][1] == 1
-    assert "firmware 2.5+" in exits[0][0]
+    assert "connection-status queries" in exits[0][0]
 
 
 @pytest.mark.unit
 def test_ip4_to_str_formats_dotted_quad() -> None:
     """Packed IPv4 addresses render as dotted quads."""
-    assert device_actions._ip4_to_str(0xC0A8012A) == "192.168.1.42"
-    assert device_actions._ip4_to_str(0x7F000001) == "127.0.0.1"
+    assert device_actions._ip4_to_str(0x2A01A8C0) == "192.168.1.42"
+    assert device_actions._ip4_to_str(0x0100007F) == "127.0.0.1"
+
+
+@pytest.mark.unit
+def test_input_event_rejects_keyboard_code_outside_firmware_byte() -> None:
+    """Firmware stores kb_char as an unsigned byte, so Unicode must not truncate."""
+    interface = _interface()
+    exits: list[tuple[str, int]] = []
+
+    with pytest.raises(SystemExit):
+        device_actions._handle_admin_utility_actions(
+            _context(interface, {"send_input_event": 212, "input_kb_char": "€"}),
+            _hooks(exits=exits),
+        )
+
+    assert exits == [
+        ("ERROR: --input-kb-char must fit the firmware 8-bit keyboard field.", 1)
+    ]
+    interface.getNode.assert_not_called()
+
+
+@pytest.mark.unit
+def test_connection_status_prints_all_optional_details() -> None:
+    """WiFi/Ethernet/Bluetooth status output covers every optional detail branch."""
+    status = connection_status_pb2.DeviceConnectionStatus()
+    status.wifi.status.is_connected = False
+    status.wifi.status.ip_address = 0x0501A8C0  # 192.168.1.5 in firmware packing
+    status.wifi.status.is_syslog_connected = True
+    status.wifi.ssid = "meshnet"
+    status.wifi.rssi = -42
+    status.ethernet.status.is_connected = True
+    status.ethernet.status.is_mqtt_connected = True
+    status.bluetooth.is_connected = True
+    status.bluetooth.rssi = -55
+    status.serial.is_connected = False
+    status.serial.baud = 9600
+
+    prints: list[str] = []
+    device_actions._print_device_connection_status(status, _hooks(prints))
+
+    assert "wifi: disconnected (192.168.1.5, syslog, ssid meshnet, rssi -42)" in prints
+    assert "ethernet: connected (mqtt)" in prints
+    assert "bluetooth: connected (rssi -55)" in prints
+    assert "serial: disconnected (baud 9600)" in prints
+
+
+@pytest.mark.unit
+def test_connection_status_without_nested_network_state_is_unknown() -> None:
+    """Present transport sections without a nested status remain explicitly unknown."""
+    status = connection_status_pb2.DeviceConnectionStatus()
+    status.wifi.ssid = "meshnet"
+
+    prints: list[str] = []
+    device_actions._print_device_connection_status(status, _hooks(prints))
+
+    assert prints == ["wifi: unknown (ssid meshnet)"]
+
+
+@pytest.mark.unit
+def test_node_admin_utility_methods_build_expected_admin_fields() -> None:
+    """Every new one-shot Node utility constructs the firmware field it documents."""
+    node = object.__new__(Node)
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=9))
+    node._send_admin_op = sender  # type: ignore[method-assign]
+
+    assert node.backupPreferences("flash") is sender.return_value
+    assert sender.call_args.args[0].backup_preferences == admin_pb2.AdminMessage.FLASH
+    node.restorePreferences("sd")
+    assert sender.call_args.args[0].restore_preferences == admin_pb2.AdminMessage.SD
+    node.removeBackupPreferences("flash")
+    assert sender.call_args.args[0].remove_backup_preferences == admin_pb2.AdminMessage.FLASH
+    node.toggleMutedNode("!0000002a")
+    assert sender.call_args.args[0].toggle_muted_node == 42
+    node.deleteFile("/prefs/uiconfig.proto")
+    assert sender.call_args.args[0].delete_file_request == "/prefs/uiconfig.proto"
+    node.sendInputEvent(17, kb_char=65, touch_x=10, touch_y=20)
+    event = sender.call_args.args[0].send_input_event
+    assert (event.event_code, event.kb_char, event.touch_x, event.touch_y) == (17, 65, 10, 20)
+
+
+@pytest.mark.unit
+def test_request_connection_status_delegates_to_shared_response_helper() -> None:
+    """The connection-status getter requests its named response with the supplied timeout."""
+    node = object.__new__(Node)
+    expected = connection_status_pb2.DeviceConnectionStatus()
+    requester = MagicMock(return_value=expected)
+    node._request_admin_response = requester  # type: ignore[method-assign]
+
+    assert node.requestDeviceConnectionStatus(response_timeout_seconds=3.5) is expected
+
+    message, field_name, response_type = requester.call_args.args
+    assert message.get_device_connection_status_request is True
+    assert field_name == "get_device_connection_status_response"
+    assert response_type is connection_status_pb2.DeviceConnectionStatus
+    assert requester.call_args.kwargs == {"response_timeout_seconds": 3.5}
+
+
+@pytest.mark.unit
+def test_connection_status_action_prints_successful_response() -> None:
+    """The CLI action prints a received status rather than only testing the helper."""
+    interface = _interface()
+    status = connection_status_pb2.DeviceConnectionStatus()
+    status.serial.is_connected = True
+    status.serial.baud = 115200
+    interface.getNode.return_value.requestDeviceConnectionStatus.return_value = status
+    prints: list[str] = []
+
+    context = _context(interface, {"request_connection_status": True})
+    device_actions._handle_admin_utility_actions(context, _hooks(prints))
+
+    assert "serial: connected (baud 115200)" in prints
+    assert context.outcome.close_now is True
+
+
+@pytest.mark.unit
+def test_node_delete_file_keeps_library_level_absolute_path_guard() -> None:
+    """Direct library callers still get the Node-level absolute-path validation."""
+    node = object.__new__(Node)
+    node._raise_interface_error = MagicMock(  # type: ignore[method-assign]
+        side_effect=MeshInterfaceError("bad path")
+    )
+    with pytest.raises(MeshInterfaceError, match="bad path"):
+        node.deleteFile("prefs/config.proto")
