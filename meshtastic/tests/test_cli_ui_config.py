@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import threading
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -67,9 +68,7 @@ def _stub_node_for_request(
 
 
 @pytest.mark.unit
-def test_requestUiConfig_returns_config_when_response_fires(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_requestUiConfig_returns_config_when_response_fires() -> None:
     """The DeviceUIConfig is returned when the response callback is invoked."""
 
     expected = device_ui_pb2.DeviceUIConfig(version=3, screen_brightness=85)
@@ -77,18 +76,15 @@ def test_requestUiConfig_returns_config_when_response_fires(
     iface = _interface()
     node = _stub_node_for_request(captured, iface)
 
-    def _fake_ack_wait(node_obj: Node, request: Any) -> None:
-        # Simulate the response arriving slightly after the ACK so the bounded
-        # wait actually has to succeed.
+    def _fire_response_later() -> None:
+        # Mirror the real pipeline: the response packet arrives concurrently
+        # while the bounded correlation wait is running.
         on_response = captured.get("onResponse")
         if on_response is not None:
             on_response(_build_response_packet(config=expected))
 
-    monkeypatch.setattr(
-        "meshtastic.node._wait_for_admin_ack",
-        _fake_ack_wait,
-        raising=True,
-    )
+    timer = threading.Timer(0.05, _fire_response_later)
+    timer.start()
 
     result = node.requestUiConfig(response_timeout_seconds=2.0)
     assert result == expected
@@ -308,23 +304,22 @@ def test_parser_accepts_get_ui_config_with_reboot_argument() -> None:
 
 
 @pytest.mark.unit
-def test_request_admin_response_ignores_malformed_has_field_and_times_out(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_request_admin_response_ignores_malformed_has_field_and_times_out() -> None:
     """Malformed response doubles cannot consume/complete the pending admin getter."""
     captured: dict[str, Any] = {}
     node = _stub_node_for_request(captured, _interface())
 
-    def _fake_ack_wait(node_obj: Node, request: Any) -> None:
-        _ = (node_obj, request)
+    def _fire_malformed_response_later() -> None:
         raw = MagicMock()
         raw.HasField.side_effect = ValueError("bad oneof")
-        callback = captured["onResponse"]
-        callback({"decoded": {"admin": {"raw": raw}}})
+        callback = captured.get("onResponse")
+        if callback is not None:
+            callback({"decoded": {"admin": {"raw": raw}}})
 
-    monkeypatch.setattr("meshtastic.node._wait_for_admin_ack", _fake_ack_wait)
+    timer = threading.Timer(0.05, _fire_malformed_response_later)
+    timer.start()
 
-    assert node.requestUiConfig(response_timeout_seconds=0.01) is None
+    assert node.requestUiConfig(response_timeout_seconds=0.5) is None
 
 
 @pytest.mark.unit
