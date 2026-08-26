@@ -83,6 +83,10 @@ from meshtastic.lockdown import (
     send_lockdown_auth,
     validate_lockdown_passphrase,
 )
+from meshtastic.key_verification import (
+    build_key_verification_admin,
+    send_key_verification,
+)
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime import node_data
 from meshtastic.protobuf import (  # noqa: F401 - legacy __main__ compatibility export
@@ -1243,6 +1247,8 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
         read_lockdown_passphrase_file=read_lockdown_passphrase_file,
         send_lockdown_auth=send_lockdown_auth,
         validate_lockdown_passphrase=validate_lockdown_passphrase,
+        build_key_verification_admin=build_key_verification_admin,
+        send_key_verification=send_key_verification,
     )
     channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
         cli_exit=_cli_exit,

@@ -23,12 +23,14 @@ import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic._core_constants import LOCAL_ADDR
+from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
+from meshtastic.key_verification import STAGE_INITIATE as _KV_STAGE_INITIATE
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import admin_pb2, mesh_pb2
 
 logger = logging.getLogger(__name__)
+
 
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
 FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
@@ -60,6 +62,8 @@ class DeviceActionHooks:
         Best-effort serial readiness probe used after a full local reset.
     handle_ota_update : Callable[[MeshInterface, Any, dict[str, Any]], None]
         Wi-Fi OTA execution helper.
+    build_key_verification_admin, send_key_verification : Callable[..., Any]
+        Key-verification handshake seams retained by the entrypoint.
     build_lockdown_auth, read_lockdown_passphrase_file, send_lockdown_auth,
     validate_lockdown_passphrase : Callable[..., Any]
         Lockdown compatibility seams retained by the entrypoint.
@@ -76,6 +80,8 @@ class DeviceActionHooks:
     read_lockdown_passphrase_file: Callable[[str], bytes]
     send_lockdown_auth: Callable[..., Any]
     validate_lockdown_passphrase: Callable[[bytes], bytes]
+    build_key_verification_admin: Callable[..., Any]
+    send_key_verification: Callable[..., Any]
 
 
 def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-statements
@@ -986,3 +992,134 @@ def _read_lockdown_passphrase(
         if entered != confirmed:
             _terminate_cli(hooks.cli_exit, "Lockdown passphrases do not match.", 1)
     return hooks.validate_lockdown_passphrase(entered.encode("utf-8"))
+
+
+def _handle_key_verification_action(
+    context: CliContext, hooks: DeviceActionHooks
+) -> None:
+    """Execute one stage of the firmware key-verification handshake, if requested.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. The action enables ``close_now`` so the
+        one-shot CLI exits after the handshake stage completes.
+    hooks : DeviceActionHooks
+        Entrypoint-owned key-verification and reporting dependencies.
+    """
+    args = context.args
+    stage = getattr(args, "key_verify", None)
+    if stage is None:
+        return
+
+    context.outcome.close_now = True
+    remote_nodenum = 0
+    if stage == _KV_STAGE_INITIATE:
+        remote_nodenum = _resolve_key_verification_peer(context, hooks)
+
+    try:
+        request = hooks.build_key_verification_admin(
+            stage,
+            remote_nodenum=remote_nodenum,
+            nonce=args.key_verify_nonce,
+            security_number=args.key_verify_security_number,
+        )
+    except ValueError as exc:
+        _terminate_cli(hooks.cli_exit, f"Invalid key-verification options: {exc}", 1)
+
+    try:
+        notification = hooks.send_key_verification(
+            context.interface, request, timeout=args.key_verify_wait
+        )
+    except (TimeoutError, RuntimeError, ValueError) as exc:
+        _terminate_cli(hooks.cli_exit, f"Key verification failed: {exc}", 1)
+
+    _report_key_verification_notification(notification, hooks)
+
+
+def _resolve_key_verification_peer(
+    context: CliContext, hooks: DeviceActionHooks
+) -> int:
+    """Resolve and validate the remote peer named by ``--dest``.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state carrying the parsed destination.
+    hooks : DeviceActionHooks
+        CLI-exit seam used to report unusable destinations.
+
+    Returns
+    -------
+    int
+        Node number of the remote peer to verify.
+    """
+    dest = getattr(context.args, "dest", None)
+    if not dest or dest in (BROADCAST_ADDR, LOCAL_ADDR):
+        _terminate_cli(
+            hooks.cli_exit,
+            "key-verification initiation requires --dest naming the remote peer.",
+            1,
+        )
+    try:
+        nodenum = meshtastic.util.toNodeNum(dest)
+    except ValueError:
+        _terminate_cli(
+            hooks.cli_exit, f"Could not parse --dest {dest!r} as a node id.", 1
+        )
+    if nodenum == BROADCAST_NUM:
+        _terminate_cli(
+            hooks.cli_exit,
+            "key verification cannot target the broadcast address.",
+            1,
+        )
+    my_info = getattr(context.interface, "myInfo", None)
+    if my_info is not None and nodenum == my_info.my_node_num:
+        _terminate_cli(
+            hooks.cli_exit,
+            "key verification verifies a remote peer, not the local node.",
+            1,
+        )
+    return nodenum
+
+
+def _report_key_verification_notification(
+    notification: mesh_pb2.ClientNotification | None, hooks: DeviceActionHooks
+) -> None:
+    """Print the device's key-verification progress notification, if any.
+
+    Parameters
+    ----------
+    notification : mesh_pb2.ClientNotification | None
+        Notification returned by the handshake stage, if the device sent one.
+    hooks : DeviceActionHooks
+        Quiet-aware CLI reporter.
+    """
+    if notification is None:
+        hooks.cli_print(
+            "Key-verification stage sent; the device reported no notification."
+        )
+        return
+    if notification.HasField("key_verification_number_inform"):
+        inform = notification.key_verification_number_inform
+        hooks.cli_print(
+            f"Security number for {inform.remote_longname}: "
+            f"{inform.security_number:04d}"
+        )
+        hooks.cli_print(
+            "Compare it out of band with the remote operator, then confirm with "
+ f"--key-verify verify --key-verify-nonce {inform.nonce} (or cancel with "
+            "--key-verify no-verify)."
+        )
+    elif notification.HasField("key_verification_number_request"):
+        request = notification.key_verification_number_request
+        hooks.cli_print(
+            f"{request.remote_longname} requests the security number shown on "
+            "that node; reply with --key-verify provide "
+            f"--key-verify-nonce {request.nonce} --key-verify-security-number NNNN."
+        )
+    elif notification.HasField("key_verification_final"):
+        final = notification.key_verification_final
+        hooks.cli_print(f"Key verification with {final.remote_longname} completed.")
+    else:
+        hooks.cli_print(f"Key-verification notification: {notification.message}")
