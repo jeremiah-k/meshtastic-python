@@ -140,6 +140,10 @@
 - [x] `meshtastic --info` - Verify baseline restored ✅ (owner: Meshtastic e474)
 - [ ] `meshtastic --export-config /tmp/after_configure.yaml` - Export after configure
 - [ ] Compare `/tmp/export_test.yaml` and `/tmp/after_configure.yaml` for consistency
+- [ ] `meshtastic --export-format binary --export-config /tmp/profile.cfg` - Export DeviceProfile binary
+- [ ] `meshtastic --configure /tmp/profile.cfg` - Re-import the DeviceProfile and verify owner/config/module_config
+- [ ] Export and re-import a profile containing `mesh_beacon.broadcast_targets` - Verify repeated submessages round-trip
+- [ ] `meshtastic --export-format yaml --export-config /tmp/profile.cfg` then `--configure /tmp/profile.cfg` - Verify extension fallback to YAML
 
 ## 15. Factory Reset + Configure Flow
 
@@ -194,6 +198,24 @@
 ## 21. List Fields
 
 - [x] `meshtastic --list-fields` - List all configurable fields ✅
+
+## 22. Firmware 2.8 Administration and Key Verification
+
+- [ ] `meshtastic --backup-preferences flash` - Create a flash preferences backup
+- [ ] `meshtastic --restore-preferences flash` - Restore backup and verify the node reboots/reconnects
+- [ ] `meshtastic --remove-backup-preferences flash` - Remove the flash backup
+- [ ] Confirm `sd` backup/removal help warns that current firmware does not implement those operations
+- [ ] `meshtastic --toggle-muted-node !xxxxxxxx` - Toggle a known node's muted state
+- [ ] `meshtastic --delete-file /path/on/device` - Delete a disposable absolute-path file
+- [ ] Confirm a relative `--delete-file` path is rejected before connecting
+- [ ] `meshtastic --send-input-event EVENT --input-kb-char A` - Inject a supported input event
+- [ ] Confirm keyboard characters outside the firmware 8-bit range are rejected
+- [ ] `meshtastic --request-connection-status` - Verify Wi-Fi/Ethernet IPv4 output against the device's actual address
+- [ ] `meshtastic --get-ui-config` - Capture DeviceUIConfig YAML
+- [ ] `meshtastic --store-ui-config /tmp/uiconfig.yaml` - Restore the captured config on a screen-capable node
+- [ ] Key verification initiator: `initiate` → `provide` → compare final characters → `verify`/`no-verify`
+- [ ] Key verification responder: keep a long-lived CLI session open and confirm spontaneous security-number/final notifications are printed
+- [ ] Confirm invalid/non-finite `--key-verify-wait` values fail without opening an unbounded wait
 
 ---
 
