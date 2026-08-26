@@ -98,7 +98,7 @@ def _stub_node_for_request(
         captured["onResponse"] = onResponse
         return mesh_pb2.MeshPacket(id=1)
 
-    node._send_admin = _fake_send_admin  # type: ignore[method-assign]
+    node._send_admin = _fake_send_admin  # type: ignore[assignment]
     return node
 
 

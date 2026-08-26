@@ -10,13 +10,14 @@ array literal in a single ``--set`` token.
 from __future__ import annotations
 
 import pytest
+from collections.abc import Iterator
 
 from meshtastic.__main__ import setPref
 from meshtastic.protobuf import config_pb2, localonly_pb2, module_config_pb2
 
 
 @pytest.fixture(autouse=True)
-def _quiet_mt_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def _quiet_mt_config(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Force ``setPref`` to use the public CLI printer and bypass preflight."""
     # Direct ``setPref`` exercises the same diagnostic surface as ``--set``;
     # we deliberately avoid ``reset_mt_config`` because these tests don't
