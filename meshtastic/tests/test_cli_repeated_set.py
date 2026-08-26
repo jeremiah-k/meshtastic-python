@@ -9,8 +9,9 @@ array literal in a single ``--set`` token.
 
 from __future__ import annotations
 
-import pytest
 from collections.abc import Iterator
+
+import pytest
 
 from meshtastic.__main__ import setPref
 from meshtastic.protobuf import config_pb2, localonly_pb2, module_config_pb2
@@ -45,23 +46,14 @@ def test_json_array_builds_repeated_broadcast_targets() -> None:
 
     targets = config.mesh_beacon.broadcast_targets
     assert len(targets) == 2
-    assert (
-        targets[0].preset
-        == config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST
-    )
+    assert targets[0].preset == config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST
     assert targets[0].region == config_pb2.Config.LoRaConfig.RegionCode.US
     assert targets[0].channel_index == 1
-    assert (
-        targets[1].preset
-        == config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_FAST
-    )
+    assert targets[1].preset == config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_FAST
     assert targets[1].channel_index == 2
     # Defaults are applied for omitted fields, so region == 0 (UNSET) for the
     # second entry which did not specify one.
-    assert (
-        targets[1].region
-        == config_pb2.Config.LoRaConfig.RegionCode.Value("UNSET")
-    )
+    assert targets[1].region == config_pb2.Config.LoRaConfig.RegionCode.Value("UNSET")
 
 
 @pytest.mark.unit

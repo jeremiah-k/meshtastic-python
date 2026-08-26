@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 from typing import Literal
+
 from pubsub import pub
 
 from meshtastic._topics import CLIENT_NOTIFICATION_TOPIC
@@ -157,7 +158,10 @@ def send_key_verification(
     result: mesh_pb2.ClientNotification | None = None
 
     def _on_notification(
-        *, interface: object, notification: mesh_pb2.ClientNotification, **_kwargs: object
+        *,
+        interface: object,
+        notification: mesh_pb2.ClientNotification,
+        **_kwargs: object,
     ) -> None:
         nonlocal result
         if interface is not local_interface:

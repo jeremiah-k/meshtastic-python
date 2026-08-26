@@ -17,11 +17,9 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, cast
 
-from pubsub import pub
-
-from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
-
 import yaml
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+from pubsub import pub
 
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -1119,7 +1117,7 @@ def _report_key_verification_notification(
         )
         hooks.cli_print(
             "Compare it out of band with the remote operator, then confirm with "
- f"--key-verify verify --key-verify-nonce {inform.nonce} (or cancel with "
+            f"--key-verify verify --key-verify-nonce {inform.nonce} (or cancel with "
             "--key-verify no-verify)."
         )
     elif notification.HasField("key_verification_number_request"):
@@ -1193,10 +1191,9 @@ def _handle_admin_utility_actions(
 
     if getattr(args, "request_connection_status", False):
         outcome.close_now = True
-        status = (
-            interface.getNode(args.dest, False, **kwargs)
-            .requestDeviceConnectionStatus()
-        )
+        status = interface.getNode(
+            args.dest, False, **kwargs
+        ).requestDeviceConnectionStatus()
         if status is None:
             _terminate_cli(
                 hooks.cli_exit,
@@ -1208,9 +1205,7 @@ def _handle_admin_utility_actions(
 
     if getattr(args, "get_ui_config", False):
         outcome.close_now = True
-        ui_config = (
-            interface.getNode(args.dest, False, **kwargs).requestUiConfig()
-        )
+        ui_config = interface.getNode(args.dest, False, **kwargs).requestUiConfig()
         if ui_config is None:
             _terminate_cli(
                 hooks.cli_exit,

@@ -8,12 +8,13 @@ import sys
 from collections.abc import Sequence
 from typing import Protocol
 
+from meshtastic.cli.values import parse_modem_preset_name as _parse_modem_preset_name
 from meshtastic.key_verification import (
     DEFAULT_KEY_VERIFICATION_TIMEOUT_SECONDS as _DEFAULT_KEY_VERIFY_WAIT,
+)
+from meshtastic.key_verification import (
     KEY_VERIFICATION_STAGES as _KEY_VERIFICATION_STAGES,
 )
-
-from meshtastic.cli.values import parse_modem_preset_name as _parse_modem_preset_name
 
 
 class _ArgcompleteModule(Protocol):

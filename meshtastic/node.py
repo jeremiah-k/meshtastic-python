@@ -27,6 +27,7 @@ from meshtastic.node_runtime.admin_wait import (
     _send_admin_with_ack_scope,
     _wait_for_admin_ack,
 )
+from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
 from meshtastic.node_runtime.channel_lookup_runtime import _NodeChannelLookupRuntime
 from meshtastic.node_runtime.channel_normalization_runtime import (
     _NodeChannelNormalizationRuntime,
@@ -69,8 +70,6 @@ from meshtastic.node_runtime.transport_runtime import (
     _NodeChannelWriteRuntime,
     _NodeDeleteChannelRuntime,
 )
-from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
-
 from meshtastic.protobuf import (
     admin_pb2,
     channel_pb2,
@@ -82,7 +81,6 @@ from meshtastic.protobuf import (
 )
 from meshtastic.util import (
     Timeout,
-
     flagsToList,
     toNodeNum,
 )
@@ -115,8 +113,9 @@ MAX_RINGTONE_LENGTH = _MAX_RINGTONE_LENGTH
 MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
 
 
-
-def _backup_location_value(location: str) -> admin_pb2.AdminMessage.BackupLocation.ValueType:
+def _backup_location_value(
+    location: str,
+) -> admin_pb2.AdminMessage.BackupLocation.ValueType:
     """Convert a backup location name to its ``BackupLocation`` enum value.
 
     Parameters
@@ -141,7 +140,6 @@ def _backup_location_value(location: str) -> admin_pb2.AdminMessage.BackupLocati
         raise _MeshInterfaceError(
             f"Unknown backup location {location!r}; expected one of: {valid}"
         ) from None
-
 
 
 _MAX_CONTACT_URL_PAYLOAD = contact_runtime.MAX_CONTACT_URL_PAYLOAD
@@ -1580,7 +1578,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
         """
         return self._admin_command_runtime.reset_node_db()
 
-    def _send_admin_op(self, message: admin_pb2.AdminMessage) -> mesh_pb2.MeshPacket | None:
+    def _send_admin_op(
+        self, message: admin_pb2.AdminMessage
+    ) -> mesh_pb2.MeshPacket | None:
         """Send a one-shot admin message, waiting for ACK/NAK on remote nodes."""
         self.ensureSessionKey()
         onResponse = None if self is self.iface.localNode else self.onAckNak
@@ -1763,7 +1763,6 @@ class Node:  # pylint: disable=too-many-instance-attributes
             return None
         return result.get("status")
 
-
     def requestUiConfig(
         self, *, response_timeout_seconds: float = 12.0
     ) -> device_ui_pb2.DeviceUIConfig | None:
@@ -1813,7 +1812,6 @@ class Node:  # pylint: disable=too-many-instance-attributes
         if not completed.wait(timeout=response_timeout_seconds):
             return None
         return result.get("config")
-
 
     def storeUiConfig(
         self, config: device_ui_pb2.DeviceUIConfig
