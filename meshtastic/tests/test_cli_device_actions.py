@@ -46,6 +46,8 @@ def _hooks(**overrides: Any) -> device_actions.DeviceActionHooks:
         "read_lockdown_passphrase_file": MagicMock(return_value=b"secret"),
         "send_lockdown_auth": MagicMock(return_value=None),
         "validate_lockdown_passphrase": MagicMock(return_value=b"secret"),
+        "build_key_verification_admin": MagicMock(),
+        "send_key_verification": MagicMock(),
     }
     values.update(overrides)
     return device_actions.DeviceActionHooks(**values)
