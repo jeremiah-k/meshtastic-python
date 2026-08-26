@@ -617,10 +617,23 @@ def onClientNotification(
 ) -> None:
     """Render spontaneous key-verification notifications for long-lived CLI sessions.
 
-    The active ``--key-verify`` action owns its own subscription and renders its
-    response after the bounded wait, so suppress this generic subscriber during
-    that action to avoid duplicate output. Other ClientNotification variants are
-    intentionally ignored here.
+    Parameters
+    ----------
+    notification : mesh_pb2.ClientNotification
+        Notification packet decoded from the ``meshtastic.clientNotification``
+        pubsub topic. Only key-verification variants are rendered; all other
+        notification types are intentionally ignored.
+
+    interface : MeshInterface
+        Interface that received the notification. Unused by this handler and
+        retained for the shared pubsub subscriber signature.
+
+    Returns
+    -------
+    None
+        The active ``--key-verify`` action owns its own subscription and renders its
+        response after the bounded wait, so this generic subscriber is suppressed
+        during that action to avoid duplicate output.
     """
     _ = interface
     args = _current_invocation_args()
@@ -1416,7 +1429,19 @@ export_config = exportConfig
 
 
 def exportProfile(interface: MeshInterface) -> bytes:
-    """Export the local node configuration as a binary DeviceProfile."""
+    """Export the local node configuration as a binary DeviceProfile.
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        Connected interface whose local node configuration is exported.
+
+    Returns
+    -------
+    bytes
+        Serialized ``clientonly_pb2.DeviceProfile`` payload suitable for a
+        ``.cfg`` destination or later ``--configure`` import.
+    """
     return cli_config_io._export_profile(interface)  # noqa: SLF001
 
 

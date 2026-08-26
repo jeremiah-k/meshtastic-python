@@ -224,7 +224,7 @@ def test_decode_rejects_garbage_with_combined_error() -> None:
 @pytest.mark.unit
 def test_profile_export_round_trip() -> None:
     """Exported profile bytes parse back into the YAML document shape."""
-    mock = MagicMock()
+    mock = MagicMock(autospec=MeshInterface)
     mock.getLongName.return_value = "Jeremiah K"
     mock.getShortName.return_value = "JK"
     mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
@@ -360,7 +360,7 @@ def test_decode_control_byte_garbage_without_profile_suffix_exits_cleanly() -> N
 
 @pytest.mark.unit
 def test_binary_profile_write_reports_open_failure(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Filesystem open errors terminate through the CLI error surface."""
     exits: list[str] = []
@@ -369,10 +369,9 @@ def test_binary_profile_write_reports_open_failure(
         exits.append(message)
         raise SystemExit(code)
 
-    monkeypatch.setattr(config_io.os, "open", MagicMock(side_effect=OSError("disk")))
     with pytest.raises(SystemExit):
         config_io._write_binary_profile(
-            "/bad/profile.cfg",
+            str(tmp_path / "missing_dir" / "profile.cfg"),
             lambda: b"payload",
             cast(CliExit, fake_exit),
             MagicMock(),
@@ -411,7 +410,7 @@ def test_binary_profile_write_closes_raw_descriptor_on_fdopen_failure(
 @pytest.mark.unit
 def test_yaml_export_includes_all_optional_local_snapshot_fields() -> None:
     """YAML export exercises every populated direct-state field from one snapshot."""
-    mock = MagicMock()
+    mock = MagicMock(autospec=MeshInterface)
     mock.getLongName.return_value = "Owner"
     mock.getShortName.return_value = "OS"
     mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"

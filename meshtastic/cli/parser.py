@@ -25,9 +25,9 @@ class _ArgcompleteModule(Protocol):
         """Enable shell completion for ``parser``."""
 
 
-_UINT32_MAX = (1 << 32) - 1
-_UINT64_MAX = (1 << 64) - 1
-_KEY_VERIFICATION_SECURITY_NUMBER_MAX = 999_999
+_UINT32_MAX: int = (1 << 32) - 1
+_UINT64_MAX: int = (1 << 64) - 1
+_KEY_VERIFICATION_SECURITY_NUMBER_MAX: int = 999_999
 
 
 def _parse_uint32(value: str) -> int:
