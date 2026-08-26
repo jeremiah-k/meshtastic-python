@@ -1768,7 +1768,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
         )
         if request is None:
             return None
-        _wait_for_admin_ack(self, request)
+        # A want_response admin request is answered by the data response
+        # itself; firmware sends no separate RoutingACK for it, so waiting on
+        # scoped ACK bookkeeping here would block past the bounded response
+        # wait. The correlated-response event below decides success.
         if not completed.wait(timeout=response_timeout_seconds):
             return None
         return result
