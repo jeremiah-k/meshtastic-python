@@ -439,6 +439,29 @@ def parse_profile_bytes(raw: bytes) -> clientonly_pb2.DeviceProfile:
     return profile
 
 
+_YAML_ALLOWED_CONTROL_CHARS = frozenset("\t\n\r")
+
+
+def has_yaml_forbidden_control_chars(text: str) -> bool:
+    """Detect control characters that YAML forbids inside decoded bytes.
+
+    Parameters
+    ----------
+    text : str
+        Decoded textual candidate for a YAML configuration document.
+
+    Returns
+    -------
+    bool
+        True when the text contains C0 control characters YAML rejects,
+        indicating binary content rather than a YAML document.
+    """
+    return any(
+        ord(char) < 32 and char not in _YAML_ALLOWED_CONTROL_CHARS or ord(char) == 127
+        for char in text
+    )
+
+
 def profile_to_configuration(
     profile: clientonly_pb2.DeviceProfile,
 ) -> dict[str, Any]:

@@ -963,15 +963,30 @@ def _decode_configure_document(
     dict[str, Any]
         Parsed configuration mapping.
     """
+    if isinstance(raw_bytes, str):
+        # Legacy compatibility seams (text-mode reads, mocked opens) may
+        # supply decoded content directly; normalize before detection.
+        raw_bytes = raw_bytes.encode("utf8")
     try:
         text = raw_bytes.decode("utf8")
     except UnicodeDecodeError:
         text = None
+    if text is not None and _config_io.has_yaml_forbidden_control_chars(text):
+        # Protobuf wire payloads are dense in C0 control bytes that YAML
+        # forbids; route such payloads to the DeviceProfile parser instead.
+        text = None
     if text is not None:
         try:
             configuration = yaml.safe_load(text)
-        except yaml.YAMLError:
-            configuration = None
+        except yaml.YAMLError as exc:
+            # Printable content that still fails YAML parsing is a malformed
+            # YAML document, not a candidate binary profile. Preserve the
+            # historical error over the DeviceProfile fallback.
+            _terminate_cli(
+                hooks.cli_exit,
+                f"ERROR: Failed to parse YAML configuration: {exc}",
+                1,
+            )
         else:
             if isinstance(configuration, dict):
                 return configuration
