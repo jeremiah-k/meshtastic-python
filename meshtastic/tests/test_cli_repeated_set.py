@@ -145,6 +145,18 @@ def test_repeated_scalar_ignores_empty_comma_elements() -> None:
 
 
 @pytest.mark.unit
+def test_repeated_scalar_rejects_separator_only_value_without_clearing() -> None:
+    """A malformed comma list with no values must not clear existing state."""
+    config = localonly_pb2.LocalConfig()
+    config.lora.ignore_incoming.extend([11, 22])
+    before = config.SerializeToString()
+
+    assert setPref(config, "lora.ignore_incoming", ", ,") is False
+
+    assert config.SerializeToString() == before
+
+
+@pytest.mark.unit
 def test_repeated_scalar_list_path_still_works() -> None:
     """Passing a Python list to a repeated scalar field keeps historical semantics."""
     config = localonly_pb2.LocalConfig()
