@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from meshtastic.cli import configure_actions, config_io
+from meshtastic.cli import config_io, configure_actions
 from meshtastic.cli.configure_actions import ConfigureActionHooks
 from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
@@ -66,7 +66,7 @@ def _context(
 )
 def test_resolve_export_format(fmt: str, destination: str, expected: str) -> None:
     """Format resolution honors explicit choices and extension auto-detection."""
-    assert configure_actions._resolve_export_format(fmt, destination) == expected
+    assert config_io.resolve_export_format(fmt, destination) == expected
 
 
 @pytest.mark.unit

@@ -1541,11 +1541,16 @@ def _handle_configure_actions(
         outcome.stop_processing = True
         return
 
-    export_format = _resolve_export_format(
+    export_format = _config_io.resolve_export_format(
         getattr(args, "export_format", "auto"), args.export_config
     )
     if export_format == "binary":
-        _export_binary_profile(context, hooks)
+        _config_io.write_binary_profile(
+            args.export_config,
+            lambda: hooks.export_profile(context.interface),
+            hooks.cli_exit,
+            hooks.cli_print,
+        )
         return
 
     config_text = hooks.export_config(context.interface)
@@ -1576,70 +1581,3 @@ def _handle_configure_actions(
         _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
     hooks.cli_print(f"Exported configuration to {args.export_config}")
 
-
-def _resolve_export_format(fmt: str, destination: str) -> str:
-    """Resolve the effective export format for a destination.
-
-    Parameters
-    ----------
-    fmt : str
-        Requested format: ``auto``, ``yaml``, ``binary``, or ``protobuf``.
-    destination : str
-        Export destination path or ``-`` for stdout.
-
-    Returns
-    -------
-    str
-        Either ``yaml`` or ``binary``.
-    """
-    if fmt in ("binary", "protobuf"):
-        return "binary"
-    if fmt == "yaml":
-        return "yaml"
-    lowered = destination.lower()
-    if lowered.endswith((".cfg", ".bin")):
-        return "binary"
-    return "yaml"
-
-
-def _export_binary_profile(
-    context: CliContext, hooks: ConfigureActionHooks
-) -> None:
-    """Write the local node configuration as a binary DeviceProfile.
-
-    Parameters
-    ----------
-    context : CliContext
-        Connected invocation state.
-    hooks : ConfigureActionHooks
-        Entrypoint-owned profile-export and reporting seams.
-    """
-    payload = hooks.export_profile(context.interface)
-    if context.args.export_config == "-":
-        # Binary payloads are meaningless on a text console; refuse rather
-        # than spew protobuf bytes into a terminal or capture file.
-        _terminate_cli(
-            hooks.cli_exit,
-            "ERROR: Binary export requires a file path; use --export-format yaml "
-            "for stdout.",
-            1,
-        )
-    try:
-        descriptor = os.open(
-            context.args.export_config,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            PRIVATE_CONFIG_FILE_MODE,
-        )
-        try:
-            fchmod = getattr(os, "fchmod", None)
-            if callable(fchmod):
-                fchmod(descriptor, PRIVATE_CONFIG_FILE_MODE)
-            with os.fdopen(descriptor, "wb") as output_file:
-                descriptor = -1
-                output_file.write(payload)
-        finally:
-            if descriptor >= 0:
-                os.close(descriptor)
-    except OSError as exc:
-        _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
-    hooks.cli_print(f"Exported configuration to {context.args.export_config}")

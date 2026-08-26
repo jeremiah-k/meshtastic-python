@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from typing import Any, Protocol
 
@@ -11,6 +13,8 @@ from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import DecodeError, Message
 
 import meshtastic.util
+from meshtastic.cli.context import CliExit, _terminate_cli
+
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import clientonly_pb2, localonly_pb2
 
@@ -479,3 +483,85 @@ def profile_to_configuration(
             module_config, camel_case=False
         )
     return configuration
+
+
+EXPORT_FILE_MODE: int = 0o600
+
+
+def resolve_export_format(fmt: str, destination: str) -> str:
+    """Resolve the effective export format for a destination.
+
+    Parameters
+    ----------
+    fmt : str
+        Requested format: ``auto``, ``yaml``, ``binary``, or ``protobuf``.
+    destination : str
+        Export destination path or ``-`` for stdout.
+
+    Returns
+    -------
+    str
+        Either ``yaml`` or ``binary``.
+    """
+    if fmt in ("binary", "protobuf"):
+        return "binary"
+    if fmt == "yaml":
+        return "yaml"
+    lowered = destination.lower()
+    if lowered.endswith((".cfg", ".bin")):
+        return "binary"
+    return "yaml"
+
+
+def write_binary_profile(
+    export_path: str,
+    get_payload: Callable[[], bytes],
+    cli_exit: CliExit,
+    cli_print: Callable[[str], None],
+) -> None:
+    """Write a binary DeviceProfile payload to *export_path*.
+
+    Parameters
+    ----------
+    export_path : str
+        Destination path, or ``-`` to indicate stdout (which binary payloads
+        cannot target — that case terminates the CLI with a clear error).
+    get_payload : Callable[[], bytes]
+        Zero-argument callable that returns the serialized DeviceProfile
+        bytes; invoked lazily so termination happens before the device
+        round-trip when stdout is requested.
+    cli_exit : CliExit
+        Entrypoint-owned exit seam invoked for unrecoverable errors.
+    cli_print : Callable[[str], None]
+        Entrypoint-owned print seam for the final success status line.
+    """
+    if export_path == "-":
+        # Binary payloads are meaningless on a text console; refuse rather
+        # than spew protobuf bytes into a terminal or capture file.
+        _terminate_cli(
+            cli_exit,
+            "ERROR: Binary export requires a file path; use --export-format yaml "
+            "for stdout.",
+            1,
+        )
+    payload = get_payload()
+    try:
+        descriptor = os.open(
+            export_path,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            EXPORT_FILE_MODE,
+        )
+        try:
+            fchmod = getattr(os, "fchmod", None)
+            if callable(fchmod):
+                fchmod(descriptor, EXPORT_FILE_MODE)
+            with os.fdopen(descriptor, "wb") as output_file:
+                descriptor = -1
+                output_file.write(payload)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+    except OSError as exc:
+        _terminate_cli(cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
+    cli_print(f"Exported configuration to {export_path}")
+
