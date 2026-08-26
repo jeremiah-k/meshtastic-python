@@ -875,6 +875,70 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         metavar="TIMESTAMP",
     )
 
+    backup_group = outer.add_mutually_exclusive_group()
+    backup_group.add_argument(
+        "--backup-preferences",
+        nargs="?",
+        const="flash",
+        default=None,
+        choices=["flash", "sd"],
+        metavar="LOCATION",
+        help="Back up preferences to flash or SD storage (default: flash)",
+    )
+    backup_group.add_argument(
+        "--restore-preferences",
+        nargs="?",
+        const="flash",
+        default=None,
+        choices=["flash", "sd"],
+        metavar="LOCATION",
+        help="Restore preferences from flash or SD storage (default: flash)",
+    )
+    backup_group.add_argument(
+        "--remove-backup-preferences",
+        nargs="?",
+        const="flash",
+        default=None,
+        choices=["flash", "sd"],
+        metavar="LOCATION",
+        help="Remove a preferences backup from flash or SD (default: flash)",
+    )
+    outer.add_argument(
+        "--toggle-muted-node",
+        metavar="!xxxxxxxx",
+        help="Toggle the muted flag for a node in the device's NodeDB",
+    )
+    outer.add_argument(
+        "--delete-file",
+        metavar="PATH",
+        help="Delete a file from the node's filesystem (absolute path)",
+    )
+    outer.add_argument(
+        "--send-input-event",
+        type=int,
+        metavar="EVENT_CODE",
+        help="Send a physical input event code (button/keyboard/touch) to the node",
+    )
+    outer.add_argument(
+        "--input-kb-char",
+        help="Single keyboard character paired with --send-input-event",
+    )
+    outer.add_argument(
+        "--input-touch-x",
+        type=int,
+        help="Touch X coordinate paired with --send-input-event",
+    )
+    outer.add_argument(
+        "--input-touch-y",
+        type=int,
+        help="Touch Y coordinate paired with --send-input-event",
+    )
+    outer.add_argument(
+        "--request-connection-status",
+        action="store_true",
+        help="Report the node's WiFi, Ethernet, Bluetooth, and serial status",
+    )
+
     return parser
 
 
