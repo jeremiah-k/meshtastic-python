@@ -1333,6 +1333,7 @@ class TestMeshBeaconReceivePipeline:
 
     @staticmethod
     def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        """Build a MESH_BEACON_APP packet carrying the given payload bytes."""
         packet = mesh_pb2.MeshPacket(id=8128, to=456)
         setattr(packet, "from", 123)
         packet.decoded.portnum = portnums_pb2.PortNum.MESH_BEACON_APP
@@ -1343,6 +1344,7 @@ class TestMeshBeaconReceivePipeline:
     def test_real_mesh_beacon_packet_decodes_and_selects_topic(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """Decode a well-formed beacon payload and publish on the meshbeacon topic."""
         beacon = mesh_beacon_pb2.MeshBeacon(
             message="Meet on the offered channel",
             offer_region=config_pb2.Config.LoRaConfig.RegionCode.US,
@@ -1370,6 +1372,7 @@ class TestMeshBeaconReceivePipeline:
     def test_malformed_mesh_beacon_uses_standard_decode_error(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """A malformed beacon payload should publish a decode-failed marker without raw."""
         intents = receive_pipeline._handle_packet_from_radio(
             self._packet(b"\x0a\x08short"),
             emit_publication=False,
@@ -1399,6 +1402,7 @@ class TestNodeStatusReceivePipeline:
 
     @staticmethod
     def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        """Build a NODE_STATUS_APP packet carrying the given payload bytes."""
         packet = mesh_pb2.MeshPacket(id=8129, to=456)
         setattr(packet, "from", 123)
         packet.decoded.portnum = portnums_pb2.PortNum.NODE_STATUS_APP
@@ -1409,6 +1413,7 @@ class TestNodeStatusReceivePipeline:
     def test_real_node_status_packet_decodes_and_selects_topic(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """Decode a well-formed status payload and publish on the nodestatus topic."""
         status = mesh_pb2.StatusMessage(status="Bravo: solar powered")
 
         intents = receive_pipeline._handle_packet_from_radio(
@@ -1427,6 +1432,7 @@ class TestNodeStatusReceivePipeline:
     def test_malformed_node_status_uses_standard_decode_error(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """A malformed status payload should publish a decode-failed marker without raw."""
         intents = receive_pipeline._handle_packet_from_radio(
             self._packet(b"\x0a\x08short"),
             emit_publication=False,
@@ -1456,6 +1462,7 @@ class TestKeyVerificationReceivePipeline:
 
     @staticmethod
     def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        """Build a KEY_VERIFICATION_APP packet carrying the given payload bytes."""
         packet = mesh_pb2.MeshPacket(id=8130, to=456)
         setattr(packet, "from", 123)
         packet.decoded.portnum = portnums_pb2.PortNum.KEY_VERIFICATION_APP
@@ -1466,6 +1473,7 @@ class TestKeyVerificationReceivePipeline:
     def test_real_key_verification_packet_decodes_and_selects_topic(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """Decode a well-formed verification payload and publish on the keyverification topic."""
         verification = mesh_pb2.KeyVerification(nonce=0x0123456789ABCDEF)
         verification.hash1 = b"\x11" * 32
 
@@ -1486,6 +1494,7 @@ class TestKeyVerificationReceivePipeline:
     def test_malformed_key_verification_uses_standard_decode_error(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """A malformed verification payload should publish a decode-failed marker without raw."""
         intents = receive_pipeline._handle_packet_from_radio(
             self._packet(b"\x12\x20short"),
             emit_publication=False,
@@ -1516,6 +1525,7 @@ class TestAlertReceivePipeline:
 
     @staticmethod
     def _packet(payload: bytes) -> mesh_pb2.MeshPacket:
+        """Build an ALERT_APP packet carrying the given payload bytes."""
         packet = mesh_pb2.MeshPacket(id=8131, to=456)
         setattr(packet, "from", 123)
         assert packet.decoded.portnum == portnums_pb2.PortNum.UNKNOWN_APP
@@ -1527,6 +1537,7 @@ class TestAlertReceivePipeline:
     def test_alert_packet_selects_text_topic_and_stores_decoded_text(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """An alert payload should publish on the alert topic with decoded UTF-8 text."""
         intents = receive_pipeline._handle_packet_from_radio(
             self._packet("Tornado warning for grid EG13".encode()),
             emit_publication=False,
@@ -1541,6 +1552,7 @@ class TestAlertReceivePipeline:
     def test_alert_packet_with_non_utf8_payload_still_publishes(
         self, receive_pipeline: ReceivePipeline
     ) -> None:
+        """A non-UTF-8 alert payload should still publish on the alert topic without text."""
         intents = receive_pipeline._handle_packet_from_radio(
             self._packet(b"\xff\xfe\x00\x01"),
             emit_publication=False,
