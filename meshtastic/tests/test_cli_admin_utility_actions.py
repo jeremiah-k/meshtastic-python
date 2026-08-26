@@ -127,6 +127,22 @@ def _node_with_admin_sender(
 
 
 @pytest.mark.unit
+def test_input_event_rejects_empty_keyboard_character() -> None:
+    """An explicitly supplied empty keyboard token is not silently treated as zero."""
+    interface = _interface()
+    exits: list[tuple[str, int]] = []
+
+    with pytest.raises(SystemExit):
+        device_actions._handle_admin_utility_actions(
+            _context(interface, {"send_input_event": 212, "input_kb_char": ""}),
+            _hooks(exits=exits),
+        )
+
+    assert exits == [("ERROR: --input-kb-char accepts exactly one character.", 1)]
+    interface.getNode.assert_not_called()
+
+
+@pytest.mark.unit
 def test_send_admin_op_waits_for_remote_ack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
