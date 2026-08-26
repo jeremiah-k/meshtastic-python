@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NoReturn, cast
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import MagicMock, call, create_autospec
 
 import pytest
 
@@ -604,6 +604,30 @@ def test_apply_direct_configuration_prints_explicit_altitude_and_applies_all_val
     node.setURL.assert_called_once_with("https://example.invalid/#abc")
     assert "Fixing altitude at 3 meters" in [
         c.args[0] for c in cli_print.call_args_list
+    ]
+
+
+@pytest.mark.unit
+def test_apply_direct_configuration_preserves_legacy_owner_write_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Owner/name-only configure documents retain their historical two writes."""
+    node = MagicMock()
+    hooks = _hooks()
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(
+            owner="Owner",
+            owner_short="OS",
+        ),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
+    assert node.setOwner.call_args_list == [
+        call(long_name="Owner"),
+        call(long_name=None, short_name="OS"),
     ]
 
 

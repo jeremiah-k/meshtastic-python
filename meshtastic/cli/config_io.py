@@ -436,11 +436,7 @@ def _export_profile(
         profile.is_unmessagable = snapshot.is_unmessagable
     if snapshot.is_licensed is not None:
         profile.is_licensed = snapshot.is_licensed
-    if (
-        snapshot.latitude is not None
-        or snapshot.longitude is not None
-        or snapshot.altitude is not None
-    ):
+    if snapshot.latitude is not None or snapshot.longitude is not None:
         profile.fixed_position.latitude_i = int(round((snapshot.latitude or 0.0) * 1e7))
         profile.fixed_position.longitude_i = int(
             round((snapshot.longitude or 0.0) * 1e7)
@@ -558,6 +554,93 @@ def _profile_to_configuration(
 
 
 EXPORT_FILE_MODE: int = 0o600
+
+
+
+def _decode_configure_document(
+    raw_bytes: bytes | str, path: str, *, cli_exit: CliExit
+) -> dict[str, Any] | None:
+    """Decode one configure document, auto-detecting YAML or binary profiles.
+
+    Parameters
+    ----------
+    raw_bytes : bytes | str
+        Raw file contents. Strings remain accepted for historical mocked and
+        text-mode file seams.
+    path : str
+        Source path used for format preference and error reporting.
+    cli_exit : CliExit
+        CLI termination callback used for stable user-facing parse failures.
+
+    Returns
+    -------
+    dict[str, Any] | None
+        Parsed configuration mapping, or ``None`` for an empty YAML document.
+    """
+    raw = raw_bytes.encode("utf8") if isinstance(raw_bytes, str) else raw_bytes
+
+    def _decode_profile() -> dict[str, Any]:
+        return _profile_to_configuration(_parse_profile_bytes(raw))
+
+    def _fail_invalid_profile(exc: ValueError) -> None:
+        _terminate_cli(
+            cli_exit,
+            f"ERROR: {path} is not a valid YAML config or DeviceProfile "
+            f"(.cfg) file: {exc}",
+            1,
+        )
+
+    preferred_profile_error: ValueError | None = None
+    if path.lower().endswith((".cfg", ".bin")):
+        try:
+            return _decode_profile()
+        except ValueError as exc:
+            # Extension-based detection is only a preference. Explicit
+            # ``--export-format yaml`` is allowed with any destination name,
+            # so a textual ``.cfg``/``.bin`` file must still round-trip.
+            preferred_profile_error = exc
+
+    try:
+        text = raw.decode("utf8")
+    except UnicodeDecodeError:
+        text = None
+    if text is not None and _has_yaml_forbidden_control_chars(text):
+        # Protobuf wire payloads are dense in C0 control bytes that YAML
+        # forbids; route such payloads to the DeviceProfile parser instead.
+        text = None
+    if text is None:
+        if preferred_profile_error is not None:
+            _fail_invalid_profile(preferred_profile_error)
+        try:
+            return _decode_profile()
+        except ValueError as exc:
+            _fail_invalid_profile(exc)
+
+    try:
+        configuration = yaml.safe_load(text)
+    except yaml.YAMLError as yaml_error:
+        # A valid protobuf can occasionally contain only YAML-permitted UTF-8
+        # bytes. Accept it only when it has recognized DeviceProfile fields;
+        # otherwise preserve the historical malformed-YAML diagnostic.
+        try:
+            return _decode_profile()
+        except ValueError:
+            _terminate_cli(
+                cli_exit,
+                f"ERROR: Failed to parse YAML configuration: {yaml_error}",
+                1,
+            )
+    if isinstance(configuration, dict) or configuration is None:
+        return configuration
+    try:
+        return _decode_profile()
+    except ValueError:
+        _terminate_cli(
+            cli_exit,
+            "ERROR: YAML configuration must be a mapping/dictionary, got "
+            f"{type(configuration).__name__}",
+            1,
+        )
 
 
 def _resolve_export_format(fmt: str, destination: str) -> str:

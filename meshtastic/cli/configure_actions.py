@@ -13,9 +13,8 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, NamedTuple, NoReturn
+from typing import Any, NamedTuple
 
-import yaml
 
 import meshtastic.util
 from meshtastic.cli import config_io as _config_io
@@ -236,10 +235,10 @@ class ConfigureActionHooks:
         [MeshInterface, Any, dict[str, Any]], tuple[bool, bool]
     ]
     export_config: Callable[[MeshInterface], str]
-    export_profile: Callable[[MeshInterface], bytes]
     cli_exit: CliExit
     cli_print: Callable[[str], None]
     is_local_destination: Callable[[Any, str], bool]
+    export_profile: Callable[[MeshInterface], bytes] = _config_io._export_profile
 
 
 def _post_configure_reconnect_and_verify(
@@ -949,90 +948,10 @@ def _close_failed_settings_transaction(
 def _decode_configure_document(
     hooks: ConfigureHooks, raw_bytes: bytes | str, path: str
 ) -> dict[str, Any] | None:
-    """Decode one configure document, auto-detecting YAML or binary profiles.
-
-    Parameters
-    ----------
-    hooks : ConfigureHooks
-        CLI reporting and validation hooks.
-    raw_bytes : bytes | str
-        Raw file contents. Strings remain accepted for historical mocked and
-        text-mode file seams.
-    path : str
-        Source path used for error reporting.
-
-    Returns
-    -------
-    dict[str, Any] | None
-        Parsed configuration mapping, or ``None`` for an empty YAML document.
-    """
-    if isinstance(raw_bytes, str):
-        # Legacy compatibility seams (text-mode reads, mocked opens) may
-        # supply decoded content directly; normalize before detection.
-        raw = raw_bytes.encode("utf8")
-    else:
-        raw = raw_bytes
-
-    def _decode_profile() -> dict[str, Any]:
-        return _config_io._profile_to_configuration(  # noqa: SLF001
-            _config_io._parse_profile_bytes(raw)  # noqa: SLF001
-        )
-
-    def _fail_invalid_profile(exc: ValueError) -> NoReturn:
-        _terminate_cli(
-            hooks.cli_exit,
-            f"ERROR: {path} is not a valid YAML config or DeviceProfile "
-            f"(.cfg) file: {exc}",
-            1,
-        )
-
-    if path.lower().endswith((".cfg", ".bin")):
-        try:
-            return _decode_profile()
-        except ValueError as exc:
-            _fail_invalid_profile(exc)
-
-    try:
-        text = raw.decode("utf8")
-    except UnicodeDecodeError:
-        text = None
-    if text is not None and _config_io._has_yaml_forbidden_control_chars(
-        text
-    ):  # noqa: SLF001
-        # Protobuf wire payloads are dense in C0 control bytes that YAML
-        # forbids; route such payloads to the DeviceProfile parser instead.
-        text = None
-    if text is None:
-        try:
-            return _decode_profile()
-        except ValueError as exc:
-            _fail_invalid_profile(exc)
-
-    try:
-        configuration = yaml.safe_load(text)
-    except yaml.YAMLError as yaml_error:
-        # A valid protobuf can occasionally contain only YAML-permitted UTF-8
-        # bytes. Accept it only when it has recognized DeviceProfile fields;
-        # otherwise preserve the historical malformed-YAML diagnostic.
-        try:
-            return _decode_profile()
-        except ValueError:
-            _terminate_cli(
-                hooks.cli_exit,
-                f"ERROR: Failed to parse YAML configuration: {yaml_error}",
-                1,
-            )
-    if isinstance(configuration, dict) or configuration is None:
-        return configuration
-    try:
-        return _decode_profile()
-    except ValueError:
-        _terminate_cli(
-            hooks.cli_exit,
-            "ERROR: YAML configuration must be a mapping/dictionary, got "
-            f"{type(configuration).__name__}",
-            1,
-        )
+    """Decode one configure document through the configuration I/O runtime."""
+    return _config_io._decode_configure_document(  # noqa: SLF001
+        raw_bytes, path, cli_exit=hooks.cli_exit
+    )
 
 
 def _load_and_validate_configure_document(
@@ -1170,15 +1089,10 @@ def _apply_direct_configuration(
             hooks.cli_print(CONFIGURE_DIRECT_SETTINGS_HEADER)
             direct_writes_started = True
 
-    if any(
-        value is not None
-        for value in (
-            values.owner,
-            values.owner_short,
-            values.is_unmessagable,
-            values.is_licensed,
-        )
-    ):
+    owner_flags_requested = (
+        values.is_licensed is not None or values.is_unmessagable is not None
+    )
+    if owner_flags_requested:
         _begin_direct_writes()
         if values.owner is not None:
             hooks.cli_print(f"Setting device owner to {values.owner}")
@@ -1197,6 +1111,20 @@ def _apply_direct_configuration(
             is_unmessagable=values.is_unmessagable,
         )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+    else:
+        # Preserve the historical configure write shape for the long/short-name-only
+        # path. Besides compatibility with observable call ordering, this avoids
+        # changing firmware pacing for existing configure documents.
+        if values.owner is not None:
+            _begin_direct_writes()
+            hooks.cli_print(f"Setting device owner to {values.owner}")
+            target_node.setOwner(long_name=values.owner)
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+        if values.owner_short is not None:
+            _begin_direct_writes()
+            hooks.cli_print(f"Setting device owner short to {values.owner_short}")
+            target_node.setOwner(long_name=None, short_name=values.owner_short)
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if values.location is not None:
         _begin_direct_writes()
