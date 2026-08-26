@@ -30,6 +30,12 @@ from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.key_verification import STAGE_INITIATE as _KV_STAGE_INITIATE
 from meshtastic.key_verification import STAGE_NO_VERIFY as _KV_STAGE_NO_VERIFY
 from meshtastic.key_verification import STAGE_VERIFY as _KV_STAGE_VERIFY
+from meshtastic.key_verification import (
+    _build_key_verification_admin as _default_build_key_verification_admin,
+)
+from meshtastic.key_verification import (
+    _send_key_verification as _default_send_key_verification,
+)
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
     admin_pb2,
@@ -89,8 +95,10 @@ class DeviceActionHooks:
     read_lockdown_passphrase_file: Callable[[str], bytes]
     send_lockdown_auth: Callable[..., Any]
     validate_lockdown_passphrase: Callable[[bytes], bytes]
-    build_key_verification_admin: Callable[..., Any]
-    send_key_verification: Callable[..., Any]
+    build_key_verification_admin: Callable[..., Any] = (
+        _default_build_key_verification_admin
+    )
+    send_key_verification: Callable[..., Any] = _default_send_key_verification
 
 
 def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-statements
@@ -1202,7 +1210,7 @@ def _handle_admin_utility_actions(
         outcome.wait_for_ack_nak = True
         kb_char = getattr(args, "input_kb_char", None)
         char_code = 0
-        if kb_char:
+        if kb_char is not None:
             if len(kb_char) != 1:
                 _terminate_cli(
                     hooks.cli_exit,

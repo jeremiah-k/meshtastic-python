@@ -24,6 +24,29 @@ class _ArgcompleteModule(Protocol):
         """Enable shell completion for ``parser``."""
 
 
+_UINT32_MAX = (1 << 32) - 1
+
+
+def _parse_uint32(value: str) -> int:
+    """Parse one CLI integer constrained to an unsigned protobuf 32-bit field."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not 0 <= parsed <= _UINT32_MAX:
+        raise argparse.ArgumentTypeError(
+            f"value must be between 0 and {_UINT32_MAX}, got {parsed}"
+        )
+    return parsed
+
+
+def _parse_absolute_device_path(value: str) -> str:
+    """Validate a device-side file path before opening a transport session."""
+    if not value.startswith("/"):
+        raise argparse.ArgumentTypeError("device file path must be absolute")
+    return value
+
+
 _MODEM_PRESET_SHORTHANDS: tuple[tuple[tuple[str, ...], str, str, str], ...] = (
     (
         ("--ch-vlongslow",),
@@ -914,12 +937,13 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
     outer.add_argument(
         "--delete-file",
+        type=_parse_absolute_device_path,
         metavar="PATH",
         help="Delete a file from the node's filesystem (absolute path)",
     )
     outer.add_argument(
         "--send-input-event",
-        type=int,
+        type=_parse_uint32,
         metavar="EVENT_CODE",
         help="Send a physical input event code (button/keyboard/touch) to the node",
     )
@@ -929,12 +953,12 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
     outer.add_argument(
         "--input-touch-x",
-        type=int,
+        type=_parse_uint32,
         help="Touch X coordinate paired with --send-input-event",
     )
     outer.add_argument(
         "--input-touch-y",
-        type=int,
+        type=_parse_uint32,
         help="Touch Y coordinate paired with --send-input-event",
     )
     outer.add_argument(

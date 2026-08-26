@@ -138,6 +138,29 @@ def _run_ota(interface: _DummyTCPInterface) -> None:
 
 
 @pytest.mark.unit
+def test_device_action_hooks_preserve_legacy_keyword_constructor() -> None:
+    """Key-verification seams default without breaking pre-2.8 hook construction."""
+    values = {
+        "cli_exit": MagicMock(),
+        "cli_print": MagicMock(),
+        "set_pref": MagicMock(),
+        "is_local_destination": MagicMock(),
+        "send_local_factory_reset_and_wait": MagicMock(),
+        "post_factory_reset_ready_probe": MagicMock(),
+        "handle_ota_update": MagicMock(),
+        "build_lockdown_auth": MagicMock(),
+        "read_lockdown_passphrase_file": MagicMock(),
+        "send_lockdown_auth": MagicMock(),
+        "validate_lockdown_passphrase": MagicMock(),
+    }
+
+    hooks = device_actions.DeviceActionHooks(**values)
+
+    assert hooks.build_key_verification_admin is not None
+    assert hooks.send_key_verification is not None
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("raw_altitude", ["not-an-altitude", str(1 << 31)])
 def test_altitude_guards_reject_returning_cli_exit(raw_altitude: str) -> None:
     """Invalid altitude input must not continue into position assignment."""

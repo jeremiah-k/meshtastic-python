@@ -61,6 +61,54 @@ def test_local_action_builder_keeps_lockdown_actions_mutually_exclusive() -> Non
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--send-input-event", "-1"),
+        ("--send-input-event", str(1 << 32)),
+        ("--input-touch-x", "-1"),
+        ("--input-touch-y", str(1 << 32)),
+    ],
+)
+def test_remote_admin_builder_rejects_out_of_range_input_fields(
+    option: str, value: str
+) -> None:
+    """Input-event uint32 fields fail in argparse instead of protobuf assignment."""
+    parser = addRemoteAdminArgs(_parser())
+
+    with pytest.raises(SystemExit):
+        parser.parse_args([option, value])
+
+
+@pytest.mark.unit
+def test_remote_admin_builder_rejects_relative_delete_path() -> None:
+    """A device-side delete path fails before connecting when it is not absolute."""
+    parser = addRemoteAdminArgs(_parser())
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--delete-file", "prefs/config.proto"])
+
+
+@pytest.mark.unit
+def test_remote_admin_builder_accepts_uint32_input_boundaries() -> None:
+    """Input-event fields accept the full protobuf uint32 range."""
+    args = addRemoteAdminArgs(_parser()).parse_args(
+        [
+            "--send-input-event",
+            "0",
+            "--input-touch-x",
+            str((1 << 32) - 1),
+            "--input-touch-y",
+            "0",
+        ]
+    )
+
+    assert args.send_input_event == 0
+    assert args.input_touch_x == (1 << 32) - 1
+    assert args.input_touch_y == 0
+
+
+@pytest.mark.unit
 def test_connection_builder_accepts_tcp_host() -> None:
     args = addConnectionArgs(_parser()).parse_args(["--host", "localhost:4403"])
     assert args.host == "localhost:4403"
