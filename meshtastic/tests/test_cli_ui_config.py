@@ -334,7 +334,9 @@ def test_request_admin_response_returns_none_when_transport_returns_no_packet(
     """A sender that produces no request packet exits without entering ACK/response waits."""
     node = object.__new__(Node)
     wait = MagicMock()
-    monkeypatch.setattr("meshtastic.node._send_admin_with_ack_scope", MagicMock(return_value=None))
+    monkeypatch.setattr(
+        "meshtastic.node._send_admin_with_ack_scope", MagicMock(return_value=None)
+    )
     monkeypatch.setattr("meshtastic.node._wait_for_admin_ack", wait)
 
     assert node.requestUiConfig(response_timeout_seconds=1.0) is None

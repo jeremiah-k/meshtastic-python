@@ -233,18 +233,24 @@ def test_repeated_message_accepts_configure_mapping_list() -> None:
 def test_repeated_message_mapping_list_is_transactional_on_parse_failure() -> None:
     """An invalid YAML list element cannot partially replace existing messages."""
     config = localonly_pb2.LocalModuleConfig()
-    assert setPref(
-        config,
-        "mesh_beacon.broadcast_targets",
-        '[{"preset":"SHORT_FAST","channel_index":7}]',
-    ) is True
+    assert (
+        setPref(
+            config,
+            "mesh_beacon.broadcast_targets",
+            '[{"preset":"SHORT_FAST","channel_index":7}]',
+        )
+        is True
+    )
     before = config.SerializeToString()
 
-    assert setPref(
-        config,
-        "mesh_beacon.broadcast_targets",
-        [{"preset": "LONG_FAST"}, {"notAField": 1}],
-    ) is False
+    assert (
+        setPref(
+            config,
+            "mesh_beacon.broadcast_targets",
+            [{"preset": "LONG_FAST"}, {"notAField": 1}],
+        )
+        is False
+    )
 
     assert config.SerializeToString() == before
 
@@ -256,18 +262,29 @@ def test_repeated_message_parser_rejects_non_array_candidates_cleanly() -> None:
 
     scalar = localonly_pb2.LocalConfig().lora.DESCRIPTOR.fields_by_name["hop_limit"]
     repeated_message = (
-        localonly_pb2.LocalModuleConfig()
-        .mesh_beacon.DESCRIPTOR.fields_by_name["broadcast_targets"]
+        localonly_pb2.LocalModuleConfig().mesh_beacon.DESCRIPTOR.fields_by_name[
+            "broadcast_targets"
+        ]
     )
+
     def reporter(_message: str, **_kwargs: object) -> None:
         return None
 
-    assert preference_runtime._parse_repeated_message_value(
-        scalar, [], field_path="lora.hop_limit", cli_print=reporter
-    ) is None
-    assert preference_runtime._parse_repeated_message_value(
-        repeated_message, 7, field_path="mesh_beacon.broadcast_targets", cli_print=reporter
-    ) is None
+    assert (
+        preference_runtime._parse_repeated_message_value(
+            scalar, [], field_path="lora.hop_limit", cli_print=reporter
+        )
+        is None
+    )
+    assert (
+        preference_runtime._parse_repeated_message_value(
+            repeated_message,
+            7,
+            field_path="mesh_beacon.broadcast_targets",
+            cli_print=reporter,
+        )
+        is None
+    )
 
 
 @pytest.mark.unit

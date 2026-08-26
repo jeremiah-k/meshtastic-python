@@ -1066,14 +1066,20 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
     node_num = getattr(target_node, "nodeNum", None)
     interface = getattr(target_node, "iface", None)
     node_db_lock = getattr(interface, "_node_db_lock", None)
-    if not isinstance(node_num, int) or isinstance(node_num, bool) or node_db_lock is None:
+    if (
+        not isinstance(node_num, int)
+        or isinstance(node_num, bool)
+        or node_db_lock is None
+    ):
         _terminate_cli(
             hooks.cli_exit,
             "Unable to preserve the current licensed flag: target owner state is unavailable.",
         )
     with node_db_lock:
         nodes_by_num = getattr(interface, "nodesByNum", None)
-        node_data = nodes_by_num.get(node_num) if isinstance(nodes_by_num, dict) else None
+        node_data = (
+            nodes_by_num.get(node_num) if isinstance(nodes_by_num, dict) else None
+        )
         stored_user = node_data.get("user") if isinstance(node_data, dict) else None
         user = dict(stored_user) if isinstance(stored_user, dict) else None
     if user is None:

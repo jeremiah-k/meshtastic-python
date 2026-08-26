@@ -207,7 +207,9 @@ def test_local_action_builder_accepts_key_verification_boundaries() -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize("value", ["", "ab", "😀"])
-def test_remote_admin_builder_rejects_unrepresentable_keyboard_input(value: str) -> None:
+def test_remote_admin_builder_rejects_unrepresentable_keyboard_input(
+    value: str,
+) -> None:
     """Keyboard input fails in argparse when firmware cannot represent it."""
     parser = addRemoteAdminArgs(_parser())
 

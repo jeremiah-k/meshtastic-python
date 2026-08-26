@@ -283,7 +283,9 @@ def test_send_ignores_expected_variant_when_nonce_extraction_fails(
         )
 
     interface.sendData.side_effect = _send
-    monkeypatch.setattr("meshtastic.key_verification._notification_nonce", lambda _n: None)
+    monkeypatch.setattr(
+        "meshtastic.key_verification._notification_nonce", lambda _n: None
+    )
     request = _build_key_verification_admin("initiate", remote_nodenum=0xABCD1234)
 
     with pytest.raises(TimeoutError):
