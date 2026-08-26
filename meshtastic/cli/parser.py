@@ -8,6 +8,11 @@ import sys
 from collections.abc import Sequence
 from typing import Protocol
 
+from meshtastic.key_verification import (
+    DEFAULT_KEY_VERIFICATION_TIMEOUT_SECONDS as _DEFAULT_KEY_VERIFY_WAIT,
+    KEY_VERIFICATION_STAGES as _KEY_VERIFICATION_STAGES,
+)
+
 from meshtastic.cli.values import parse_modem_preset_name as _parse_modem_preset_name
 
 
@@ -619,6 +624,30 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         "--lockdown-yes",
         action="store_true",
         help="Skip typed confirmation for destructive lockdown actions",
+    )
+
+    key_verify_actions = group.add_mutually_exclusive_group()
+    key_verify_actions.add_argument(
+        "--key-verify",
+        choices=_KEY_VERIFICATION_STAGES,
+        help="Run one stage of the firmware 2.8 PKI key-verification handshake",
+    )
+    group.add_argument(
+        "--key-verify-nonce",
+        type=int,
+        default=0,
+        help="Handshake nonce from the device notification (stages after initiate)",
+    )
+    group.add_argument(
+        "--key-verify-security-number",
+        type=int,
+        help="Four digit security number shown on the remote node (provide stage)",
+    )
+    group.add_argument(
+        "--key-verify-wait",
+        type=float,
+        default=_DEFAULT_KEY_VERIFY_WAIT,
+        help="Seconds to wait for the device key-verification notification",
     )
 
     group.add_argument(

@@ -154,6 +154,7 @@ def _dispatch_connected(context: CliContext, hooks: DispatchHooks) -> None:
                 context, hooks.channel_contact
             )
             device_actions._handle_lockdown_action(context, hooks.device)
+            device_actions._handle_key_verification_action(context, hooks.device)
             messaging_service_actions._handle_information_actions(
                 context, hooks.services
             )
