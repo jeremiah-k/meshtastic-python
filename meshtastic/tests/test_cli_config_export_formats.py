@@ -1,0 +1,204 @@
+"""Tests for --export-format and DeviceProfile (.cfg) config round-trips."""
+
+import argparse
+import os
+from pathlib import Path
+from typing import Any, cast
+from unittest.mock import MagicMock
+
+import pytest
+
+from meshtastic.cli import configure_actions, config_io
+from meshtastic.cli.configure_actions import ConfigureActionHooks
+from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
+from meshtastic.mesh_interface import MeshInterface
+from meshtastic.protobuf import clientonly_pb2, config_pb2, localonly_pb2
+
+
+def _hooks(
+    *,
+    export_config: Any = None,
+    export_profile: Any = None,
+    cli_exit: Any = None,
+    is_local: bool = True,
+) -> ConfigureActionHooks:
+    return ConfigureActionHooks(
+        handle_set_command=MagicMock(),
+        handle_configure_command=MagicMock(return_value=(False, False)),
+        export_config=export_config or MagicMock(return_value="yaml: true\n"),
+        export_profile=export_profile or MagicMock(return_value=b"\x00profile"),
+        cli_exit=cli_exit or cast(CliExit, lambda message, code=0: None),
+        cli_print=MagicMock(),
+        is_local_destination=MagicMock(return_value=is_local),
+    )
+
+
+def _context(
+    interface: Any, *, export_config: Any, export_format: Any = "auto"
+) -> CliContext:
+    return CliContext(
+        interface=interface,
+        args=argparse.Namespace(
+            set=None,
+            configure=None,
+            export_config=export_config,
+            export_format=export_format,
+            dest="^local",
+        ),
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("fmt", "destination", "expected"),
+    [
+        ("auto", "out.cfg", "binary"),
+        ("auto", "out.bin", "binary"),
+        ("auto", "out.CFG", "binary"),
+        ("auto", "out.yaml", "yaml"),
+        ("auto", "-", "yaml"),
+        ("yaml", "out.cfg", "yaml"),
+        ("binary", "out.txt", "binary"),
+        ("protobuf", "-", "binary"),
+    ],
+)
+def test_resolve_export_format(fmt: str, destination: str, expected: str) -> None:
+    """Format resolution honors explicit choices and extension auto-detection."""
+    assert configure_actions._resolve_export_format(fmt, destination) == expected
+
+
+@pytest.mark.unit
+def test_export_writes_binary_profile_for_cfg_extension(tmp_path: Path) -> None:
+    """Auto format with a .cfg destination writes serialized DeviceProfile bytes."""
+    interface = cast(MeshInterface, MagicMock())
+    payload = clientonly_pb2.DeviceProfile()
+    payload.long_name = "Binary Owner"
+    raw = payload.SerializeToString()
+    export_path = tmp_path / "node.cfg"
+    context = _context(interface, export_config=str(export_path))
+    hooks = _hooks(export_profile=MagicMock(return_value=raw))
+
+    configure_actions._handle_configure_actions(context, hooks)
+
+    assert export_path.read_bytes() == raw
+    assert (os.stat(export_path).st_mode & 0o777) == 0o600
+
+
+@pytest.mark.unit
+def test_export_binary_to_stdout_is_rejected() -> None:
+    """Binary payloads must not be spewed to a text console."""
+    interface = cast(MeshInterface, MagicMock())
+    exits: list[tuple[str, int]] = []
+
+    def fake_exit(message: str, code: int = 0) -> None:
+        exits.append((message, code))
+        raise SystemExit(code)
+
+    context = _context(interface, export_config="-", export_format="binary")
+    hooks = _hooks(cli_exit=fake_exit)
+
+    with pytest.raises(SystemExit):
+        configure_actions._handle_configure_actions(context, hooks)
+    assert exits and exits[0][1] == 1
+    assert "Binary export requires a file path" in exits[0][0]
+
+
+@pytest.mark.unit
+def test_export_yaml_still_writes_text(tmp_path: Path) -> None:
+    """Explicit yaml format keeps the historical text export path."""
+    interface = cast(MeshInterface, MagicMock())
+    export_path = tmp_path / "node.yaml"
+    context = _context(interface, export_config=str(export_path), export_format="yaml")
+    hooks = _hooks(export_config=MagicMock(return_value="owner: Someone\n"))
+
+    configure_actions._handle_configure_actions(context, hooks)
+
+    assert export_path.read_text(encoding="utf8") == "owner: Someone\n"
+
+
+@pytest.mark.unit
+def test_decode_prefers_yaml_mappings() -> None:
+    """UTF-8 YAML mappings decode as YAML."""
+    decoded = configure_actions._decode_configure_document(
+        MagicMock(), b"owner: Tester\n", "config.yaml"
+    )
+    assert decoded == {"owner": "Tester"}
+
+
+@pytest.mark.unit
+def test_decode_accepts_binary_profiles() -> None:
+    """Serialized DeviceProfile bytes decode through the profile adapter."""
+    payload = clientonly_pb2.DeviceProfile()
+    payload.long_name = "Binary Owner"
+    payload.config.lora.region = config_pb2.Config.LoRaConfig.RegionCode.US
+
+    decoded = configure_actions._decode_configure_document(
+        MagicMock(), payload.SerializeToString(), "node.cfg"
+    )
+
+    assert decoded["owner"] == "Binary Owner"
+    assert decoded["config"]
+
+
+@pytest.mark.unit
+def test_decode_rejects_non_mapping_yaml() -> None:
+    """Valid YAML that is not a mapping keeps the historical shape error."""
+    exits: list[str] = []
+
+    def fake_exit(message: str, code: int = 0) -> None:
+        exits.append(message)
+        raise SystemExit(code)
+
+    hooks = MagicMock()
+    hooks.cli_exit = fake_exit
+    with pytest.raises(SystemExit):
+        configure_actions._decode_configure_document(hooks, b"[]", "bad.yaml")
+    assert any("mapping/dictionary" in message for message in exits)
+
+
+@pytest.mark.unit
+def test_decode_rejects_garbage_with_combined_error() -> None:
+    """Files that are neither YAML nor DeviceProfile fail with both formats named."""
+
+    def fake_exit(message: str, code: int = 0) -> None:
+        raise SystemExit(code)
+
+    hooks = MagicMock()
+    hooks.cli_exit = fake_exit
+    with pytest.raises(SystemExit):
+        configure_actions._decode_configure_document(
+            hooks, b"\xff\xfe\xfd\xfc\xfb\xfa", "garbage.cfg"
+        )
+
+
+@pytest.mark.unit
+def test_profile_export_round_trip() -> None:
+    """Exported profile bytes parse back into the YAML document shape."""
+    mock = MagicMock()
+    mock.getLongName.return_value = "Jeremiah K"
+    mock.getShortName.return_value = "JK"
+    mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
+    mock.getCannedMessage.return_value = "ping||pong"
+    mock.getRingtone.return_value = ""
+    mock.getMyNodeInfo.return_value = {
+        "position": {"latitude": 37.5, "longitude": -122.1, "altitude": 52}
+    }
+    mock.localNode.localConfig = localonly_pb2.LocalConfig()
+    mock.localNode.localConfig.lora.region = config_pb2.Config.LoRaConfig.RegionCode.US
+    mock.localNode.moduleConfig = localonly_pb2.LocalModuleConfig()
+    interface = cast(MeshInterface, mock)
+
+    raw = config_io.export_profile(interface)
+    configuration = config_io.profile_to_configuration(
+        config_io.parse_profile_bytes(raw)
+    )
+
+    assert configuration["owner"] == "Jeremiah K"
+    assert configuration["owner_short"] == "JK"
+    assert configuration["channel_url"] == "https://meshtastic.org/e/#ABC"
+    assert configuration["canned_messages"] == "ping||pong"
+    assert "ringtone" not in configuration
+    assert configuration["location"]["alt"] == 52
+    assert configuration["config"]

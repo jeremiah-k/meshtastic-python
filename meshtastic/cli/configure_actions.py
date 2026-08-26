@@ -18,6 +18,7 @@ from typing import Any, NamedTuple
 import yaml
 
 import meshtastic.util
+from meshtastic.cli import config_io as _config_io
 from meshtastic.cli import configure_values
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.configure_verify import (
@@ -233,6 +234,7 @@ class ConfigureActionHooks:
         [MeshInterface, Any, dict[str, Any]], tuple[bool, bool]
     ]
     export_config: Callable[[MeshInterface], str]
+    export_profile: Callable[[MeshInterface], bytes]
     cli_exit: CliExit
     cli_print: Callable[[str], None]
     is_local_destination: Callable[[Any, str], bool]
@@ -942,6 +944,59 @@ def _close_failed_settings_transaction(
         )
 
 
+def _decode_configure_document(
+    hooks: ConfigureHooks, raw_bytes: bytes, path: str
+) -> dict[str, Any]:
+    """Decode one configure document, auto-detecting YAML or binary profiles.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and validation hooks.
+    raw_bytes : bytes
+        Raw file contents.
+    path : str
+        Source path used for error reporting.
+
+    Returns
+    -------
+    dict[str, Any]
+        Parsed configuration mapping.
+    """
+    try:
+        text = raw_bytes.decode("utf8")
+    except UnicodeDecodeError:
+        text = None
+    if text is not None:
+        try:
+            configuration = yaml.safe_load(text)
+        except yaml.YAMLError:
+            configuration = None
+        else:
+            if isinstance(configuration, dict):
+                return configuration
+            if configuration is not None:
+                # Decoded YAML that is not a mapping is a YAML shape error,
+                # not a candidate binary profile.
+                _terminate_cli(
+                    hooks.cli_exit,
+                    "ERROR: YAML configuration must be a mapping/dictionary, got "
+                    f"{type(configuration).__name__}",
+                    1,
+                )
+    try:
+        return _config_io.profile_to_configuration(
+            _config_io.parse_profile_bytes(raw_bytes)
+        )
+    except ValueError as exc:
+        _terminate_cli(
+            hooks.cli_exit,
+            f"ERROR: {path} is not a valid YAML config or DeviceProfile "
+            f"(.cfg) file: {exc}",
+            1,
+        )
+
+
 def _load_and_validate_configure_document(
     hooks: ConfigureHooks,
     path: str,
@@ -961,18 +1016,16 @@ def _load_and_validate_configure_document(
         Validated top-level mapping, normalized direct-write values, and narrowed
         config/module-config section mappings.
     """
+
     try:
-        with open(path, encoding="utf8") as file:
-            raw_text = file.read()
-        configuration = yaml.safe_load(raw_text)
+        with open(path, "rb") as file:
+            raw_bytes = file.read()
     except OSError as exc:
         _terminate_cli(
             hooks.cli_exit, f"ERROR: Failed to read configuration file: {exc}"
         )
-    except (yaml.YAMLError, UnicodeDecodeError) as exc:
-        _terminate_cli(
-            hooks.cli_exit, f"ERROR: Failed to parse YAML configuration: {exc}"
-        )
+    configuration = _decode_configure_document(hooks, raw_bytes, path)
+
 
     if configuration is None:
         _terminate_cli(hooks.cli_exit, "ERROR: YAML configuration file is empty")
@@ -1488,6 +1541,13 @@ def _handle_configure_actions(
         outcome.stop_processing = True
         return
 
+    export_format = _resolve_export_format(
+        getattr(args, "export_format", "auto"), args.export_config
+    )
+    if export_format == "binary":
+        _export_binary_profile(context, hooks)
+        return
+
     config_text = hooks.export_config(context.interface)
     if args.export_config == "-":
         print(config_text)
@@ -1515,3 +1575,71 @@ def _handle_configure_actions(
     except OSError as exc:
         _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
     hooks.cli_print(f"Exported configuration to {args.export_config}")
+
+
+def _resolve_export_format(fmt: str, destination: str) -> str:
+    """Resolve the effective export format for a destination.
+
+    Parameters
+    ----------
+    fmt : str
+        Requested format: ``auto``, ``yaml``, ``binary``, or ``protobuf``.
+    destination : str
+        Export destination path or ``-`` for stdout.
+
+    Returns
+    -------
+    str
+        Either ``yaml`` or ``binary``.
+    """
+    if fmt in ("binary", "protobuf"):
+        return "binary"
+    if fmt == "yaml":
+        return "yaml"
+    lowered = destination.lower()
+    if lowered.endswith((".cfg", ".bin")):
+        return "binary"
+    return "yaml"
+
+
+def _export_binary_profile(
+    context: CliContext, hooks: ConfigureActionHooks
+) -> None:
+    """Write the local node configuration as a binary DeviceProfile.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state.
+    hooks : ConfigureActionHooks
+        Entrypoint-owned profile-export and reporting seams.
+    """
+    payload = hooks.export_profile(context.interface)
+    if context.args.export_config == "-":
+        # Binary payloads are meaningless on a text console; refuse rather
+        # than spew protobuf bytes into a terminal or capture file.
+        _terminate_cli(
+            hooks.cli_exit,
+            "ERROR: Binary export requires a file path; use --export-format yaml "
+            "for stdout.",
+            1,
+        )
+    try:
+        descriptor = os.open(
+            context.args.export_config,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            PRIVATE_CONFIG_FILE_MODE,
+        )
+        try:
+            fchmod = getattr(os, "fchmod", None)
+            if callable(fchmod):
+                fchmod(descriptor, PRIVATE_CONFIG_FILE_MODE)
+            with os.fdopen(descriptor, "wb") as output_file:
+                descriptor = -1
+                output_file.write(payload)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+    except OSError as exc:
+        _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
+    hooks.cli_print(f"Exported configuration to {context.args.export_config}")

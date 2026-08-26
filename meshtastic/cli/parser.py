@@ -222,7 +222,13 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
         nargs="?",
         const="-",  # default to "-" if no value provided
         metavar="FILE",
-        help="Export device config as YAML (to stdout if no file given)",
+        help="Export device config (to stdout if no file given); format set by --export-format",
+    )
+    group.add_argument(
+        "--export-format",
+        choices=["auto", "yaml", "binary", "protobuf"],
+        default="auto",
+        help="Config export format; auto picks binary for .cfg/.bin files, else YAML",
     )
     return parser
 

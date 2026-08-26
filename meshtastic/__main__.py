@@ -1266,6 +1266,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
     )
     configure_hooks = cli_configure_actions.ConfigureActionHooks(
         handle_set_command=_handle_set_command,
+        export_profile=exportProfile,
         handle_configure_command=_handle_configure_command,
         export_config=exportConfig,
         cli_exit=_cli_exit,
@@ -1387,6 +1388,15 @@ def exportConfig(interface: MeshInterface) -> str:
 # COMPAT_STABLE_SHIM: snake_case alias for exportConfig
 export_config = exportConfig
 
+
+
+def exportProfile(interface: MeshInterface) -> bytes:
+    """Export the local node configuration as a binary DeviceProfile."""
+    return cli_config_io.export_profile(interface)
+
+
+# COMPAT_STABLE_SHIM: snake_case alias for exportProfile
+export_profile = exportProfile
 
 def _close_power_meter_quietly(candidate: Any) -> None:
     """Best-effort close used while rolling back meter construction/configuration."""

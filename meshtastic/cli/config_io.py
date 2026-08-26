@@ -8,12 +8,11 @@ from typing import Any, Protocol
 import yaml
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
-from google.protobuf.message import Message
+from google.protobuf.message import DecodeError, Message
 
 import meshtastic.util
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.protobuf import localonly_pb2
-
+from meshtastic.protobuf import clientonly_pb2, localonly_pb2
 
 class DescriptorLike(Protocol):
     """Structural descriptor type shared by pure-Python and upb protobuf runtimes."""
@@ -357,3 +356,126 @@ def export_config(
         )
 
     return "# start of Meshtastic configure yaml\n" + yaml.dump(config_obj)
+
+
+def export_profile(
+    interface: MeshInterface,
+) -> bytes:
+    """Export local node configuration as a binary DeviceProfile (.cfg).
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        Connected interface whose local node state should be exported.
+
+    Returns
+    -------
+    bytes
+        Serialized ``clientonly_pb2.DeviceProfile`` suitable for ``--configure``.
+
+    Notes
+    -----
+    Mirrors :func:`export_config` data collection. Canned messages, ringtone,
+    and fixed position are included only when populated; local and module
+    configurations are always copied so firmware defaults round-trip.
+    """
+    profile = clientonly_pb2.DeviceProfile()
+    owner = interface.getLongName()
+    owner_short = interface.getShortName()
+    channel_url = interface.localNode.getURL()
+    canned_messages = interface.getCannedMessage()
+    ringtone = interface.getRingtone()
+    my_info = interface.getMyNodeInfo()
+    position = my_info.get("position") if my_info else None
+    latitude = position.get("latitude") if position else None
+    longitude = position.get("longitude") if position else None
+    altitude = position.get("altitude") if position else None
+
+    if owner:
+        profile.long_name = owner
+    if owner_short:
+        profile.short_name = owner_short
+    if channel_url:
+        profile.channel_url = channel_url
+    if canned_messages:
+        profile.canned_messages = canned_messages
+    if ringtone:
+        profile.ringtone = ringtone
+    if latitude is not None or longitude is not None or altitude is not None:
+        profile.fixed_position.latitude_i = int(round((latitude or 0.0) * 1e7))
+        profile.fixed_position.longitude_i = int(round((longitude or 0.0) * 1e7))
+        profile.fixed_position.altitude = int(altitude or 0)
+    profile.config.CopyFrom(interface.localNode.localConfig)
+    profile.module_config.CopyFrom(interface.localNode.moduleConfig)
+    return profile.SerializeToString()
+
+
+def parse_profile_bytes(raw: bytes) -> clientonly_pb2.DeviceProfile:
+    """Parse raw bytes as a DeviceProfile protobuf.
+
+    Parameters
+    ----------
+    raw : bytes
+        Candidate serialized DeviceProfile payload.
+
+    Returns
+    -------
+    clientonly_pb2.DeviceProfile
+        Parsed profile.
+
+    Raises
+    ------
+    ValueError
+        If the payload is not a parsable DeviceProfile.
+    """
+    profile = clientonly_pb2.DeviceProfile()
+    try:
+        profile.ParseFromString(raw)
+    except DecodeError as exc:
+        raise ValueError(f"invalid DeviceProfile payload: {exc}") from exc
+    return profile
+
+
+def profile_to_configuration(
+    profile: clientonly_pb2.DeviceProfile,
+) -> dict[str, Any]:
+    """Convert a DeviceProfile into the equivalent YAML configure document.
+
+    Parameters
+    ----------
+    profile : clientonly_pb2.DeviceProfile
+        Profile to adapt, typically parsed from a binary ``.cfg`` file.
+
+    Returns
+    -------
+    dict[str, Any]
+        Mapping using the same keys as YAML exports, so binary profiles flow
+        through the standard configure pipeline unchanged.
+    """
+    configuration: dict[str, Any] = {}
+    if profile.long_name:
+        configuration["owner"] = profile.long_name
+    if profile.short_name:
+        configuration["owner_short"] = profile.short_name
+    if profile.channel_url:
+        configuration["channel_url"] = profile.channel_url
+    if profile.canned_messages:
+        configuration["canned_messages"] = profile.canned_messages
+    if profile.ringtone:
+        configuration["ringtone"] = profile.ringtone
+    fixed = profile.fixed_position
+    if fixed.latitude_i or fixed.longitude_i or fixed.altitude:
+        configuration["location"] = {
+            "lat": fixed.latitude_i / 1e7,
+            "lon": fixed.longitude_i / 1e7,
+            "alt": fixed.altitude,
+        }
+    config = MessageToDict(profile.config)
+    if config:
+        configuration["config"] = _converted_section_keys(config, camel_case=False)
+    module_config = MessageToDict(profile.module_config)
+    if module_config:
+        configuration["module_config"] = _converted_section_keys(
+            module_config, camel_case=False
+        )
+    return configuration
