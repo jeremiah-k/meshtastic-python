@@ -30,7 +30,7 @@ from meshtastic.__main__ import (
     traverseConfig,
 )
 from meshtastic._branding import PRIMARY_CLI_NAME, PROJECT_ISSUE_URL
-from meshtastic.protobuf import config_pb2, localonly_pb2
+from meshtastic.protobuf import config_pb2, localonly_pb2, mesh_pb2
 from meshtastic.serial_interface import SerialInterface
 
 
@@ -778,3 +778,70 @@ def test_create_power_meter_ppk2_none_exits(capsys: pytest.CaptureFixture[str]) 
         _out, _err = capsys.readouterr()
         # Error message is printed to stderr by _cli_exit
         assert "incomplete" in _err.lower() or "unavailable" in _err.lower()
+
+
+@pytest.mark.unit
+def test_spontaneous_key_verification_notification_is_rendered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Long-lived CLI sessions surface responder-side key-verification prompts."""
+    notification = mesh_pb2.ClientNotification()
+    notification.key_verification_number_inform.remote_longname = "Remote"
+    notification.key_verification_number_inform.security_number = 123456
+    notification.key_verification_number_inform.nonce = 77
+    prints: list[str] = []
+    monkeypatch.setattr(main_module, "_current_invocation_args", lambda: None)
+    monkeypatch.setattr(main_module, "_cli_print", prints.append)
+
+    main_module.onClientNotification(notification, MagicMock())
+
+    assert any("Security number for Remote: 123456" in line for line in prints)
+    assert any("wait for the final verification-character" in line for line in prints)
+
+
+@pytest.mark.unit
+def test_active_key_verification_action_suppresses_generic_notification_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one-shot action owns its response rendering and must not print twice."""
+    notification = mesh_pb2.ClientNotification()
+    notification.key_verification_final.nonce = 77
+    prints: list[str] = []
+    monkeypatch.setattr(
+        main_module,
+        "_current_invocation_args",
+        lambda: MagicMock(key_verify="provide"),
+    )
+    monkeypatch.setattr(main_module, "_cli_print", prints.append)
+
+    main_module.onClientNotification(notification, MagicMock())
+
+    assert prints == []
+
+
+@pytest.mark.unit
+def test_non_key_client_notification_is_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The generic subscriber remains silent for unrelated ClientNotifications."""
+    notification = mesh_pb2.ClientNotification(message="unrelated")
+    prints: list[str] = []
+    monkeypatch.setattr(main_module, "_current_invocation_args", lambda: None)
+    monkeypatch.setattr(main_module, "_cli_print", prints.append)
+
+    main_module.onClientNotification(notification, MagicMock())
+
+    assert prints == []
+
+
+@pytest.mark.unit
+def test_export_profile_compatibility_wrapper_delegates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The historical __main__ profile-export seam delegates to config I/O runtime."""
+    interface = MagicMock()
+    exporter = MagicMock(return_value=b"profile")
+    monkeypatch.setattr(main_module.cli_config_io, "_export_profile", exporter)
+
+    assert main_module.exportProfile(interface) == b"profile"
+    exporter.assert_called_once_with(interface)

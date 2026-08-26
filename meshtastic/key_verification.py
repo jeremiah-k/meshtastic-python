@@ -10,6 +10,7 @@ reports progress through ``ClientNotification`` payloads published on the
 
 from __future__ import annotations
 
+import math
 import threading
 from typing import Literal
 
@@ -154,15 +155,15 @@ def _send_key_verification(
     Raises
     ------
     ValueError
-        If ``timeout`` is not positive.
+        If ``timeout`` is not finite and positive.
     TimeoutError
         If an expected stage-specific notification does not arrive before
         ``timeout``.
     RuntimeError
         If the interface has not completed its initial node handshake.
     """
-    if timeout <= 0:
-        raise ValueError("timeout must be positive")
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout must be finite and positive")
     my_info = interface.myInfo
     if my_info is None:
         raise RuntimeError("device did not provide my_info")

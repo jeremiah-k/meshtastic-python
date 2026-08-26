@@ -30,6 +30,7 @@ import meshtastic.cli.invocation as cli_invocation
 import meshtastic.cli.messaging_service_actions as cli_messaging_service_actions
 import meshtastic.cli.preference_runtime as cli_preference_runtime
 import meshtastic.cli.runtime as cli_runtime
+from meshtastic import _topics
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
@@ -610,6 +611,31 @@ def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
 
     except Exception as ex:
         logger.warning("Error processing received packet: %s", ex)
+
+
+def onClientNotification(
+    notification: mesh_pb2.ClientNotification, interface: MeshInterface
+) -> None:
+    """Render spontaneous key-verification notifications for long-lived CLI sessions.
+
+    The active ``--key-verify`` action owns its own subscription and renders its
+    response after the bounded wait, so suppress this generic subscriber during
+    that action to avoid duplicate output. Other ClientNotification variants are
+    intentionally ignored here.
+    """
+    _ = interface
+    args = _current_invocation_args()
+    if args is not None and getattr(args, "key_verify", None):
+        return
+    if notification.WhichOneof("payload_variant") not in {
+        "key_verification_number_inform",
+        "key_verification_number_request",
+        "key_verification_final",
+    }:
+        return
+    cli_device_actions._render_key_verification_notification(  # noqa: SLF001
+        notification, "", _cli_print
+    )
 
 
 def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
@@ -1355,6 +1381,7 @@ def subscribe() -> None:
     commented out.
     """
     pub.subscribe(onReceive, "meshtastic.receive")
+    pub.subscribe(onClientNotification, _topics.CLIENT_NOTIFICATION_TOPIC)
     # pub.subscribe(onConnection, "meshtastic.connection")
 
     # We now call onConnected from main
@@ -1574,6 +1601,7 @@ def _unsubscribe_cli_receive() -> None:
     """Best-effort removal of the invocation-level receive subscription."""
     try:
         pub.unsubscribe(onReceive, "meshtastic.receive")
+        pub.unsubscribe(onClientNotification, _topics.CLIENT_NOTIFICATION_TOPIC)
     except Exception:
         logger.debug("Unable to remove CLI receive subscription", exc_info=True)
 
