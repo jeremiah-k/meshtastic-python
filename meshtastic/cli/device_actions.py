@@ -27,7 +27,7 @@ from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.key_verification import STAGE_INITIATE as _KV_STAGE_INITIATE
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.protobuf import admin_pb2, mesh_pb2
+from meshtastic.protobuf import admin_pb2, connection_status_pb2, mesh_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -524,6 +524,7 @@ def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> Non
     if outcome.stop_processing:
         return
     _handle_node_database_actions(context)
+    _handle_admin_utility_actions(context, hooks)
 
 
 def _parse_coordinate(
@@ -806,6 +807,7 @@ def _handle_node_database_actions(context: CliContext) -> None:
         (args.remove_favorite_node, "removeFavorite"),
         (args.set_ignored_node, "setIgnored"),
         (args.remove_ignored_node, "removeIgnored"),
+        (getattr(args, "toggle_muted_node", None), "toggleMutedNode"),
     )
     for value, method_name in actions:
         if value:
@@ -1123,3 +1125,125 @@ def _report_key_verification_notification(
         hooks.cli_print(f"Key verification with {final.remote_longname} completed.")
     else:
         hooks.cli_print(f"Key-verification notification: {notification.message}")
+
+
+def _handle_admin_utility_actions(
+    context: CliContext, hooks: DeviceActionHooks
+) -> None:
+    """Run preference backups, file deletion, input events, and status reads.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. Each requested action enables ``close_now``
+        plus ACK/NAK finalization for shared lifecycle handling.
+    hooks : DeviceActionHooks
+        CLI reporting and exit seams.
+    """
+    args = context.args
+    interface = context.interface
+    kwargs = context.get_node_kwargs
+    outcome = context.outcome
+
+    backup_actions = (
+        (getattr(args, "backup_preferences", None), "backupPreferences", "Backing up"),
+        (getattr(args, "restore_preferences", None), "restorePreferences", "Restoring"),
+        (
+            getattr(args, "remove_backup_preferences", None),
+            "removeBackupPreferences",
+            "Removing",
+        ),
+    )
+    for location, method_name, verb in backup_actions:
+        if location is None:
+            continue
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        hooks.cli_print(f"{verb} preferences ({location})")
+        getattr(interface.getNode(args.dest, False, **kwargs), method_name)(location)
+
+    delete_file = getattr(args, "delete_file", None)
+    if delete_file:
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        hooks.cli_print(f"Deleting file {delete_file}")
+        interface.getNode(args.dest, False, **kwargs).deleteFile(delete_file)
+
+    input_event = getattr(args, "send_input_event", None)
+    if input_event is not None:
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        kb_char = getattr(args, "input_kb_char", None)
+        char_code = ord(kb_char) if kb_char else 0
+        interface.getNode(args.dest, False, **kwargs).sendInputEvent(
+            input_event,
+            kb_char=char_code,
+            touch_x=getattr(args, "input_touch_x", 0) or 0,
+            touch_y=getattr(args, "input_touch_y", 0) or 0,
+        )
+
+    if getattr(args, "request_connection_status", False):
+        outcome.close_now = True
+        status = (
+            interface.getNode(args.dest, False, **kwargs)
+            .requestDeviceConnectionStatus()
+        )
+        if status is None:
+            _terminate_cli(
+                hooks.cli_exit,
+                "No device connection status response received; "
+                "firmware 2.5+ is required.",
+                1,
+            )
+        _print_device_connection_status(status, hooks)
+
+
+def _print_device_connection_status(
+    status: connection_status_pb2.DeviceConnectionStatus, hooks: DeviceActionHooks
+) -> None:
+    """Print each transport's connection state reported by the device.
+
+    Parameters
+    ----------
+    status : connection_status_pb2.DeviceConnectionStatus
+        Aggregated per-transport status from the node.
+    hooks : DeviceActionHooks
+        Quiet-aware CLI reporter.
+    """
+    for section in ("wifi", "ethernet"):
+        if not status.HasField(section):
+            continue
+        sub = getattr(status, section)
+        state = "unknown"
+        extras: list[str] = []
+        if sub.HasField("status"):
+            network = sub.status
+            state = "connected" if network.is_connected else "disconnected"
+            if network.ip_address:
+                extras.append(_ip4_to_str(network.ip_address))
+            if network.is_mqtt_connected:
+                extras.append("mqtt")
+            if network.is_syslog_connected:
+                extras.append("syslog")
+        if section == "wifi":
+            if sub.ssid:
+                extras.append(f"ssid {sub.ssid}")
+            if sub.rssi:
+                extras.append(f"rssi {sub.rssi}")
+        detail = f" ({', '.join(extras)})" if extras else ""
+        hooks.cli_print(f"{section}: {state}{detail}")
+    if status.HasField("bluetooth"):
+        bluetooth = status.bluetooth
+        state = "connected" if bluetooth.is_connected else "disconnected"
+        extras = [f"rssi {bluetooth.rssi}"] if bluetooth.rssi else []
+        detail = f" ({', '.join(extras)})" if extras else ""
+        hooks.cli_print(f"bluetooth: {state}{detail}")
+    if status.HasField("serial"):
+        serial = status.serial
+        state = "connected" if serial.is_connected else "disconnected"
+        hooks.cli_print(f"serial: {state} (baud {serial.baud})")
+
+
+def _ip4_to_str(address: int) -> str:
+    """Format a packed 32-bit IPv4 address as dotted quad text."""
+    return ".".join(str((address >> shift) & 0xFF) for shift in (24, 16, 8, 0))
