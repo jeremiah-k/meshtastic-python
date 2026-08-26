@@ -51,6 +51,29 @@ def _context(
 
 
 @pytest.mark.unit
+def test_configure_action_hooks_preserve_legacy_positional_constructor() -> None:
+    """The new binary-export hook must not shift historical positional fields."""
+    handle_set = MagicMock()
+    handle_configure = MagicMock(return_value=(False, False))
+    export_yaml = MagicMock(return_value="yaml: true\n")
+    cli_exit = cast(CliExit, MagicMock())
+    cli_print = MagicMock()
+    is_local = MagicMock(return_value=True)
+
+    hooks = ConfigureActionHooks(
+        handle_set, handle_configure, export_yaml, cli_exit, cli_print, is_local
+    )
+
+    assert hooks.handle_set_command is handle_set
+    assert hooks.handle_configure_command is handle_configure
+    assert hooks.export_config is export_yaml
+    assert hooks.cli_exit is cli_exit
+    assert hooks.cli_print is cli_print
+    assert hooks.is_local_destination is is_local
+    assert hooks.export_profile is config_io._export_profile
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("fmt", "destination", "expected"),
     [
@@ -125,6 +148,17 @@ def test_decode_prefers_yaml_mappings() -> None:
         MagicMock(), b"owner: Tester\n", "config.yaml"
     )
     assert decoded == {"owner": "Tester"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("suffix", [".cfg", ".bin"])
+def test_decode_accepts_explicit_yaml_export_with_binary_extension(suffix: str) -> None:
+    """An explicitly requested YAML export remains importable regardless of suffix."""
+    decoded = configure_actions._decode_configure_document(
+        MagicMock(), b"owner: YAML In CFG\n", f"profile{suffix}"
+    )
+
+    assert decoded == {"owner": "YAML In CFG"}
 
 
 @pytest.mark.unit
@@ -221,6 +255,27 @@ def test_profile_export_round_trip() -> None:
     assert configuration["is_licensed"] is True
     assert configuration["location"]["alt"] == 52
     assert configuration["config"]
+
+
+@pytest.mark.unit
+def test_profile_export_does_not_synthesize_location_from_altitude_only() -> None:
+    """Binary export matches YAML and ignores an unusable altitude-only position."""
+    mock = MagicMock()
+    mock.getLongName.return_value = None
+    mock.getShortName.return_value = None
+    mock.localNode.getURL.return_value = None
+    mock.getCannedMessage.return_value = None
+    mock.getRingtone.return_value = None
+    mock.getMyUser.return_value = {}
+    mock.getMyNodeInfo.return_value = {"position": {"altitude": 123}}
+    mock.localNode.localConfig = localonly_pb2.LocalConfig()
+    mock.localNode.moduleConfig = localonly_pb2.LocalModuleConfig()
+
+    profile = config_io._parse_profile_bytes(
+        config_io._export_profile(cast(MeshInterface, mock))
+    )
+
+    assert not profile.HasField("fixed_position")
 
 
 @pytest.mark.unit
