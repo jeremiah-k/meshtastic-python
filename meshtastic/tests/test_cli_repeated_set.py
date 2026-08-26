@@ -76,7 +76,7 @@ def test_empty_array_clears_repeated_broadcast_targets() -> None:
         ("{not valid json", "Invalid value"),
         ('"just a string"', "Invalid value"),
         ('{"preset":"SHORT_FAST"}', "Invalid value"),
-        ('["not an object"]', "is not a JSON object"),
+        ('["not an object"]', "is not an object/mapping"),
     ),
 )
 def test_malformed_json_uses_same_validation_surface(
@@ -207,3 +207,77 @@ def test_broadcast_target_round_trip_against_real_protos() -> None:
     assert bt[1].preset == preset_enum.SHORT_FAST
     assert bt[1].region == region_enum.EU_433
     assert bt[1].channel_index == 3
+
+
+@pytest.mark.unit
+def test_repeated_message_accepts_configure_mapping_list() -> None:
+    """YAML/DeviceProfile list-of-mapping values use the same strict parser."""
+    config = localonly_pb2.LocalModuleConfig()
+    payload = [
+        {"preset": "SHORT_FAST", "region": "US", "channelIndex": 1},
+        {"preset": "MEDIUM_FAST", "channelIndex": 2},
+    ]
+
+    assert setPref(config, "mesh_beacon.broadcast_targets", payload) is True
+
+    targets = list(config.mesh_beacon.broadcast_targets)
+    assert len(targets) == 2
+    assert targets[0].preset == config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST
+    assert targets[0].region == config_pb2.Config.LoRaConfig.RegionCode.US
+    assert targets[0].channel_index == 1
+    assert targets[1].preset == config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_FAST
+    assert targets[1].channel_index == 2
+
+
+@pytest.mark.unit
+def test_repeated_message_mapping_list_is_transactional_on_parse_failure() -> None:
+    """An invalid YAML list element cannot partially replace existing messages."""
+    config = localonly_pb2.LocalModuleConfig()
+    assert setPref(
+        config,
+        "mesh_beacon.broadcast_targets",
+        '[{"preset":"SHORT_FAST","channel_index":7}]',
+    ) is True
+    before = config.SerializeToString()
+
+    assert setPref(
+        config,
+        "mesh_beacon.broadcast_targets",
+        [{"preset": "LONG_FAST"}, {"notAField": 1}],
+    ) is False
+
+    assert config.SerializeToString() == before
+
+
+@pytest.mark.unit
+def test_repeated_message_parser_rejects_non_array_candidates_cleanly() -> None:
+    """Internal parser guards distinguish scalar descriptors and non-array values."""
+    from meshtastic.cli import preference_runtime
+
+    scalar = localonly_pb2.LocalConfig().lora.DESCRIPTOR.fields_by_name["hop_limit"]
+    repeated_message = (
+        localonly_pb2.LocalModuleConfig()
+        .mesh_beacon.DESCRIPTOR.fields_by_name["broadcast_targets"]
+    )
+    def reporter(_message: str, **_kwargs: object) -> None:
+        return None
+
+    assert preference_runtime._parse_repeated_message_value(
+        scalar, [], field_path="lora.hop_limit", cli_print=reporter
+    ) is None
+    assert preference_runtime._parse_repeated_message_value(
+        repeated_message, 7, field_path="mesh_beacon.broadcast_targets", cli_print=reporter
+    ) is None
+
+
+@pytest.mark.unit
+def test_repeated_message_parser_reports_bracketed_invalid_json(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A bracket-shaped malformed JSON array produces the precise JSON diagnostic."""
+    config = localonly_pb2.LocalModuleConfig()
+
+    assert setPref(config, "mesh_beacon.broadcast_targets", "[{bad}]") is False
+
+    out, err = capsys.readouterr()
+    assert "Invalid JSON value" in out + err

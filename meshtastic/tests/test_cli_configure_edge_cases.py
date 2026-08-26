@@ -1140,3 +1140,112 @@ def test_prepare_configure_execution_rejects_remote_mixed_writes_before_node_loo
 
     assert "separate operations" in str(cli_exit.call_args)
     interface.getNode.assert_not_called()
+
+
+@pytest.mark.unit
+def test_partial_owner_flags_preserve_current_licensed_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Changing only unmessagable must not silently de-license the target node."""
+    node = MagicMock()
+    node.nodeNum = 123
+    node.iface = MagicMock()
+    node.iface.nodesByNum = {123: {"user": {"isLicensed": True}}}
+    hooks = _hooks()
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
+
+    node.setOwner.assert_called_once_with(
+        long_name=None,
+        short_name=None,
+        is_licensed=True,
+        is_unmessagable=True,
+    )
+
+
+@pytest.mark.unit
+def test_partial_owner_flags_treat_omitted_json_false_as_unlicensed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A known user record without isLicensed preserves protobuf-default False."""
+    node = MagicMock()
+    node.nodeNum = 123
+    node.iface = MagicMock()
+    node.iface.nodesByNum = {123: {"user": {"id": "!0000007b"}}}
+    hooks = _hooks()
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=False),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
+
+    node.setOwner.assert_called_once_with(
+        long_name=None,
+        short_name=None,
+        is_licensed=False,
+        is_unmessagable=False,
+    )
+
+
+@pytest.mark.unit
+def test_partial_owner_flags_fail_before_write_when_owner_state_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown current license state must not be guessed as False."""
+    node = MagicMock()
+    node.nodeNum = 123
+    node.iface = MagicMock()
+    node.iface.nodesByNum = {}
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    hooks = _hooks(cli_exit=cast(CliExit, cli_exit))
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    with pytest.raises(SystemExit):
+        configure_actions._apply_direct_configuration(hooks, node, prepared)
+
+    node.setOwner.assert_not_called()
+    assert "preserve the current licensed flag" in str(cli_exit.call_args)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "node_setup",
+    [
+        {"nodeNum": "123", "nodesByNum": {123: {"user": {}}}},
+        {"nodeNum": 123, "nodesByNum": {123: {"user": {"isLicensed": "yes"}}}},
+    ],
+)
+def test_partial_owner_flags_reject_unusable_current_license_state(
+    monkeypatch: pytest.MonkeyPatch, node_setup: dict[str, Any]
+) -> None:
+    """Malformed current owner state fails rather than guessing a licensed value."""
+    node = MagicMock()
+    node.nodeNum = node_setup["nodeNum"]
+    node.iface = MagicMock()
+    node.iface.nodesByNum = node_setup["nodesByNum"]
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    hooks = _hooks(cli_exit=cast(CliExit, cli_exit))
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    with pytest.raises(SystemExit):
+        configure_actions._apply_direct_configuration(hooks, node, prepared)
+    node.setOwner.assert_not_called()
