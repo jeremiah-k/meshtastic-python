@@ -476,6 +476,16 @@ def _assign_repeated_pref_value(
             del candidate_values[:]
         elif isinstance(value, str) and "," in value:
             parts = [part.strip() for part in value.split(",") if part.strip()]
+            if not parts:
+                return (
+                    reject_pref_value(
+                        pref,
+                        field_path=field_path,
+                        raw_value=raw_value,
+                        cli_print=cli_print,
+                    ),
+                    True,
+                )
             new_values = [meshtastic.util.fromStr(part) for part in parts]
             candidate_values[:] = new_values
         else:
