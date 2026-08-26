@@ -15,7 +15,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
-
 import meshtastic.util
 from meshtastic.cli import config_io as _config_io
 from meshtastic.cli import configure_values

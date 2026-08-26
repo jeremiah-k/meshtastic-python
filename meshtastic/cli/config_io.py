@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, NoReturn, Protocol
 
 import yaml
 from google.protobuf.descriptor import FieldDescriptor
@@ -556,7 +556,6 @@ def _profile_to_configuration(
 EXPORT_FILE_MODE: int = 0o600
 
 
-
 def _decode_configure_document(
     raw_bytes: bytes | str, path: str, *, cli_exit: CliExit
 ) -> dict[str, Any] | None:
@@ -582,7 +581,7 @@ def _decode_configure_document(
     def _decode_profile() -> dict[str, Any]:
         return _profile_to_configuration(_parse_profile_bytes(raw))
 
-    def _fail_invalid_profile(exc: ValueError) -> None:
+    def _fail_invalid_profile(exc: ValueError) -> NoReturn:
         _terminate_cli(
             cli_exit,
             f"ERROR: {path} is not a valid YAML config or DeviceProfile "
