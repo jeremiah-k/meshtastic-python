@@ -27,7 +27,6 @@ from meshtastic.node_runtime.admin_wait import (
     _send_admin_with_ack_scope,
     _wait_for_admin_ack,
 )
-from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
 from meshtastic.node_runtime.channel_lookup_runtime import _NodeChannelLookupRuntime
 from meshtastic.node_runtime.channel_normalization_runtime import (
     _NodeChannelNormalizationRuntime,
@@ -70,17 +69,20 @@ from meshtastic.node_runtime.transport_runtime import (
     _NodeChannelWriteRuntime,
     _NodeDeleteChannelRuntime,
 )
+from meshtastic.node_runtime.channel_export_runtime import _NodeChannelExportRuntime
+
 from meshtastic.protobuf import (
     admin_pb2,
     channel_pb2,
     config_pb2,
     connection_status_pb2,
+    device_ui_pb2,
     localonly_pb2,
     mesh_pb2,
 )
-
 from meshtastic.util import (
     Timeout,
+
     flagsToList,
     toNodeNum,
 )
@@ -1710,9 +1712,16 @@ class Node:  # pylint: disable=too-many-instance-attributes
         return self._send_admin_op(message)
 
     def requestDeviceConnectionStatus(
-        self,
+        self, *, response_timeout_seconds: float = 12.0
     ) -> connection_status_pb2.DeviceConnectionStatus | None:
         """Request the node's connectivity status and wait for the response.
+
+        Parameters
+        ----------
+        response_timeout_seconds : float, optional
+            Seconds to wait for the admin RESPONSE packet to arrive after the
+            ACK. ``None`` is returned if the wait expires before the device
+            reports back. (Default value = 12.0)
 
         Returns
         -------
@@ -1750,9 +1759,81 @@ class Node:  # pylint: disable=too-many-instance-attributes
             onResponse=_on_response,
         )
         _wait_for_admin_ack(self, request)
-        if not completed.is_set():
+        if not completed.wait(timeout=response_timeout_seconds):
             return None
         return result.get("status")
+
+
+    def requestUiConfig(
+        self, *, response_timeout_seconds: float = 12.0
+    ) -> device_ui_pb2.DeviceUIConfig | None:
+        """Request the node's device UI configuration and wait for the response.
+
+        Parameters
+        ----------
+        response_timeout_seconds : float, optional
+            Seconds to wait for the admin RESPONSE packet to arrive after the
+            ACK. ``None`` is returned if the wait expires before the device
+            reports back. (Default value = 12.0)
+
+        Returns
+        -------
+        device_ui_pb2.DeviceUIConfig | None
+            The reported UI configuration, or `None` when no response arrived.
+        """
+        message = admin_pb2.AdminMessage()
+        message.get_ui_config_request = True
+        logger.info("Requesting device UI configuration")
+        result: dict[str, device_ui_pb2.DeviceUIConfig] = {}
+        completed = threading.Event()
+
+        def _on_ui_response(packet: dict[str, Any]) -> None:
+            decoded = packet.get("decoded") if isinstance(packet, dict) else None
+            admin_section = decoded.get("admin") if isinstance(decoded, dict) else None
+            raw_admin = (
+                admin_section.get("raw") if isinstance(admin_section, dict) else None
+            )
+            has_field = getattr(raw_admin, "HasField", None)
+            try:
+                has_ui = callable(has_field) and has_field("get_ui_config_response")
+            except (TypeError, ValueError):
+                has_ui = False
+            if has_ui:
+                result["config"] = raw_admin.get_ui_config_response
+                completed.set()
+
+        request = _send_admin_with_ack_scope(
+            self,
+            message,
+            scope_ack=True,
+            wantResponse=True,
+            onResponse=_on_ui_response,
+        )
+        _wait_for_admin_ack(self, request)
+        if not completed.wait(timeout=response_timeout_seconds):
+            return None
+        return result.get("config")
+
+
+    def storeUiConfig(
+        self, config: device_ui_pb2.DeviceUIConfig
+    ) -> mesh_pb2.MeshPacket | None:
+        """Store a device UI configuration onto the node.
+
+        Parameters
+        ----------
+        config : device_ui_pb2.DeviceUIConfig
+            Complete UI configuration to persist.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        message = admin_pb2.AdminMessage()
+        message.store_ui_config.CopyFrom(config)
+        logger.info("Storing device UI configuration")
+        return self._send_admin_op(message)
 
     def setFixedPosition(
         self, lat: int | float | None, lon: int | float | None, alt: int | None

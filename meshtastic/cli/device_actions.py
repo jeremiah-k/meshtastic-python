@@ -19,6 +19,10 @@ from typing import Any, cast
 
 from pubsub import pub
 
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+
+import yaml
+
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
@@ -27,7 +31,12 @@ from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 from meshtastic.key_verification import STAGE_INITIATE as _KV_STAGE_INITIATE
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.protobuf import admin_pb2, connection_status_pb2, mesh_pb2
+from meshtastic.protobuf import (
+    admin_pb2,
+    connection_status_pb2,
+    device_ui_pb2,
+    mesh_pb2,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1197,6 +1206,27 @@ def _handle_admin_utility_actions(
             )
         _print_device_connection_status(status, hooks)
 
+    if getattr(args, "get_ui_config", False):
+        outcome.close_now = True
+        ui_config = (
+            interface.getNode(args.dest, False, **kwargs).requestUiConfig()
+        )
+        if ui_config is None:
+            _terminate_cli(
+                hooks.cli_exit,
+                "No device UI configuration response received; "
+                "firmware 2.7+ is required.",
+                1,
+            )
+        hooks.cli_print(yaml_dump_ui_config(ui_config))
+
+    store_ui = getattr(args, "store_ui_config", None)
+    if store_ui:
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        config = _load_ui_config_document(store_ui, hooks)
+        interface.getNode(args.dest, False, **kwargs).storeUiConfig(config)
+
 
 def _print_device_connection_status(
     status: connection_status_pb2.DeviceConnectionStatus, hooks: DeviceActionHooks
@@ -1247,3 +1277,44 @@ def _print_device_connection_status(
 def _ip4_to_str(address: int) -> str:
     """Format a packed 32-bit IPv4 address as dotted quad text."""
     return ".".join(str((address >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+
+
+def yaml_dump_ui_config(config: device_ui_pb2.DeviceUIConfig) -> str:
+    """Render a DeviceUIConfig as YAML for display and later re-import."""
+    return yaml.safe_dump(MessageToDict(config), sort_keys=False)
+
+
+def _load_ui_config_document(
+    path: str, hooks: DeviceActionHooks
+) -> device_ui_pb2.DeviceUIConfig:
+    """Load a DeviceUIConfig from a YAML document.
+
+    Parameters
+    ----------
+    path : str
+        YAML file produced by ``--get-ui-config``.
+    hooks : DeviceActionHooks
+        CLI exit seam used to report unreadable or invalid documents.
+
+    Returns
+    -------
+    device_ui_pb2.DeviceUIConfig
+        Parsed configuration ready to store.
+    """
+    try:
+        with open(path, encoding="utf8") as file:
+            document = yaml.safe_load(file.read())
+    except (OSError, yaml.YAMLError, UnicodeDecodeError) as exc:
+        _terminate_cli(hooks.cli_exit, f"ERROR: Failed to read UI config: {exc}", 1)
+    if not isinstance(document, dict):
+        _terminate_cli(
+            hooks.cli_exit, "ERROR: UI config YAML must be a mapping/dictionary.", 1
+        )
+    config = device_ui_pb2.DeviceUIConfig()
+    try:
+        ParseDict(document, config, ignore_unknown_fields=False)
+    except (ParseError, TypeError) as exc:
+        _terminate_cli(
+            hooks.cli_exit, f"ERROR: Invalid device UI configuration: {exc}", 1
+        )
+    return config
