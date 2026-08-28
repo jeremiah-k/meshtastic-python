@@ -12,6 +12,53 @@ import meshtastic.util
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import apponly_pb2, channel_pb2
 
+# Firmware: src/mesh/Default.h default_neighbor_info_broadcast_secs.
+_NEIGHBOR_INFO_EFFECTIVE_DEFAULT_SECS = 21600
+
+
+def _neighbor_info_effective_default_equivalence(
+    section_path: str, field_name: str, requested: Any, actual: Any
+) -> bool:
+    """Treat NeighborInfo ``update_interval`` 0 as the firmware effective default.
+
+    The firmware resolves a zero ``neighbor_info.update_interval`` to
+    ``default_neighbor_info_broadcast_secs``, so a profile storing 0 and a
+    device reporting that default hold the same effective setting, and vice
+    versa. Schema drift that removes or renames the leaf is reported as an
+    ordinary mismatch before this predicate is consulted.
+
+    Parameters
+    ----------
+    section_path : str
+        Configure-document section path containing the compared field.
+    field_name : str
+        Normalized protobuf field name being compared.
+    requested : Any
+        Value requested by the configure document.
+    actual : Any
+        Value read back from the device.
+
+    Returns
+    -------
+    bool
+        ``True`` only for the NeighborInfo effective-default equivalence.
+    """
+    if (
+        field_name != "update_interval"
+        # Section paths keep the document's original casing (snake or camel).
+        or meshtastic.util.camel_to_snake(section_path) != "neighbor_info"
+    ):
+        return False
+    requested_is_int = isinstance(requested, int) and not isinstance(requested, bool)
+    actual_is_int = isinstance(actual, int) and not isinstance(actual, bool)
+    return (
+        requested_is_int
+        and actual_is_int
+        and requested in (0, _NEIGHBOR_INFO_EFFECTIVE_DEFAULT_SECS)
+        and actual in (0, _NEIGHBOR_INFO_EFFECTIVE_DEFAULT_SECS)
+    )
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -150,7 +197,12 @@ def _verify_requested_fields(
                         snake_key,
                     )
                     scalar = scalar[0] if scalar else scalar
-                if scalar != actual:
+                if (
+                    scalar != actual
+                    and not _neighbor_info_effective_default_equivalence(
+                        section_path, snake_key, scalar, actual
+                    )
+                ):
                     mismatches.append(f"{section_path}.{snake_key}")
     return mismatches
 
