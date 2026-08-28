@@ -51,7 +51,7 @@ CONFIG_WRITE_PACE_SECONDS = 0.1
 CONFIG_SETURL_DELAY_SECONDS = 2.0
 CONFIG_COMMIT_SETTLE_SECONDS = 1.0
 CONFIG_RECONNECT_WAIT_SECONDS = 15.0
-CONFIG_DISCONNECT_WINDOW_SECONDS = 2.0
+CONFIG_REBOOT_PROBE_SECONDS = 2.0
 CONFIG_POLL_INTERVAL_SECONDS = 0.2
 SETURL_STABILITY_TIMEOUT_SECONDS = 30.0
 SETURL_STABILITY_MAX_ATTEMPTS = 3
@@ -264,20 +264,40 @@ def _post_configure_reconnect_and_verify(
     """Reconnect after a configure commit, reload config, and verify values.
 
     After ``commitSettingsTransaction()``, the firmware may reboot the device.
+    The mesh interface already tracks a generation counter (``configId``) that
+    the device echoes back through ``config_complete_id`` when it finishes
+    shipping the post-reboot config. ``_handle_from_radio_rebooted`` calls
+    ``_start_config()`` on each reboot, which bumps ``configId`` and re-issues
+    ``want_config_id`` to the device.
+
     This helper:
 
-    1. Waits for the interface to disconnect and reconnect within *timeout*.
-    2. Calls ``waitForConfig()`` to reload the device configuration.
-    3. If any verification targets were provided (channel URL, config fields,
-       or module config fields), performs value-aware comparison of the
-       explicitly requested settings against what the device reports.
+    1. Snapshots the pre-operation ``configId`` (the authoritative generation
+       signal) and probes for any reboot indication (disconnect or generation
+       bump) for a short window.
+
+    2. If a disconnect was observed, waits for reconnect within the remaining
+       timeout budget.
+
+    3. If ``configId`` is still the snapshot value, no reboot was observed on
+       the receive side, so the helper bumps it via ``_start_config()`` to ask
+       the device for a fresh full config (single, generation-aware refresh).
+
+    4. Calls ``waitForConfig()`` exactly once. A failure here is reported as
+       ``CONFIG_RELOAD_FAILED``; success moves to value verification.
+
+    5. If verification targets were provided, runs the value-aware comparator
+       once; mismatches become ``VERIFICATION_INCOMPLETE``.
 
     Parameters
     ----------
     interface : MeshInterface
         Connected interface observed for disconnect/reconnect.
     timeout : float
-        Total reconnect budget in seconds.
+        Reboot-recovery budget in seconds, covering the fixed reboot probe
+        and the post-disconnect reconnect wait. It does not bound the
+        config reload: ``waitForConfig()`` applies its own internal
+        wait/retry timing.
     node_dest : str
         Destination whose configuration is reloaded and verified.
     verify_channel_url : str | None
@@ -294,39 +314,30 @@ def _post_configure_reconnect_and_verify(
     ConfigureReconnectResult
         Reconnect, reload, and requested-value verification outcome.
     """
-    deadline = time.monotonic() + timeout
+    start_time = time.monotonic()
+    deadline = start_time + timeout
+    pre_op_config_id = getattr(interface, "configId", None)
 
-    disconnect_window = CONFIG_DISCONNECT_WINDOW_SECONDS
+    probe_deadline = start_time + CONFIG_REBOOT_PROBE_SECONDS
     logger.debug(
-        "Waiting up to %.1fs for device disconnect (reboot indication)...",
-        disconnect_window,
+        "Probing for reboot indication up to %.1fs (configId or isConnected)...",
+        max(probe_deadline - time.monotonic(), 0.0),
     )
-    disconnect_deadline = time.monotonic() + disconnect_window
-    disconnected = False
-    while time.monotonic() < disconnect_deadline:
+    while time.monotonic() < probe_deadline:
         if not interface.isConnected.is_set():
-            disconnected = True
             logger.info("Device disconnected (reboot indication received).")
             break
-        time.sleep(CONFIG_POLL_INTERVAL_SECONDS)
-
-    if not disconnected:
-        logger.debug(
-            "No disconnect detected within %.1fs; device may not require reboot.",
-            disconnect_window,
-        )
-
-    reconnect_deadline = deadline
-    if disconnected:
-        logger.debug(
-            "Waiting up to %.1fs for device reconnect...",
-            reconnect_deadline - time.monotonic(),
-        )
-    while time.monotonic() < reconnect_deadline:
-        if interface.isConnected.is_set():
-            logger.info("Device reconnected.")
+        if getattr(interface, "configId", None) != pre_op_config_id:
+            logger.info("Device rebooted (generation counter advanced).")
             break
         time.sleep(CONFIG_POLL_INTERVAL_SECONDS)
+
+    if not interface.isConnected.is_set():
+        while time.monotonic() < deadline:
+            if interface.isConnected.is_set():
+                logger.info("Device reconnected.")
+                break
+            time.sleep(CONFIG_POLL_INTERVAL_SECONDS)
 
     if not interface.isConnected.is_set():
         logger.warning(
@@ -335,6 +346,23 @@ def _post_configure_reconnect_and_verify(
             timeout,
         )
         return ConfigureReconnectResult.RECONNECT_FAILED
+
+    if getattr(interface, "configId", None) == pre_op_config_id:
+        start_config = getattr(interface, "_start_config", None)
+        if callable(start_config):
+            try:
+                start_config()
+            except Exception:
+                logger.warning(
+                    "Failed to bump config generation after reconnect; "
+                    "configuration may still be applying.",
+                    exc_info=True,
+                )
+                return ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+            logger.debug(
+                "No reboot observed via generation counter; "
+                "requested fresh full config via want_config_id."
+            )
 
     try:
         interface.waitForConfig()
@@ -352,25 +380,6 @@ def _post_configure_reconnect_and_verify(
     )
     if not has_verification:
         return ConfigureReconnectResult.VERIFIED
-
-    if not disconnected:
-        try:
-            _refresh_no_disconnect_verify_state(
-                interface.getNode(node_dest),
-                verify_channel_url=verify_channel_url,
-                verify_config_fields=verify_config_fields,
-                verify_module_config_fields=verify_module_config_fields,
-            )
-            interface.waitForConfig()
-            logger.debug(
-                "No disconnect observed; touched config/channel state refreshed before verification."
-            )
-        except Exception:
-            logger.warning(
-                "No-disconnect verify refresh failed while reloading config.",
-                exc_info=True,
-            )
-            return ConfigureReconnectResult.CONFIG_RELOAD_FAILED
 
     try:
         result = _verify_post_reconnect_config(

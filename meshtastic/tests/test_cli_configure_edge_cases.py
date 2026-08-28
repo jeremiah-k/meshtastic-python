@@ -141,10 +141,10 @@ def _install_clock(
 
 
 @pytest.mark.unit
-def test_reconnect_verify_reports_refresh_failure(
+def test_reconnect_verify_observed_reboot_single_wait_for_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No-disconnect refresh failures should become a config-reload result."""
+    """An observed reboot (configId bumped by receive pipeline) reloads exactly once."""
     iface = _interface()
     iface.getNode.return_value = MagicMock()
     ticks = iter(float(value) for value in range(20))
@@ -153,11 +153,102 @@ def test_reconnect_verify_reports_refresh_failure(
         monotonic=lambda: next(ticks, 20.0),
         sleep=lambda _seconds: None,
     )
-    monkeypatch.setattr(
-        configure_actions,
-        "_refresh_no_disconnect_verify_state",
-        MagicMock(side_effect=RuntimeError("refresh failed")),
+    # First access returns the pre-operation generation; the receive pipeline
+    # has already advanced it by the time we compare, so subsequent reads
+    # observe the new value.
+    iface.configId = MagicMock(side_effect=[41, 42, 42, 42])
+    iface._start_config = MagicMock()
+    iface.isConnected.is_set.return_value = True
+
+    result = configure_actions._post_configure_reconnect_and_verify(
+        iface,
+        timeout=1.0,
+        node_dest="^local",
     )
+
+    assert result is ConfigureReconnectResult.VERIFIED
+    # Generation was already bumped by the receive pipeline; no extra start_config.
+    iface._start_config.assert_not_called()
+    iface.waitForConfig.assert_called_once()
+
+
+@pytest.mark.unit
+def test_reconnect_verify_unobserved_reboot_triggers_single_start_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When no reboot was observed on the receive side, the helper bumps the
+    generation itself via want_config_id and reloads exactly once."""
+    iface = _interface()
+    iface.getNode.return_value = MagicMock()
+    ticks = iter(float(value) for value in range(20))
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
+    )
+    iface.configId = 7  # pre-op generation snapshot
+    iface._start_config = MagicMock(side_effect=lambda: setattr(iface, "configId", 8))
+    iface.isConnected.is_set.return_value = True
+
+    result = configure_actions._post_configure_reconnect_and_verify(
+        iface,
+        timeout=1.0,
+        node_dest="^local",
+    )
+
+    assert result is ConfigureReconnectResult.VERIFIED
+    iface._start_config.assert_called_once()
+    iface.waitForConfig.assert_called_once()
+
+
+@pytest.mark.unit
+def test_reconnect_verify_no_reboot_observes_probe_then_waits_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No disconnect and no generation bump across the probe window means the
+    device did not reboot; the helper issues exactly one want_config_id refresh
+    and waits once for the response."""
+    iface = _interface()
+    iface.getNode.return_value = MagicMock()
+    ticks = iter(float(value) for value in range(20))
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
+    )
+    iface.configId = 13
+    iface._start_config = MagicMock()
+    iface.isConnected.is_set.return_value = True
+
+    result = configure_actions._post_configure_reconnect_and_verify(
+        iface,
+        timeout=1.0,
+        node_dest="^local",
+    )
+
+    assert result is ConfigureReconnectResult.VERIFIED
+    iface.waitForConfig.assert_called_once()
+
+    iface._start_config.assert_called_once()
+
+
+@pytest.mark.unit
+def test_reconnect_verify_true_reload_failure_reported_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed waitForConfig must surface as CONFIG_RELOAD_FAILED, never double-counted."""
+    iface = _interface()
+    iface.getNode.return_value = MagicMock()
+    ticks = iter(float(value) for value in range(20))
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
+    )
+    iface.configId = 21
+    iface._start_config = MagicMock()
+    iface.isConnected.is_set.return_value = True
+    iface.waitForConfig.side_effect = RuntimeError("reload failed")
 
     result = configure_actions._post_configure_reconnect_and_verify(
         iface,
@@ -167,6 +258,42 @@ def test_reconnect_verify_reports_refresh_failure(
     )
 
     assert result is ConfigureReconnectResult.CONFIG_RELOAD_FAILED
+    iface.waitForConfig.assert_called_once()
+
+
+@pytest.mark.unit
+def test_reconnect_verify_successful_reload_then_verifier_mismatch_is_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After a successful authoritative reload, a verifier mismatch is INCOMPLETE,
+    never reported as CONFIG_RELOAD_FAILED."""
+    iface = _interface()
+    iface.getNode.return_value = MagicMock()
+    ticks = iter(float(value) for value in range(20))
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
+    )
+    iface.configId = 33
+    iface._start_config = MagicMock()
+    iface.isConnected.is_set.return_value = True
+
+    monkeypatch.setattr(
+        configure_actions,
+        "_verify_post_reconnect_config",
+        MagicMock(return_value=ConfigureReconnectResult.VERIFICATION_INCOMPLETE),
+    )
+
+    result = configure_actions._post_configure_reconnect_and_verify(
+        iface,
+        timeout=1.0,
+        node_dest="^local",
+        verify_config_fields={"power": {"ls_secs": 1}},
+    )
+
+    assert result is ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+    iface.waitForConfig.assert_called_once()
 
 
 @pytest.mark.unit
@@ -182,9 +309,9 @@ def test_reconnect_verify_reports_unexpected_verifier_failure(
         monotonic=lambda: next(ticks, 20.0),
         sleep=lambda _seconds: None,
     )
-    monkeypatch.setattr(
-        configure_actions, "_refresh_no_disconnect_verify_state", MagicMock()
-    )
+    iface.configId = 99
+    iface._start_config = MagicMock()
+    iface.isConnected.is_set.return_value = True
     monkeypatch.setattr(
         configure_actions,
         "_verify_post_reconnect_config",
@@ -199,6 +326,35 @@ def test_reconnect_verify_reports_unexpected_verifier_failure(
     )
 
     assert result is ConfigureReconnectResult.VERIFICATION_INCOMPLETE
+
+
+@pytest.mark.unit
+def test_reconnect_verify_stale_pre_op_generation_cannot_satisfy_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pre-op configId that no longer matches forces a single generation bump; the
+    authoritative reload is the only path to VERIFIED."""
+    iface = _interface()
+    iface.getNode.return_value = MagicMock()
+    ticks = iter(float(value) for value in range(20))
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 20.0),
+        sleep=lambda _seconds: None,
+    )
+    iface.configId = 100  # the snapshot
+    iface._start_config = MagicMock(side_effect=lambda: setattr(iface, "configId", 101))
+    iface.isConnected.is_set.return_value = True
+
+    result = configure_actions._post_configure_reconnect_and_verify(
+        iface,
+        timeout=1.0,
+        node_dest="^local",
+    )
+
+    assert result is ConfigureReconnectResult.VERIFIED
+    iface._start_config.assert_called_once()
+    iface.waitForConfig.assert_called_once()
 
 
 class _ConnectionEvent:
