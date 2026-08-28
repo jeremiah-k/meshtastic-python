@@ -1,6 +1,7 @@
 """Tests for --export-format and DeviceProfile (.cfg) config round-trips."""
 
 import argparse
+import base64
 import os
 from pathlib import Path
 from typing import Any, cast
@@ -486,3 +487,52 @@ def test_partial_profile_keeps_defaults_within_present_sections() -> None:
     configuration = config_io._profile_to_configuration(profile)
 
     assert configuration["config"]["lora"]["usePreset"] is False
+
+
+@pytest.mark.unit
+def test_profile_export_retains_raw_neighbor_info_and_security_keys() -> None:
+    """Export keeps raw values; equivalence lives only in verification.
+
+    A stored NeighborInfo ``update_interval`` of 0 stays 0 in the binary
+    profile and is never rewritten to 21600. Proto3 implicit presence omits
+    the zero-valued leaf from dict exports, which is itself proof that no
+    fabricated 21600 is written. Security key bytes survive untouched.
+    """
+    mock = MagicMock(spec=MeshInterface)
+    mock.localNode = MagicMock()
+    mock.getLongName.return_value = "Profile Owner"
+    mock.getShortName.return_value = "PO"
+    mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
+    mock.getCannedMessage.return_value = None
+    mock.getRingtone.return_value = None
+    mock.getMyUser.return_value = {"isUnmessagable": True, "isLicensed": False}
+    mock.getMyNodeInfo.return_value = {
+        "position": {"latitude": 1.25, "longitude": -2.5, "altitude": 33}
+    }
+    mock.localNode.localConfig = localonly_pb2.LocalConfig()
+    mock.localNode.localConfig.security.private_key = bytes(range(32))
+    mock.localNode.localConfig.security.admin_key.append(b"\xaa" * 32)
+    mock.localNode.moduleConfig = localonly_pb2.LocalModuleConfig()
+    mock.localNode.moduleConfig.neighbor_info.update_interval = 0
+    mock.localNode.moduleConfig.neighbor_info.transmit_over_lora = True
+
+    yaml_text = config_io.export_config(cast(MeshInterface, mock), camel_case=False)
+    profile = config_io._parse_profile_bytes(
+        config_io._export_profile(cast(MeshInterface, mock))
+    )
+    configuration = config_io.yaml.safe_load(yaml_text.split("\n", 1)[1])
+    converted = config_io._profile_to_configuration(profile)
+
+    assert mock.localNode.moduleConfig.neighbor_info.update_interval == 0
+    assert profile.module_config.neighbor_info.update_interval == 0
+    yaml_neighbor = configuration["module_config"]["neighbor_info"]
+    converted_neighbor = converted["module_config"]["neighbor_info"]
+    assert "updateInterval" not in yaml_neighbor
+    assert "updateInterval" not in converted_neighbor
+    assert yaml_neighbor["transmitOverLora"] is True
+    private_b64 = "base64:" + base64.b64encode(bytes(range(32))).decode()
+    admin_b64 = "base64:" + base64.b64encode(b"\xaa" * 32).decode()
+    assert configuration["config"]["security"]["privateKey"] == private_b64
+    assert configuration["config"]["security"]["adminKey"] == [admin_b64]
+    assert profile.config.security.private_key == bytes(range(32))
+    assert list(profile.config.security.admin_key) == [b"\xaa" * 32]
