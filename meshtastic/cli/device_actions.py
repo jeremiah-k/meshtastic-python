@@ -48,6 +48,8 @@ logger = logging.getLogger(__name__)
 
 
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
+FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS = 3
+FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS = 1.0
 FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
 FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = 0.05
 POSITION_ALTITUDE_MIN = -(1 << 31)
@@ -73,8 +75,10 @@ class DeviceActionHooks:
         Destination classifier.
     send_local_factory_reset_and_wait : Callable[..., Any]
         Local destructive-reset acceptance helper.
-    post_factory_reset_ready_probe : Callable[[MeshInterface], None]
-        Best-effort serial readiness probe used after a full local reset.
+    post_factory_reset_ready_probe : Callable[[MeshInterface], bool]
+        Best-effort serial readiness probe used after a full local reset. Returns
+        ``True`` once the device reconnected on serial, ``False`` when every
+        probe attempt was exhausted without the device returning.
     handle_ota_update : Callable[[MeshInterface, Any, dict[str, Any]], None]
         Wi-Fi OTA execution helper.
     build_key_verification_admin, send_key_verification : Callable[..., Any]
@@ -89,7 +93,7 @@ class DeviceActionHooks:
     set_pref: Callable[[Any, str, Any], bool]
     is_local_destination: Callable[[Any, str], bool]
     send_local_factory_reset_and_wait: Callable[..., Any]
-    post_factory_reset_ready_probe: Callable[[MeshInterface], None]
+    post_factory_reset_ready_probe: Callable[[MeshInterface], bool]
     handle_ota_update: Callable[[MeshInterface, Any, dict[str, Any]], None]
     build_lockdown_auth: Callable[..., Any]
     read_lockdown_passphrase_file: Callable[[str], bytes]
@@ -304,31 +308,58 @@ def _temporary_instance_attributes(
                 setattr(instance, name, previous)
 
 
-def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
-    """Close, briefly probe serial readiness, then release the serial port.
+def _post_factory_reset_ready_probe(interface: MeshInterface) -> bool:
+    """Close, then retry the serial readiness probe across a bounded budget.
+
+    A factory reset wipes the device's prefs and forces a reboot. On most
+    T-Beam hardware the device returns within ~5s, but the first reconnect
+    attempt after BLE/WiFi teardown can race the kernel re-enumerating the
+    USB-CDC device. A single 20s probe often gives up just before the device
+    reappears, leaving the CLI to report success when the next command is
+    the one that actually has to wait. This routine closes the port, then
+    attempts the probe up to
+    [FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS] times, sleeping
+    [FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS] between attempts, with
+    each individual attempt bound by
+    [FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS].
 
     Parameters
     ----------
     interface : MeshInterface
         Connected interface; non-serial transports are ignored.
+
+    Returns
+    -------
+    bool
+        ``True`` once a probe connected to the device, ``False`` when every
+        attempt was exhausted without the device returning. The final
+        exhausted-state decision surfaces as an error in
+        [__main__._post_factory_reset_ready_probe] so the CLI exits with a
+        non-zero status when the user can't tell whether the device finished
+        factory-resetting.
     """
     serial_interface_cls = getattr(meshtastic.serial_interface, "SerialInterface", None)
     if not isinstance(serial_interface_cls, type) or not isinstance(
         interface, serial_interface_cls
     ):
-        return
+        return True
 
     serial_interface = cast(meshtastic.serial_interface.SerialInterface, interface)
 
+    def _safe_close() -> None:
+        try:
+            serial_interface.close()
+        except Exception:
+            logger.debug("Factory reset: serial close failed.", exc_info=True)
+
     logger.debug("Factory reset: closing serial interface to release port.")
-    try:
-        serial_interface.close()
-    except Exception:
-        logger.debug("Factory reset: initial serial close failed.", exc_info=True)
+    _safe_close()
 
     logger.debug(
-        "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
+        "Factory reset: probing reconnect readiness (max_attempts=%d, per_attempt=%.1fs, retry_delay=%.1fs)...",
+        FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS,
         FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
+        FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS,
     )
     probe_overrides = {
         "_connect_wait_timeout_seconds": FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
@@ -336,24 +367,44 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
         "_suppress_connect_failure_logging": True,
     }
     probe_start = time.monotonic()
+    last_error: Exception | None = None
+    attempts_made = 0
     with _temporary_instance_attributes(serial_interface, probe_overrides):
-        try:
-            serial_interface.connect()
-            logger.debug(
-                "Factory reset: reconnect probe succeeded in %.2fs.",
-                time.monotonic() - probe_start,
-            )
-        except Exception as exc:
-            logger.info(
-                "Factory reset accepted; device is still rebooting after %.1fs "
-                "and the next command will reconnect normally (%s).",
-                time.monotonic() - probe_start,
-                exc,
-            )
-    try:
-        serial_interface.close()
-    except Exception:
-        logger.debug("Factory reset: final serial close failed.", exc_info=True)
+        for attempt_index in range(FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS):
+            attempts_made += 1
+            try:
+                serial_interface.connect()
+                logger.info(
+                    "Factory reset: device reconnected on attempt %d/%d after %.1fs.",
+                    attempts_made,
+                    FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS,
+                    time.monotonic() - probe_start,
+                )
+                _safe_close()
+                return True
+            except Exception as exc:  # noqa: BLE001 - we translate the entire family
+                last_error = exc
+                if attempt_index + 1 < FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS:
+                    logger.debug(
+                        "Factory reset: probe attempt %d/%d failed (%s); retrying in %.1fs.",
+                        attempts_made,
+                        FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS,
+                        exc,
+                        FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS,
+                    )
+                    time.sleep(FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS)
+
+    elapsed = time.monotonic() - probe_start
+    logger.warning(
+        "Factory reset: device did not respond after %d probes spanning %.1fs "
+        "(last error: %s). The next command may need to reconnect itself, or "
+        "the factory reset may not have completed.",
+        attempts_made,
+        elapsed,
+        last_error,
+    )
+    _safe_close()
+    return False
 
 
 def _handle_ota_update(
@@ -800,7 +851,18 @@ def _handle_reboot_and_reset_actions(
         else:
             reset_node.factoryReset(full=full)
         if full and is_local_reset:
-            hooks.post_factory_reset_ready_probe(interface)
+            if not hooks.post_factory_reset_ready_probe(interface):
+                # Surface the uncertain outcome to the user; ``cli_exit`` raises the
+                # standard CLI error path so the process exits non-zero. The error
+                # message deliberately stays close to the legacy log wording so
+                # existing operator scripts that grep for the phrase keep working.
+                hooks.cli_exit(
+                    "Factory reset accepted; the device did not respond on the "
+                    "configured serial port within the readiness budget. The "
+                    "factory reset may not have completed; power-cycle the device "
+                    "and retry.",
+                    1,
+                )
 
 
 def _handle_node_database_actions(context: CliContext) -> None:
