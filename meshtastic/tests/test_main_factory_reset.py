@@ -21,7 +21,8 @@ from meshtastic.__main__ import (
 # from ..radioconfig_pb2 import UserPreferences
 # import meshtastic.config_pb2
 from ..serial_interface import SerialInterface
-from ..util import Acknowledgment
+from meshtastic.mesh_interface import MeshInterface
+from meshtastic.util import Acknowledgment
 
 # from ..ble_interface import BLEInterface
 
@@ -406,7 +407,15 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
 def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A still-rebooting device should produce one concise info line, not a traceback."""
+    """All attempts exhausted: log a concise WARNING and return ``False`` without a traceback.
+
+    The legacy "Factory reset accepted; device is still rebooting" log line
+    was a single-shot, single-attempt suppression. The new probe retires up
+    to [FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS] times, and the final
+    exhausted-state is now a WARNING (not INFO) that explains the next
+    command may have to reconnect. The function returns ``False`` and the
+    caller turns that into a non-zero CLI exit.
+    """
     iface = cast(Any, object.__new__(SerialInterface))
     iface.close = MagicMock()
 
@@ -423,14 +432,65 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     iface.connect = MagicMock(side_effect=_connect)
 
     with caplog.at_level(logging.DEBUG):
-        main_module._post_factory_reset_ready_probe(cast(Any, iface))
+        result = main_module._post_factory_reset_ready_probe(cast(Any, iface))
 
-    assert "device is still rebooting" in caplog.text
+    assert result is False
+    assert (
+        iface.connect.call_count == main_module.FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS
+    )
+    assert "device did not respond" in caplog.text
     assert "Traceback" not in caplog.text
     assert not hasattr(iface, "_connect_wait_timeout_seconds")
     assert not hasattr(iface, "_connect_retry_budget_seconds")
     assert not hasattr(iface, "_suppress_connect_failure_logging")
-    assert iface.close.call_count >= 2
+    # The probe closes the port once before the retry loop and once after
+    # exhausting it; intermediate attempts do not close.
+    assert iface.close.call_count == 2
+
+
+@pytest.mark.unit
+def test_post_factory_reset_ready_probe_retries_until_device_returns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A device that returns on the second attempt must report success."""
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface.close = MagicMock()
+
+    # First attempt fails, second succeeds.
+    failures = iter([RuntimeError("not yet")])
+    success_seen = {"value": False}
+
+    def _connect() -> None:
+        try:
+            err = next(failures)
+        except StopIteration:
+            success_seen["value"] = True
+            return
+        raise err
+
+    iface.connect = MagicMock(side_effect=_connect)
+
+    with caplog.at_level(logging.DEBUG):
+        result = main_module._post_factory_reset_ready_probe(cast(Any, iface))
+
+    assert result is True
+    assert success_seen["value"] is True
+    assert iface.connect.call_count == 2
+    assert "device reconnected on attempt 2/3" in caplog.text
+    assert iface.close.call_count == 2
+
+
+@pytest.mark.unit
+def test_post_factory_reset_ready_probe_returns_true_for_non_serial_interface() -> None:
+    """Wi-Fi / TCP interfaces should be ignored (return ``True``) so the caller never errors out."""
+
+    class _NotSerial(MeshInterface):
+        def __init__(self) -> None:  # noqa: D401 - test double
+            pass
+
+    iface = cast(Any, _NotSerial())
+    # No connect/close methods are needed because the function short-circuits.
+    assert main_module._post_factory_reset_ready_probe(iface) is True
 
 
 @pytest.mark.unit
@@ -491,7 +551,7 @@ def test_post_factory_reset_ready_probe_logs_final_close_failure(
     with caplog.at_level(logging.DEBUG):
         main_module._post_factory_reset_ready_probe(cast(Any, iface))
 
-    assert "Factory reset: final serial close failed" in caplog.text
+    assert "Factory reset: serial close failed." in caplog.text
 
 
 @pytest.mark.unit

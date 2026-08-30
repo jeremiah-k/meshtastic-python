@@ -596,6 +596,99 @@ def test_remote_factory_reset_uses_direct_factory_reset() -> None:
 
 
 @pytest.mark.unit
+def test_local_factory_reset_device_exits_when_readiness_probe_fails() -> None:
+    """A full local factory reset whose readiness probe never reconnects must
+    raise through the cli_exit hook so the CLI exits non-zero. The
+    ``MeshInterface`` import is the same one used by the test file already.
+    """
+    interface = MagicMock()
+    reset_node = interface.getNode.return_value
+    reset_node.factoryReset = MagicMock()
+    args = argparse.Namespace(
+        reboot=False,
+        reboot_ota=False,
+        enter_dfu=False,
+        shutdown=False,
+        ota_update=None,
+        device_metadata=False,
+        begin_edit=False,
+        commit_edit=False,
+        factory_reset=False,
+        factory_reset_device=True,
+        dest="^local",
+    )
+    context = CliContext(
+        interface=cast(MeshInterface, interface),
+        args=args,
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    local_wait = MagicMock()
+    readiness_probe = MagicMock(return_value=False)
+    hooks = _hooks(
+        cli_exit=cli_exit,
+        is_local_destination=MagicMock(return_value=True),
+        send_local_factory_reset_and_wait=local_wait,
+        post_factory_reset_ready_probe=readiness_probe,
+    )
+
+    with pytest.raises(SystemExit):
+        device_actions._handle_reboot_and_reset_actions(context, hooks)
+
+    local_wait.assert_called_once()
+    readiness_probe.assert_called_once_with(interface)
+    cli_exit.assert_called_once()
+    message, code = cli_exit.call_args.args
+    assert code == 1
+    assert "Factory reset accepted" in message
+    assert "did not respond" in message
+    assert "power-cycle" in message
+
+
+@pytest.mark.unit
+def test_local_factory_reset_device_succeeds_when_readiness_probe_succeeds() -> None:
+    """A successful readiness probe must not invoke cli_exit."""
+    interface = MagicMock()
+    reset_node = interface.getNode.return_value
+    reset_node.factoryReset = MagicMock()
+    args = argparse.Namespace(
+        reboot=False,
+        reboot_ota=False,
+        enter_dfu=False,
+        shutdown=False,
+        ota_update=None,
+        device_metadata=False,
+        begin_edit=False,
+        commit_edit=False,
+        factory_reset=False,
+        factory_reset_device=True,
+        dest="^local",
+    )
+    context = CliContext(
+        interface=cast(MeshInterface, interface),
+        args=args,
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    local_wait = MagicMock()
+    readiness_probe = MagicMock(return_value=True)
+    hooks = _hooks(
+        cli_exit=cli_exit,
+        is_local_destination=MagicMock(return_value=True),
+        send_local_factory_reset_and_wait=local_wait,
+        post_factory_reset_ready_probe=readiness_probe,
+    )
+
+    device_actions._handle_reboot_and_reset_actions(context, hooks)
+
+    local_wait.assert_called_once()
+    readiness_probe.assert_called_once_with(interface)
+    cli_exit.assert_not_called()
+
+
+@pytest.mark.unit
 def test_factory_reset_probe_logs_close_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
