@@ -137,11 +137,15 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
     ValueError
         If the supplied timeout is not positive.
     MeshInterface.MeshInterfaceError
-        If the request is rejected or no acceptance/reboot signal arrives.
+        If the device rejects the request with a NAK.
 
+    Notes
+    -----
     The request is resent on a bounded interval while acceptance remains
     pending; some devices silently drop the first destructive request. The
-    overall acceptance deadline is never extended.
+    overall acceptance deadline is never extended. If no acceptance or reboot
+    signal arrives before that deadline, the timeout is logged and the sent
+    request is returned; no error is raised.
     """
     reset_interface = reset_node.iface
     acceptance_timeout = (
