@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from meshtastic import key_verification
 from meshtastic.cli import device_actions
 from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
@@ -156,8 +157,11 @@ def test_device_action_hooks_preserve_legacy_keyword_constructor() -> None:
 
     hooks = device_actions.DeviceActionHooks(**values)
 
-    assert hooks.build_key_verification_admin is not None
-    assert hooks.send_key_verification is not None
+    assert (
+        hooks.build_key_verification_admin
+        is key_verification.build_key_verification_admin
+    )
+    assert hooks.send_key_verification is key_verification.send_key_verification
 
 
 @pytest.mark.unit
