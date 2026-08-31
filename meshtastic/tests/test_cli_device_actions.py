@@ -684,14 +684,16 @@ def test_factory_reset_accepts_implicit_ack_in_scoped_wait(
     iface = MagicMock()
     raise_wait_error = MagicMock()
 
-    def _never_completed(acknowledgment_attr, request_id, timeout_seconds=0.0):
+    def _never_completed(
+        acknowledgment_attr: str, request_id: int, timeout_seconds: float = 0.0
+    ) -> bool:
         return False
 
     iface._wait_for_request_ack = _never_completed
     iface._raise_wait_error_if_present = raise_wait_error
     node = MagicMock(iface=iface)
 
-    def _factory_reset(*, full):
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
         # The implicit ACK is not request-correlated, so it can only surface
         # through the legacy acknowledgment flag.
         iface._acknowledgment.receivedImplAck = True
