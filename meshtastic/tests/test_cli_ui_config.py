@@ -315,6 +315,25 @@ def test_request_admin_response_ignores_malformed_has_field_and_times_out() -> N
 
 
 @pytest.mark.unit
+def test_request_admin_response_ignores_wrong_response_variant() -> None:
+    """A different admin response oneof must not satisfy the UI-config wait."""
+    captured: dict[str, Any] = {}
+    node = _stub_node_for_request(captured, _interface())
+
+    def _fire_wrong_variant_later() -> None:
+        raw = admin_pb2.AdminMessage()
+        raw.get_device_connection_status_response.SetInParent()
+        callback = captured.get("onResponse")
+        if callback is not None:
+            callback({"decoded": {"admin": {"raw": raw}}})
+
+    timer = threading.Timer(0.05, _fire_wrong_variant_later)
+    timer.start()
+
+    assert node.requestUiConfig(response_timeout_seconds=0.5) is None
+
+
+@pytest.mark.unit
 def test_request_admin_response_returns_none_when_transport_returns_no_packet(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
