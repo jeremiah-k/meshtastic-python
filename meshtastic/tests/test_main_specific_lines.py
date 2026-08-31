@@ -835,6 +835,30 @@ def test_non_key_client_notification_is_ignored(
 
 
 @pytest.mark.unit
+def test_client_notification_render_failure_is_contained(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A rendering exception must not escape into the pubsub receive thread."""
+    notification = mesh_pb2.ClientNotification()
+    notification.key_verification_final.nonce = 77
+    prints: list[str] = []
+    monkeypatch.setattr(main_module, "_current_invocation_args", lambda: None)
+    monkeypatch.setattr(main_module, "_cli_print", prints.append)
+    monkeypatch.setattr(
+        main_module.cli_device_actions,
+        "_render_key_verification_notification",
+        MagicMock(side_effect=RuntimeError("renderer blew up")),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        main_module.onClientNotification(notification, MagicMock())
+
+    assert "Error rendering client notification" in caplog.text
+    assert "renderer blew up" in caplog.text
+
+
+@pytest.mark.unit
 def test_export_profile_compatibility_wrapper_delegates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

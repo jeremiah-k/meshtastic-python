@@ -645,9 +645,12 @@ def onClientNotification(
         "key_verification_final",
     }:
         return
-    cli_device_actions._render_key_verification_notification(  # noqa: SLF001
-        notification, "", _cli_print
-    )
+    try:
+        cli_device_actions._render_key_verification_notification(  # noqa: SLF001
+            notification, "", _cli_print
+        )
+    except Exception as ex:
+        logger.warning("Error rendering client notification: %s", ex)
 
 
 def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
