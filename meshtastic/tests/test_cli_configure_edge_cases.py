@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, call, create_autospec
 import pytest
 
 from meshtastic import configure_verify
-from meshtastic.cli import configure_actions, configure_values
+from meshtastic.cli import config_io, configure_actions, configure_values
 from meshtastic.cli.configure_actions import (
     ConfigureActionHooks,
     ConfigureHooks,
@@ -855,9 +855,7 @@ def test_configure_export_restricts_existing_file_permissions(tmp_path: Path) ->
     assert export_path.read_text(encoding="utf-8") == (
         "config:\n  security:\n    privateKey: secret\n"
     )
-    assert stat.S_IMODE(export_path.stat().st_mode) == (
-        configure_actions.PRIVATE_CONFIG_FILE_MODE
-    )
+    assert stat.S_IMODE(export_path.stat().st_mode) == config_io.EXPORT_FILE_MODE
 
 
 @pytest.mark.unit

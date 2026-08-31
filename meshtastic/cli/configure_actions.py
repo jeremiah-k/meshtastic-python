@@ -59,7 +59,6 @@ SETURL_STABILITY_MAX_ATTEMPTS = 3
 SETURL_STABILITY_WINDOW_SECONDS = 1.5
 SETURL_RECONNECT_WAIT_SECONDS = 10.0
 SETURL_STABILITY_POLL_SECONDS = 0.1
-PRIVATE_CONFIG_FILE_MODE: int = 0o600
 CONFIGURE_DIRECT_SETTINGS_HEADER = (
     "Applying direct configuration values "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -1445,7 +1444,7 @@ def _handle_configure_actions(
         descriptor = os.open(
             args.export_config,
             os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            PRIVATE_CONFIG_FILE_MODE,
+            _config_io.EXPORT_FILE_MODE,
         )
         try:
             # ``os.open(..., mode=...)`` does not alter an existing file's mode.
@@ -1453,7 +1452,7 @@ def _handle_configure_actions(
             # administrative keys.
             fchmod = getattr(os, "fchmod", None)
             if callable(fchmod):
-                fchmod(descriptor, PRIVATE_CONFIG_FILE_MODE)
+                fchmod(descriptor, _config_io.EXPORT_FILE_MODE)
             with os.fdopen(descriptor, "w", encoding="utf-8") as output_file:
                 descriptor = -1
                 output_file.write(config_text)
