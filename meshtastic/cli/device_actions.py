@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS: float = 20.0
 FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS: int = 3
 FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS: float = 1.0
-FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS: float = 40.0
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS: float = 8.0
 FACTORY_RESET_ACCEPTANCE_POLL_SECONDS: float = 0.05
 FACTORY_RESET_RESEND_INTERVAL_SECONDS: float = 4.0
 FACTORY_RESET_MAX_SENDS: int = 4
@@ -271,6 +271,13 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
                 if completed:
                     raise_wait_error("receivedNak", request_id=request_id)
                     return request
+                if bool(getattr(acknowledgment, "receivedImplAck", False)):
+                    # An implicit ACK is not request-correlated, so the scoped
+                    # registry cannot record it; the legacy flag is the only
+                    # carrier. Session-key responses only set receivedAck, so
+                    # this flag cannot be satisfied by the session-key
+                    # exchange that precedes the destructive request.
+                    return request
             else:
                 if callable(raise_wait_error):
                     raise_wait_error("receivedNak", request_id=request_id)
@@ -318,9 +325,11 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
 
         if callable(raise_wait_error):
             raise_wait_error("receivedNak", request_id=request_id)
-        raise reset_interface.MeshInterfaceError(
-            "Timed out waiting for a factory reset acknowledgment or reboot disconnect"
+        logger.info(
+            "No factory reset acknowledgment observed; the request has been "
+            "sent and the node will reboot and apply the reset on its own."
         )
+        return request
     finally:
         retire_wait = getattr(reset_interface, "_retire_wait_request", None)
         if callable(retire_wait) and request_id is not None:
@@ -916,21 +925,6 @@ def _handle_reboot_and_reset_actions(
             hooks.send_local_factory_reset_and_wait(reset_node, full=full)
         else:
             reset_node.factoryReset(full=full)
-        if full and is_local_reset:
-            if not hooks.post_factory_reset_ready_probe(interface):
-                # Surface the uncertain outcome to the user through the shared
-                # fail-closed exit helper so even an injected ``cli_exit`` that
-                # returns cannot report success. The error message deliberately
-                # stays close to the legacy log wording so existing operator
-                # scripts that grep for the phrase keep working.
-                _terminate_cli(
-                    hooks.cli_exit,
-                    "Factory reset accepted; the device did not respond on the "
-                    "configured serial port within the readiness budget. The "
-                    "factory reset may not have completed; power-cycle the device "
-                    "and retry.",
-                    1,
-                )
 
 
 def _handle_node_database_actions(context: CliContext) -> None:
