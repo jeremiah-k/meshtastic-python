@@ -1421,8 +1421,8 @@ class ModuleConfig(_message.Message):
         @_typing.final
         class BroadcastTarget(_message.Message):
             """
-            One entry in the multi-target broadcast list.
-            The broadcaster transmits one beacon copy per entry, each on its own radio settings.
+            One entry in the broadcast destination list.
+            Each entry names one set of radio settings to send a beacon copy on.
             """
 
             DESCRIPTOR: _descriptor.Descriptor
@@ -1470,27 +1470,15 @@ class ModuleConfig(_message.Message):
             def WhichOneof(self, oneof_group: _WhichOneofArgType__preset) -> _WhichOneofReturnType__preset | None: ...
 
         FLAGS_FIELD_NUMBER: _builtins.int
-        BROADCAST_SEND_AS_NODE_FIELD_NUMBER: _builtins.int
         BROADCAST_MESSAGE_FIELD_NUMBER: _builtins.int
         BROADCAST_OFFER_CHANNEL_FIELD_NUMBER: _builtins.int
         BROADCAST_OFFER_REGION_FIELD_NUMBER: _builtins.int
         BROADCAST_OFFER_PRESET_FIELD_NUMBER: _builtins.int
-        BROADCAST_ON_CHANNEL_FIELD_NUMBER: _builtins.int
-        BROADCAST_ON_REGION_FIELD_NUMBER: _builtins.int
-        BROADCAST_ON_PRESET_FIELD_NUMBER: _builtins.int
         BROADCAST_INTERVAL_SECS_FIELD_NUMBER: _builtins.int
         BROADCAST_TARGETS_FIELD_NUMBER: _builtins.int
         flags: _builtins.int
         """
         Bitwise-OR of Flags values (listen / broadcast / legacy-split toggles).
-        """
-        broadcast_send_as_node: _builtins.int
-        """
-        Optional: node ID to send beacon messages AS.
-        When set, the `from` field of outgoing beacon packets is set to this node ID,
-        making beacons appear to originate from that node.
-        When unset (0), beacons are sent as the local node.
-        A remote admin can only set this field to their own node ID.
         """
         broadcast_message: _builtins.str
         """
@@ -1504,15 +1492,6 @@ class ModuleConfig(_message.Message):
         """
         Optional modem preset to advertise in the MeshBeacon offer_preset field.
         """
-        broadcast_on_region: _config_pb2.Config.LoRaConfig.RegionCode.ValueType
-        """
-        Region to use when sending beacons on broadcast_on_preset.
-        """
-        broadcast_on_preset: _config_pb2.Config.LoRaConfig.ModemPreset.ValueType
-        """
-        Modem preset to use when sending beacons.
-        If different from current config, the radio is temporarily switched for TX.
-        """
         broadcast_interval_secs: _builtins.int
         """
         How often to broadcast, in seconds. Min 3600 (1 h), default 3600.
@@ -1524,56 +1503,35 @@ class ModuleConfig(_message.Message):
             """
 
         @_builtins.property
-        def broadcast_on_channel(self) -> _channel_pb2.ChannelSettings:
-            """
-            Single-target TX channel: channel settings (name + PSK) to send beacons on.
-            If unset, beacons go out on the primary channel. Used only when broadcast_targets is empty.
-            NOTE: the single-target path embeds the ChannelSettings inline here, whereas a
-            broadcast_targets entry references a channel-table slot by channel_index instead — see
-            BroadcastTarget. The two paths are equal, first-class options; only this representation differs.
-            """
-
-        @_builtins.property
         def broadcast_targets(self) -> _containers.RepeatedCompositeFieldContainer[Global___ModuleConfig.MeshBeaconConfig.BroadcastTarget]:
             """
-            Multi-target broadcast list.
-            When non-empty the broadcaster transmits one beacon copy per entry in sequence,
-            each temporarily switching the radio to that entry's preset/region/channel.
-            When empty, the broadcaster uses the scalar broadcast_on_preset / broadcast_on_region /
-            broadcast_on_channel fields instead (the single-target path).
-            Single- and multi-target are equal, first-class options — neither is preferred or
-            deprecated. They differ only in how the TX channel is named: broadcast_on_channel embeds a
-            ChannelSettings inline, while a target references an existing channel-table slot by
-            channel_index (see BroadcastTarget).
+            Broadcast destination list.
+            The broadcaster sends one beacon copy per distinct destination, in sequence, temporarily
+            switching the radio to that entry's preset/region/channel for each.
+            When empty, a single beacon is sent on the node's running preset and region over the
+            primary channel.
+            Entries that resolve to the same effective preset, region and channel are deduplicated, so
+            a duplicate entry does not produce a second transmission.
             """
 
         def __init__(
             self,
             *,
             flags: _builtins.int = ...,
-            broadcast_send_as_node: _builtins.int = ...,
             broadcast_message: _builtins.str = ...,
             broadcast_offer_channel: _channel_pb2.ChannelSettings | None = ...,
             broadcast_offer_region: _config_pb2.Config.LoRaConfig.RegionCode.ValueType = ...,
             broadcast_offer_preset: _config_pb2.Config.LoRaConfig.ModemPreset.ValueType | None = ...,
-            broadcast_on_channel: _channel_pb2.ChannelSettings | None = ...,
-            broadcast_on_region: _config_pb2.Config.LoRaConfig.RegionCode.ValueType = ...,
-            broadcast_on_preset: _config_pb2.Config.LoRaConfig.ModemPreset.ValueType | None = ...,
             broadcast_interval_secs: _builtins.int = ...,
             broadcast_targets: _abc.Iterable[Global___ModuleConfig.MeshBeaconConfig.BroadcastTarget] | None = ...,
         ) -> None: ...
-        _HasFieldArgType: _TypeAlias = _typing.Literal["_broadcast_offer_preset", b"_broadcast_offer_preset", "_broadcast_on_preset", b"_broadcast_on_preset", "broadcast_offer_channel", b"broadcast_offer_channel", "broadcast_offer_preset", b"broadcast_offer_preset", "broadcast_on_channel", b"broadcast_on_channel", "broadcast_on_preset", b"broadcast_on_preset"]  # noqa: Y015
+        _HasFieldArgType: _TypeAlias = _typing.Literal["_broadcast_offer_preset", b"_broadcast_offer_preset", "broadcast_offer_channel", b"broadcast_offer_channel", "broadcast_offer_preset", b"broadcast_offer_preset"]  # noqa: Y015
         def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-        _ClearFieldArgType: _TypeAlias = _typing.Literal["_broadcast_offer_preset", b"_broadcast_offer_preset", "_broadcast_on_preset", b"_broadcast_on_preset", "broadcast_interval_secs", b"broadcast_interval_secs", "broadcast_message", b"broadcast_message", "broadcast_offer_channel", b"broadcast_offer_channel", "broadcast_offer_preset", b"broadcast_offer_preset", "broadcast_offer_region", b"broadcast_offer_region", "broadcast_on_channel", b"broadcast_on_channel", "broadcast_on_preset", b"broadcast_on_preset", "broadcast_on_region", b"broadcast_on_region", "broadcast_send_as_node", b"broadcast_send_as_node", "broadcast_targets", b"broadcast_targets", "flags", b"flags"]  # noqa: Y015
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["_broadcast_offer_preset", b"_broadcast_offer_preset", "broadcast_interval_secs", b"broadcast_interval_secs", "broadcast_message", b"broadcast_message", "broadcast_offer_channel", b"broadcast_offer_channel", "broadcast_offer_preset", b"broadcast_offer_preset", "broadcast_offer_region", b"broadcast_offer_region", "broadcast_targets", b"broadcast_targets", "flags", b"flags"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
         _WhichOneofReturnType__broadcast_offer_preset: _TypeAlias = _typing.Literal["broadcast_offer_preset"]  # noqa: Y015
         _WhichOneofArgType__broadcast_offer_preset: _TypeAlias = _typing.Literal["_broadcast_offer_preset", b"_broadcast_offer_preset"]  # noqa: Y015
-        _WhichOneofReturnType__broadcast_on_preset: _TypeAlias = _typing.Literal["broadcast_on_preset"]  # noqa: Y015
-        _WhichOneofArgType__broadcast_on_preset: _TypeAlias = _typing.Literal["_broadcast_on_preset", b"_broadcast_on_preset"]  # noqa: Y015
-        @_typing.overload
         def WhichOneof(self, oneof_group: _WhichOneofArgType__broadcast_offer_preset) -> _WhichOneofReturnType__broadcast_offer_preset | None: ...
-        @_typing.overload
-        def WhichOneof(self, oneof_group: _WhichOneofArgType__broadcast_on_preset) -> _WhichOneofReturnType__broadcast_on_preset | None: ...
 
     @_typing.final
     class TAKConfig(_message.Message):
