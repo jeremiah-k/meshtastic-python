@@ -368,7 +368,8 @@ def _parse_repeated_message_value(
     for index, item in enumerate(parsed):
         if not isinstance(item, dict):
             report_pref_validation(
-                f"Invalid value {rendered_value!r} for {field_path}; "
+                f"Invalid value {redact_pref_value(field_path, rendered_value)} "
+                f"for {field_path}; "
                 f"element {index} is not an object/mapping.",
                 cli_print=cli_print,
             )
