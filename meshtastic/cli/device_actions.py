@@ -31,10 +31,10 @@ from meshtastic.key_verification import STAGE_INITIATE as _KV_STAGE_INITIATE
 from meshtastic.key_verification import STAGE_NO_VERIFY as _KV_STAGE_NO_VERIFY
 from meshtastic.key_verification import STAGE_VERIFY as _KV_STAGE_VERIFY
 from meshtastic.key_verification import (
-    _build_key_verification_admin as _default_build_key_verification_admin,
+    build_key_verification_admin as _default_build_key_verification_admin,
 )
 from meshtastic.key_verification import (
-    _send_key_verification as _default_send_key_verification,
+    send_key_verification as _default_send_key_verification,
 )
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (

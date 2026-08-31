@@ -16,6 +16,10 @@ from meshtastic.key_verification import (
 from meshtastic.key_verification import (
     KEY_VERIFICATION_STAGES as _KEY_VERIFICATION_STAGES,
 )
+from meshtastic.key_verification import (
+    SECURITY_NUMBER_MAX,
+    SECURITY_NUMBER_MIN,
+)
 
 
 class _ArgcompleteModule(Protocol):
@@ -27,7 +31,6 @@ class _ArgcompleteModule(Protocol):
 
 _UINT32_MAX: int = (1 << 32) - 1
 _UINT64_MAX: int = (1 << 64) - 1
-_KEY_VERIFICATION_SECURITY_NUMBER_MAX: int = 999_999
 
 
 def _parse_uint32(value: str) -> int:
@@ -62,10 +65,10 @@ def _parse_key_verification_security_number(value: str) -> int:
         parsed = int(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
-    if not 1 <= parsed <= _KEY_VERIFICATION_SECURITY_NUMBER_MAX:
+    if not SECURITY_NUMBER_MIN <= parsed <= SECURITY_NUMBER_MAX:
         raise argparse.ArgumentTypeError(
-            "security number must be between 1 and "
-            f"{_KEY_VERIFICATION_SECURITY_NUMBER_MAX}, got {parsed}"
+            f"security number must be between {SECURITY_NUMBER_MIN} and "
+            f"{SECURITY_NUMBER_MAX}, got {parsed}"
         )
     return parsed
 

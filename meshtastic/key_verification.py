@@ -35,8 +35,8 @@ _STAGE_MESSAGE_TYPES = {
     STAGE_NO_VERIFY: admin_pb2.KeyVerificationAdmin.DO_NOT_VERIFY,
 }
 
-_SECURITY_NUMBER_MIN = 1
-_SECURITY_NUMBER_MAX = 999999
+SECURITY_NUMBER_MIN = 1
+SECURITY_NUMBER_MAX = 999999
 _NODE_NUM_MAX = 0xFFFFFFFF
 _NONCE_MAX = 0xFFFFFFFFFFFFFFFF
 _NOTIFICATION_PAYLOAD_FIELDS: tuple[
@@ -56,7 +56,7 @@ _EXPECTED_NOTIFICATION_FIELDS = {
 }
 
 
-def _build_key_verification_admin(
+def build_key_verification_admin(
     stage: str,
     *,
     remote_nodenum: int = 0,
@@ -111,10 +111,10 @@ def _build_key_verification_admin(
             raise ValueError(
                 "provide requires the security number shown on the remote node"
             )
-        if not _SECURITY_NUMBER_MIN <= security_number <= _SECURITY_NUMBER_MAX:
+        if not SECURITY_NUMBER_MIN <= security_number <= SECURITY_NUMBER_MAX:
             raise ValueError(
                 "security_number must be "
-                f"{_SECURITY_NUMBER_MIN}..{_SECURITY_NUMBER_MAX} (six digits)"
+                f"{SECURITY_NUMBER_MIN}..{SECURITY_NUMBER_MAX} (six digits)"
             )
         message.security_number = security_number
     return message
@@ -128,7 +128,7 @@ def _notification_nonce(notification: mesh_pb2.ClientNotification) -> int | None
     return None
 
 
-def _send_key_verification(
+def send_key_verification(
     interface: MeshInterface,
     request: admin_pb2.KeyVerificationAdmin,
     *,
@@ -141,7 +141,7 @@ def _send_key_verification(
     interface : MeshInterface
         Connected mesh interface owning the local node.
     request : admin_pb2.KeyVerificationAdmin
-        Handshake stage built by :func:`_build_key_verification_admin`.
+        Handshake stage built by :func:`build_key_verification_admin`.
     timeout : float
         Seconds to wait for the device's key-verification notification.
 
