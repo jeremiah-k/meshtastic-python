@@ -18,7 +18,7 @@ from meshtastic.protobuf import config_pb2, localonly_pb2, module_config_pb2
 
 
 @pytest.fixture(autouse=True)
-def _quiet_mt_config(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def _quiet_mt_config() -> Iterator[None]:
     """Force ``setPref`` to use the public CLI printer and bypass preflight."""
     # Direct ``setPref`` exercises the same diagnostic surface as ``--set``;
     # we deliberately avoid ``reset_mt_config`` because these tests don't
@@ -26,7 +26,6 @@ def _quiet_mt_config(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     import meshtastic.cli.preference_runtime as pr
 
     token = pr.CONFIGURE_PREFLIGHT_MODE.set(False)
-    monkeypatch.setattr(pr, "CONFIGURE_PREFLIGHT_MODE", pr.CONFIGURE_PREFLIGHT_MODE)
     try:
         yield
     finally:
