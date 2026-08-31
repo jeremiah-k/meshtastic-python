@@ -178,7 +178,7 @@ jobs:
     env:
       PYTHON_VERSION: "3.13"
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
-      MESHTASTICD_IMAGE: meshtastic/meshtasticd:2.7.26-alpha-debian@sha256:80aad2b748f9a28fc70ec4ffa39901617a20d620a815b4c7e9a7d9556ecae1d8
+      MESHTASTICD_IMAGE: meshtastic/meshtasticd:2.8.0-alpha-debian@sha256:29ed6be9739a82ef47d2d908c63c99a5766cb27de8416046759b540b3d2fdb7e
       MESHTASTICD_HOST: localhost:4401
       MESHTASTICD_PORT: "4401"
       MESHTASTICD_READY_TIMEOUT_SECONDS: "180"

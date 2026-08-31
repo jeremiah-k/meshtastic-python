@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Pinned meshtasticd 2.7.20 line (Docker Hub tag: 2.7.20-alpha-debian)
-MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:2.7.26-alpha-debian@sha256:80aad2b748f9a28fc70ec4ffa39901617a20d620a815b4c7e9a7d9556ecae1d8}"
+MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:2.8.0-alpha-debian@sha256:29ed6be9739a82ef47d2d908c63c99a5766cb27de8416046759b540b3d2fdb7e}"
 MESHTASTICD_CONTAINER="${MESHTASTICD_CONTAINER:-meshtasticd-smokevirt}"
 MESHTASTICD_HOST="${MESHTASTICD_HOST:-localhost:4401}"
 MESHTASTICD_PORT="${MESHTASTICD_PORT:-4401}"
