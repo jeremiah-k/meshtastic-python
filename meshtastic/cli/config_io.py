@@ -498,6 +498,41 @@ def _has_yaml_forbidden_control_chars(text: str) -> bool:
     )
 
 
+def _true_defaults_in_present_sections(
+    config_dict: Mapping[str, Any], true_defaults: set[tuple[str, ...]]
+) -> set[tuple[str, ...]]:
+    """Filter firmware-true default paths to those whose sections exist.
+
+    Materializing a flag inside a section the source document never carried
+    would invent whole sections during partial-profile imports and then write
+    them to the device, so restrict default materialization to sections the
+    profile actually contains.
+
+    Parameters
+    ----------
+    config_dict : Mapping[str, Any]
+        Source configuration mapping to inspect.
+    true_defaults : set[tuple[str, ...]]
+        Key paths whose missing final key would be created with ``False``.
+
+    Returns
+    -------
+    set[tuple[str, ...]]
+        The subset of paths whose ancestor sections are present.
+    """
+    present: set[tuple[str, ...]] = set()
+    for path in true_defaults:
+        current: Mapping[str, Any] | None = config_dict
+        for key in path[:-1]:
+            if current is None:
+                break
+            nested = current.get(key)
+            current = nested if isinstance(nested, Mapping) else None
+        if current is not None:
+            present.add(path)
+    return present
+
+
 def _profile_to_configuration(
     profile: clientonly_pb2.DeviceProfile,
 ) -> dict[str, Any]:
@@ -539,13 +574,18 @@ def _profile_to_configuration(
     if profile.HasField("config"):
         config = MessageToDict(profile.config)
         prefix_base64_bytes_fields(profile.config, config)
-        set_missing_flags_false(config, CONFIG_TRUE_DEFAULTS)
+        set_missing_flags_false(
+            config, _true_defaults_in_present_sections(config, CONFIG_TRUE_DEFAULTS)
+        )
         if config:
             configuration["config"] = _converted_section_keys(config, camel_case=False)
     if profile.HasField("module_config"):
         module_config = MessageToDict(profile.module_config)
         prefix_base64_bytes_fields(profile.module_config, module_config)
-        set_missing_flags_false(module_config, MODULE_TRUE_DEFAULTS)
+        set_missing_flags_false(
+            module_config,
+            _true_defaults_in_present_sections(module_config, MODULE_TRUE_DEFAULTS),
+        )
         if module_config:
             configuration["module_config"] = _converted_section_keys(
                 module_config, camel_case=False
