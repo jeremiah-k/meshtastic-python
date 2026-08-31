@@ -596,6 +596,36 @@ def _profile_to_configuration(
 EXPORT_FILE_MODE: int = 0o600
 
 
+def _write_export_file(
+    export_path: str, payload: bytes | str, cli_exit: CliExit
+) -> None:
+    """Write one export payload with owner-only file permissions.
+
+    ``os.open(..., mode=...)`` does not alter an existing file's mode, so the
+    descriptor is tightened with ``fchmod`` before writing: exports may carry
+    private and administrative keys.
+    """
+    data = payload.encode("utf-8") if isinstance(payload, str) else payload
+    try:
+        descriptor = os.open(
+            export_path,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            EXPORT_FILE_MODE,
+        )
+        try:
+            fchmod = getattr(os, "fchmod", None)
+            if callable(fchmod):
+                fchmod(descriptor, EXPORT_FILE_MODE)
+            with os.fdopen(descriptor, "wb") as output_file:
+                descriptor = -1
+                output_file.write(data)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+    except OSError as exc:
+        _terminate_cli(cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
+
+
 def _decode_configure_document(
     raw_bytes: bytes | str, path: str, *, cli_exit: CliExit
 ) -> dict[str, Any] | None:
@@ -739,22 +769,5 @@ def _write_binary_profile(
             1,
         )
     payload = get_payload()
-    try:
-        descriptor = os.open(
-            export_path,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            EXPORT_FILE_MODE,
-        )
-        try:
-            fchmod = getattr(os, "fchmod", None)
-            if callable(fchmod):
-                fchmod(descriptor, EXPORT_FILE_MODE)
-            with os.fdopen(descriptor, "wb") as output_file:
-                descriptor = -1
-                output_file.write(payload)
-        finally:
-            if descriptor >= 0:
-                os.close(descriptor)
-    except OSError as exc:
-        _terminate_cli(cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
+    _write_export_file(export_path, payload, cli_exit)
     cli_print(f"Exported configuration to {export_path}")
