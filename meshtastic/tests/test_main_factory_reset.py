@@ -866,12 +866,120 @@ def test_factory_reset_fails_closed_on_still_connected_session(
     )
     iface = _reset_command_iface(reset_node, _connect)
     reset_node.iface = iface
-
     with pytest.raises(MeshInterface.MeshInterfaceError, match="Timed out"):
         _run_reset_command(monkeypatch, clock, iface, reset_node)
 
-    assert reset_node.factoryReset.call_count == 1
+    assert reset_node.factoryReset.call_count == (
+        device_actions.FACTORY_RESET_MAX_SENDS
+    )
     assert connect_calls == []
     assert clock.now == pytest.approx(
         device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
     )
+
+
+@pytest.mark.unit
+def test_local_factory_reset_resends_while_acceptance_pending() -> None:
+    """A silently dropped first request is resent until the device reboots."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=Acknowledgment(),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(iface=iface)
+    ids = iter([100, 200])
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        request = SimpleNamespace(id=next(ids))
+        if request.id == 200:
+
+            def _disconnect_after_resend() -> None:
+                time.sleep(0.02)
+                main_module.pub.sendMessage(
+                    "meshtastic.connection.lost", interface=iface
+                )
+
+            threading.Thread(target=_disconnect_after_resend, daemon=True).start()
+        return request
+
+    reset_node.factoryReset = MagicMock(side_effect=_factory_reset)
+
+    with patch.object(device_actions, "FACTORY_RESET_RESEND_INTERVAL_SECONDS", 0.05):
+        request = main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=5.0,
+        )
+
+    assert request is not None
+    assert request.id == 200
+    assert reset_node.factoryReset.call_count == 2
+
+
+@pytest.mark.unit
+def test_local_factory_reset_resend_caps_at_max_sends() -> None:
+    """Resend attempts stop at the configured cap and the timeout still fires."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=Acknowledgment(),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(return_value=SimpleNamespace(id=789)),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Timed out waiting for a factory reset acknowledgment or reboot disconnect",
+    ):
+        with patch.object(
+            device_actions,
+            "FACTORY_RESET_RESEND_INTERVAL_SECONDS",
+            0.05,
+        ), patch.object(device_actions, "FACTORY_RESET_MAX_SENDS", 3):
+            main_module._send_local_factory_reset_and_wait(
+                reset_node,
+                full=False,
+                timeout=0.4,
+            )
+
+    assert reset_node.factoryReset.call_count == 3
+
+
+@pytest.mark.unit
+def test_local_factory_reset_resend_send_failure_does_not_crash() -> None:
+    """A failed resend attempt is contained and the canonical timeout remains."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=Acknowledgment(),
+        _retire_wait_request=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(iface=iface)
+    reset_node.factoryReset = MagicMock(
+        side_effect=[SimpleNamespace(id=911), RuntimeError("port closed")]
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Timed out waiting for a factory reset acknowledgment or reboot disconnect",
+    ):
+        with patch.object(
+            device_actions, "FACTORY_RESET_RESEND_INTERVAL_SECONDS", 0.05
+        ):
+            main_module._send_local_factory_reset_and_wait(
+                reset_node,
+                full=False,
+                timeout=0.3,
+            )
+
+    assert reset_node.factoryReset.call_count == 2

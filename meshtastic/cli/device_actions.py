@@ -50,8 +50,10 @@ logger = logging.getLogger(__name__)
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS: float = 20.0
 FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS: int = 3
 FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS: float = 1.0
-FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS: float = 20.0
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS: float = 40.0
 FACTORY_RESET_ACCEPTANCE_POLL_SECONDS: float = 0.05
+FACTORY_RESET_RESEND_INTERVAL_SECONDS: float = 4.0
+FACTORY_RESET_MAX_SENDS: int = 4
 POSITION_ALTITUDE_MIN = -(1 << 31)
 POSITION_ALTITUDE_MAX = (1 << 31) - 1
 OTA_REBOOT_WAIT_SECONDS: float = 5.0
@@ -136,6 +138,10 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         If the supplied timeout is not positive.
     MeshInterface.MeshInterfaceError
         If the request is rejected or no acceptance/reboot signal arrives.
+
+    The request is resent on a bounded interval while acceptance remains
+    pending; some devices silently drop the first destructive request. The
+    overall acceptance deadline is never extended.
     """
     reset_interface = reset_node.iface
     acceptance_timeout = (
@@ -169,6 +175,8 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         # Genuine reset transport loss remains visible through the connection and
         # transport snapshots below even if publication raced with this boundary.
         request_queued.set()
+        sends = 1
+        last_send_monotonic = time.monotonic()
 
         raw_request_id = getattr(request, "id", None)
         if isinstance(raw_request_id, int) and not isinstance(raw_request_id, bool):
@@ -181,6 +189,7 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         raise_wait_error = getattr(
             reset_interface, "_raise_wait_error_if_present", None
         )
+        retire_wait = getattr(reset_interface, "_retire_wait_request", None)
         scoped_wait_available = (
             request_id is not None
             and callable(wait_for_request_ack)
@@ -193,6 +202,59 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
+
+            if (
+                sends < FACTORY_RESET_MAX_SENDS
+                and not disconnect_observed.is_set()
+                and time.monotonic() - last_send_monotonic
+                >= FACTORY_RESET_RESEND_INTERVAL_SECONDS
+            ):
+                if callable(retire_wait) and request_id is not None:
+                    retire_wait("receivedNak", request_id=request_id)
+                if callable(reset_acknowledgment):
+                    reset_acknowledgment()
+                try:
+                    resend = reset_node.factoryReset(full=full)
+                except Exception:
+                    logger.debug(
+                        "Factory reset resend attempt failed; waiting on the "
+                        "original request instead.",
+                        exc_info=True,
+                    )
+                    sends = FACTORY_RESET_MAX_SENDS
+                    last_send_monotonic = time.monotonic()
+                else:
+                    last_send_monotonic = time.monotonic()
+                    if resend is None:
+                        sends = FACTORY_RESET_MAX_SENDS
+                    else:
+                        request = resend
+                        sends += 1
+                        request_id = None
+                        raw_request_id = getattr(request, "id", None)
+                        if (
+                            isinstance(raw_request_id, int)
+                            and not isinstance(raw_request_id, bool)
+                            and raw_request_id > 0
+                        ):
+                            request_id = raw_request_id
+                        scoped_wait_available = (
+                            request_id is not None
+                            and callable(wait_for_request_ack)
+                            and callable(raise_wait_error)
+                        )
+                        socket_after_send = getattr(
+                            reset_interface, "socket", missing_transport
+                        )
+                        stream_after_send = getattr(
+                            reset_interface, "stream", missing_transport
+                        )
+                        logger.info(
+                            "Factory reset acceptance pending; resent request "
+                            "(%d/%d)",
+                            sends,
+                            FACTORY_RESET_MAX_SENDS,
+                        )
 
             if (
                 scoped_wait_available

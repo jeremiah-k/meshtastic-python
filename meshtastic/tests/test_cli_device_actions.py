@@ -854,7 +854,10 @@ def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_fai
     iface._acknowledgment.receivedNak = False
     node = MagicMock(iface=iface)
     node.factoryReset.return_value = SimpleNamespace(id=0)
-    ticks = iter([0.0, 2.0])
+    # Two monotonic reads precede the deadline: the last-send stamp and the deadline
+    # itself. The first loop check must then see a clock past the 1.0s deadline so the
+    # wait times out instead of polling on a frozen clock.
+    ticks = iter([0.0, 0.0, 2.0])
     _install_clock(monkeypatch, monotonic=lambda: next(ticks, 2.0))
     monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
     monkeypatch.setattr(
