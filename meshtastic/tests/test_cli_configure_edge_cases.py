@@ -74,6 +74,32 @@ def _hooks(**overrides: Any) -> ConfigureHooks:
     return ConfigureHooks(**values)
 
 
+def _action_hooks(**overrides: Any) -> ConfigureActionHooks:
+    """Build configure-action hooks with deterministic defaults.
+
+    Parameters
+    ----------
+    **overrides : Any
+        Hook values that should replace the focused-test defaults.
+
+    Returns
+    -------
+    ConfigureActionHooks
+        Fully populated configure-action dependency seams.
+    """
+    values: dict[str, Any] = {
+        "handle_set_command": MagicMock(),
+        "handle_configure_command": MagicMock(return_value=(False, False)),
+        "export_config": MagicMock(return_value="yaml"),
+        "export_profile": MagicMock(return_value=b""),
+        "cli_exit": cast(CliExit, _cli_exit),
+        "cli_print": MagicMock(),
+        "is_local_destination": MagicMock(return_value=True),
+    }
+    values.update(overrides)
+    return ConfigureActionHooks(**values)
+
+
 def _interface(connected: bool = True) -> MagicMock:
     """Build a specced interface with controllable connection state.
 
@@ -684,13 +710,8 @@ def test_configure_actions_remote_export_and_write_failure(tmp_path: Path) -> No
         outcome=ActionOutcome(),
     )
     export_config = MagicMock(return_value="yaml")
-    action_hooks = ConfigureActionHooks(
-        handle_set_command=MagicMock(),
-        handle_configure_command=MagicMock(return_value=(False, False)),
+    action_hooks = _action_hooks(
         export_config=export_config,
-        export_profile=MagicMock(return_value=b""),
-        cli_exit=cast(CliExit, _cli_exit),
-        cli_print=MagicMock(),
         is_local_destination=MagicMock(return_value=False),
     )
     configure_actions._handle_configure_actions(remote_context, action_hooks)
@@ -708,14 +729,12 @@ def test_configure_actions_remote_export_and_write_failure(tmp_path: Path) -> No
         get_node_kwargs={},
         outcome=ActionOutcome(),
     )
-    local_hooks = ConfigureActionHooks(
+    local_hooks = _action_hooks(
         handle_set_command=action_hooks.handle_set_command,
         handle_configure_command=action_hooks.handle_configure_command,
         export_config=action_hooks.export_config,
-        export_profile=MagicMock(return_value=b""),
         cli_exit=action_hooks.cli_exit,
         cli_print=action_hooks.cli_print,
-        is_local_destination=MagicMock(return_value=True),
     )
     with pytest.raises(SystemExit):
         configure_actions._handle_configure_actions(local_context, local_hooks)
@@ -787,15 +806,7 @@ def test_configure_actions_no_export_and_stdout_export(
     """Configure dispatch should cover the no-export fast path and stdout payload path."""
     interface = cast(MeshInterface, MagicMock())
     export_config = MagicMock(return_value="config: true\n")
-    hooks = ConfigureActionHooks(
-        handle_set_command=MagicMock(),
-        handle_configure_command=MagicMock(return_value=(False, False)),
-        export_config=export_config,
-        export_profile=MagicMock(return_value=b""),
-        cli_exit=cast(CliExit, _cli_exit),
-        cli_print=MagicMock(),
-        is_local_destination=MagicMock(return_value=True),
-    )
+    hooks = _action_hooks(export_config=export_config)
     no_export = CliContext(
         interface=interface,
         args=argparse.Namespace(
@@ -827,16 +838,10 @@ def test_configure_export_restricts_existing_file_permissions(tmp_path: Path) ->
     export_path.write_text("stale: true\n", encoding="utf-8")
     export_path.chmod(0o644)
     interface = cast(MeshInterface, MagicMock())
-    hooks = ConfigureActionHooks(
-        handle_set_command=MagicMock(),
-        handle_configure_command=MagicMock(return_value=(False, False)),
+    hooks = _action_hooks(
         export_config=MagicMock(
             return_value="config:\n  security:\n    privateKey: secret\n"
-        ),
-        export_profile=MagicMock(return_value=b""),
-        cli_exit=cast(CliExit, _cli_exit),
-        cli_print=MagicMock(),
-        is_local_destination=MagicMock(return_value=True),
+        )
     )
     context = CliContext(
         interface=interface,
@@ -960,14 +965,9 @@ def test_configure_noop_does_not_arm_shared_ack_wait() -> None:
     """A confirmed configure no-op must not wait for an acknowledgment never sent."""
     interface = _interface()
     result = configure_actions._ConfigureCommandResult(False, False, request_sent=False)
-    hooks = ConfigureActionHooks(
-        handle_set_command=MagicMock(),
+    hooks = _action_hooks(
         handle_configure_command=MagicMock(return_value=result),
         export_config=MagicMock(),
-        export_profile=MagicMock(return_value=b""),
-        cli_exit=cast(CliExit, _cli_exit),
-        cli_print=MagicMock(),
-        is_local_destination=MagicMock(return_value=True),
     )
     context = CliContext(
         interface=interface,
@@ -991,14 +991,10 @@ def test_set_ack_wait_survives_later_configure_noop() -> None:
     interface = _interface()
     result = configure_actions._ConfigureCommandResult(False, False, request_sent=False)
     set_command = MagicMock()
-    hooks = ConfigureActionHooks(
+    hooks = _action_hooks(
         handle_set_command=set_command,
         handle_configure_command=MagicMock(return_value=result),
         export_config=MagicMock(),
-        export_profile=MagicMock(return_value=b""),
-        cli_exit=cast(CliExit, _cli_exit),
-        cli_print=MagicMock(),
-        is_local_destination=MagicMock(return_value=True),
     )
     context = CliContext(
         interface=interface,
@@ -1023,15 +1019,7 @@ def test_set_ack_wait_survives_later_configure_noop() -> None:
 def test_configure_plain_tuple_hook_retains_legacy_ack_behavior() -> None:
     """Downstream hook doubles returning plain tuples keep legacy ACK semantics."""
     interface = _interface()
-    hooks = ConfigureActionHooks(
-        handle_set_command=MagicMock(),
-        handle_configure_command=MagicMock(return_value=(False, False)),
-        export_config=MagicMock(),
-        export_profile=MagicMock(return_value=b""),
-        cli_exit=cast(CliExit, _cli_exit),
-        cli_print=MagicMock(),
-        is_local_destination=MagicMock(return_value=True),
-    )
+    hooks = _action_hooks(export_config=MagicMock())
     context = CliContext(
         interface=interface,
         args=argparse.Namespace(
