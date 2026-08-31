@@ -321,3 +321,40 @@ def test_repeated_message_parser_reports_bracketed_invalid_json(
 
     out, err = capsys.readouterr()
     assert "Invalid JSON value" in out + err
+
+
+@pytest.mark.unit
+def test_invalid_element_diagnostic_redacts_secret_and_avoids_nested_repr() -> None:
+    """A non-mapping element is echoed without nested repr quoting, and a
+    secret-bearing path never exposes the raw input in the diagnostic."""
+    from meshtastic.cli import preference_runtime
+
+    repeated_message = (
+        localonly_pb2.LocalModuleConfig().mesh_beacon.DESCRIPTOR.fields_by_name[
+            "broadcast_targets"
+        ]
+    )
+    reported: list[str] = []
+
+    def reporter(message: str, **_kwargs: object) -> None:
+        reported.append(message)
+
+    assert preference_runtime._parse_repeated_message_value(
+        repeated_message,
+        '["element"]',
+        field_path="security.admin_key",
+        cli_print=reporter,
+    ) == (False, [])
+    secret_message = reported[-1]
+    assert "<redacted>" in secret_message
+    assert '["element"]' not in secret_message
+
+    assert preference_runtime._parse_repeated_message_value(
+        repeated_message,
+        '["element"]',
+        field_path="mesh_beacon.broadcast_targets",
+        cli_print=reporter,
+    ) == (False, [])
+    plain_message = reported[-1]
+    assert '["element"] for mesh_beacon.broadcast_targets' in plain_message
+    assert "'[\"element\"]'" not in plain_message
