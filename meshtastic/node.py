@@ -1762,16 +1762,18 @@ class Node:  # pylint: disable=too-many-instance-attributes
         request = _send_admin_with_ack_scope(
             self,
             message,
-            scope_ack=True,
+            scope_ack=False,
             wantResponse=True,
             onResponse=_on_response,
         )
         if request is None:
             return None
         # A want_response admin request is answered by the data response
-        # itself; firmware sends no separate RoutingACK for it, so waiting on
-        # scoped ACK bookkeeping here would block past the bounded response
-        # wait. The correlated-response event below decides success.
+        # itself; firmware sends no separate RoutingACK for it, so no scoped
+        # ACK bookkeeping is registered (``scope_ack=False``) and nothing ever
+        # retires it. The bounded correlated-response event below decides
+        # success, and skipping the WAIT_ATTR_NAK registration keeps the
+        # response handler prunable when the device never answers.
         if not completed.wait(timeout=response_timeout_seconds):
             return None
         return result

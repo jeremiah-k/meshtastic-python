@@ -53,9 +53,10 @@ def _stub_node_for_request(
         adminIndex: int | None = None,
         responseWaitAttr: str | None = None,
     ) -> mesh_pb2.MeshPacket:
-        _ = (wantResponse, adminIndex, responseWaitAttr)
+        _ = (wantResponse, adminIndex)
         captured["msg"] = msg
         captured["onResponse"] = onResponse
+        captured["responseWaitAttr"] = responseWaitAttr
         return mesh_pb2.MeshPacket(id=1)
 
     node._send_admin = _fake_send_admin  # type: ignore[assignment]
@@ -89,6 +90,9 @@ def test_requestUiConfig_returns_config_when_response_fires() -> None:
     result = node.requestUiConfig(response_timeout_seconds=2.0)
     assert result == expected
     assert captured["msg"].HasField("get_ui_config_request") is True
+    # Response-only requests wait on the correlated response event; they must
+    # not register scoped WAIT_ATTR_NAK bookkeeping that nothing retires.
+    assert captured["responseWaitAttr"] is None
 
 
 @pytest.mark.unit
