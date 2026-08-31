@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import math
 import threading
+import time
+from _thread import LockType
 from typing import Literal
+from weakref import WeakKeyDictionary
 
 from pubsub import pub
 
@@ -21,6 +24,9 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2
 
 DEFAULT_KEY_VERIFICATION_TIMEOUT_SECONDS = 60.0
+
+_INITIATE_LOCKS_GUARD = threading.Lock()
+_INITIATE_LOCKS: WeakKeyDictionary[MeshInterface, LockType] = WeakKeyDictionary()
 
 STAGE_INITIATE = "initiate"
 STAGE_PROVIDE = "provide"
@@ -128,6 +134,27 @@ def _notification_nonce(notification: mesh_pb2.ClientNotification) -> int | None
     return None
 
 
+def _initiate_lock_for(interface: MeshInterface) -> LockType:
+    """Return the lock serializing nonce-zero initiations for one interface.
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        Connected interface whose initiation handshake must remain exclusive.
+
+    Returns
+    -------
+    LockType
+        Shared lock for initiation handshakes on ``interface``.
+    """
+    with _INITIATE_LOCKS_GUARD:
+        lock = _INITIATE_LOCKS.get(interface)
+        if lock is None:
+            lock = threading.Lock()
+            _INITIATE_LOCKS[interface] = lock
+        return lock
+
+
 def send_key_verification(
     interface: MeshInterface,
     request: admin_pb2.KeyVerificationAdmin,
@@ -168,39 +195,58 @@ def send_key_verification(
     if my_info is None:
         raise RuntimeError("device did not provide my_info")
 
-    expected_notification_field = _EXPECTED_NOTIFICATION_FIELDS.get(
-        request.message_type
-    )
-    event = threading.Event()
-    result: mesh_pb2.ClientNotification | None = None
+    deadline = time.monotonic() + timeout
+    initiate_lock: LockType | None = None
+    if request.message_type == admin_pb2.KeyVerificationAdmin.INITIATE_VERIFICATION:
+        initiate_lock = _initiate_lock_for(interface)
+        if not initiate_lock.acquire(timeout=timeout):
+            raise TimeoutError(
+                "timed out waiting for another key-verification initiation to finish"
+            )
 
-    def _on_notification(
-        *,
-        interface: object,
-        notification: mesh_pb2.ClientNotification,
-        **_kwargs: object,
-    ) -> None:
-        nonlocal result
-        if interface is not local_interface:
-            return
-        if notification.WhichOneof("payload_variant") != expected_notification_field:
-            return
-        nonce = _notification_nonce(notification)
-        if nonce is None:
-            return
-        if request.nonce and nonce != request.nonce:
-            # Later stages must match the handshake they belong to; the
-            # initiate stage (nonce 0) accepts the first fresh notification.
-            return
-        copied = mesh_pb2.ClientNotification()
-        copied.CopyFrom(notification)
-        result = copied
-        event.set()
-
-    local_interface: object = interface
-    if expected_notification_field is not None:
-        pub.subscribe(_on_notification, CLIENT_NOTIFICATION_TOPIC)
+    subscribed = False
     try:
+        if initiate_lock is not None and time.monotonic() >= deadline:
+            raise TimeoutError(
+                "timed out waiting for another key-verification initiation to finish"
+            )
+        expected_notification_field = _EXPECTED_NOTIFICATION_FIELDS.get(
+            request.message_type
+        )
+        event = threading.Event()
+        result: mesh_pb2.ClientNotification | None = None
+        local_interface: object = interface
+
+        def _on_notification(
+            *,
+            interface: object,
+            notification: mesh_pb2.ClientNotification,
+            **_kwargs: object,
+        ) -> None:
+            nonlocal result
+            if interface is not local_interface:
+                return
+            if (
+                notification.WhichOneof("payload_variant")
+                != expected_notification_field
+            ):
+                return
+            nonce = _notification_nonce(notification)
+            if nonce is None:
+                return
+            if request.nonce and nonce != request.nonce:
+                # Later stages must match the handshake they belong to; the
+                # initiate stage (nonce 0) accepts the first fresh notification.
+                return
+            copied = mesh_pb2.ClientNotification()
+            copied.CopyFrom(notification)
+            result = copied
+            event.set()
+
+        if expected_notification_field is not None:
+            pub.subscribe(_on_notification, CLIENT_NOTIFICATION_TOPIC)
+            subscribed = True
+
         admin = admin_pb2.AdminMessage()
         admin.key_verification.CopyFrom(request)
         interface.sendData(
@@ -214,9 +260,12 @@ def send_key_verification(
         )
         if expected_notification_field is None:
             return None
-        if event.wait(timeout):
+        remaining = max(deadline - time.monotonic(), 0.0)
+        if event.wait(remaining):
             return result
         raise TimeoutError("no key-verification notification received before timeout")
     finally:
-        if expected_notification_field is not None:
+        if subscribed:
             pub.unsubscribe(_on_notification, CLIENT_NOTIFICATION_TOPIC)
+        if initiate_lock is not None:
+            initiate_lock.release()
