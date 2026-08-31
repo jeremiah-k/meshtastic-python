@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+from types import MethodType, SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -271,6 +272,16 @@ class TestNodeSettingsRuntime:
         correlated for the local node, so a cleared section stays at protobuf
         defaults and later comparisons read manufactured values.
         """
+        iface = mock_local_node.iface
+        scoped_waits: list[int] = []
+        iface._extract_request_id_from_sent_packet = MagicMock(return_value=7)
+        iface._has_active_wait_request = MethodType(
+            lambda self, acknowledgment_attr, request_id: False, iface
+        )
+        iface._wait_for_ack_nak = MethodType(
+            lambda self, request_id: scoped_waits.append(request_id), iface
+        )
+        mock_local_node._send_admin = MagicMock(return_value=SimpleNamespace(id=7))
         builder = _NodeSettingsMessageBuilder(mock_local_node)
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
 
@@ -279,11 +290,35 @@ class TestNodeSettingsRuntime:
         mock_local_node._send_admin.assert_called_once()
         call_kwargs = mock_local_node._send_admin.call_args[1]
         assert call_kwargs["wantResponse"] is True
-        assert (
-            call_kwargs["onResponse"]
-            is mock_local_node.onResponseRequestSettings
+        assert call_kwargs["onResponse"] is mock_local_node.onResponseRequestSettings
+        assert scoped_waits == []
+        iface.waitForAckNak.assert_not_called()
+
+    @pytest.mark.unit
+    def test_request_config_local_node_waits_via_scoped_bookkeeping(
+        self, mock_local_node: MagicMock
+    ) -> None:
+        """When scoped ACK bookkeeping is registered, the local settings
+        request waits on the request-scoped helper instead of the legacy
+        interface ACK wait."""
+        scoped_waits: list[int] = []
+        iface = mock_local_node.iface
+        iface._wait_for_ack_nak = MethodType(
+            lambda self, request_id: scoped_waits.append(request_id), iface
         )
-        mock_local_node.iface.waitForAckNak.assert_called_once()
+        iface._has_active_wait_request = MethodType(
+            lambda self, acknowledgment_attr, request_id: True, iface
+        )
+        iface._extract_request_id_from_sent_packet = MagicMock(return_value=7)
+        mock_local_node._send_admin = MagicMock(return_value=SimpleNamespace(id=7))
+
+        builder = _NodeSettingsMessageBuilder(mock_local_node)
+        runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
+
+        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+
+        assert scoped_waits == [7]
+        iface.waitForAckNak.assert_not_called()
 
     @pytest.mark.unit
     def test_request_config_local_node_applies_response_to_local_config(
@@ -305,9 +340,7 @@ class TestNodeSettingsRuntime:
             on_response = kwargs.get("onResponse")
             assert on_response is not None
             raw = admin_pb2.AdminMessage()
-            raw.get_config_response.device.CopyFrom(
-                mock_local_node.localConfig.device
-            )
+            raw.get_config_response.device.CopyFrom(mock_local_node.localConfig.device)
             raw.get_config_response.device.node_info_broadcast_secs = 10800
             on_response(
                 {
@@ -327,9 +360,7 @@ class TestNodeSettingsRuntime:
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
         runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
 
-        assert (
-            mock_local_node.localConfig.device.node_info_broadcast_secs == 10800
-        )
+        assert mock_local_node.localConfig.device.node_info_broadcast_secs == 10800
 
     @pytest.mark.unit
     def test_request_config_remote_node_sends_with_callback(

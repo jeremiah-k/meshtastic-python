@@ -140,6 +140,17 @@ def _get_bound_interface_helper(node: "Node", name: str) -> Callable[..., Any] |
     return None
 
 
+def _request_is_scoped(node: "Node", request: mesh_pb2.MeshPacket | None) -> bool:
+    """Return whether one sent request carries active scoped wait bookkeeping."""
+    request_id = _extract_request_id_from_sent_packet(node, request)
+    has_active_wait = _get_bound_interface_helper(node, "_has_active_wait_request")
+    return (
+        request_id is not None
+        and has_active_wait is not None
+        and bool(has_active_wait(WAIT_ATTR_NAK, request_id))
+    )
+
+
 def _wait_for_admin_ack(node: "Node", request: mesh_pb2.MeshPacket | None) -> None:
     """Wait for the ACK/NAK that belongs to one remote admin request.
 
@@ -148,15 +159,8 @@ def _wait_for_admin_ack(node: "Node", request: mesh_pb2.MeshPacket | None) -> No
     and minimal interface doubles without the scoped helper retain that legacy
     fallback.
     """
-    request_id = _extract_request_id_from_sent_packet(node, request)
     scoped_wait = _get_bound_interface_helper(node, "_wait_for_ack_nak")
-    has_active_wait = _get_bound_interface_helper(node, "_has_active_wait_request")
-    request_is_scoped = (
-        request_id is not None
-        and has_active_wait is not None
-        and bool(has_active_wait(WAIT_ATTR_NAK, request_id))
-    )
-    if request_is_scoped and scoped_wait is not None:
-        scoped_wait(request_id)
+    if _request_is_scoped(node, request) and scoped_wait is not None:
+        scoped_wait(_extract_request_id_from_sent_packet(node, request))
         return
     node.iface.waitForAckNak()
