@@ -16,6 +16,7 @@ from typing import Any
 
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import ParseDict, ParseError
+from google.protobuf.message_factory import GetMessageClass
 
 import meshtastic.util
 from meshtastic.cli.values import parse_bitfield_value
@@ -491,7 +492,7 @@ def _assign_repeated_message_pref_value(
     candidate.CopyFrom(target)
     field_container = getattr(candidate, pref.name)
     del field_container[:]
-    submsg_class = pref.message_type._concrete_class  # type: ignore[union-attr]
+    submsg_class = GetMessageClass(pref.message_type)
     for index, element in enumerate(elements):
         submsg = submsg_class()
         try:
