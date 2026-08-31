@@ -321,6 +321,65 @@ def _resolve_enum_value(
     return False, value
 
 
+def _resolve_repeated_enum_tokens(
+    pref: FieldDescriptor,
+    value: str,
+    *,
+    field_path: str,
+    name: list[str],
+    display_name: str,
+    cli_print: Callable[..., None],
+) -> tuple[bool, list[int]]:
+    """Resolve comma-separated enum names for one repeated enum field.
+
+    Parameters
+    ----------
+    pref : FieldDescriptor
+        Descriptor of the repeated enum field being assigned.
+    value : str
+        Raw comma-separated enum name list, e.g. ``"ENUM_A,ENUM_B"``.
+    field_path : str
+        Fully qualified preference path used in validation messages.
+    name : list[str]
+        Compound preference name segments used in enum diagnostics.
+    display_name : str
+        Display name of the field used in enum diagnostics.
+    cli_print : Callable[..., None]
+        CLI diagnostic reporter.
+
+    Returns
+    -------
+    tuple[bool, list[int]]
+        ``(True, resolved_numbers)`` when every token names an enum member;
+        ``(False, [])`` after reporting the standard enum diagnostics or the
+        standard rejection for a separator-only value.
+    """
+    tokens = [part.strip() for part in value.split(",") if part.strip()]
+    if not tokens:
+        return (
+            reject_pref_value(
+                pref,
+                field_path=field_path,
+                raw_value=value,
+                cli_print=cli_print,
+            ),
+            [],
+        )
+    resolved: list[int] = []
+    for token in tokens:
+        token_ok, number = _resolve_enum_value(
+            pref,
+            token,
+            name=name,
+            display_name=display_name,
+            cli_print=cli_print,
+        )
+        if not token_ok:
+            return False, []
+        resolved.append(number)
+    return True, resolved
+
+
 def _parse_repeated_message_value(
     pref: FieldDescriptor,
     raw_value: Any,
@@ -561,6 +620,23 @@ def set_pref(
             cli_print=cli_print,
         )
         return False
+
+    if (
+        is_repeated_field(pref)
+        and pref.enum_type is not None
+        and isinstance(value, str)
+        and "," in value
+    ):
+        tokens_ok, value = _resolve_repeated_enum_tokens(
+            pref,
+            value,
+            field_path=normalized,
+            name=name,
+            display_name=display_name,
+            cli_print=cli_print,
+        )
+        if not tokens_ok:
+            return False
 
     enum_ok, value = _resolve_enum_value(
         pref,

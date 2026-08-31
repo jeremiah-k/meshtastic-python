@@ -10,8 +10,11 @@ array literal in a single ``--set`` token.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from functools import lru_cache
+from typing import Any
 
 import pytest
+from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
 from meshtastic.__main__ import setPref
 from meshtastic.protobuf import config_pb2, localonly_pb2, module_config_pb2
@@ -166,6 +169,74 @@ def test_repeated_scalar_list_path_still_works() -> None:
     assert setPref(config, "lora.ignore_incoming", ["4", "8"]) is True
 
     assert list(config.lora.ignore_incoming) == [4, 8]
+
+
+@lru_cache(maxsize=1)
+def _repeated_enum_config_class() -> type[Any]:
+    """Build a dynamic message with one repeated enum field.
+
+    No shipped Meshtastic protobuf declares a repeated enum field, so the
+    batch path is exercised against a dynamically constructed descriptor.
+    """
+    file_proto = descriptor_pb2.FileDescriptorProto()
+    file_proto.name = "mtjk_repeated_enum_test.proto"
+    file_proto.package = "mtjk.test"
+    palette = file_proto.message_type.add()
+    palette.name = "Palette"
+    color = palette.enum_type.add()
+    color.name = "Color"
+    for member in (("RED", 1), ("GREEN", 2)):
+        enum_value = color.value.add()
+        enum_value.name = member[0]
+        enum_value.number = member[1]
+    colors = palette.field.add()
+    colors.name = "colors"
+    colors.number = 1
+    colors.label = colors.LABEL_REPEATED
+    colors.type = colors.TYPE_ENUM
+    colors.type_name = ".mtjk.test.Palette.Color"
+    pool = descriptor_pool.DescriptorPool()
+    classes = message_factory.GetMessages([file_proto], pool=pool)
+    return classes["mtjk.test.Palette"]
+
+
+@pytest.mark.unit
+def test_repeated_enum_field_accepts_comma_separated_names() -> None:
+    """A comma-separated enum name list resolves per token on repeated enums."""
+    palette = _repeated_enum_config_class()()
+
+    assert setPref(palette, "colors", "RED, GREEN") is True
+
+    assert list(palette.colors) == [
+        palette.Color.Value("RED"),
+        palette.Color.Value("GREEN"),
+    ]
+
+
+@pytest.mark.unit
+def test_repeated_enum_field_rejects_unknown_token_without_clearing() -> None:
+    """An unknown token rejects the batch and leaves existing entries intact."""
+    palette_class = _repeated_enum_config_class()
+    palette = palette_class()
+    palette.colors.extend([palette_class.Color.Value("RED")])
+    before = palette.SerializeToString()
+
+    assert setPref(palette, "colors", "RED,BOGUS") is False
+
+    assert palette.SerializeToString() == before
+
+
+@pytest.mark.unit
+def test_repeated_enum_field_rejects_separator_only_value() -> None:
+    """A separator-only value rejects without clearing existing entries."""
+    palette_class = _repeated_enum_config_class()
+    palette = palette_class()
+    palette.colors.extend([palette_class.Color.Value("GREEN")])
+    before = palette.SerializeToString()
+
+    assert setPref(palette, "colors", ", ,") is False
+
+    assert palette.SerializeToString() == before
 
 
 @pytest.mark.unit
