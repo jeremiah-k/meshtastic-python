@@ -354,15 +354,15 @@ def _post_configure_reconnect_and_verify(
                 start_config()
             except Exception:
                 logger.warning(
-                    "Failed to bump config generation after reconnect; "
-                    "configuration may still be applying.",
+                    "Failed to request a fresh config generation after reconnect; "
+                    "waiting for config completion anyway.",
                     exc_info=True,
                 )
-                return ConfigureReconnectResult.CONFIG_RELOAD_FAILED
-            logger.debug(
-                "No reboot observed via generation counter; "
-                "requested fresh full config via want_config_id."
-            )
+            else:
+                logger.debug(
+                    "No reboot observed via generation counter; "
+                    "requested fresh full config via want_config_id."
+                )
 
     try:
         interface.waitForConfig()
