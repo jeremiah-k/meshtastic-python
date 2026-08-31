@@ -16,6 +16,7 @@ from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2
 
 
 def _interface_with_node_num(node_num: int) -> MagicMock:
+    """Build a MeshInterface double that reports one local node number."""
     interface = MagicMock(spec=MeshInterface)
     interface.myInfo = MagicMock()
     interface.myInfo.my_node_num = node_num
@@ -111,6 +112,7 @@ def test_send_targets_local_node_over_admin_app() -> None:
 
 
 def _number_request_notification(nonce: int) -> mesh_pb2.ClientNotification:
+    """Build a security-number-request notification for one handshake nonce."""
     notification = mesh_pb2.ClientNotification()
     notification.key_verification_number_request.nonce = nonce
     notification.key_verification_number_request.remote_longname = "Repeater"
@@ -118,6 +120,7 @@ def _number_request_notification(nonce: int) -> mesh_pb2.ClientNotification:
 
 
 def _final_notification(nonce: int) -> mesh_pb2.ClientNotification:
+    """Build a final key-verification notification for one handshake nonce."""
     notification = mesh_pb2.ClientNotification()
     notification.key_verification_final.nonce = nonce
     notification.key_verification_final.remote_longname = "Repeater"
