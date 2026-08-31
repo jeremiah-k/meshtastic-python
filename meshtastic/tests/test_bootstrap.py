@@ -2,7 +2,7 @@
 
 import argparse
 from pathlib import Path
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -39,7 +39,7 @@ def test_ota_preflight_forces_no_nodes_before_transport_open(tmp_path: Path) -> 
         seriallog=None,
         noproto=False,
     )
-    hooks = create_autospec(bootstrap.BootstrapHooks, instance=True)
+    hooks = MagicMock(autospec=bootstrap.BootstrapHooks)
 
     bootstrap._validate_and_normalize_args(args, MagicMock(), hooks)
 
