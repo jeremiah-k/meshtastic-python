@@ -213,52 +213,75 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
                 and time.monotonic() - last_send_monotonic
                 >= FACTORY_RESET_RESEND_INTERVAL_SECONDS
             ):
-                if callable(retire_wait) and request_id is not None:
-                    retire_wait("receivedNak", request_id=request_id)
-                if callable(reset_acknowledgment):
-                    reset_acknowledgment()
-                try:
-                    resend = reset_node.factoryReset(full=full)
-                except Exception:
-                    logger.debug(
-                        "Factory reset resend attempt failed; waiting on the "
-                        "original request instead.",
-                        exc_info=True,
+                original_acknowledged = bool(
+                    getattr(acknowledgment, "receivedImplAck", False)
+                )
+                if (
+                    not original_acknowledged
+                    and request_id is not None
+                    and callable(wait_for_request_ack)
+                    and wait_for_request_ack(
+                        "receivedNak", request_id, timeout_seconds=0
                     )
+                ):
+                    original_acknowledged = True
+                if original_acknowledged:
+                    # The original request already carries an acceptance
+                    # signal; resending would retire it and duplicate a
+                    # destructive request. Stop resending and let the
+                    # acceptance checks below return the acknowledged request.
                     sends = FACTORY_RESET_MAX_SENDS
-                    last_send_monotonic = time.monotonic()
                 else:
-                    last_send_monotonic = time.monotonic()
-                    if resend is None:
+                    try:
+                        resend = reset_node.factoryReset(full=full)
+                    except Exception:
+                        logger.debug(
+                            "Factory reset resend attempt failed; waiting on "
+                            "the original request instead.",
+                            exc_info=True,
+                        )
                         sends = FACTORY_RESET_MAX_SENDS
+                        last_send_monotonic = time.monotonic()
                     else:
-                        request = resend
-                        sends += 1
-                        request_id = None
-                        raw_request_id = getattr(request, "id", None)
-                        if (
-                            isinstance(raw_request_id, int)
-                            and not isinstance(raw_request_id, bool)
-                            and raw_request_id > 0
-                        ):
-                            request_id = raw_request_id
-                        scoped_wait_available = (
-                            request_id is not None
-                            and callable(wait_for_request_ack)
-                            and callable(raise_wait_error)
-                        )
-                        socket_after_send = getattr(
-                            reset_interface, "socket", missing_transport
-                        )
-                        stream_after_send = getattr(
-                            reset_interface, "stream", missing_transport
-                        )
-                        logger.info(
-                            "Factory reset acceptance pending; resent request "
-                            "(%d/%d)",
-                            sends,
-                            FACTORY_RESET_MAX_SENDS,
-                        )
+                        # Retire the original scope and clear stale
+                        # acknowledgment state only once the resend produced a
+                        # request, so a completion for the original request
+                        # stays observable while the resend is in flight.
+                        if callable(retire_wait) and request_id is not None:
+                            retire_wait("receivedNak", request_id=request_id)
+                        if callable(reset_acknowledgment):
+                            reset_acknowledgment()
+                        last_send_monotonic = time.monotonic()
+                        if resend is None:
+                            sends = FACTORY_RESET_MAX_SENDS
+                        else:
+                            request = resend
+                            sends += 1
+                            request_id = None
+                            raw_request_id = getattr(request, "id", None)
+                            if (
+                                isinstance(raw_request_id, int)
+                                and not isinstance(raw_request_id, bool)
+                                and raw_request_id > 0
+                            ):
+                                request_id = raw_request_id
+                            scoped_wait_available = (
+                                request_id is not None
+                                and callable(wait_for_request_ack)
+                                and callable(raise_wait_error)
+                            )
+                            socket_after_send = getattr(
+                                reset_interface, "socket", missing_transport
+                            )
+                            stream_after_send = getattr(
+                                reset_interface, "stream", missing_transport
+                            )
+                            logger.info(
+                                "Factory reset acceptance pending; resent "
+                                "request (%d/%d)",
+                                sends,
+                                FACTORY_RESET_MAX_SENDS,
+                            )
 
             if (
                 scoped_wait_available

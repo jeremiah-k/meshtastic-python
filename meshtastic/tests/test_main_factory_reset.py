@@ -912,6 +912,53 @@ def test_local_factory_reset_resends_while_acceptance_pending() -> None:
 
 
 @pytest.mark.unit
+def test_local_factory_reset_skip_resend_when_original_request_acknowledged() -> None:
+    """An original request completed between polls is returned, not resent."""
+    connected = threading.Event()
+    connected.set()
+    iface = SimpleNamespace(
+        isConnected=connected,
+        _acknowledgment=Acknowledgment(),
+        _retire_wait_request=MagicMock(),
+        _raise_wait_error_if_present=MagicMock(),
+        MeshInterfaceError=RuntimeError,
+    )
+    reset_node = SimpleNamespace(
+        iface=iface,
+        factoryReset=MagicMock(
+            side_effect=[SimpleNamespace(id=300), SimpleNamespace(id=400)]
+        ),
+    )
+    wait_calls = {"count": 0}
+
+    def _acknowledged_after_first_poll(
+        acknowledgment_attr: str, request_id: int, *, timeout_seconds: float = 0.0
+    ) -> bool:
+        _ = (acknowledgment_attr, request_id)
+        wait_calls["count"] += 1
+        if wait_calls["count"] == 1:
+            # Hold the first acceptance poll past the resend interval so the
+            # resend decision observes a completion that arrived right after
+            # the poll saw nothing.
+            time.sleep(0.06)
+            return False
+        return True
+
+    iface._wait_for_request_ack = _acknowledged_after_first_poll
+
+    with patch.object(device_actions, "FACTORY_RESET_RESEND_INTERVAL_SECONDS", 0.05):
+        request = main_module._send_local_factory_reset_and_wait(
+            reset_node,
+            full=False,
+            timeout=0.4,
+        )
+
+    assert request is not None
+    assert request.id == 300
+    assert reset_node.factoryReset.call_count == 1
+
+
+@pytest.mark.unit
 def test_local_factory_reset_resend_caps_at_max_sends() -> None:
     """Resend attempts stop at the configured cap and the timeout still fires."""
     connected = threading.Event()
