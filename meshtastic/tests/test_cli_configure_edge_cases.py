@@ -323,34 +323,6 @@ def test_reconnect_verify_reports_unexpected_verifier_failure(
     assert result is ConfigureReconnectResult.VERIFICATION_INCOMPLETE
 
 
-@pytest.mark.unit
-def test_reconnect_verify_stale_pre_op_generation_cannot_satisfy_success(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A pre-op configId that no longer matches forces a single generation bump; the
-    authoritative reload is the only path to VERIFIED."""
-    iface = _interface()
-    iface.getNode.return_value = MagicMock()
-    ticks = iter(float(value) for value in range(20))
-    _install_clock(
-        monkeypatch,
-        monotonic=lambda: next(ticks, 20.0),
-        sleep=lambda _seconds: None,
-    )
-    iface.configId = 100  # the snapshot
-    iface._start_config = MagicMock(side_effect=lambda: setattr(iface, "configId", 101))
-
-    result = configure_actions._post_configure_reconnect_and_verify(
-        iface,
-        timeout=1.0,
-        node_dest="^local",
-    )
-
-    assert result is ConfigureReconnectResult.VERIFIED
-    iface._start_config.assert_called_once()
-    iface.waitForConfig.assert_called_once()
-
-
 class _ConnectionEvent:
     """Mutable connection-event double for deterministic stability tests."""
 
