@@ -293,3 +293,61 @@ def test_send_ignores_expected_variant_when_nonce_extraction_fails(
 
     with pytest.raises(TimeoutError):
         send_key_verification(interface, request, timeout=0.02)
+
+
+@pytest.mark.unit
+def test_concurrent_initiates_are_serialized_per_interface() -> None:
+    """Two nonce-zero initiations on one interface cannot consume one reply."""
+    interface = _interface_with_node_num(2478223698)
+    first_sent = threading.Event()
+    second_sent = threading.Event()
+    send_count = 0
+    send_count_lock = threading.Lock()
+    results: dict[str, mesh_pb2.ClientNotification] = {}
+    errors: list[Exception] = []
+
+    def _send(_payload: object, _target: int, **_kwargs: object) -> None:
+        nonlocal send_count
+        with send_count_lock:
+            send_count += 1
+            current = send_count
+        (first_sent if current == 1 else second_sent).set()
+
+    interface.sendData.side_effect = _send
+    first = build_key_verification_admin("initiate", remote_nodenum=0x11111111)
+    second = build_key_verification_admin("initiate", remote_nodenum=0x22222222)
+
+    def _run(name: str, request: admin_pb2.KeyVerificationAdmin) -> None:
+        try:
+            result = send_key_verification(interface, request, timeout=2.0)
+            assert result is not None
+            results[name] = result
+        except Exception as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    first_thread = threading.Thread(target=_run, args=("first", first))
+    second_thread = threading.Thread(target=_run, args=("second", second))
+    first_thread.start()
+    assert first_sent.wait(timeout=1.0)
+    second_thread.start()
+    assert not second_sent.wait(timeout=0.05)
+
+    pub.sendMessage(
+        CLIENT_NOTIFICATION_TOPIC,
+        interface=interface,
+        notification=_number_request_notification(101),
+    )
+    assert second_sent.wait(timeout=1.0)
+    pub.sendMessage(
+        CLIENT_NOTIFICATION_TOPIC,
+        interface=interface,
+        notification=_number_request_notification(202),
+    )
+
+    first_thread.join(timeout=1.0)
+    second_thread.join(timeout=1.0)
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert errors == []
+    assert results["first"].key_verification_number_request.nonce == 101
+    assert results["second"].key_verification_number_request.nonce == 202
