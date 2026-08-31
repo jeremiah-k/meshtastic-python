@@ -32,6 +32,36 @@ def _returning_cli_exit(*_args: object, **_kwargs: object) -> None:
     """Model an injected exit seam that incorrectly returns to its caller."""
 
 
+def _reset_args(**overrides: Any) -> argparse.Namespace:
+    """Build reboot/reset argument defaults for factory-reset dispatch tests.
+
+    Parameters
+    ----------
+    **overrides : Any
+        Argument values that replace the shared defaults.
+
+    Returns
+    -------
+    argparse.Namespace
+        Reset command arguments consumed by the reboot/reset handler.
+    """
+    values: dict[str, Any] = {
+        "reboot": False,
+        "reboot_ota": False,
+        "enter_dfu": False,
+        "shutdown": False,
+        "ota_update": None,
+        "device_metadata": False,
+        "begin_edit": False,
+        "commit_edit": False,
+        "factory_reset": False,
+        "factory_reset_device": False,
+        "dest": "^local",
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
 def _hooks(**overrides: Any) -> device_actions.DeviceActionHooks:
     """Build device-action hooks with a deliberately returning exit seam."""
     values: dict[str, Any] = {
@@ -564,19 +594,7 @@ def test_remote_factory_reset_uses_direct_factory_reset() -> None:
     """Remote reset must use Node.factoryReset without the local acceptance probe."""
     interface = MagicMock()
     reset_node = interface.getNode.return_value
-    args = argparse.Namespace(
-        reboot=False,
-        reboot_ota=False,
-        enter_dfu=False,
-        shutdown=False,
-        ota_update=None,
-        device_metadata=False,
-        begin_edit=False,
-        commit_edit=False,
-        factory_reset=True,
-        factory_reset_device=False,
-        dest="!remote",
-    )
+    args = _reset_args(factory_reset=True, factory_reset_device=False, dest="!remote")
     context = CliContext(
         interface=cast(MeshInterface, interface),
         args=args,
@@ -598,25 +616,12 @@ def test_remote_factory_reset_uses_direct_factory_reset() -> None:
 @pytest.mark.unit
 def test_local_factory_reset_device_exits_when_readiness_probe_fails() -> None:
     """A full local factory reset whose readiness probe never reconnects must
-    raise through the cli_exit hook so the CLI exits non-zero. The
-    ``MeshInterface`` import is the same one used by the test file already.
+    raise through the cli_exit hook so the CLI exits non-zero.
     """
     interface = MagicMock()
     reset_node = interface.getNode.return_value
     reset_node.factoryReset = MagicMock()
-    args = argparse.Namespace(
-        reboot=False,
-        reboot_ota=False,
-        enter_dfu=False,
-        shutdown=False,
-        ota_update=None,
-        device_metadata=False,
-        begin_edit=False,
-        commit_edit=False,
-        factory_reset=False,
-        factory_reset_device=True,
-        dest="^local",
-    )
+    args = _reset_args(factory_reset_device=True)
     context = CliContext(
         interface=cast(MeshInterface, interface),
         args=args,
@@ -652,19 +657,7 @@ def test_local_factory_reset_device_fails_closed_when_cli_exit_returns() -> None
     interface = MagicMock()
     reset_node = interface.getNode.return_value
     reset_node.factoryReset = MagicMock()
-    args = argparse.Namespace(
-        reboot=False,
-        reboot_ota=False,
-        enter_dfu=False,
-        shutdown=False,
-        ota_update=None,
-        device_metadata=False,
-        begin_edit=False,
-        commit_edit=False,
-        factory_reset=False,
-        factory_reset_device=True,
-        dest="^local",
-    )
+    args = _reset_args(factory_reset_device=True)
     context = CliContext(
         interface=cast(MeshInterface, interface),
         args=args,
@@ -686,25 +679,14 @@ def test_local_factory_reset_device_fails_closed_when_cli_exit_returns() -> None
     readiness_probe.assert_called_once_with(interface)
     cli_exit.assert_called_once()
 
+
 @pytest.mark.unit
 def test_local_factory_reset_device_succeeds_when_readiness_probe_succeeds() -> None:
     """A successful readiness probe must not invoke cli_exit."""
     interface = MagicMock()
     reset_node = interface.getNode.return_value
     reset_node.factoryReset = MagicMock()
-    args = argparse.Namespace(
-        reboot=False,
-        reboot_ota=False,
-        enter_dfu=False,
-        shutdown=False,
-        ota_update=None,
-        device_metadata=False,
-        begin_edit=False,
-        commit_edit=False,
-        factory_reset=False,
-        factory_reset_device=True,
-        dest="^local",
-    )
+    args = _reset_args(factory_reset_device=True)
     context = CliContext(
         interface=cast(MeshInterface, interface),
         args=args,

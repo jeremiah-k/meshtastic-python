@@ -384,6 +384,10 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> bool:
                 return True
             except Exception as exc:  # noqa: BLE001 - we translate the entire family
                 last_error = exc
+                # A failed connect can leave the port open or reader threads
+                # running; release it so the next attempt fails only when the
+                # device is genuinely absent, not because the tty is held.
+                _safe_close()
                 if attempt_index + 1 < FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS:
                     logger.debug(
                         "Factory reset: probe attempt %d/%d failed (%s); retrying in %.1fs.",
