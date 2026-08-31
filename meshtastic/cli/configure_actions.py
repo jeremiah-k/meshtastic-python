@@ -42,6 +42,8 @@ from meshtastic.configure_verify import (
     _verify_post_reconnect_config,
 )
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.node import ADMIN_RESPONSE_WAIT_SECONDS
+from meshtastic.protobuf import admin_pb2, mesh_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -829,6 +831,46 @@ def _load_and_validate_configure_document(
     )
 
 
+def _local_owner_is_licensed_via_admin(target_node: Any) -> bool | None:
+    """Read the local node's licensed flag from the device's own owner record.
+
+    A nodeless connection (``--no-nodes``) can leave the client node database
+    without the local entry that ``getMyUser()`` reads, so fall back to the
+    admin ``get_owner`` getter — the same channel the owner write itself uses.
+    The device's answer is authoritative and does not depend on ``nodesByNum``.
+
+    Parameters
+    ----------
+    target_node : Any
+        Local node whose owner record is read.
+
+    Returns
+    -------
+    bool | None
+        The current ``isLicensed`` value, or ``None`` when the node does not
+        support the admin owner-getter seam, does not answer in time, or the
+        transport rejects the request.
+    """
+    request_admin_response = getattr(target_node, "_request_admin_response", None)
+    if not callable(request_admin_response):
+        return None
+    message = admin_pb2.AdminMessage()
+    message.get_owner_request = True
+    try:
+        owner = request_admin_response(
+            message,
+            "get_owner_response",
+            mesh_pb2.User,
+            response_timeout_seconds=ADMIN_RESPONSE_WAIT_SECONDS,
+        )
+    except Exception:  # pylint: disable=broad-except
+        logger.debug("Local owner state request failed.", exc_info=True)
+        return None
+    if owner is None:
+        return None
+    return bool(owner.is_licensed)
+
+
 def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
     """Return the target's current licensed flag for partial owner-profile writes.
 
@@ -839,8 +881,10 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
 
     target_node : Any
         Target node whose owner state is read. For the local node the public
-        :meth:`MeshInterface.getMyUser` path is preferred so a populated node
-        database is not required; remote targets read their node-database entry.
+        :meth:`MeshInterface.getMyUser` path is preferred, then the device's
+        own owner record via the admin ``get_owner`` getter, so a populated
+        node database is not required; remote targets read their
+        node-database entry.
 
     Returns
     -------
@@ -855,6 +899,9 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
         stored ``isLicensed`` value is not boolean. A guessed default would
         risk silently clearing HAM mode on real hardware, so missing local
         state under ``--no-nodes`` still terminates rather than assuming.
+        Local state missing from the client snapshot is first re-read from
+        the device itself; only a device that does not answer counts as
+        genuinely unavailable.
     """
     node_num = getattr(target_node, "nodeNum", None)
     interface = getattr(target_node, "iface", None)
@@ -870,13 +917,22 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
             "Unable to preserve the current licensed flag: target owner state is unavailable.",
         )
     user: dict[str, Any] | None = None
+    is_local_target = my_node_num is not None and node_num == my_node_num
     with node_db_lock:
-        if my_node_num is not None and node_num == my_node_num:
+        if is_local_target:
             # Local-node reads use the interface-owned accessors rather than
             # requiring this node's entry in nodesByNum.
             get_my_user = getattr(interface, "getMyUser", None)
             stored_user = get_my_user() if callable(get_my_user) else None
             user = dict(stored_user) if isinstance(stored_user, dict) else None
+    if user is None and is_local_target:
+        # A nodeless connection (--no-nodes) can leave the client node
+        # database empty, so read the authoritative licensed flag from the
+        # device's own owner record. The query runs outside the node-database
+        # lock because it blocks on a bounded device response wait.
+        licensed = _local_owner_is_licensed_via_admin(target_node)
+        if licensed is not None:
+            return licensed
     if user is None:
         with node_db_lock:
             nodes_by_num = getattr(interface, "nodesByNum", None)
