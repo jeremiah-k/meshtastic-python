@@ -95,7 +95,33 @@ class _NodeSettingsResponseRuntime:
         )
         return None
 
-    def handle_settings_response(self, packet: dict[str, Any]) -> None:
+    def _acknowledge_session_key_response(
+        self, packet: dict[str, Any], admin_message: dict[str, Any]
+    ) -> bool:
+        """Acknowledge a session-key config response without applying local config.
+
+        A ``SESSIONKEY_CONFIG`` request is answered with a ``Config`` payload
+        variant rather than a ``LocalConfig`` section, so there is no local
+        config field to repopulate.  The session key itself is harvested from
+        the raw admin payload by the admin receive path; this only completes
+        the scoped admin wait so ``ensureSessionKey`` is not failed with a
+        fabricated NAK.
+        """
+        raw_admin = admin_message.get("raw")
+        if not isinstance(raw_admin, admin_pb2.AdminMessage):
+            return False
+        if not raw_admin.HasField("get_config_response"):
+            return False
+        if raw_admin.get_config_response.WhichOneof("payload_variant") != "sessionkey":
+            return False
+        self._node.iface._acknowledgment.receivedAck = True
+        _mark_admin_wait_acknowledged_for_packet(self._node, packet)
+        logger.info("Received session-key config response.")
+        return True
+
+    def handle_settings_response(  # pylint: disable=too-many-return-statements
+        self, packet: dict[str, Any]
+    ) -> None:
         """Process one settings response packet with preserved ACK/NAK semantics."""
         logger.debug("handleSettingsResponse() response received")
         decoded = packet.get("decoded")
@@ -125,6 +151,8 @@ class _NodeSettingsResponseRuntime:
             logger.warning(message)
             self._node.iface._acknowledgment.receivedNak = True
             _record_admin_wait_error_for_packet(self._node, packet, message)
+            return
+        if self._acknowledge_session_key_response(packet, admin_message):
             return
         target = self._resolve_config_target(admin_message)
         if target is None:
