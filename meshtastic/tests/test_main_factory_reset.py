@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import meshtastic.cli.device_actions as device_actions
 import meshtastic.__main__ as main_module
+import meshtastic.cli.device_actions as device_actions
 from meshtastic import mt_config
 from meshtastic.__main__ import main
 from meshtastic.cli.context import ActionOutcome, CliContext
@@ -405,7 +405,12 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
 def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """All attempts exhausted: log a concise WARNING and return ``False`` without a traceback.
+    """Log a concise warning when all readiness attempts are exhausted.
+
+    Parameters
+    ----------
+    caplog : pytest.LogCaptureFixture
+        Captured log records used to verify the bounded failure diagnostic.
 
     The legacy "Factory reset accepted; device is still rebooting" log line
     was a single-shot, single-attempt suppression. The new probe retires up
@@ -453,7 +458,13 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
 def test_post_factory_reset_ready_probe_retries_until_device_returns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A device that returns on the second attempt must report success."""
+    """Report success when the device returns on the second attempt.
+
+    Parameters
+    ----------
+    caplog : pytest.LogCaptureFixture
+        Captured log records used while exercising the retry path.
+    """
     iface = cast(Any, object.__new__(SerialInterface))
     iface.close = MagicMock()
 
@@ -487,9 +498,7 @@ def test_post_factory_reset_ready_probe_releases_port_between_attempts() -> None
     serial device open locally instead of the device being absent."""
     iface = cast(Any, object.__new__(SerialInterface))
     iface.close = MagicMock()
-    iface.connect = MagicMock(
-        side_effect=RuntimeError("port held by previous attempt")
-    )
+    iface.connect = MagicMock(side_effect=RuntimeError("port held by previous attempt"))
 
     result = main_module._post_factory_reset_ready_probe(cast(Any, iface))
 
@@ -608,17 +617,42 @@ class _VirtualClock:
         return self.now
 
     def sleep(self, seconds: float) -> None:
-        """Advance the virtual clock instead of blocking."""
+        """Advance the virtual clock instead of blocking.
+
+        Parameters
+        ----------
+        seconds : float
+            Virtual duration to advance.
+        """
         self.now += seconds
 
 
 def _failing_exit(message: str, return_value: int = 1) -> None:
-    """Exit seam mirroring the real CliExit contract by raising."""
+    """Exit through the test seam by raising ``SystemExit``.
+
+    Parameters
+    ----------
+    message : str
+        CLI diagnostic associated with the exit.
+    return_value : int
+        Exit status to raise.
+    """
     raise SystemExit(return_value)
 
 
 def _command_hooks(prints: list[str]) -> device_actions.DeviceActionHooks:
-    """Build hooks wiring the real reset wait and readiness probe."""
+    """Build hooks wiring the real reset wait and readiness probe.
+
+    Parameters
+    ----------
+    prints : list[str]
+        Sink receiving CLI output emitted by the command.
+
+    Returns
+    -------
+    device_actions.DeviceActionHooks
+        Hooks configured for the factory-reset command seam.
+    """
     return device_actions.DeviceActionHooks(
         cli_exit=cast(Any, _failing_exit),
         cli_print=prints.append,
@@ -639,7 +673,20 @@ def _command_hooks(prints: list[str]) -> device_actions.DeviceActionHooks:
 
 
 def _reset_command_iface(reset_node: Any, connect: Any) -> Any:
-    """Build a bare SerialInterface double for the command-level seam."""
+    """Build a bare SerialInterface double for the command-level seam.
+
+    Parameters
+    ----------
+    reset_node : Any
+        Node double returned by ``getNode``.
+    connect : Any
+        Callable installed as the serial reconnect seam.
+
+    Returns
+    -------
+    Any
+        Minimal SerialInterface-compatible command double.
+    """
     iface = cast(Any, object.__new__(SerialInterface))
     iface._acknowledgment = Acknowledgment()
     iface.isConnected = threading.Event()
@@ -656,7 +703,18 @@ def _reset_command_iface(reset_node: Any, connect: Any) -> Any:
 
 
 def _reset_command_context(iface: Any) -> CliContext:
-    """Build factory-reset-device CLI arguments for the command seam."""
+    """Build factory-reset-device CLI arguments for the command seam.
+
+    Parameters
+    ----------
+    iface : Any
+        Interface double used by the command context.
+
+    Returns
+    -------
+    CliContext
+        Context configured for a local full factory reset.
+    """
     return CliContext(
         interface=cast(MeshInterface, iface),
         args=argparse.Namespace(
@@ -683,7 +741,24 @@ def _run_reset_command(
     iface: Any,
     reset_node: Any,
 ) -> tuple[list[str], _VirtualClock]:
-    """Drive the real handler with the real wait and probe under a virtual clock."""
+    """Drive the real reset handler under a virtual clock.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace the device-action clock.
+    clock : _VirtualClock
+        Deterministic clock used by reset acceptance and readiness probing.
+    iface : Any
+        Serial-interface command double.
+    reset_node : Any
+        Node double receiving the destructive reset request.
+
+    Returns
+    -------
+    tuple[list[str], _VirtualClock]
+        Captured CLI output and the advanced virtual clock.
+    """
     monkeypatch.setattr(device_actions, "time", clock)
     prints: list[str] = []
     device_actions._handle_reboot_and_reset_actions(
@@ -696,12 +771,19 @@ def _run_reset_command(
 def test_factory_reset_reports_success_only_after_reboot_transition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Success must require the observed reboot transition, and the implicit
-    ACK must end the acceptance phase promptly instead of waiting out the
-    acceptance budget. The timeline mirrors the reported device log: the ACK
-    arrives almost immediately, the first probe attempt burns its budget
-    while the device is still rebooting, and the second attempt reconnects
-    just after the device returns."""
+    """Require an observed reboot transition before reporting reset success.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to install the deterministic reset clock.
+
+    The implicit ACK must end the acceptance phase promptly instead of waiting
+    out the acceptance budget. The timeline mirrors the reported device log:
+    the ACK arrives almost immediately, the first probe attempt burns its
+    budget while the device is still rebooting, and the second attempt
+    reconnects just after the device returns.
+    """
     clock = _VirtualClock()
     boot_done_at = 22.0
     timeline: dict[str, float] = {}
@@ -727,7 +809,7 @@ def test_factory_reset_reports_success_only_after_reboot_transition(
     reset_node = SimpleNamespace(factoryReset=MagicMock(side_effect=_factory_reset))
     iface = _reset_command_iface(reset_node, _connect)
     reset_node.iface = iface
-    acceptance_finished_at = {"value": None}
+    acceptance_finished_at: dict[str, float | None] = {"value": None}
     real_wait = device_actions._send_local_factory_reset_and_wait
 
     def _timed_wait(node: Any, *, full: bool, cli_print: Any) -> Any:
@@ -754,9 +836,7 @@ def test_factory_reset_reports_success_only_after_reboot_transition(
     assert acceptance_finished_at["value"] < (
         device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
     )
-    assert any(
-        "Waiting for factory reset acknowledgment" in text for text in prints
-    )
+    assert any("Waiting for factory reset acknowledgment" in text for text in prints)
     assert not hasattr(iface, "_connect_wait_timeout_seconds")
 
 
@@ -764,10 +844,17 @@ def test_factory_reset_reports_success_only_after_reboot_transition(
 def test_factory_reset_fails_closed_on_still_connected_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A device that never acknowledges and never disconnects must produce a
-    failure, never a success. This is the seam that rejects fire-and-forget:
-    skipping the acceptance wait would let the readiness probe reconnect the
-    still-running pre-reset session and report success before any reboot."""
+    """Fail closed when the active session never acknowledges or disconnects.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to install the deterministic reset clock.
+
+    This is the seam that rejects fire-and-forget: skipping the acceptance wait
+    would let the readiness probe reconnect the still-running pre-reset session
+    and report success before any reboot.
+    """
     clock = _VirtualClock()
     connect_calls: list[float] = []
 
