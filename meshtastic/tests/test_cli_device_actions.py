@@ -158,10 +158,9 @@ def test_device_action_hooks_preserve_legacy_keyword_constructor() -> None:
     hooks = device_actions.DeviceActionHooks(**values)
 
     assert (
-        hooks.build_key_verification_admin
-        is key_verification.build_key_verification_admin
+        hooks.build_key_verification_admin is key_verification.buildKeyVerificationAdmin
     )
-    assert hooks.send_key_verification is key_verification.send_key_verification
+    assert hooks.send_key_verification is key_verification.sendKeyVerification
 
 
 @pytest.mark.unit

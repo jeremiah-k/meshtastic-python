@@ -62,7 +62,7 @@ _EXPECTED_NOTIFICATION_FIELDS = {
 }
 
 
-def build_key_verification_admin(
+def buildKeyVerificationAdmin(
     stage: str,
     *,
     remote_nodenum: int = 0,
@@ -155,7 +155,7 @@ def _initiate_lock_for(interface: MeshInterface) -> LockType:
         return lock
 
 
-def send_key_verification(
+def sendKeyVerification(
     interface: MeshInterface,
     request: admin_pb2.KeyVerificationAdmin,
     *,
@@ -168,7 +168,7 @@ def send_key_verification(
     interface : MeshInterface
         Connected mesh interface owning the local node.
     request : admin_pb2.KeyVerificationAdmin
-        Handshake stage built by :func:`build_key_verification_admin`.
+        Handshake stage built by :func:`buildKeyVerificationAdmin`.
     timeout : float
         Seconds to wait for the device's key-verification notification.
 
