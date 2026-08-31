@@ -399,6 +399,7 @@ def test_post_factory_reset_ready_probe_closes_and_probes_reconnect() -> None:
 @pytest.mark.unit
 def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Log a concise warning when all readiness attempts are exhausted.
 
@@ -416,6 +417,8 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     instead of failing closed.
     """
     iface = cast(Any, object.__new__(SerialInterface))
+    clock = _VirtualClock()
+    monkeypatch.setattr(device_actions, "time", clock)
     iface.close = MagicMock()
 
     def _connect() -> None:
@@ -453,6 +456,7 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
 @pytest.mark.unit
 def test_post_factory_reset_ready_probe_retries_until_device_returns(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Report success when the device returns on the second attempt.
 
@@ -462,6 +466,8 @@ def test_post_factory_reset_ready_probe_retries_until_device_returns(
         Captured log records used while exercising the retry path.
     """
     iface = cast(Any, object.__new__(SerialInterface))
+    clock = _VirtualClock()
+    monkeypatch.setattr(device_actions, "time", clock)
     iface.close = MagicMock()
 
     # First attempt fails, second succeeds.
@@ -488,11 +494,15 @@ def test_post_factory_reset_ready_probe_retries_until_device_returns(
 
 
 @pytest.mark.unit
-def test_post_factory_reset_ready_probe_releases_port_between_attempts() -> None:
+def test_post_factory_reset_ready_probe_releases_port_between_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A failed probe attempt must release the port before the retry delay so
     the next attempt cannot fail because the previous attempt still holds the
     serial device open locally instead of the device being absent."""
     iface = cast(Any, object.__new__(SerialInterface))
+    clock = _VirtualClock()
+    monkeypatch.setattr(device_actions, "time", clock)
     iface.close = MagicMock()
     iface.connect = MagicMock(side_effect=RuntimeError("port held by previous attempt"))
 
