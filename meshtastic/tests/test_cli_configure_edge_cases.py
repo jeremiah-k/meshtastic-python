@@ -24,6 +24,7 @@ from meshtastic.cli.configure_actions import (
 )
 from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.protobuf import mesh_pb2
 
 _PREFLIGHT_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "configure_edge_preflight", default=False
@@ -1249,3 +1250,100 @@ def test_partial_owner_flags_reject_unusable_current_license_state(
     with pytest.raises(SystemExit):
         configure_actions._apply_direct_configuration(hooks, node, prepared)
     node.setOwner.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device_is_licensed", [True, False])
+def test_partial_owner_flags_preserve_local_license_via_admin_when_node_db_empty(
+    monkeypatch: pytest.MonkeyPatch, device_is_licensed: bool
+) -> None:
+    """An empty node database falls back to the device's own owner record."""
+    node = MagicMock()
+    node.nodeNum = 123
+    node.iface = MagicMock()
+    node.iface.myInfo.my_node_num = 123
+    node.iface.getMyUser = MagicMock(return_value=None)
+    node.iface.nodesByNum = {}
+    node._request_admin_response = MagicMock(
+        return_value=mesh_pb2.User(is_licensed=device_is_licensed)
+    )
+    hooks = _hooks()
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
+
+    request = node._request_admin_response.call_args.args[0]
+    assert request.get_owner_request is True
+    node.setOwner.assert_called_once_with(
+        long_name=None,
+        short_name=None,
+        is_licensed=device_is_licensed,
+        is_unmessagable=True,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("admin_failure", ["no_answer", "transport_error"])
+def test_partial_owner_flags_fail_when_local_admin_owner_state_unavailable(
+    monkeypatch: pytest.MonkeyPatch, admin_failure: str
+) -> None:
+    """A local device that cannot answer for its owner state still terminates."""
+    node = MagicMock()
+    node.nodeNum = 123
+    node.iface = MagicMock()
+    node.iface.myInfo.my_node_num = 123
+    node.iface.getMyUser = MagicMock(return_value=None)
+    node.iface.nodesByNum = {}
+    if admin_failure == "no_answer":
+        node._request_admin_response = MagicMock(return_value=None)
+    else:
+        node._request_admin_response = MagicMock(
+            side_effect=RuntimeError("transport down")
+        )
+    hooks = _hooks()
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    with pytest.raises(SystemExit):
+        configure_actions._apply_direct_configuration(hooks, node, prepared)
+
+    node.setOwner.assert_not_called()
+
+
+@pytest.mark.unit
+def test_partial_owner_flags_prefer_local_snapshot_over_admin_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A populated local snapshot answers the licensed flag without a device round trip."""
+    node = MagicMock()
+    node.nodeNum = 123
+    node.iface = MagicMock()
+    node.iface.myInfo.my_node_num = 123
+    node.iface.getMyUser = MagicMock(return_value={"isLicensed": True})
+    node._request_admin_response = MagicMock()
+    hooks = _hooks()
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
+
+    node._request_admin_response.assert_not_called()
+    node.setOwner.assert_called_once_with(
+        long_name=None,
+        short_name=None,
+        is_licensed=True,
+        is_unmessagable=True,
+    )
