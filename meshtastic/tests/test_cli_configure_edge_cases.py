@@ -1137,7 +1137,7 @@ def test_partial_owner_flags_preserve_current_licensed_state(
     node = MagicMock()
     node.nodeNum = 123
     node.iface = MagicMock()
-    node.iface.nodesByNum = {123: {"user": {"isLicensed": True}}}
+    node.iface.nodesByNum = {123: {"user": {"isLicensed": True, "longName": "Owner"}}}
     hooks = _hooks()
     prepared = configure_actions._PreparedConfigureDocument(
         direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
@@ -1149,7 +1149,7 @@ def test_partial_owner_flags_preserve_current_licensed_state(
     assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
 
     node.setOwner.assert_called_once_with(
-        long_name=None,
+        long_name="Owner",
         short_name=None,
         is_licensed=True,
         is_unmessagable=True,
@@ -1164,7 +1164,7 @@ def test_partial_owner_flags_treat_omitted_json_false_as_unlicensed(
     node = MagicMock()
     node.nodeNum = 123
     node.iface = MagicMock()
-    node.iface.nodesByNum = {123: {"user": {"id": "!0000007b"}}}
+    node.iface.nodesByNum = {123: {"user": {"id": "!0000007b", "longName": "Owner"}}}
     hooks = _hooks()
     prepared = configure_actions._PreparedConfigureDocument(
         direct_values=configure_values._DirectConfigureValues(is_unmessagable=False),
@@ -1176,7 +1176,7 @@ def test_partial_owner_flags_treat_omitted_json_false_as_unlicensed(
     assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
 
     node.setOwner.assert_called_once_with(
-        long_name=None,
+        long_name="Owner",
         short_name=None,
         is_licensed=False,
         is_unmessagable=False,
@@ -1251,7 +1251,7 @@ def test_partial_owner_flags_preserve_local_license_via_admin_when_node_db_empty
     node.iface.getMyUser = MagicMock(return_value=None)
     node.iface.nodesByNum = {}
     node._request_admin_response = MagicMock(
-        return_value=mesh_pb2.User(is_licensed=device_is_licensed)
+        return_value=mesh_pb2.User(is_licensed=device_is_licensed, long_name="Owner")
     )
     hooks = _hooks()
     prepared = configure_actions._PreparedConfigureDocument(
@@ -1266,7 +1266,7 @@ def test_partial_owner_flags_preserve_local_license_via_admin_when_node_db_empty
     request = node._request_admin_response.call_args.args[0]
     assert request.get_owner_request is True
     node.setOwner.assert_called_once_with(
-        long_name=None,
+        long_name="Owner",
         short_name=None,
         is_licensed=device_is_licensed,
         is_unmessagable=True,
@@ -1314,7 +1314,9 @@ def test_partial_owner_flags_prefer_local_snapshot_over_admin_query(
     node.nodeNum = 123
     node.iface = MagicMock()
     node.iface.myInfo.my_node_num = 123
-    node.iface.getMyUser = MagicMock(return_value={"isLicensed": True})
+    node.iface.getMyUser = MagicMock(
+        return_value={"isLicensed": True, "longName": "Owner"}
+    )
     node._request_admin_response = MagicMock()
     hooks = _hooks()
     prepared = configure_actions._PreparedConfigureDocument(
@@ -1328,8 +1330,39 @@ def test_partial_owner_flags_prefer_local_snapshot_over_admin_query(
 
     node._request_admin_response.assert_not_called()
     node.setOwner.assert_called_once_with(
-        long_name=None,
+        long_name="Owner",
         short_name=None,
         is_licensed=True,
         is_unmessagable=True,
     )
+
+
+@pytest.mark.unit
+def test_flag_only_owner_write_refused_when_current_name_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A flag-only owner write without a readable current long name is
+    refused before the write: ``Node.setOwner`` applies owner flags only
+    alongside a long name, so sending none would report success without
+    applying the requested flag."""
+    node = MagicMock()
+    node.nodeNum = 123
+    node.iface = MagicMock()
+    node.iface.myInfo.my_node_num = 123
+    node.iface.getMyUser = MagicMock(
+        return_value={"isLicensed": True, "longName": "  "}
+    )
+    node._request_admin_response = MagicMock()
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    hooks = _hooks(cli_exit=cast(CliExit, cli_exit))
+    prepared = configure_actions._PreparedConfigureDocument(
+        direct_values=configure_values._DirectConfigureValues(is_unmessagable=True),
+        config_sections={},
+        module_config_sections={},
+    )
+    _install_clock(monkeypatch, sleep=lambda _seconds: None)
+
+    with pytest.raises(SystemExit):
+        configure_actions._apply_direct_configuration(hooks, node, prepared)
+
+    node.setOwner.assert_not_called()

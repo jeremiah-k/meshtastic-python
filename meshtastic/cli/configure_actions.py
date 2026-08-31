@@ -830,8 +830,8 @@ def _load_and_validate_configure_document(
     )
 
 
-def _local_owner_is_licensed_via_admin(target_node: Any) -> bool | None:
-    """Read the local node's licensed flag from the device's own owner record.
+def _local_owner_via_admin(target_node: Any) -> mesh_pb2.User | None:
+    """Read the local node's owner record from the device's own admin getter.
 
     A nodeless connection (``--no-nodes``) can leave the client node database
     without the local entry that ``getMyUser()`` reads, so fall back to the
@@ -845,9 +845,9 @@ def _local_owner_is_licensed_via_admin(target_node: Any) -> bool | None:
 
     Returns
     -------
-    bool | None
-        The current ``isLicensed`` value, or ``None`` when the node does not
-        support the admin owner-getter seam, does not answer in time, or the
+    mesh_pb2.User | None
+        The current owner record, or ``None`` when the node does not support
+        the admin owner-getter seam, does not answer in time, or the
         transport rejects the request.
     """
     request_admin_response = getattr(target_node, "_request_admin_response", None)
@@ -856,7 +856,7 @@ def _local_owner_is_licensed_via_admin(target_node: Any) -> bool | None:
     message = admin_pb2.AdminMessage()
     message.get_owner_request = True
     try:
-        owner = request_admin_response(
+        return request_admin_response(
             message,
             "get_owner_response",
             mesh_pb2.User,
@@ -865,42 +865,38 @@ def _local_owner_is_licensed_via_admin(target_node: Any) -> bool | None:
     except Exception:  # pylint: disable=broad-except
         logger.debug("Local owner state request failed.", exc_info=True)
         return None
-    if owner is None:
-        return None
-    return bool(owner.is_licensed)
 
 
-def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
-    """Return the target's current licensed flag for partial owner-profile writes.
+class _CurrentOwnerState(NamedTuple):
+    """Current owner state resolved from the client cache or device."""
+
+    user: dict[str, Any] | None
+    owner: mesh_pb2.User | None
+
+
+def _current_owner_state(
+    hooks: ConfigureHooks, target_node: Any, *, purpose: str
+) -> _CurrentOwnerState:
+    """Resolve owner state from the client snapshot, then the device.
 
     Parameters
     ----------
     hooks : ConfigureHooks
         CLI reporting and termination seams.
-
     target_node : Any
-        Target node whose owner state is read. For the local node the public
-        :meth:`MeshInterface.getMyUser` path is preferred, then the device's
-        own owner record via the admin ``get_owner`` getter, so a populated
-        node database is not required; remote targets read their
-        node-database entry.
+        Target node whose owner state is read.
+    purpose : str
+        Description of the owner field being preserved for error messages.
 
     Returns
     -------
-    bool
-        Current ``isLicensed`` value. Protobuf JSON omits scalar ``False``
-        values, so a missing ``isLicensed`` key means ``False``.
+    _CurrentOwnerState
+        Client-side user mapping or the local device's owner protobuf.
 
     Raises
     ------
     SystemExit
-        Via the CLI exit seam when owner state is genuinely unavailable or its
-        stored ``isLicensed`` value is not boolean. A guessed default would
-        risk silently clearing HAM mode on real hardware, so missing local
-        state under ``--no-nodes`` still terminates rather than assuming.
-        Local state missing from the client snapshot is first re-read from
-        the device itself; only a device that does not answer counts as
-        genuinely unavailable.
+        Via the CLI exit seam when target identity/state cannot be resolved.
     """
     node_num = getattr(target_node, "nodeNum", None)
     interface = getattr(target_node, "iface", None)
@@ -913,25 +909,25 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
     ):
         _terminate_cli(
             hooks.cli_exit,
-            "Unable to preserve the current licensed flag: target owner state is unavailable.",
+            f"Unable to preserve the current {purpose}: target owner state is unavailable.",
         )
+
     user: dict[str, Any] | None = None
     is_local_target = my_node_num is not None and node_num == my_node_num
     with node_db_lock:
         if is_local_target:
-            # Local-node reads use the interface-owned accessors rather than
-            # requiring this node's entry in nodesByNum.
             get_my_user = getattr(interface, "getMyUser", None)
             stored_user = get_my_user() if callable(get_my_user) else None
             user = dict(stored_user) if isinstance(stored_user, dict) else None
+
     if user is None and is_local_target:
         # A nodeless connection (--no-nodes) can leave the client node
-        # database empty, so read the authoritative licensed flag from the
-        # device's own owner record. The query runs outside the node-database
-        # lock because it blocks on a bounded device response wait.
-        licensed = _local_owner_is_licensed_via_admin(target_node)
-        if licensed is not None:
-            return licensed
+        # database empty. Query the device outside the node DB lock because
+        # the admin getter blocks on a bounded response wait.
+        owner = _local_owner_via_admin(target_node)
+        if owner is not None:
+            return _CurrentOwnerState(None, owner)
+
     if user is None:
         with node_db_lock:
             nodes_by_num = getattr(interface, "nodesByNum", None)
@@ -940,18 +936,81 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
             )
             stored_user = node_data.get("user") if isinstance(node_data, dict) else None
             user = dict(stored_user) if isinstance(stored_user, dict) else None
+
     if user is None:
         _terminate_cli(
             hooks.cli_exit,
-            "Unable to preserve the current licensed flag: target owner state is unavailable.",
+            f"Unable to preserve the current {purpose}: target owner state is unavailable.",
         )
-    current = user.get("isLicensed", False)
+    return _CurrentOwnerState(user, None)
+
+
+def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
+    """Return the target's current licensed flag for partial owner-profile writes.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and termination seams.
+    target_node : Any
+        Target node whose owner state is read.
+
+    Returns
+    -------
+    bool
+        Current ``isLicensed`` value. Protobuf JSON omits scalar ``False``
+        values, so a missing ``isLicensed`` key means ``False``.
+
+    Raises
+    ------
+    SystemExit
+        Via the CLI exit seam when owner state is unavailable or invalid.
+    """
+    state = _current_owner_state(hooks, target_node, purpose="licensed flag")
+    if state.owner is not None:
+        return bool(state.owner.is_licensed)
+    assert state.user is not None
+    current = state.user.get("isLicensed", False)
     if not isinstance(current, bool):
         _terminate_cli(
             hooks.cli_exit,
             "Unable to preserve the current licensed flag: target owner state is invalid.",
         )
     return current
+
+
+def _current_owner_long_name(hooks: ConfigureHooks, target_node: Any) -> str:
+    """Return the target's current long owner name for partial owner writes.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and termination seams.
+    target_node : Any
+        Target node whose owner state is read.
+
+    Returns
+    -------
+    str
+        The current long owner name with surrounding whitespace stripped.
+
+    Raises
+    ------
+    SystemExit
+        Via the CLI exit seam when the current long name is unavailable or blank.
+    """
+    state = _current_owner_state(hooks, target_node, purpose="owner name")
+    if state.owner is not None:
+        long_name: object = state.owner.long_name
+    else:
+        assert state.user is not None
+        long_name = state.user.get("longName")
+    if not isinstance(long_name, str) or not long_name.strip():
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current owner name: target owner state is unavailable.",
+        )
+    return long_name.strip()
 
 
 def _apply_direct_configuration(
@@ -1005,8 +1064,17 @@ def _apply_direct_configuration(
             if values.is_licensed is not None
             else _current_owner_is_licensed(hooks, target_node)
         )
+        # ``Node.setOwner`` applies the owner-profile flags only alongside a
+        # long name, so a flag-only write must restate the current name; a
+        # flag-only document whose owner name cannot be read is refused
+        # before the write instead of silently not applying the flags.
+        long_name = (
+            values.owner
+            if values.owner is not None
+            else _current_owner_long_name(hooks, target_node)
+        )
         target_node.setOwner(
-            long_name=values.owner,
+            long_name=long_name,
             short_name=values.owner_short,
             is_licensed=is_licensed,
             is_unmessagable=values.is_unmessagable,
