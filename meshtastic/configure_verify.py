@@ -6,7 +6,7 @@ import base64
 import enum
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import meshtastic.util
 from meshtastic.mesh_interface import MeshInterface
@@ -396,6 +396,50 @@ def _verify_channel_sets_match(
     )
 
 
+class _SectionReloadProbe:
+    """Probe reporting whether one cleared config section was repopulated."""
+
+    def __init__(self, has_field_fn: Callable[[str], bool], name: str) -> None:
+        self._has_field_fn = has_field_fn
+        self._name = name
+
+    def is_set(self) -> bool:
+        """Return ``True`` once the probed section is present again."""
+        return bool(self._has_field_fn(self._name))
+
+
+def _wait_for_section_reload(
+    target_node: Any, proto_config: Any, section_snake: str
+) -> bool:
+    """Wait for one re-requested config section response to arrive.
+
+    Parameters
+    ----------
+    target_node : Any
+        Node whose bounded wait timeout scopes the section wait.
+    proto_config : Any
+        The protobuf config root (local or module) holding the section.
+    section_snake : str
+        Snake-case name of the cleared section being re-requested.
+
+    Returns
+    -------
+    bool
+        ``True`` when the section is present again before the node's wait
+        timeout expires, ``False`` otherwise.
+    """
+    has_field = getattr(proto_config, "HasField", None)
+    if not callable(has_field):
+        return True
+    timeout = getattr(target_node, "_timeout", None)
+    if timeout is None:
+        # Older node doubles without a wait owner cannot block here; the
+        # subsequent section verification reports any missing state.
+        return True
+    probe = _SectionReloadProbe(cast(Callable[[str], bool], has_field), section_snake)
+    return bool(timeout.waitForSet(probe, attrs=("is_set",)))
+
+
 def _refresh_no_disconnect_verify_state(
     target_node: Any,
     *,
@@ -420,6 +464,13 @@ def _refresh_no_disconnect_verify_state(
         target_node.localConfig.ClearField(section_snake)
         if callable(request_config):
             request_config(field_desc)
+            if not _wait_for_section_reload(
+                target_node, target_node.localConfig, section_snake
+            ):
+                logger.warning(
+                    "Config section %r was not repopulated before verification.",
+                    section_name,
+                )
 
     for section_name in verify_module_config_fields or {}:
         section_snake = meshtastic.util.camel_to_snake(section_name)
@@ -435,6 +486,13 @@ def _refresh_no_disconnect_verify_state(
         target_node.moduleConfig.ClearField(section_snake)
         if callable(request_config):
             request_config(field_desc)
+            if not _wait_for_section_reload(
+                target_node, target_node.moduleConfig, section_snake
+            ):
+                logger.warning(
+                    "Module config section %r was not repopulated before verification.",
+                    section_name,
+                )
 
     if verify_channel_url:
         invalidate_channel_cache = getattr(

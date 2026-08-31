@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextvars
+import logging
 import os
 import stat
 import threading
@@ -358,6 +359,86 @@ def test_refresh_verify_state_skips_unknown_sections() -> None:
 
     node.localConfig.ClearField.assert_not_called()
     node.moduleConfig.ClearField.assert_not_called()
+
+
+@pytest.mark.unit
+def test_refresh_verify_state_waits_for_each_section_response() -> None:
+    """Each re-requested section waits for its response before verification."""
+    node = MagicMock()
+    node.localConfig.DESCRIPTOR.fields_by_name = {"lora": object()}
+    node.moduleConfig.DESCRIPTOR.fields_by_name = {"mqtt": object()}
+    waits_observed_requests: list[int] = []
+
+    def _record_wait(*_args: Any, **_kwargs: Any) -> bool:
+        waits_observed_requests.append(node.requestConfig.call_count)
+        return True
+
+    node._timeout.waitForSet.side_effect = _record_wait
+
+    configure_actions._refresh_no_disconnect_verify_state(
+        node,
+        verify_channel_url=None,
+        verify_config_fields={"lora": {"hop_limit": 3}},
+        verify_module_config_fields={"mqtt": {"enabled": True}},
+    )
+
+    assert node.requestConfig.call_count == 2
+    assert node._timeout.waitForSet.call_count == 2
+    # Every wait must observe its own section request already sent.
+    assert waits_observed_requests == [1, 2]
+
+
+@pytest.mark.unit
+def test_refresh_verify_state_warns_when_section_response_times_out(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A section that never repopulates warns instead of failing silently."""
+    node = MagicMock()
+    node.localConfig.DESCRIPTOR.fields_by_name = {"lora": object()}
+    node.moduleConfig.DESCRIPTOR.fields_by_name = {"mqtt": object()}
+    node._timeout.waitForSet.return_value = False
+
+    with caplog.at_level(logging.WARNING, logger="meshtastic.configure_verify"):
+        configure_actions._refresh_no_disconnect_verify_state(
+            node,
+            verify_channel_url=None,
+            verify_config_fields={"lora": {"hop_limit": 3}},
+            verify_module_config_fields={"mqtt": {"enabled": True}},
+        )
+
+    warning_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    ]
+    assert any(
+        "Config section 'lora' was not repopulated" in message
+        for message in warning_messages
+    )
+    assert any(
+        "Module config section 'mqtt' was not repopulated" in message
+        for message in warning_messages
+    )
+
+
+@pytest.mark.unit
+def test_refresh_verify_state_skips_section_wait_without_wait_owner() -> None:
+    """Node doubles without a wait owner refresh without blocking."""
+    node = SimpleNamespace(
+        localConfig=SimpleNamespace(
+            DESCRIPTOR=SimpleNamespace(fields_by_name={"lora": object()}),
+            ClearField=lambda _name: None,
+            HasField=lambda _name: False,
+        ),
+        requestConfig=lambda _field_desc: None,
+    )
+
+    configure_actions._refresh_no_disconnect_verify_state(
+        node,
+        verify_channel_url=None,
+        verify_config_fields={"lora": {"hop_limit": 3}},
+        verify_module_config_fields=None,
+    )
 
 
 @pytest.mark.unit
