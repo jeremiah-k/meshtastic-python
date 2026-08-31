@@ -1286,7 +1286,7 @@ def test_partial_owner_flags_fail_before_write_when_owner_state_unknown(
         configure_actions._apply_direct_configuration(hooks, node, prepared)
 
     node.setOwner.assert_not_called()
-    assert "preserve the current licensed flag" in str(cli_exit.call_args)
+    assert "preserve the current owner profile" in str(cli_exit.call_args)
 
 
 @pytest.mark.unit
@@ -1344,6 +1344,8 @@ def test_partial_owner_flags_preserve_local_license_via_admin_when_node_db_empty
 
     assert configure_actions._apply_direct_configuration(hooks, node, prepared) is False
 
+    # A flag-only document resolves the current owner state exactly once.
+    node._request_admin_response.assert_called_once()
     request = node._request_admin_response.call_args.args[0]
     assert request.get_owner_request is True
     node.setOwner.assert_called_once_with(

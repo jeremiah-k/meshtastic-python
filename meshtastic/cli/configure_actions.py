@@ -944,15 +944,18 @@ def _current_owner_state(
     return _CurrentOwnerState(user, None)
 
 
-def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
-    """Return the target's current licensed flag for partial owner-profile writes.
+def _licensed_from_state(
+    hooks: ConfigureHooks, state: _CurrentOwnerState | None
+) -> bool:
+    """Derive the target's current licensed flag from resolved owner state.
 
     Parameters
     ----------
     hooks : ConfigureHooks
         CLI reporting and termination seams.
-    target_node : Any
-        Target node whose owner state is read.
+    state : _CurrentOwnerState | None
+        Owner state resolved by :func:`_current_owner_state`, or ``None``
+        when it was never resolved.
 
     Returns
     -------
@@ -965,7 +968,12 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
     SystemExit
         Via the CLI exit seam when owner state is unavailable or invalid.
     """
-    state = _current_owner_state(hooks, target_node, purpose="licensed flag")
+    if state is None:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current licensed flag: "
+            "target owner state is unavailable.",
+        )
     if state.owner is not None:
         return bool(state.owner.is_licensed)
     assert state.user is not None
@@ -973,20 +981,24 @@ def _current_owner_is_licensed(hooks: ConfigureHooks, target_node: Any) -> bool:
     if not isinstance(current, bool):
         _terminate_cli(
             hooks.cli_exit,
-            "Unable to preserve the current licensed flag: target owner state is invalid.",
+            "Unable to preserve the current licensed flag: "
+            "target owner state is invalid.",
         )
     return current
 
 
-def _current_owner_long_name(hooks: ConfigureHooks, target_node: Any) -> str:
-    """Return the target's current long owner name for partial owner writes.
+def _long_name_from_state(
+    hooks: ConfigureHooks, state: _CurrentOwnerState | None
+) -> str:
+    """Derive the target's current long owner name from resolved owner state.
 
     Parameters
     ----------
     hooks : ConfigureHooks
         CLI reporting and termination seams.
-    target_node : Any
-        Target node whose owner state is read.
+    state : _CurrentOwnerState | None
+        Owner state resolved by :func:`_current_owner_state`, or ``None``
+        when it was never resolved.
 
     Returns
     -------
@@ -996,9 +1008,15 @@ def _current_owner_long_name(hooks: ConfigureHooks, target_node: Any) -> str:
     Raises
     ------
     SystemExit
-        Via the CLI exit seam when the current long name is unavailable or blank.
+        Via the CLI exit seam when the current long name is unavailable or
+        blank.
     """
-    state = _current_owner_state(hooks, target_node, purpose="owner name")
+    if state is None:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current owner name: "
+            "target owner state is unavailable.",
+        )
     if state.owner is not None:
         long_name: object = state.owner.long_name
     else:
@@ -1007,7 +1025,8 @@ def _current_owner_long_name(hooks: ConfigureHooks, target_node: Any) -> str:
     if not isinstance(long_name, str) or not long_name.strip():
         _terminate_cli(
             hooks.cli_exit,
-            "Unable to preserve the current owner name: target owner state is unavailable.",
+            "Unable to preserve the current owner name: "
+            "target owner state is unavailable.",
         )
     return long_name.strip()
 
@@ -1058,10 +1077,16 @@ def _apply_direct_configuration(
             hooks.cli_print(
                 f"Setting owner unmessagable flag to {values.is_unmessagable}"
             )
+        needs_current_state = values.is_licensed is None or values.owner is None
+        current_state = (
+            _current_owner_state(hooks, target_node, purpose="owner profile")
+            if needs_current_state
+            else None
+        )
         is_licensed = (
             values.is_licensed
             if values.is_licensed is not None
-            else _current_owner_is_licensed(hooks, target_node)
+            else _licensed_from_state(hooks, current_state)
         )
         # ``Node.setOwner`` applies the owner-profile flags only alongside a
         # long name, so a flag-only write must restate the current name; a
@@ -1070,7 +1095,7 @@ def _apply_direct_configuration(
         long_name = (
             values.owner
             if values.owner is not None
-            else _current_owner_long_name(hooks, target_node)
+            else _long_name_from_state(hooks, current_state)
         )
         target_node.setOwner(
             long_name=long_name,
