@@ -177,8 +177,9 @@ def test_reconnect_verify_observed_reboot_single_wait_for_config(
 def test_reconnect_verify_unobserved_reboot_triggers_single_start_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When no reboot was observed on the receive side, the helper bumps the
-    generation itself via want_config_id and reloads exactly once."""
+    """When no reboot was observed on the receive side and no generation bump
+    crossed the probe window, the device did not reboot; the helper issues
+    exactly one want_config_id refresh and waits once for the response."""
     iface = _interface()
     iface.getNode.return_value = MagicMock()
     ticks = iter(float(value) for value in range(20))
@@ -188,35 +189,6 @@ def test_reconnect_verify_unobserved_reboot_triggers_single_start_config(
         sleep=lambda _seconds: None,
     )
     iface.configId = 7  # pre-op generation snapshot
-    iface._start_config = MagicMock(side_effect=lambda: setattr(iface, "configId", 8))
-
-    result = configure_actions._post_configure_reconnect_and_verify(
-        iface,
-        timeout=1.0,
-        node_dest="^local",
-    )
-
-    assert result is ConfigureReconnectResult.VERIFIED
-    iface._start_config.assert_called_once()
-    iface.waitForConfig.assert_called_once()
-
-
-@pytest.mark.unit
-def test_reconnect_verify_no_reboot_observes_probe_then_waits_once(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """No disconnect and no generation bump across the probe window means the
-    device did not reboot; the helper issues exactly one want_config_id refresh
-    and waits once for the response."""
-    iface = _interface()
-    iface.getNode.return_value = MagicMock()
-    ticks = iter(float(value) for value in range(20))
-    _install_clock(
-        monkeypatch,
-        monotonic=lambda: next(ticks, 20.0),
-        sleep=lambda _seconds: None,
-    )
-    iface.configId = 13
     iface._start_config = MagicMock()
 
     result = configure_actions._post_configure_reconnect_and_verify(
@@ -226,9 +198,8 @@ def test_reconnect_verify_no_reboot_observes_probe_then_waits_once(
     )
 
     assert result is ConfigureReconnectResult.VERIFIED
-    iface.waitForConfig.assert_called_once()
-
     iface._start_config.assert_called_once()
+    iface.waitForConfig.assert_called_once()
 
 
 @pytest.mark.unit
