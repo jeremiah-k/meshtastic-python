@@ -318,7 +318,7 @@ def _post_configure_reconnect_and_verify(
     deadline = start_time + timeout
     pre_op_config_id = getattr(interface, "configId", None)
 
-    probe_deadline = start_time + CONFIG_REBOOT_PROBE_SECONDS
+    probe_deadline = min(start_time + CONFIG_REBOOT_PROBE_SECONDS, deadline)
     logger.debug(
         "Probing for reboot indication up to %.1fs (configId or isConnected)...",
         max(probe_deadline - time.monotonic(), 0.0),
