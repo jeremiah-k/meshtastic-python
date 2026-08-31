@@ -20,7 +20,8 @@ these request/response pairs:
 | `get_ui_config_request`                | `get_ui_config_response`                |
 
 `Node.requestDeviceConnectionStatus()` and `Node.requestUiConfig()` therefore accept
-only the named admin response from the requested source. A routing ACK is necessary
-for request completion but is not treated as the getter payload itself. Malformed,
-wrong-source, wrong-variant, and replayed packets leave the bounded response wait
-pending rather than satisfying the callback.
+only the named admin response from the requested source. Completion is decided by the
+bounded correlated-response wait alone; no routing ACK/NAK wait is performed, and a
+routing ACK is never treated as the getter payload. Malformed, wrong-source,
+wrong-variant, and replayed packets leave the bounded response wait pending rather
+than satisfying the callback.
