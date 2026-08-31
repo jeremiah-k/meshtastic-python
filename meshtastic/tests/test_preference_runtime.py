@@ -358,3 +358,32 @@ def test_invalid_element_diagnostic_redacts_secret_and_avoids_nested_repr() -> N
     plain_message = reported[-1]
     assert '["element"] for mesh_beacon.broadcast_targets' in plain_message
     assert "'[\"element\"]'" not in plain_message
+
+
+@pytest.mark.unit
+def test_repeated_message_malformed_json_honors_fatal_policy() -> None:
+    """Malformed array JSON raises under the fatal preference-value policy."""
+    from meshtastic.cli import preference_runtime
+
+    config = localonly_pb2.LocalModuleConfig()
+    with (
+        preference_runtime.fatal_preference_value_errors(),
+        pytest.raises(
+            preference_runtime.PreferenceValueError, match="Invalid JSON value"
+        ),
+    ):
+        setPref(config, "mesh_beacon.broadcast_targets", "[{bad}]")
+
+
+@pytest.mark.unit
+def test_repeated_message_element_parse_error_honors_fatal_policy() -> None:
+    """Invalid array elements raise under the fatal preference-value policy."""
+    from meshtastic.cli import preference_runtime
+
+    config = localonly_pb2.LocalModuleConfig()
+    payload = '[{"preset":"NOT_A_PRESET","channel_index":1}]'
+    with (
+        preference_runtime.fatal_preference_value_errors(),
+        pytest.raises(preference_runtime.PreferenceValueError, match="element 0"),
+    ):
+        setPref(config, "mesh_beacon.broadcast_targets", payload)

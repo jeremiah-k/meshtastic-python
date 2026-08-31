@@ -74,7 +74,7 @@ BITFIELD_ENUMS = {
 
 
 class PreferenceValueError(ValueError):
-    """Raised when fatal CLI preference assignment rejects a scalar value."""
+    """Raised when fatal CLI preference assignment rejects a value."""
 
 
 @contextlib.contextmanager
@@ -192,6 +192,16 @@ def protobuf_field_type_label(field: FieldDescriptor) -> str:
     }.get(field.type, "compatible value")
 
 
+def _reject_pref_validation_message(
+    message: str, *, cli_print: Callable[..., None]
+) -> bool:
+    """Apply the shared fatal-or-report policy for one invalid preference value."""
+    if SET_PREF_VALUE_ERRORS_FATAL.get():
+        raise PreferenceValueError(message)
+    report_pref_validation(message, cli_print=cli_print)
+    return False
+
+
 def reject_pref_value(
     field: FieldDescriptor,
     *,
@@ -205,10 +215,7 @@ def reject_pref_value(
         f"Invalid value {display_value} for {field_path}; "
         f"expected {protobuf_field_type_label(field)}."
     )
-    if SET_PREF_VALUE_ERRORS_FATAL.get():
-        raise PreferenceValueError(message)
-    report_pref_validation(message, cli_print=cli_print)
-    return False
+    return _reject_pref_validation_message(message, cli_print=cli_print)
 
 
 def assign_scalar_pref_value(
@@ -356,23 +363,22 @@ def _parse_repeated_message_value(
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:
-            report_pref_validation(
+            message = (
                 f"Invalid JSON value for {field_path}: {exc.msg} "
-                f"(line {exc.lineno}, column {exc.colno}).",
-                cli_print=cli_print,
+                f"(line {exc.lineno}, column {exc.colno})."
             )
+            _reject_pref_validation_message(message, cli_print=cli_print)
             return False, []
     else:
         return None
 
     for index, item in enumerate(parsed):
         if not isinstance(item, dict):
-            report_pref_validation(
+            message = (
                 f"Invalid value {redact_pref_value(field_path, rendered_value)} "
-                f"for {field_path}; "
-                f"element {index} is not an object/mapping.",
-                cli_print=cli_print,
+                f"for {field_path}; element {index} is not an object/mapping."
             )
+            _reject_pref_validation_message(message, cli_print=cli_print)
             return False, []
     return True, parsed
 
@@ -432,10 +438,8 @@ def _assign_repeated_message_pref_value(
         try:
             ParseDict(element, submsg)
         except ParseError as exc:
-            report_pref_validation(
-                f"Invalid value for {field_path}; element {index}: {exc}.",
-                cli_print=cli_print,
-            )
+            message = f"Invalid value for {field_path}; element {index}: {exc}."
+            _reject_pref_validation_message(message, cli_print=cli_print)
             return False, True
         field_container.append(submsg)
 
