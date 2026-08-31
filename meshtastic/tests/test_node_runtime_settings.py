@@ -262,10 +262,15 @@ class TestNodeSettingsRuntime:
     """Tests for _NodeSettingsRuntime."""
 
     @pytest.mark.unit
-    def test_request_config_local_node_sends_without_callback(
+    def test_request_config_local_node_sends_with_response_callback(
         self, mock_local_node: MagicMock
     ) -> None:
-        """request_config on local node sends without onResponse callback."""
+        """request_config on local node registers the settings response handler.
+
+        Without the registered handler the device's config response is never
+        correlated for the local node, so a cleared section stays at protobuf
+        defaults and later comparisons read manufactured values.
+        """
         builder = _NodeSettingsMessageBuilder(mock_local_node)
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
 
@@ -274,7 +279,57 @@ class TestNodeSettingsRuntime:
         mock_local_node._send_admin.assert_called_once()
         call_kwargs = mock_local_node._send_admin.call_args[1]
         assert call_kwargs["wantResponse"] is True
-        assert call_kwargs["onResponse"] is None
+        assert (
+            call_kwargs["onResponse"]
+            is mock_local_node.onResponseRequestSettings
+        )
+        mock_local_node.iface.waitForAckNak.assert_called_once()
+
+    @pytest.mark.unit
+    def test_request_config_local_node_applies_response_to_local_config(
+        self, mock_local_node: MagicMock
+    ) -> None:
+        """A local get_config response must repopulate the cleared section.
+
+        Regression test for the real-device configure failure where the
+        no-disconnect verification refresh cleared requested sections and
+        fired local requestConfig calls whose responses were dropped, leaving
+        network.wifi_enabled/wifi_ssid/wifi_psk reading as defaults.
+        """
+        response_runtime = _NodeSettingsResponseRuntime(mock_local_node)
+        mock_local_node.onResponseRequestSettings.side_effect = (
+            response_runtime.handle_settings_response
+        )
+
+        def deliver_response(_message: Any, **kwargs: Any) -> MagicMock:
+            on_response = kwargs.get("onResponse")
+            assert on_response is not None
+            raw = admin_pb2.AdminMessage()
+            raw.get_config_response.device.CopyFrom(
+                mock_local_node.localConfig.device
+            )
+            raw.get_config_response.device.node_info_broadcast_secs = 10800
+            on_response(
+                {
+                    "decoded": {
+                        "admin": {
+                            "getConfigResponse": {"device": {}},
+                            "raw": raw,
+                        }
+                    }
+                }
+            )
+            return MagicMock()
+
+        mock_local_node._send_admin.side_effect = deliver_response
+
+        builder = _NodeSettingsMessageBuilder(mock_local_node)
+        runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
+        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+
+        assert (
+            mock_local_node.localConfig.device.node_info_broadcast_secs == 10800
+        )
 
     @pytest.mark.unit
     def test_request_config_remote_node_sends_with_callback(
