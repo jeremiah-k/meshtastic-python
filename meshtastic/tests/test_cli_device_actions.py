@@ -647,6 +647,46 @@ def test_local_factory_reset_device_exits_when_readiness_probe_fails() -> None:
 
 
 @pytest.mark.unit
+def test_local_factory_reset_device_fails_closed_when_cli_exit_returns() -> None:
+    """A readiness failure must never fall through a non-terminating exit seam."""
+    interface = MagicMock()
+    reset_node = interface.getNode.return_value
+    reset_node.factoryReset = MagicMock()
+    args = argparse.Namespace(
+        reboot=False,
+        reboot_ota=False,
+        enter_dfu=False,
+        shutdown=False,
+        ota_update=None,
+        device_metadata=False,
+        begin_edit=False,
+        commit_edit=False,
+        factory_reset=False,
+        factory_reset_device=True,
+        dest="^local",
+    )
+    context = CliContext(
+        interface=cast(MeshInterface, interface),
+        args=args,
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+    cli_exit = MagicMock(return_value=None)
+    readiness_probe = MagicMock(return_value=False)
+    hooks = _hooks(
+        cli_exit=cli_exit,
+        is_local_destination=MagicMock(return_value=True),
+        send_local_factory_reset_and_wait=MagicMock(),
+        post_factory_reset_ready_probe=readiness_probe,
+    )
+
+    with pytest.raises(AssertionError, match="cli_exit returned unexpectedly"):
+        device_actions._handle_reboot_and_reset_actions(context, hooks)
+
+    readiness_probe.assert_called_once_with(interface)
+    cli_exit.assert_called_once()
+
+@pytest.mark.unit
 def test_local_factory_reset_device_succeeds_when_readiness_probe_succeeds() -> None:
     """A successful readiness probe must not invoke cli_exit."""
     interface = MagicMock()

@@ -852,11 +852,13 @@ def _handle_reboot_and_reset_actions(
             reset_node.factoryReset(full=full)
         if full and is_local_reset:
             if not hooks.post_factory_reset_ready_probe(interface):
-                # Surface the uncertain outcome to the user; ``cli_exit`` raises the
-                # standard CLI error path so the process exits non-zero. The error
-                # message deliberately stays close to the legacy log wording so
-                # existing operator scripts that grep for the phrase keep working.
-                hooks.cli_exit(
+                # Surface the uncertain outcome to the user through the shared
+                # fail-closed exit helper so even an injected ``cli_exit`` that
+                # returns cannot report success. The error message deliberately
+                # stays close to the legacy log wording so existing operator
+                # scripts that grep for the phrase keep working.
+                _terminate_cli(
+                    hooks.cli_exit,
                     "Factory reset accepted; the device did not respond on the "
                     "configured serial port within the readiness budget. The "
                     "factory reset may not have completed; power-cycle the device "
