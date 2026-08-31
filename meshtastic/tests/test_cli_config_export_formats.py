@@ -114,6 +114,7 @@ def test_export_writes_binary_profile_for_cfg_extension(tmp_path: Path) -> None:
 def test_export_binary_to_stdout_is_rejected() -> None:
     """Binary payloads must not be spewed to a text console."""
     interface = cast(MeshInterface, MagicMock())
+    export_profile = MagicMock(return_value=b"\x00profile")
     exits: list[tuple[str, int]] = []
 
     def fake_exit(message: str, code: int = 0) -> None:
@@ -121,12 +122,15 @@ def test_export_binary_to_stdout_is_rejected() -> None:
         raise SystemExit(code)
 
     context = _context(interface, export_config="-", export_format="binary")
-    hooks = _hooks(cli_exit=fake_exit)
+    hooks = _hooks(cli_exit=fake_exit, export_profile=export_profile)
 
     with pytest.raises(SystemExit):
         configure_actions._handle_configure_actions(context, hooks)
     assert exits and exits[0][1] == 1
     assert "Binary export requires a file path" in exits[0][0]
+    # The payload is built lazily: termination must happen before the device
+    # round-trip that get_payload() performs for a stdout export.
+    export_profile.assert_not_called()
 
 
 @pytest.mark.unit
@@ -209,8 +213,10 @@ def test_decode_rejects_non_mapping_yaml() -> None:
 @pytest.mark.unit
 def test_decode_rejects_garbage_with_combined_error() -> None:
     """Files that are neither YAML nor DeviceProfile fail with both formats named."""
+    exits: list[str] = []
 
     def fake_exit(message: str, code: int = 0) -> None:
+        exits.append(message)
         raise SystemExit(code)
 
     hooks = MagicMock()
@@ -219,6 +225,9 @@ def test_decode_rejects_garbage_with_combined_error() -> None:
         configure_actions._decode_configure_document(
             hooks, b"\xff\xfe\xfd\xfc\xfb\xfa", "garbage.cfg"
         )
+    assert exits
+    assert "YAML config" in exits[0]
+    assert "DeviceProfile" in exits[0]
 
 
 @pytest.mark.unit
