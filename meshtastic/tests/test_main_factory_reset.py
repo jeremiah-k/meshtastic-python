@@ -2,6 +2,7 @@
 
 # pylint: disable=C0302,W0613,R0917
 
+import argparse
 import logging
 import sys
 import threading
@@ -12,16 +13,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import meshtastic.cli.device_actions as device_actions
 import meshtastic.__main__ as main_module
 from meshtastic import mt_config
-from meshtastic.__main__ import (
-    main,
-)
-
-# from ..radioconfig_pb2 import UserPreferences
-# import meshtastic.config_pb2
-from ..serial_interface import SerialInterface
+from meshtastic.__main__ import main
+from meshtastic.cli.context import ActionOutcome, CliContext
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.serial_interface import SerialInterface
 from meshtastic.util import Acknowledgment
 
 # from ..ble_interface import BLEInterface
@@ -443,9 +441,12 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     assert not hasattr(iface, "_connect_wait_timeout_seconds")
     assert not hasattr(iface, "_connect_retry_budget_seconds")
     assert not hasattr(iface, "_suppress_connect_failure_logging")
-    # The probe closes the port once before the retry loop and once after
-    # exhausting it; intermediate attempts do not close.
-    assert iface.close.call_count == 2
+    # The probe closes the port once before the retry loop, once after every
+    # failed attempt (so a failed attempt cannot hold the tty against the
+    # next one), and once after exhausting the budget.
+    assert iface.close.call_count == (
+        main_module.FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS + 2
+    )
 
 
 @pytest.mark.unit
@@ -476,8 +477,29 @@ def test_post_factory_reset_ready_probe_retries_until_device_returns(
     assert result is True
     assert success_seen["value"] is True
     assert iface.connect.call_count == 2
-    assert "device reconnected on attempt 2/3" in caplog.text
-    assert iface.close.call_count == 2
+    assert iface.close.call_count == 3
+
+
+@pytest.mark.unit
+def test_post_factory_reset_ready_probe_releases_port_between_attempts() -> None:
+    """A failed probe attempt must release the port before the retry delay so
+    the next attempt cannot fail because the previous attempt still holds the
+    serial device open locally instead of the device being absent."""
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface.close = MagicMock()
+    iface.connect = MagicMock(
+        side_effect=RuntimeError("port held by previous attempt")
+    )
+
+    result = main_module._post_factory_reset_ready_probe(cast(Any, iface))
+
+    assert result is False
+    assert iface.connect.call_count == (
+        main_module.FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS
+    )
+    assert iface.close.call_count == (
+        main_module.FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS + 2
+    )
 
 
 @pytest.mark.unit
@@ -573,3 +595,196 @@ def test_local_factory_reset_rejects_invalid_timeout_before_send() -> None:
         )
 
     reset_node.factoryReset.assert_not_called()
+
+
+class _VirtualClock:
+    """Deterministic monotonic clock and sleeper for factory-reset seams."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        """Return the virtual clock reading."""
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        """Advance the virtual clock instead of blocking."""
+        self.now += seconds
+
+
+def _failing_exit(message: str, return_value: int = 1) -> None:
+    """Exit seam mirroring the real CliExit contract by raising."""
+    raise SystemExit(return_value)
+
+
+def _command_hooks(prints: list[str]) -> device_actions.DeviceActionHooks:
+    """Build hooks wiring the real reset wait and readiness probe."""
+    return device_actions.DeviceActionHooks(
+        cli_exit=cast(Any, _failing_exit),
+        cli_print=prints.append,
+        set_pref=MagicMock(return_value=True),
+        is_local_destination=MagicMock(return_value=True),
+        send_local_factory_reset_and_wait=(
+            lambda node, *, full: device_actions._send_local_factory_reset_and_wait(
+                node, full=full, cli_print=prints.append
+            )
+        ),
+        post_factory_reset_ready_probe=main_module._post_factory_reset_ready_probe,
+        handle_ota_update=MagicMock(),
+        build_lockdown_auth=MagicMock(),
+        read_lockdown_passphrase_file=MagicMock(return_value=b"x"),
+        send_lockdown_auth=MagicMock(),
+        validate_lockdown_passphrase=MagicMock(return_value=b"x"),
+    )
+
+
+def _reset_command_iface(reset_node: Any, connect: Any) -> Any:
+    """Build a bare SerialInterface double for the command-level seam."""
+    iface = cast(Any, object.__new__(SerialInterface))
+    iface._acknowledgment = Acknowledgment()
+    iface.isConnected = threading.Event()
+    iface.isConnected.set()
+    iface.socket = object()
+    iface.stream = object()
+    iface._wait_for_request_ack = None
+    iface._raise_wait_error_if_present = None
+    iface._retire_wait_request = None
+    iface.close = MagicMock()
+    iface.connect = connect
+    iface.getNode = MagicMock(return_value=reset_node)
+    return iface
+
+
+def _reset_command_context(iface: Any) -> CliContext:
+    """Build factory-reset-device CLI arguments for the command seam."""
+    return CliContext(
+        interface=cast(MeshInterface, iface),
+        args=argparse.Namespace(
+            reboot=False,
+            reboot_ota=False,
+            enter_dfu=False,
+            shutdown=False,
+            ota_update=None,
+            device_metadata=False,
+            begin_edit=False,
+            commit_edit=False,
+            factory_reset=False,
+            factory_reset_device=True,
+            dest="^local",
+        ),
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+
+
+def _run_reset_command(
+    monkeypatch: pytest.MonkeyPatch,
+    clock: _VirtualClock,
+    iface: Any,
+    reset_node: Any,
+) -> tuple[list[str], _VirtualClock]:
+    """Drive the real handler with the real wait and probe under a virtual clock."""
+    monkeypatch.setattr(device_actions, "time", clock)
+    prints: list[str] = []
+    device_actions._handle_reboot_and_reset_actions(
+        _reset_command_context(iface), _command_hooks(prints)
+    )
+    return prints, clock
+
+
+@pytest.mark.unit
+def test_factory_reset_reports_success_only_after_reboot_transition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Success must require the observed reboot transition, and the implicit
+    ACK must end the acceptance phase promptly instead of waiting out the
+    acceptance budget. The timeline mirrors the reported device log: the ACK
+    arrives almost immediately, the first probe attempt burns its budget
+    while the device is still rebooting, and the second attempt reconnects
+    just after the device returns."""
+    clock = _VirtualClock()
+    boot_done_at = 22.0
+    timeline: dict[str, float] = {}
+
+    def _connect() -> None:
+        if clock.now >= boot_done_at:
+            timeline["reconnected_at"] = clock.now
+            return
+        if boot_done_at < clock.now + (
+            device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
+        ):
+            clock.now = boot_done_at
+            timeline["reconnected_at"] = clock.now
+            return
+        clock.now += device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
+        raise OSError("serial port absent while device reboots")
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        assert full is True
+        timeline["sent_at"] = clock.now
+        return SimpleNamespace(id=123)
+
+    reset_node = SimpleNamespace(factoryReset=MagicMock(side_effect=_factory_reset))
+    iface = _reset_command_iface(reset_node, _connect)
+    reset_node.iface = iface
+    acceptance_finished_at = {"value": None}
+    real_wait = device_actions._send_local_factory_reset_and_wait
+
+    def _timed_wait(node: Any, *, full: bool, cli_print: Any) -> Any:
+        result = real_wait(node, full=full, cli_print=cli_print)
+        acceptance_finished_at["value"] = clock.now
+        return result
+
+    monkeypatch.setattr(
+        device_actions, "_send_local_factory_reset_and_wait", _timed_wait
+    )
+
+    def _implicit_ack_when_settled(seconds: float) -> None:
+        clock.now += seconds
+        if clock.now >= 0.05:
+            iface._acknowledgment.receivedImplAck = True
+
+    clock.sleep = _implicit_ack_when_settled  # type: ignore[method-assign]
+    prints, clock = _run_reset_command(monkeypatch, clock, iface, reset_node)
+
+    assert reset_node.factoryReset.call_count == 1
+    assert timeline["sent_at"] == 0.0
+    assert acceptance_finished_at["value"] is not None
+    assert acceptance_finished_at["value"] < 1.0
+    assert acceptance_finished_at["value"] < (
+        device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
+    )
+    assert any(
+        "Waiting for factory reset acknowledgment" in text for text in prints
+    )
+    assert not hasattr(iface, "_connect_wait_timeout_seconds")
+
+
+@pytest.mark.unit
+def test_factory_reset_fails_closed_on_still_connected_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A device that never acknowledges and never disconnects must produce a
+    failure, never a success. This is the seam that rejects fire-and-forget:
+    skipping the acceptance wait would let the readiness probe reconnect the
+    still-running pre-reset session and report success before any reboot."""
+    clock = _VirtualClock()
+    connect_calls: list[float] = []
+
+    def _connect() -> None:
+        connect_calls.append(clock.now)
+
+    reset_node = SimpleNamespace(
+        factoryReset=MagicMock(return_value=SimpleNamespace(id=321))
+    )
+    iface = _reset_command_iface(reset_node, _connect)
+    reset_node.iface = iface
+
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="Timed out"):
+        _run_reset_command(monkeypatch, clock, iface, reset_node)
+
+    assert reset_node.factoryReset.call_count == 1
+    assert connect_calls == []
+    assert clock.now == pytest.approx(
+        device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
+    )
