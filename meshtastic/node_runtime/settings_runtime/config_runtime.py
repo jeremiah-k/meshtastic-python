@@ -1,8 +1,7 @@
 """Settings request/write orchestration and callback policy."""
 
 import logging
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from google.protobuf.descriptor import FieldDescriptor
 
