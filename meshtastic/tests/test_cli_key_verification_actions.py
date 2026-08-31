@@ -23,6 +23,20 @@ def _interface() -> MagicMock:
 
 
 def _args(stage: str | None, **overrides: object) -> dict[str, object]:
+    """Build key-verification CLI argument defaults for one stage.
+
+    Parameters
+    ----------
+    stage : str | None
+        Value for ``--key-verify``, or ``None`` to leave the flag unset.
+    **overrides : object
+        Argument values that replace the focused-test defaults.
+
+    Returns
+    -------
+    dict[str, object]
+        Argument overrides consumed by ``device_action_context``.
+    """
     values: dict[str, object] = {
         "key_verify": stage,
         "key_verify_nonce": 0,

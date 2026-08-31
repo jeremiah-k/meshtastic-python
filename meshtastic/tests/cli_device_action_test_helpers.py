@@ -21,10 +21,10 @@ def device_action_hooks(
     ``_hooks(**overrides)`` fixture idiom used by the device-action suites.
     """
 
-    def fake_exit(message: str, code: int = 0) -> None:
+    def fake_exit(message: str, return_value: int = 1) -> None:
         if exits is not None:
-            exits.append((message, code))
-        raise SystemExit(code)
+            exits.append((message, return_value))
+        raise SystemExit(return_value)
 
     values: dict[str, Any] = {
         "cli_exit": cast(CliExit, fake_exit),
