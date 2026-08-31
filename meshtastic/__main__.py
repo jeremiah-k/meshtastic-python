@@ -78,8 +78,8 @@ from meshtastic.configure_verify import (  # noqa: F401 - legacy __main__ compat
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.key_verification import (
-    _build_key_verification_admin,
-    _send_key_verification,
+    build_key_verification_admin,
+    send_key_verification,
 )
 from meshtastic.lockdown import (
     build_lockdown_auth,
@@ -1288,8 +1288,8 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
         read_lockdown_passphrase_file=read_lockdown_passphrase_file,
         send_lockdown_auth=send_lockdown_auth,
         validate_lockdown_passphrase=validate_lockdown_passphrase,
-        build_key_verification_admin=_build_key_verification_admin,
-        send_key_verification=_send_key_verification,
+        build_key_verification_admin=build_key_verification_admin,
+        send_key_verification=send_key_verification,
     )
     channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
         cli_exit=_cli_exit,
