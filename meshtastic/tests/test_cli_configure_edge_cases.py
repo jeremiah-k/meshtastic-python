@@ -141,6 +141,32 @@ def _install_clock(
 
 
 @pytest.mark.unit
+def test_reconnect_verify_caps_reboot_probe_to_total_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A short caller budget must cap the fixed reboot-observation window."""
+    iface = _interface()
+    iface.configId = 5
+    iface._start_config = MagicMock()
+    ticks = iter([0.0, 0.0, 0.4, 0.8, 1.0, 1.0])
+    sleeps: list[float] = []
+    _install_clock(
+        monkeypatch,
+        monotonic=lambda: next(ticks, 1.0),
+        sleep=sleeps.append,
+    )
+
+    result = configure_actions._post_configure_reconnect_and_verify(
+        iface, timeout=1.0, node_dest="^local"
+    )
+
+    assert result is ConfigureReconnectResult.VERIFIED
+    assert len(sleeps) == 2
+    iface._start_config.assert_called_once_with()
+    iface.waitForConfig.assert_called_once_with()
+
+
+@pytest.mark.unit
 def test_reconnect_verify_observed_reboot_single_wait_for_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
