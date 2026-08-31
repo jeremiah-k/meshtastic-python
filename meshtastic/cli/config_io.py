@@ -595,6 +595,11 @@ def _profile_to_configuration(
 
 EXPORT_FILE_MODE: int = 0o600
 
+# Module-owned filesystem seams keep fault-injection tests from monkeypatching
+# process-wide ``os`` functions while preserving the real file-descriptor path.
+_os_fdopen = os.fdopen
+_os_close = os.close
+
 
 def _write_export_file(
     export_path: str, payload: bytes | str, cli_exit: CliExit
@@ -616,12 +621,12 @@ def _write_export_file(
             fchmod = getattr(os, "fchmod", None)
             if callable(fchmod):
                 fchmod(descriptor, EXPORT_FILE_MODE)
-            with os.fdopen(descriptor, "wb") as output_file:
+            with _os_fdopen(descriptor, "wb") as output_file:
                 descriptor = -1
                 output_file.write(data)
         finally:
             if descriptor >= 0:
-                os.close(descriptor)
+                _os_close(descriptor)
     except OSError as exc:
         _terminate_cli(cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
 

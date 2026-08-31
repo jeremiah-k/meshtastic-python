@@ -396,9 +396,8 @@ def test_binary_profile_write_closes_raw_descriptor_on_fdopen_failure(
     """A descriptor acquired before fdopen failure is closed exactly once.
 
     ``os.open`` and ``fchmod`` stay real so the descriptor is a genuine open
-    file; only the ``fdopen`` boundary is forced to fail and ``os.close`` is
-    wrapped in a transparent spy, keeping the process-wide patch surface
-    minimal.
+    file. Only config_io-owned aliases for ``fdopen`` and ``close`` are replaced,
+    so the fault injection cannot affect unrelated threads or test code.
     """
     exits: list[str] = []
     real_path = tmp_path / "profile.cfg"
@@ -412,8 +411,8 @@ def test_binary_profile_write_closes_raw_descriptor_on_fdopen_failure(
     def failing_fdopen(*_args: Any, **_kwargs: Any) -> Any:
         raise OSError("fdopen forced")
 
-    monkeypatch.setattr(os, "fdopen", failing_fdopen)
-    monkeypatch.setattr(os, "close", spying_close)
+    monkeypatch.setattr(config_io, "_os_fdopen", failing_fdopen)
+    monkeypatch.setattr(config_io, "_os_close", spying_close)
 
     def fake_exit(message: str, return_value: int = 1) -> None:
         exits.append(message)
