@@ -233,7 +233,8 @@ def test_decode_rejects_garbage_with_combined_error() -> None:
 @pytest.mark.unit
 def test_profile_export_round_trip() -> None:
     """Exported profile bytes parse back into the YAML document shape."""
-    mock = MagicMock(autospec=MeshInterface)
+    mock = MagicMock(spec=MeshInterface)
+    mock.localNode = MagicMock()
     mock.getLongName.return_value = "Jeremiah K"
     mock.getShortName.return_value = "JK"
     mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
@@ -390,36 +391,50 @@ def test_binary_profile_write_reports_open_failure(
 
 @pytest.mark.unit
 def test_binary_profile_write_closes_raw_descriptor_on_fdopen_failure(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A descriptor acquired before fdopen failure is closed exactly once."""
+    """A descriptor acquired before fdopen failure is closed exactly once.
+
+    ``os.open`` and ``fchmod`` stay real so the descriptor is a genuine open
+    file; only the ``fdopen`` boundary is forced to fail and ``os.close`` is
+    wrapped in a transparent spy, keeping the process-wide patch surface
+    minimal.
+    """
     exits: list[str] = []
+    real_path = tmp_path / "profile.cfg"
+    close_calls: list[int] = []
+    real_close = os.close
 
-    def fake_exit(message: str, code: int = 0) -> None:
+    def spying_close(fd: int) -> None:
+        close_calls.append(fd)
+        real_close(fd)
+
+    def failing_fdopen(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("fdopen forced")
+
+    monkeypatch.setattr(os, "fdopen", failing_fdopen)
+    monkeypatch.setattr(os, "close", spying_close)
+
+    def fake_exit(message: str, return_value: int = 1) -> None:
         exits.append(message)
-        raise SystemExit(code)
-
-    monkeypatch.setattr(config_io.os, "open", MagicMock(return_value=77))
-    monkeypatch.setattr(config_io.os, "fchmod", MagicMock())
-    monkeypatch.setattr(
-        config_io.os, "fdopen", MagicMock(side_effect=OSError("fdopen"))
-    )
-    close = MagicMock()
-    monkeypatch.setattr(config_io.os, "close", close)
+        raise SystemExit(return_value)
 
     with pytest.raises(SystemExit):
         config_io._write_binary_profile(
-            "profile.cfg", lambda: b"payload", cast(CliExit, fake_exit), MagicMock()
+            str(real_path), lambda: b"payload", cast(CliExit, fake_exit), MagicMock()
         )
 
-    close.assert_called_once_with(77)
+    # The helper acquired exactly one real descriptor via os.open and the
+    # ownership-transfer bookkeeping closed it exactly once on the failure.
+    assert len(close_calls) == 1
     assert "Failed to write config file" in exits[0]
 
 
 @pytest.mark.unit
 def test_yaml_export_includes_all_optional_local_snapshot_fields() -> None:
     """YAML export exercises every populated direct-state field from one snapshot."""
-    mock = MagicMock(autospec=MeshInterface)
+    mock = MagicMock(spec=MeshInterface)
+    mock.localNode = MagicMock()
     mock.getLongName.return_value = "Owner"
     mock.getShortName.return_value = "OS"
     mock.localNode.getURL.return_value = "https://meshtastic.org/e/#ABC"
