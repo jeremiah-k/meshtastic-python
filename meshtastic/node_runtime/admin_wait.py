@@ -140,15 +140,15 @@ def _get_bound_interface_helper(node: "Node", name: str) -> Callable[..., Any] |
     return None
 
 
-def _request_is_scoped(node: "Node", request: mesh_pb2.MeshPacket | None) -> bool:
-    """Return whether one sent request carries active scoped wait bookkeeping."""
+def _scoped_request_id(node: "Node", request: mesh_pb2.MeshPacket | None) -> int | None:
+    """Return the request id when scoped wait bookkeeping is active for it."""
     request_id = _extract_request_id_from_sent_packet(node, request)
+    if request_id is None:
+        return None
     has_active_wait = _get_bound_interface_helper(node, "_has_active_wait_request")
-    return (
-        request_id is not None
-        and has_active_wait is not None
-        and bool(has_active_wait(WAIT_ATTR_NAK, request_id))
-    )
+    if has_active_wait is None or not bool(has_active_wait(WAIT_ATTR_NAK, request_id)):
+        return None
+    return request_id
 
 
 def _wait_for_admin_ack(node: "Node", request: mesh_pb2.MeshPacket | None) -> None:
@@ -160,7 +160,8 @@ def _wait_for_admin_ack(node: "Node", request: mesh_pb2.MeshPacket | None) -> No
     fallback.
     """
     scoped_wait = _get_bound_interface_helper(node, "_wait_for_ack_nak")
-    if _request_is_scoped(node, request) and scoped_wait is not None:
-        scoped_wait(_extract_request_id_from_sent_packet(node, request))
+    scoped_request_id = _scoped_request_id(node, request)
+    if scoped_request_id is not None and scoped_wait is not None:
+        scoped_wait(scoped_request_id)
         return
     node.iface.waitForAckNak()

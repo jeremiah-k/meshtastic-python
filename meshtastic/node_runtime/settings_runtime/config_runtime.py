@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from google.protobuf.descriptor import FieldDescriptor
 
 from meshtastic.node_runtime.admin_wait import (
-    _request_is_scoped,
+    _scoped_request_id,
     _send_admin_with_ack_scope,
     _wait_for_admin_ack,
 )
@@ -70,8 +70,9 @@ class _NodeSettingsRuntime:
                 f"requestConfig failed: admin message not started (admin_index={admin_index})"
             )
         if on_response is not None and request is not None:
-            if self._node is self._node.iface.localNode and not _request_is_scoped(
-                self._node, request
+            if (
+                self._node is self._node.iface.localNode
+                and _scoped_request_id(self._node, request) is None
             ):
                 # A want_response settings request to the local node completes
                 # through its correlated data response, not a Routing ACK.
