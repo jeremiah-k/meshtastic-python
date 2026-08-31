@@ -147,18 +147,19 @@ def test_reconnect_verify_observed_reboot_single_wait_for_config(
     """An observed reboot (configId bumped by receive pipeline) reloads exactly once."""
     iface = _interface()
     iface.getNode.return_value = MagicMock()
-    ticks = iter(float(value) for value in range(20))
+    ticks = iter(index * 0.1 for index in range(100))
+    iface.configId = 41  # pre-operation generation snapshot
+
+    def _bump_generation(_seconds: float) -> None:
+        """Advance the generation once while the probe loop sleeps."""
+        iface.configId = 42
+
     _install_clock(
         monkeypatch,
         monotonic=lambda: next(ticks, 20.0),
-        sleep=lambda _seconds: None,
+        sleep=_bump_generation,
     )
-    # First access returns the pre-operation generation; the receive pipeline
-    # has already advanced it by the time we compare, so subsequent reads
-    # observe the new value.
-    iface.configId = MagicMock(side_effect=[41, 42, 42, 42])
     iface._start_config = MagicMock()
-    iface.isConnected.is_set.return_value = True
 
     result = configure_actions._post_configure_reconnect_and_verify(
         iface,
@@ -188,7 +189,6 @@ def test_reconnect_verify_unobserved_reboot_triggers_single_start_config(
     )
     iface.configId = 7  # pre-op generation snapshot
     iface._start_config = MagicMock(side_effect=lambda: setattr(iface, "configId", 8))
-    iface.isConnected.is_set.return_value = True
 
     result = configure_actions._post_configure_reconnect_and_verify(
         iface,
@@ -218,7 +218,6 @@ def test_reconnect_verify_no_reboot_observes_probe_then_waits_once(
     )
     iface.configId = 13
     iface._start_config = MagicMock()
-    iface.isConnected.is_set.return_value = True
 
     result = configure_actions._post_configure_reconnect_and_verify(
         iface,
@@ -247,7 +246,6 @@ def test_reconnect_verify_true_reload_failure_reported_once(
     )
     iface.configId = 21
     iface._start_config = MagicMock()
-    iface.isConnected.is_set.return_value = True
     iface.waitForConfig.side_effect = RuntimeError("reload failed")
 
     result = configure_actions._post_configure_reconnect_and_verify(
@@ -277,7 +275,6 @@ def test_reconnect_verify_successful_reload_then_verifier_mismatch_is_incomplete
     )
     iface.configId = 33
     iface._start_config = MagicMock()
-    iface.isConnected.is_set.return_value = True
 
     monkeypatch.setattr(
         configure_actions,
@@ -311,7 +308,6 @@ def test_reconnect_verify_reports_unexpected_verifier_failure(
     )
     iface.configId = 99
     iface._start_config = MagicMock()
-    iface.isConnected.is_set.return_value = True
     monkeypatch.setattr(
         configure_actions,
         "_verify_post_reconnect_config",
@@ -344,7 +340,6 @@ def test_reconnect_verify_stale_pre_op_generation_cannot_satisfy_success(
     )
     iface.configId = 100  # the snapshot
     iface._start_config = MagicMock(side_effect=lambda: setattr(iface, "configId", 101))
-    iface.isConnected.is_set.return_value = True
 
     result = configure_actions._post_configure_reconnect_and_verify(
         iface,
