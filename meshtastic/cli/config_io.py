@@ -493,7 +493,7 @@ def _has_yaml_forbidden_control_chars(text: str) -> bool:
         indicating binary content rather than a YAML document.
     """
     return any(
-        ord(char) < 32 and char not in _YAML_ALLOWED_CONTROL_CHARS or ord(char) == 127
+        (ord(char) < 32 and char not in _YAML_ALLOWED_CONTROL_CHARS) or ord(char) == 127
         for char in text
     )
 
