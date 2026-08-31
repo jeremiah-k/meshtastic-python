@@ -58,6 +58,7 @@ def test_key_verification_action_noop_without_stage() -> None:
     device_actions._handle_key_verification_action(context, hooks)
 
     assert context.outcome.close_now is False
+    assert context.outcome.stop_processing is False
     build_admin = cast(MagicMock, hooks.build_key_verification_admin)
     build_admin.assert_not_called()
 
@@ -91,6 +92,7 @@ def test_key_verification_initiate_resolves_peer_sends_and_reports() -> None:
     )
     send_notification.assert_called_once_with(interface, request, timeout=2.5)
     assert context.outcome.close_now is True
+    assert context.outcome.stop_processing is True
     assert any("Repeater requests the security number" in line for line in prints)
     assert any("--key-verify-nonce 91" in line for line in prints)
 

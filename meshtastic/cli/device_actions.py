@@ -1021,8 +1021,9 @@ def _handle_key_verification_action(
     Parameters
     ----------
     context : CliContext
-        Connected invocation state. The action enables ``close_now`` so the
-        one-shot CLI exits after the handshake stage completes.
+        Connected invocation state. The action enables ``close_now`` and
+        ``stop_processing`` so the one-shot CLI exits after the handshake stage
+        completes instead of continuing into information or long-running actions.
     hooks : DeviceActionHooks
         Entrypoint-owned key-verification and reporting dependencies.
     """
@@ -1032,6 +1033,7 @@ def _handle_key_verification_action(
         return
 
     context.outcome.close_now = True
+    context.outcome.stop_processing = True
     remote_nodenum = 0
     if stage == _KV_STAGE_INITIATE:
         remote_nodenum = _resolve_key_verification_peer(context, hooks)
