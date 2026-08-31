@@ -1786,9 +1786,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
         Parameters
         ----------
         response_timeout_seconds : float, optional
-            Seconds to wait for the admin RESPONSE packet to arrive after the
-            ACK. ``None`` is returned if the wait expires before the device
-            reports back. Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
+            Seconds to wait for the correlated admin RESPONSE packet after
+            the request is sent. No ACK/NAK wait is performed. ``None`` is
+            returned if the wait expires before the device reports back.
+            Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
 
         Returns
         -------
@@ -1813,9 +1814,10 @@ class Node:  # pylint: disable=too-many-instance-attributes
         Parameters
         ----------
         response_timeout_seconds : float, optional
-            Seconds to wait for the admin RESPONSE packet to arrive after the
-            ACK. ``None`` is returned if the wait expires before the device
-            reports back. Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
+            Seconds to wait for the correlated admin RESPONSE packet after
+            the request is sent. No ACK/NAK wait is performed. ``None`` is
+            returned if the wait expires before the device reports back.
+            Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
 
         Returns
         -------
