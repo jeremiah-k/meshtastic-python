@@ -734,6 +734,38 @@ class TestNodeSettingsResponseRuntime:
             == config_pb2.Config.DeviceConfig.Role.CLIENT
         )
 
+    @pytest.mark.unit
+    def test_handle_settings_response_session_key_variant_acks_without_applying(
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A SESSIONKEY_CONFIG response completes the wait without a fabricated NAK.
+
+        The device answers with a ``Config`` payload variant, which maps to no
+        ``LocalConfig`` field; the response must be acknowledged and must not
+        fail ``ensureSessionKey`` with a "recognized config field" error.
+        """
+        runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
+
+        raw = admin_pb2.AdminMessage()
+        raw.get_config_response.sessionkey.SetInParent()
+
+        packet: dict[str, Any] = {
+            "decoded": {
+                "admin": {
+                    "getConfigResponse": {"sessionkey": {}},
+                    "raw": raw,
+                }
+            }
+        }
+
+        with caplog.at_level(logging.INFO):
+            runtime.handle_settings_response(packet)
+
+        assert mock_node_for_response.iface._acknowledgment.receivedAck is True
+        assert mock_node_for_response.iface._acknowledgment.receivedNak is False
+        assert len(mock_node_for_response.localConfig.ListFields()) == 0
+        assert "Received session-key config response" in caplog.text
+
 
 class TestNodeAdminCommandRuntime:
     """Tests for _NodeAdminCommandRuntime."""
