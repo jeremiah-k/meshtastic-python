@@ -430,11 +430,9 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> bool:
     -------
     bool
         ``True`` once a probe connected to the device, ``False`` when every
-        attempt was exhausted without the device returning. The final
-        exhausted-state decision surfaces as an error in
-        [__main__._post_factory_reset_ready_probe] so the CLI exits with a
-        non-zero status when the user can't tell whether the device finished
-        factory-resetting.
+        attempt was exhausted without the device returning. Callers decide how
+        to treat an exhausted budget; the factory-reset command intentionally
+        logs clearly and returns to the shell without failing closed.
     """
     serial_interface_cls = getattr(meshtastic.serial_interface, "SerialInterface", None)
     if not isinstance(serial_interface_cls, type) or not isinstance(

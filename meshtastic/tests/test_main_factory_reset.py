@@ -411,8 +411,9 @@ def test_post_factory_reset_ready_probe_bounds_and_quiets_expected_failure(
     was a single-shot, single-attempt suppression. The new probe retires up
     to [FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS] times, and the final
     exhausted-state is now a WARNING (not INFO) that explains the next
-    command may have to reconnect. The function returns ``False`` and the
-    caller turns that into a non-zero CLI exit.
+    command may have to reconnect. The function returns ``False``; the
+    reset command intentionally continues and reports the uncertain state
+    instead of failing closed.
     """
     iface = cast(Any, object.__new__(SerialInterface))
     iface.close = MagicMock()
