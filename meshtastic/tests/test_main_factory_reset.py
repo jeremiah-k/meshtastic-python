@@ -774,38 +774,21 @@ def _run_reset_command(
 
 
 @pytest.mark.unit
-def test_factory_reset_reports_success_only_after_reboot_transition(
+def test_factory_reset_implicit_ack_ends_acceptance_before_the_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Require an observed reboot transition before reporting reset success.
+    """End the acceptance phase promptly when an implicit ACK arrives.
 
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
         Fixture used to install the deterministic reset clock.
-
-    The implicit ACK must end the acceptance phase promptly instead of waiting
-    out the acceptance budget. The timeline mirrors the reported device log:
-    the ACK arrives almost immediately, the first probe attempt burns its
-    budget while the device is still rebooting, and the second attempt
-    reconnects just after the device returns.
     """
     clock = _VirtualClock()
-    boot_done_at = 22.0
     timeline: dict[str, float] = {}
 
     def _connect() -> None:
-        if clock.now >= boot_done_at:
-            timeline["reconnected_at"] = clock.now
-            return
-        if boot_done_at < clock.now + (
-            device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
-        ):
-            clock.now = boot_done_at
-            timeline["reconnected_at"] = clock.now
-            return
-        clock.now += device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
-        raise OSError("serial port absent while device reboots")
+        raise AssertionError("the reset path must not probe readiness")
 
     def _factory_reset(*, full: bool) -> SimpleNamespace:
         assert full is True
