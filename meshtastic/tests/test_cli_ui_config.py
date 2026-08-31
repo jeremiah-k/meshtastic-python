@@ -96,24 +96,12 @@ def test_requestUiConfig_returns_config_when_response_fires() -> None:
 
 
 @pytest.mark.unit
-def test_requestUiConfig_returns_none_when_response_times_out(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_requestUiConfig_returns_none_when_response_times_out() -> None:
     """A response that never fires surfaces as ``None`` after the bounded wait."""
 
     captured: dict[str, Any] = {}
     iface = _interface()
     node = _stub_node_for_request(captured, iface)
-
-    def _fake_ack_wait(node_obj: Node, request: Any) -> None:
-        # ACK arrives, but no admin RESPONSE packet ever follows.
-        return None
-
-    monkeypatch.setattr(
-        "meshtastic.node._wait_for_admin_ack",
-        _fake_ack_wait,
-        raising=True,
-    )
 
     result = node.requestUiConfig(response_timeout_seconds=0.05)
     assert result is None
