@@ -38,14 +38,19 @@ class _NodeSettingsRuntime:
         *,
         admin_index: int | None = None,
     ) -> None:
-        """Send one settings request with preserved local/remote wait semantics."""
-        if self._node is self._node.iface.localNode:
-            on_response: Callable[[dict[str, Any]], Any] | None = None
-        else:
-            on_response = self._node.onResponseRequestSettings
+        """Send one settings request and wait for the response to be applied.
+
+        The response handler runs for local and remote nodes alike: without it
+        the device's config response is never correlated, so a cleared section
+        (e.g. a pre-verification refresh) silently stays at defaults and any
+        subsequent comparison reads manufactured values instead of device
+        state. The wait completes when the response is applied.
+        """
+        if self._node is not self._node.iface.localNode:
             logger.info(
                 "Requesting current config from remote node (this can take a while)."
             )
+        on_response = self._node.onResponseRequestSettings
 
         message = self._message_builder.build_request_message(config_type)
         request = _send_admin_with_ack_scope(
