@@ -440,3 +440,35 @@ def test_yaml_export_includes_all_optional_local_snapshot_fields() -> None:
     assert configuration["is_unmessagable"] is True
     assert configuration["is_licensed"] is False
     assert configuration["location"] == {"lat": 1.25, "lon": -2.5, "alt": 33}
+
+
+@pytest.mark.unit
+def test_partial_profile_import_does_not_invent_absent_sections() -> None:
+    """Firmware-true defaults materialize only inside sections the profile carries.
+
+    A partial binary profile naming a single config section must not gain the
+    other sections with disabled flags: the configure path writes every
+    section of the converted document, so invented sections would disable
+    settings the profile never specified.
+    """
+    profile = clientonly_pb2.DeviceProfile()
+    profile.config.network.wifi_ssid = "ssid"
+
+    configuration = config_io._profile_to_configuration(profile)
+
+    assert configuration["config"]["network"]["wifiSsid"] == "ssid"
+    assert "bluetooth" not in configuration["config"]
+    assert "lora" not in configuration["config"]
+    assert "position" not in configuration["config"]
+    assert "security" not in configuration["config"]
+
+
+@pytest.mark.unit
+def test_partial_profile_keeps_defaults_within_present_sections() -> None:
+    """A section present in the profile still gains its omitted true defaults."""
+    profile = clientonly_pb2.DeviceProfile()
+    profile.config.lora.region = config_pb2.Config.LoRaConfig.RegionCode.US
+
+    configuration = config_io._profile_to_configuration(profile)
+
+    assert configuration["config"]["lora"]["usePreset"] is False
