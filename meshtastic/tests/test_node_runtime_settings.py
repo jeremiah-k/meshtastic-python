@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+from types import MethodType, SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -262,10 +263,25 @@ class TestNodeSettingsRuntime:
     """Tests for _NodeSettingsRuntime."""
 
     @pytest.mark.unit
-    def test_request_config_local_node_sends_without_callback(
+    def test_request_config_local_node_sends_with_response_callback(
         self, mock_local_node: MagicMock
     ) -> None:
-        """request_config on local node sends without onResponse callback."""
+        """request_config on local node registers the settings response handler.
+
+        Without the registered handler the device's config response is never
+        correlated for the local node, so a cleared section stays at protobuf
+        defaults and later comparisons read manufactured values.
+        """
+        iface = mock_local_node.iface
+        scoped_waits: list[int] = []
+        iface._extract_request_id_from_sent_packet = MagicMock(return_value=7)
+        iface._has_active_wait_request = MethodType(
+            lambda self, acknowledgment_attr, request_id: False, iface
+        )
+        iface._wait_for_ack_nak = MethodType(
+            lambda self, request_id: scoped_waits.append(request_id), iface
+        )
+        mock_local_node._send_admin = MagicMock(return_value=SimpleNamespace(id=7))
         builder = _NodeSettingsMessageBuilder(mock_local_node)
         runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
 
@@ -274,7 +290,77 @@ class TestNodeSettingsRuntime:
         mock_local_node._send_admin.assert_called_once()
         call_kwargs = mock_local_node._send_admin.call_args[1]
         assert call_kwargs["wantResponse"] is True
-        assert call_kwargs["onResponse"] is None
+        assert call_kwargs["onResponse"] is mock_local_node.onResponseRequestSettings
+        assert scoped_waits == []
+        iface.waitForAckNak.assert_not_called()
+
+    @pytest.mark.unit
+    def test_request_config_local_node_waits_via_scoped_bookkeeping(
+        self, mock_local_node: MagicMock
+    ) -> None:
+        """When scoped ACK bookkeeping is registered, the local settings
+        request waits on the request-scoped helper instead of the legacy
+        interface ACK wait."""
+        scoped_waits: list[int] = []
+        iface = mock_local_node.iface
+        iface._wait_for_ack_nak = MethodType(
+            lambda self, request_id: scoped_waits.append(request_id), iface
+        )
+        iface._has_active_wait_request = MethodType(
+            lambda self, acknowledgment_attr, request_id: True, iface
+        )
+        iface._extract_request_id_from_sent_packet = MagicMock(return_value=7)
+        mock_local_node._send_admin = MagicMock(return_value=SimpleNamespace(id=7))
+
+        builder = _NodeSettingsMessageBuilder(mock_local_node)
+        runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
+
+        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+
+        assert scoped_waits == [7]
+        iface.waitForAckNak.assert_not_called()
+
+    @pytest.mark.unit
+    def test_request_config_local_node_applies_response_to_local_config(
+        self, mock_local_node: MagicMock
+    ) -> None:
+        """A local get_config response must repopulate the cleared section.
+
+        Regression test for the real-device configure failure where the
+        no-disconnect verification refresh cleared requested sections and
+        fired local requestConfig calls whose responses were dropped, leaving
+        network.wifi_enabled/wifi_ssid/wifi_psk reading as defaults.
+        """
+        response_runtime = _NodeSettingsResponseRuntime(mock_local_node)
+        mock_local_node.onResponseRequestSettings.side_effect = (
+            response_runtime.handle_settings_response
+        )
+
+        def deliver_response(_message: Any, **kwargs: Any) -> MagicMock:
+            on_response = kwargs.get("onResponse")
+            assert on_response is not None
+            raw = admin_pb2.AdminMessage()
+            raw.get_config_response.device.CopyFrom(mock_local_node.localConfig.device)
+            raw.get_config_response.device.node_info_broadcast_secs = 10800
+            on_response(
+                {
+                    "decoded": {
+                        "admin": {
+                            "getConfigResponse": {"device": {}},
+                            "raw": raw,
+                        }
+                    }
+                }
+            )
+            return MagicMock()
+
+        mock_local_node._send_admin.side_effect = deliver_response
+
+        builder = _NodeSettingsMessageBuilder(mock_local_node)
+        runtime = _NodeSettingsRuntime(mock_local_node, message_builder=builder)
+        runtime.request_config(admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG)
+
+        assert mock_local_node.localConfig.device.node_info_broadcast_secs == 10800
 
     @pytest.mark.unit
     def test_request_config_remote_node_sends_with_callback(
@@ -678,6 +764,41 @@ class TestNodeSettingsResponseRuntime:
             mock_node_for_response.localConfig.device.role
             == config_pb2.Config.DeviceConfig.Role.CLIENT
         )
+
+    @pytest.mark.unit
+    def test_handle_settings_response_session_key_variant_acks_without_applying(
+        self, mock_node_for_response: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A SESSIONKEY_CONFIG response completes the wait without a fabricated NAK.
+
+        The device answers with a ``Config`` payload variant, which maps to no
+        ``LocalConfig`` field; the response must be acknowledged and must not
+        fail ``ensureSessionKey`` with a "recognized config field" error.
+        """
+        runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
+        # A stale NAK from an earlier failed exchange must not survive the
+        # ack: legacy unscoped waiters read one coherent outcome.
+        mock_node_for_response.iface._acknowledgment.receivedNak = True
+
+        raw = admin_pb2.AdminMessage()
+        raw.get_config_response.sessionkey.SetInParent()
+
+        packet: dict[str, Any] = {
+            "decoded": {
+                "admin": {
+                    "getConfigResponse": {"sessionkey": {}},
+                    "raw": raw,
+                }
+            }
+        }
+
+        with caplog.at_level(logging.INFO):
+            runtime.handle_settings_response(packet)
+
+        assert mock_node_for_response.iface._acknowledgment.receivedAck is True
+        assert mock_node_for_response.iface._acknowledgment.receivedNak is False
+        assert len(mock_node_for_response.localConfig.ListFields()) == 0
+        assert "Received session-key config response" in caplog.text
 
 
 class TestNodeAdminCommandRuntime:

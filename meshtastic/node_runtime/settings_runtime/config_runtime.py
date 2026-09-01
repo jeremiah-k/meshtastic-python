@@ -1,12 +1,12 @@
 """Settings request/write orchestration and callback policy."""
 
 import logging
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from google.protobuf.descriptor import FieldDescriptor
 
 from meshtastic.node_runtime.admin_wait import (
+    _scoped_request_id,
     _send_admin_with_ack_scope,
     _wait_for_admin_ack,
 )
@@ -38,14 +38,22 @@ class _NodeSettingsRuntime:
         *,
         admin_index: int | None = None,
     ) -> None:
-        """Send one settings request with preserved local/remote wait semantics."""
-        if self._node is self._node.iface.localNode:
-            on_response: Callable[[dict[str, Any]], Any] | None = None
-        else:
-            on_response = self._node.onResponseRequestSettings
+        """Send one settings request and register its response application.
+
+        The response handler runs for local and remote nodes alike: without it
+        the device's config response is never correlated, so a cleared section
+        (e.g. a pre-verification refresh) silently stays at defaults and any
+        subsequent comparison reads manufactured values instead of device
+        state. Scoped requests wait for correlated completion. The historical
+        local compatibility path has no scoped wait bookkeeping, so it returns
+        after registering the response callback and applies that response
+        asynchronously when it arrives.
+        """
+        if self._node is not self._node.iface.localNode:
             logger.info(
                 "Requesting current config from remote node (this can take a while)."
             )
+        on_response = self._node.onResponseRequestSettings
 
         message = self._message_builder.build_request_message(config_type)
         request = _send_admin_with_ack_scope(
@@ -62,6 +70,18 @@ class _NodeSettingsRuntime:
                 f"requestConfig failed: admin message not started (admin_index={admin_index})"
             )
         if on_response is not None and request is not None:
+            if (
+                self._node is self._node.iface.localNode
+                and _scoped_request_id(self._node, request) is None
+            ):
+                # A want_response settings request to the local node completes
+                # through its correlated data response, not a Routing ACK.
+                # Without scoped wait bookkeeping there is no bounded,
+                # correlated wait to run, so fall back to the registered
+                # response handler alone instead of the legacy interface ACK
+                # wait, which would block on an acknowledgment the firmware
+                # never sends for want_response admin requests.
+                return
             _wait_for_admin_ack(self._node, request)
 
     def _validate_write_configs_loaded(self, config_name: str) -> None:
