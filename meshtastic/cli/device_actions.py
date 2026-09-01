@@ -78,9 +78,11 @@ class DeviceActionHooks:
     send_local_factory_reset_and_wait : Callable[..., Any]
         Local destructive-reset acceptance helper.
     post_factory_reset_ready_probe : Callable[[MeshInterface], bool]
-        Best-effort serial readiness probe used after a full local reset. Returns
-        ``True`` once the device reconnected on serial, ``False`` when every
-        probe attempt was exhausted without the device returning.
+        Best-effort serial readiness probe seam. Not invoked by the built-in
+        reset path - a full local reset returns to the shell after its
+        acceptance wait; the entrypoint may still call it. Returns ``True``
+        once the device reconnected on serial, ``False`` when every probe
+        attempt was exhausted without the device returning.
     handle_ota_update : Callable[[MeshInterface, Any, dict[str, Any]], None]
         Wi-Fi OTA execution helper.
     build_key_verification_admin, send_key_verification : Callable[..., Any]
