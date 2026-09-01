@@ -105,7 +105,9 @@ class _NodeSettingsResponseRuntime:
         config field to repopulate.  The session key itself is harvested from
         the raw admin payload by the admin receive path; this only completes
         the scoped admin wait so ``ensureSessionKey`` is not failed with a
-        fabricated NAK.
+        fabricated NAK. A stale NAK from an earlier exchange is cleared
+        alongside the ack so legacy unscoped waiters read one coherent
+        outcome.
         """
         raw_admin = admin_message.get("raw")
         if not isinstance(raw_admin, admin_pb2.AdminMessage):
@@ -114,7 +116,9 @@ class _NodeSettingsResponseRuntime:
             return False
         if raw_admin.get_config_response.WhichOneof("payload_variant") != "sessionkey":
             return False
-        self._node.iface._acknowledgment.receivedAck = True
+        acknowledgment = self._node.iface._acknowledgment
+        acknowledgment.receivedNak = False
+        acknowledgment.receivedAck = True
         _mark_admin_wait_acknowledged_for_packet(self._node, packet)
         logger.info("Received session-key config response.")
         return True

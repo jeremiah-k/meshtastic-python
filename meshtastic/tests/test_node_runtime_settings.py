@@ -776,6 +776,9 @@ class TestNodeSettingsResponseRuntime:
         fail ``ensureSessionKey`` with a "recognized config field" error.
         """
         runtime = _NodeSettingsResponseRuntime(mock_node_for_response)
+        # A stale NAK from an earlier failed exchange must not survive the
+        # ack: legacy unscoped waiters read one coherent outcome.
+        mock_node_for_response.iface._acknowledgment.receivedNak = True
 
         raw = admin_pb2.AdminMessage()
         raw.get_config_response.sessionkey.SetInParent()
