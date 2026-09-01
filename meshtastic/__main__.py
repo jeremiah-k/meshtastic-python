@@ -222,17 +222,28 @@ SETURL_STABILITY_TIMEOUT_SECONDS = (
 )
 """Timeout for post-setURL transport stability before transactional writes."""
 
-FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = (
+FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS: float = (
     cli_device_actions.FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS
 )
 """Timeout for post-reset reconnect probe inside factory-reset command."""
 
-FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = (
+FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS: int = (
+    cli_device_actions.FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS
+)
+"""Number of reconnect attempts the factory-reset readiness probe makes before
+declaring the device unresponsive."""
+
+FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS: float = (
+    cli_device_actions.FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS
+)
+"""Sleep between consecutive factory-reset readiness probe attempts."""
+
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS: float = (
     cli_device_actions.FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS
 )
 """Maximum time to observe a local reset ACK/NAK or reboot disconnect."""
 
-FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = (
+FACTORY_RESET_ACCEPTANCE_POLL_SECONDS: float = (
     cli_device_actions.FACTORY_RESET_ACCEPTANCE_POLL_SECONDS
 )
 """Polling interval while waiting for local reset command acceptance."""
@@ -456,9 +467,9 @@ def _temporary_instance_attributes(
         yield
 
 
-def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
+def _post_factory_reset_ready_probe(interface: MeshInterface) -> bool:
     """Compatibility wrapper for the canonical factory-reset readiness probe."""
-    cli_device_actions._post_factory_reset_ready_probe(interface)
+    return cli_device_actions._post_factory_reset_ready_probe(interface)
 
 
 def _validate_non_empty_mapping_sections(

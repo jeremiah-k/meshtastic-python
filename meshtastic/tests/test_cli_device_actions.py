@@ -33,6 +33,36 @@ def _returning_cli_exit(*_args: object, **_kwargs: object) -> None:
     """Model an injected exit seam that incorrectly returns to its caller."""
 
 
+def _reset_args(**overrides: Any) -> argparse.Namespace:
+    """Build reboot/reset argument defaults for factory-reset dispatch tests.
+
+    Parameters
+    ----------
+    **overrides : Any
+        Argument values that replace the shared defaults.
+
+    Returns
+    -------
+    argparse.Namespace
+        Reset command arguments consumed by the reboot/reset handler.
+    """
+    values: dict[str, Any] = {
+        "reboot": False,
+        "reboot_ota": False,
+        "enter_dfu": False,
+        "shutdown": False,
+        "ota_update": None,
+        "device_metadata": False,
+        "begin_edit": False,
+        "commit_edit": False,
+        "factory_reset": False,
+        "factory_reset_device": False,
+        "dest": "^local",
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
 def _hooks(**overrides: Any) -> device_actions.DeviceActionHooks:
     """Build device-action hooks with a deliberately returning exit seam."""
     values: dict[str, Any] = {
@@ -567,19 +597,7 @@ def test_remote_factory_reset_uses_direct_factory_reset() -> None:
     """Remote reset must use Node.factoryReset without the local acceptance probe."""
     interface = MagicMock()
     reset_node = interface.getNode.return_value
-    args = argparse.Namespace(
-        reboot=False,
-        reboot_ota=False,
-        enter_dfu=False,
-        shutdown=False,
-        ota_update=None,
-        device_metadata=False,
-        begin_edit=False,
-        commit_edit=False,
-        factory_reset=True,
-        factory_reset_device=False,
-        dest="!remote",
-    )
+    args = _reset_args(factory_reset=True, factory_reset_device=False, dest="!remote")
     context = CliContext(
         interface=cast(MeshInterface, interface),
         args=args,
@@ -596,6 +614,36 @@ def test_remote_factory_reset_uses_direct_factory_reset() -> None:
 
     reset_node.factoryReset.assert_called_once_with(full=False)
     local_wait.assert_not_called()
+
+
+@pytest.mark.unit
+def test_local_factory_reset_device_returns_without_readiness_probe() -> None:
+    """The command returns to the shell without the blocking readiness probe."""
+    interface = MagicMock()
+    reset_node = interface.getNode.return_value
+    reset_node.factoryReset = MagicMock()
+    args = _reset_args(factory_reset_device=True)
+    context = CliContext(
+        interface=cast(MeshInterface, interface),
+        args=args,
+        get_node_kwargs={},
+        outcome=ActionOutcome(),
+    )
+    cli_exit = MagicMock(side_effect=SystemExit(1))
+    local_wait = MagicMock()
+    readiness_probe = MagicMock(return_value=False)
+    hooks = _hooks(
+        cli_exit=cli_exit,
+        is_local_destination=MagicMock(return_value=True),
+        send_local_factory_reset_and_wait=local_wait,
+        post_factory_reset_ready_probe=readiness_probe,
+    )
+
+    device_actions._handle_reboot_and_reset_actions(context, hooks)
+
+    local_wait.assert_called_once()
+    readiness_probe.assert_not_called()
+    cli_exit.assert_not_called()
 
 
 @pytest.mark.unit
@@ -624,6 +672,42 @@ def test_factory_reset_probe_logs_close_failures(
 
     assert serial.close.call_count == 2
     serial.connect.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_factory_reset_accepts_implicit_ack_in_scoped_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An uncorrelated implicit ACK must accept the scoped wait without transport loss."""
+    monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
+    monkeypatch.setattr(device_actions.pub, "unsubscribe", MagicMock())
+    iface = MagicMock()
+    raise_wait_error = MagicMock()
+
+    def _never_completed(
+        acknowledgment_attr: str, request_id: int, timeout_seconds: float = 0.0
+    ) -> bool:
+        return False
+
+    iface._wait_for_request_ack = _never_completed
+    iface._raise_wait_error_if_present = raise_wait_error
+    node = MagicMock(iface=iface)
+
+    def _factory_reset(*, full: bool) -> SimpleNamespace:
+        # The implicit ACK is not request-correlated, so it can only surface
+        # through the legacy acknowledgment flag.
+        iface._acknowledgment.receivedImplAck = True
+        return SimpleNamespace(id=4242)
+
+    node.factoryReset = MagicMock(side_effect=_factory_reset)
+
+    result = device_actions._send_local_factory_reset_and_wait(
+        node, full=False, cli_print=MagicMock(), timeout=5.0
+    )
+
+    assert result is not None
+    assert result.id == 4242
+    raise_wait_error.assert_not_called()
 
 
 @pytest.mark.unit
@@ -728,7 +812,7 @@ def test_factory_reset_scoped_wait_checks_error_before_return_and_retires_reques
 def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Timeout cleanup should probe scoped error state and never mask unsubscribe failure."""
+    """Budget expiry should probe scoped error state and never mask unsubscribe failure."""
     iface = MagicMock()
     iface.MeshInterfaceError = device_actions.MeshInterface.MeshInterfaceError
     iface._wait_for_request_ack = None
@@ -739,7 +823,10 @@ def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_fai
     iface._acknowledgment.receivedNak = False
     node = MagicMock(iface=iface)
     node.factoryReset.return_value = SimpleNamespace(id=0)
-    ticks = iter([0.0, 2.0])
+    # Two monotonic reads precede the deadline: the last-send stamp and the deadline
+    # itself. The first loop check must then see a clock past the 1.0s deadline so the
+    # wait times out instead of polling on a frozen clock.
+    ticks = iter([0.0, 0.0, 2.0])
     _install_clock(monkeypatch, monotonic=lambda: next(ticks, 2.0))
     monkeypatch.setattr(device_actions.pub, "subscribe", MagicMock())
     monkeypatch.setattr(
@@ -748,13 +835,11 @@ def test_factory_reset_timeout_checks_scoped_error_and_tolerates_unsubscribe_fai
         MagicMock(side_effect=RuntimeError("unsubscribe")),
     )
 
-    with pytest.raises(
-        device_actions.MeshInterface.MeshInterfaceError, match="Timed out"
-    ):
-        device_actions._send_local_factory_reset_and_wait(
-            node, full=False, cli_print=MagicMock(), timeout=1.0
-        )
+    result = device_actions._send_local_factory_reset_and_wait(
+        node, full=False, cli_print=MagicMock(), timeout=1.0
+    )
 
+    assert result is node.factoryReset.return_value
     raise_wait_error.assert_called_with("receivedNak", request_id=None)
 
 

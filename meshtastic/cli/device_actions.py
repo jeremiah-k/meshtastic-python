@@ -47,9 +47,13 @@ from meshtastic.protobuf import (
 logger = logging.getLogger(__name__)
 
 
-FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
-FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
-FACTORY_RESET_ACCEPTANCE_POLL_SECONDS = 0.05
+FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS: float = 20.0
+FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS: int = 3
+FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS: float = 1.0
+FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS: float = 8.0
+FACTORY_RESET_ACCEPTANCE_POLL_SECONDS: float = 0.05
+FACTORY_RESET_RESEND_INTERVAL_SECONDS: float = 4.0
+FACTORY_RESET_MAX_SENDS: int = 4
 POSITION_ALTITUDE_MIN = -(1 << 31)
 POSITION_ALTITUDE_MAX = (1 << 31) - 1
 OTA_REBOOT_WAIT_SECONDS: float = 5.0
@@ -73,8 +77,12 @@ class DeviceActionHooks:
         Destination classifier.
     send_local_factory_reset_and_wait : Callable[..., Any]
         Local destructive-reset acceptance helper.
-    post_factory_reset_ready_probe : Callable[[MeshInterface], None]
-        Best-effort serial readiness probe used after a full local reset.
+    post_factory_reset_ready_probe : Callable[[MeshInterface], bool]
+        Best-effort serial readiness probe seam. Not invoked by the built-in
+        reset path - a full local reset returns to the shell after its
+        acceptance wait; the entrypoint may still call it. Returns ``True``
+        once the device reconnected on serial, ``False`` when every probe
+        attempt was exhausted without the device returning.
     handle_ota_update : Callable[[MeshInterface, Any, dict[str, Any]], None]
         Wi-Fi OTA execution helper.
     build_key_verification_admin, send_key_verification : Callable[..., Any]
@@ -89,7 +97,7 @@ class DeviceActionHooks:
     set_pref: Callable[[Any, str, Any], bool]
     is_local_destination: Callable[[Any, str], bool]
     send_local_factory_reset_and_wait: Callable[..., Any]
-    post_factory_reset_ready_probe: Callable[[MeshInterface], None]
+    post_factory_reset_ready_probe: Callable[[MeshInterface], bool]
     handle_ota_update: Callable[[MeshInterface, Any, dict[str, Any]], None]
     build_lockdown_auth: Callable[..., Any]
     read_lockdown_passphrase_file: Callable[[str], bytes]
@@ -131,7 +139,15 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
     ValueError
         If the supplied timeout is not positive.
     MeshInterface.MeshInterfaceError
-        If the request is rejected or no acceptance/reboot signal arrives.
+        If the device rejects the request with a NAK.
+
+    Notes
+    -----
+    The request is resent on a bounded interval while acceptance remains
+    pending; some devices silently drop the first destructive request. The
+    overall acceptance deadline is never extended. If no acceptance or reboot
+    signal arrives before that deadline, the timeout is logged and the sent
+    request is returned; no error is raised.
     """
     reset_interface = reset_node.iface
     acceptance_timeout = (
@@ -165,6 +181,8 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         # Genuine reset transport loss remains visible through the connection and
         # transport snapshots below even if publication raced with this boundary.
         request_queued.set()
+        sends = 1
+        last_send_monotonic = time.monotonic()
 
         raw_request_id = getattr(request, "id", None)
         if isinstance(raw_request_id, int) and not isinstance(raw_request_id, bool):
@@ -177,6 +195,7 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
         raise_wait_error = getattr(
             reset_interface, "_raise_wait_error_if_present", None
         )
+        retire_wait = getattr(reset_interface, "_retire_wait_request", None)
         scoped_wait_available = (
             request_id is not None
             and callable(wait_for_request_ack)
@@ -189,6 +208,82 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
+
+            if (
+                sends < FACTORY_RESET_MAX_SENDS
+                and not disconnect_observed.is_set()
+                and time.monotonic() - last_send_monotonic
+                >= FACTORY_RESET_RESEND_INTERVAL_SECONDS
+            ):
+                original_acknowledged = bool(
+                    getattr(acknowledgment, "receivedImplAck", False)
+                )
+                if (
+                    not original_acknowledged
+                    and request_id is not None
+                    and callable(wait_for_request_ack)
+                    and wait_for_request_ack(
+                        "receivedNak", request_id, timeout_seconds=0
+                    )
+                ):
+                    original_acknowledged = True
+                if original_acknowledged:
+                    # The original request already carries an acceptance
+                    # signal; resending would retire it and duplicate a
+                    # destructive request. Stop resending and let the
+                    # acceptance checks below return the acknowledged request.
+                    sends = FACTORY_RESET_MAX_SENDS
+                else:
+                    try:
+                        resend = reset_node.factoryReset(full=full)
+                    except Exception:
+                        logger.debug(
+                            "Factory reset resend attempt failed; waiting on "
+                            "the original request instead.",
+                            exc_info=True,
+                        )
+                        sends = FACTORY_RESET_MAX_SENDS
+                        last_send_monotonic = time.monotonic()
+                    else:
+                        # Retire the original scope and clear stale
+                        # acknowledgment state only once the resend produced a
+                        # request, so a completion for the original request
+                        # stays observable while the resend is in flight.
+                        if callable(retire_wait) and request_id is not None:
+                            retire_wait("receivedNak", request_id=request_id)
+                        if callable(reset_acknowledgment):
+                            reset_acknowledgment()
+                        last_send_monotonic = time.monotonic()
+                        if resend is None:
+                            sends = FACTORY_RESET_MAX_SENDS
+                        else:
+                            request = resend
+                            sends += 1
+                            request_id = None
+                            raw_request_id = getattr(request, "id", None)
+                            if (
+                                isinstance(raw_request_id, int)
+                                and not isinstance(raw_request_id, bool)
+                                and raw_request_id > 0
+                            ):
+                                request_id = raw_request_id
+                            scoped_wait_available = (
+                                request_id is not None
+                                and callable(wait_for_request_ack)
+                                and callable(raise_wait_error)
+                            )
+                            socket_after_send = getattr(
+                                reset_interface, "socket", missing_transport
+                            )
+                            stream_after_send = getattr(
+                                reset_interface, "stream", missing_transport
+                            )
+                            logger.info(
+                                "Factory reset acceptance pending; resent "
+                                "request (%d/%d)",
+                                sends,
+                                FACTORY_RESET_MAX_SENDS,
+                            )
 
             if (
                 scoped_wait_available
@@ -204,6 +299,13 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
                 )
                 if completed:
                     raise_wait_error("receivedNak", request_id=request_id)
+                    return request
+                if bool(getattr(acknowledgment, "receivedImplAck", False)):
+                    # An implicit ACK is not request-correlated, so the scoped
+                    # registry cannot record it; the legacy flag is the only
+                    # carrier. Session-key responses only set receivedAck, so
+                    # this flag cannot be satisfied by the session-key
+                    # exchange that precedes the destructive request.
                     return request
             else:
                 if callable(raise_wait_error):
@@ -252,9 +354,11 @@ def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-s
 
         if callable(raise_wait_error):
             raise_wait_error("receivedNak", request_id=request_id)
-        raise reset_interface.MeshInterfaceError(
-            "Timed out waiting for a factory reset acknowledgment or reboot disconnect"
+        logger.info(
+            "No factory reset acknowledgment observed; the request has been "
+            "sent and the node will reboot and apply the reset on its own."
         )
+        return request
     finally:
         retire_wait = getattr(reset_interface, "_retire_wait_request", None)
         if callable(retire_wait) and request_id is not None:
@@ -304,31 +408,56 @@ def _temporary_instance_attributes(
                 setattr(instance, name, previous)
 
 
-def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
-    """Close, briefly probe serial readiness, then release the serial port.
+def _post_factory_reset_ready_probe(interface: MeshInterface) -> bool:
+    """Close, then retry the serial readiness probe across a bounded budget.
+
+    A factory reset wipes the device's prefs and forces a reboot. On most
+    T-Beam hardware the device returns within ~5s, but the first reconnect
+    attempt after BLE/WiFi teardown can race the kernel re-enumerating the
+    USB-CDC device. A single 20s probe often gives up just before the device
+    reappears, leaving the CLI to report success when the next command is
+    the one that actually has to wait. This routine closes the port, then
+    attempts the probe up to
+    [FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS] times, sleeping
+    [FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS] between attempts, with
+    each individual attempt bound by
+    [FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS].
 
     Parameters
     ----------
     interface : MeshInterface
         Connected interface; non-serial transports are ignored.
+
+    Returns
+    -------
+    bool
+        ``True`` once a probe connected to the device, ``False`` when every
+        attempt was exhausted without the device returning. Callers decide how
+        to treat an exhausted budget; the factory-reset command intentionally
+        logs clearly and returns to the shell without failing closed.
     """
     serial_interface_cls = getattr(meshtastic.serial_interface, "SerialInterface", None)
     if not isinstance(serial_interface_cls, type) or not isinstance(
         interface, serial_interface_cls
     ):
-        return
+        return True
 
     serial_interface = cast(meshtastic.serial_interface.SerialInterface, interface)
 
+    def _safe_close() -> None:
+        try:
+            serial_interface.close()
+        except Exception:
+            logger.debug("Factory reset: serial close failed.", exc_info=True)
+
     logger.debug("Factory reset: closing serial interface to release port.")
-    try:
-        serial_interface.close()
-    except Exception:
-        logger.debug("Factory reset: initial serial close failed.", exc_info=True)
+    _safe_close()
 
     logger.debug(
-        "Factory reset: probing reconnect readiness (timeout=%.1fs)...",
+        "Factory reset: probing reconnect readiness (max_attempts=%d, per_attempt=%.1fs, retry_delay=%.1fs)...",
+        FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS,
         FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
+        FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS,
     )
     probe_overrides = {
         "_connect_wait_timeout_seconds": FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS,
@@ -336,24 +465,48 @@ def _post_factory_reset_ready_probe(interface: MeshInterface) -> None:
         "_suppress_connect_failure_logging": True,
     }
     probe_start = time.monotonic()
+    last_error: Exception | None = None
+    attempts_made = 0
     with _temporary_instance_attributes(serial_interface, probe_overrides):
-        try:
-            serial_interface.connect()
-            logger.debug(
-                "Factory reset: reconnect probe succeeded in %.2fs.",
-                time.monotonic() - probe_start,
-            )
-        except Exception as exc:
-            logger.info(
-                "Factory reset accepted; device is still rebooting after %.1fs "
-                "and the next command will reconnect normally (%s).",
-                time.monotonic() - probe_start,
-                exc,
-            )
-    try:
-        serial_interface.close()
-    except Exception:
-        logger.debug("Factory reset: final serial close failed.", exc_info=True)
+        for attempt_index in range(FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS):
+            attempts_made += 1
+            try:
+                serial_interface.connect()
+                logger.info(
+                    "Factory reset: device reconnected on attempt %d/%d after %.1fs.",
+                    attempts_made,
+                    FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS,
+                    time.monotonic() - probe_start,
+                )
+                _safe_close()
+                return True
+            except Exception as exc:  # noqa: BLE001 - we translate the entire family
+                last_error = exc
+                # A failed connect can leave the port open or reader threads
+                # running; release it so the next attempt fails only when the
+                # device is genuinely absent, not because the tty is held.
+                _safe_close()
+                if attempt_index + 1 < FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS:
+                    logger.debug(
+                        "Factory reset: probe attempt %d/%d failed (%s); retrying in %.1fs.",
+                        attempts_made,
+                        FACTORY_RESET_READY_PROBE_MAX_ATTEMPTS,
+                        exc,
+                        FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS,
+                    )
+                    time.sleep(FACTORY_RESET_READY_PROBE_RETRY_DELAY_SECONDS)
+
+    elapsed = time.monotonic() - probe_start
+    logger.warning(
+        "Factory reset: device did not respond after %d probes spanning %.1fs "
+        "(last error: %s). The next command may need to reconnect itself, or "
+        "the factory reset may not have completed.",
+        attempts_made,
+        elapsed,
+        last_error,
+    )
+    _safe_close()
+    return False
 
 
 def _handle_ota_update(
@@ -799,8 +952,6 @@ def _handle_reboot_and_reset_actions(
             hooks.send_local_factory_reset_and_wait(reset_node, full=full)
         else:
             reset_node.factoryReset(full=full)
-        if full and is_local_reset:
-            hooks.post_factory_reset_ready_probe(interface)
 
 
 def _handle_node_database_actions(context: CliContext) -> None:
