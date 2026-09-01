@@ -20,6 +20,7 @@ from typing import (
 )
 
 from google.protobuf.descriptor import FieldDescriptor
+from google.protobuf.message import Message
 
 from meshtastic._interface_errors import MeshInterfaceError as _MeshInterfaceError
 from meshtastic.node_runtime import contact_runtime
@@ -74,6 +75,8 @@ from meshtastic.protobuf import (
     admin_pb2,
     channel_pb2,
     config_pb2,
+    connection_status_pb2,
+    device_ui_pb2,
     localonly_pb2,
     mesh_pb2,
 )
@@ -100,6 +103,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _ResultT = TypeVar("_ResultT")
+_AdminResponseT = TypeVar("_AdminResponseT", bound=Message)
+ADMIN_RESPONSE_WAIT_SECONDS = 12.0
 # COMPAT_STABLE_SHIM: Compatibility re-exports preserved for callers/tests importing constants from meshtastic.node.
 EMPTY_LONG_NAME_MSG = _EMPTY_LONG_NAME_MSG
 EMPTY_SHORT_NAME_MSG = _EMPTY_SHORT_NAME_MSG
@@ -110,7 +115,36 @@ MAX_LONG_NAME_LEN = _MAX_LONG_NAME_LEN
 MAX_RINGTONE_LENGTH = _MAX_RINGTONE_LENGTH
 MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
 
-# COMPAT_STABLE_SHIM: private contact helpers remain importable from meshtastic.node.
+
+def _backup_location_value(
+    location: str,
+) -> admin_pb2.AdminMessage.BackupLocation.ValueType:
+    """Convert a backup location name to its ``BackupLocation`` enum value.
+
+    Parameters
+    ----------
+    location : str
+        User-supplied location name such as ``flash`` or ``sd``.
+
+    Returns
+    -------
+    admin_pb2.AdminMessage.BackupLocation.ValueType
+        The matching ``AdminMessage.BackupLocation`` enum value.
+
+    Raises
+    ------
+    MeshInterface.MeshInterfaceError
+        If the location name is not a valid backup location.
+    """
+    try:
+        return admin_pb2.AdminMessage.BackupLocation.Value(location.strip().upper())
+    except ValueError:
+        valid = ", ".join(admin_pb2.AdminMessage.BackupLocation.keys())
+        raise _MeshInterfaceError(
+            f"Unknown backup location {location!r}; expected one of: {valid}"
+        ) from None
+
+
 _MAX_CONTACT_URL_PAYLOAD = contact_runtime.MAX_CONTACT_URL_PAYLOAD
 _decode_node_bytes_field = contact_runtime._decode_node_bytes_field
 
@@ -1546,6 +1580,279 @@ class Node:  # pylint: disable=too-many-instance-attributes
             The AdminMessage packet sent, or `None` if no packet was sent.
         """
         return self._admin_command_runtime.reset_node_db()
+
+    def _send_admin_op(
+        self, message: admin_pb2.AdminMessage
+    ) -> mesh_pb2.MeshPacket | None:
+        """Send a one-shot admin message, waiting for ACK/NAK on remote nodes."""
+        self.ensureSessionKey()
+        if self is self.iface.localNode:
+            return self._send_admin(message)
+        request = _send_admin_with_ack_scope(
+            self,
+            message,
+            scope_ack=True,
+            onResponse=self.onAckNak,
+        )
+        if request is not None:
+            _wait_for_admin_ack(self, request)
+        return request
+
+    def backupPreferences(self, location: str = "flash") -> mesh_pb2.MeshPacket | None:
+        """Back up the device's preferences to internal flash or SD storage.
+
+        Parameters
+        ----------
+        location : str
+            ``flash`` or ``sd`` backup location.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        message = admin_pb2.AdminMessage()
+        message.backup_preferences = _backup_location_value(location)
+        logger.info("Backing up preferences to %s", location)
+        return self._send_admin_op(message)
+
+    def restorePreferences(self, location: str = "flash") -> mesh_pb2.MeshPacket | None:
+        """Restore the device's preferences from internal flash or SD storage.
+
+        Parameters
+        ----------
+        location : str
+            ``flash`` or ``sd`` backup location.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        message = admin_pb2.AdminMessage()
+        message.restore_preferences = _backup_location_value(location)
+        logger.info("Restoring preferences from %s", location)
+        return self._send_admin_op(message)
+
+    def removeBackupPreferences(
+        self, location: str = "flash"
+    ) -> mesh_pb2.MeshPacket | None:
+        """Remove a stored preferences backup from flash or SD.
+
+        Parameters
+        ----------
+        location : str
+            ``flash`` or ``sd`` backup location.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        message = admin_pb2.AdminMessage()
+        message.remove_backup_preferences = _backup_location_value(location)
+        logger.info("Removing %s preferences backup", location)
+        return self._send_admin_op(message)
+
+    def toggleMutedNode(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
+        """Toggle the muted flag for a node in the target device's NodeDB.
+
+        Parameters
+        ----------
+        nodeId : int | str
+            Node identifier (numeric or numeric string).
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        message = admin_pb2.AdminMessage()
+        message.toggle_muted_node = toNodeNum(nodeId)
+        logger.info("Toggling muted flag for node %s", nodeId)
+        return self._send_admin_op(message)
+
+    def deleteFile(self, path: str) -> mesh_pb2.MeshPacket | None:
+        """Delete a file from the node's filesystem.
+
+        Parameters
+        ----------
+        path : str
+            Absolute path of the file on the device filesystem.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        if not path.startswith("/"):
+            self._raise_interface_error("File path must be absolute (start with '/').")
+        message = admin_pb2.AdminMessage()
+        message.delete_file_request = path
+        logger.info("Requesting deletion of %s", path)
+        return self._send_admin_op(message)
+
+    def sendInputEvent(
+        self,
+        event_code: int,
+        kb_char: int = 0,
+        touch_x: int = 0,
+        touch_y: int = 0,
+    ) -> mesh_pb2.MeshPacket | None:
+        """Inject a physical input event (button/keyboard/touch) into the node.
+
+        Parameters
+        ----------
+        event_code : int
+            Firmware input event code.
+        kb_char : int
+            Keyboard character code for key events.
+        touch_x : int
+            Horizontal touch coordinate for touch events.
+        touch_y : int
+            Vertical touch coordinate for touch events.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        message = admin_pb2.AdminMessage()
+        message.send_input_event.event_code = event_code
+        message.send_input_event.kb_char = kb_char
+        message.send_input_event.touch_x = touch_x
+        message.send_input_event.touch_y = touch_y
+        logger.info("Sending input event %d", event_code)
+        return self._send_admin_op(message)
+
+    def _request_admin_response(
+        self,
+        message: admin_pb2.AdminMessage,
+        response_field_name: str,
+        response_type: type[_AdminResponseT],
+        *,
+        response_timeout_seconds: float,
+    ) -> _AdminResponseT | None:
+        """Send an admin request and return a copied named response field."""
+        if response_timeout_seconds <= 0:
+            raise ValueError("response timeout must be positive")
+
+        result: _AdminResponseT | None = None
+        completed = threading.Event()
+
+        def _on_response(packet: dict[str, Any]) -> None:
+            nonlocal result
+            decoded = packet.get("decoded") if isinstance(packet, dict) else None
+            admin_section = decoded.get("admin") if isinstance(decoded, dict) else None
+            raw_admin = (
+                admin_section.get("raw") if isinstance(admin_section, dict) else None
+            )
+            has_field = getattr(raw_admin, "HasField", None)
+            try:
+                present = callable(has_field) and bool(has_field(response_field_name))
+            except (TypeError, ValueError):
+                present = False
+            if not present or raw_admin is None:
+                return
+            response = response_type()
+            response.CopyFrom(getattr(raw_admin, response_field_name))
+            result = response
+            completed.set()
+
+        request = _send_admin_with_ack_scope(
+            self,
+            message,
+            scope_ack=False,
+            wantResponse=True,
+            onResponse=_on_response,
+        )
+        if request is None:
+            return None
+        # A want_response admin request is answered by the data response
+        # itself; firmware sends no separate RoutingACK for it, so no scoped
+        # ACK bookkeeping is registered (``scope_ack=False``) and nothing ever
+        # retires it. The bounded correlated-response event below decides
+        # success, and skipping the WAIT_ATTR_NAK registration keeps the
+        # response handler prunable when the device never answers.
+        if not completed.wait(timeout=response_timeout_seconds):
+            return None
+        return result
+
+    def requestDeviceConnectionStatus(
+        self, *, response_timeout_seconds: float = ADMIN_RESPONSE_WAIT_SECONDS
+    ) -> connection_status_pb2.DeviceConnectionStatus | None:
+        """Request the node's connectivity status and wait for the response.
+
+        Parameters
+        ----------
+        response_timeout_seconds : float, optional
+            Seconds to wait for the correlated admin RESPONSE packet after
+            the request is sent. No ACK/NAK wait is performed. ``None`` is
+            returned if the wait expires before the device reports back.
+            Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
+
+        Returns
+        -------
+        connection_status_pb2.DeviceConnectionStatus | None
+            The reported status, or `None` when no response arrived.
+        """
+        message = admin_pb2.AdminMessage()
+        message.get_device_connection_status_request = True
+        logger.info("Requesting device connection status")
+        return self._request_admin_response(
+            message,
+            "get_device_connection_status_response",
+            connection_status_pb2.DeviceConnectionStatus,
+            response_timeout_seconds=response_timeout_seconds,
+        )
+
+    def requestUiConfig(
+        self, *, response_timeout_seconds: float = ADMIN_RESPONSE_WAIT_SECONDS
+    ) -> device_ui_pb2.DeviceUIConfig | None:
+        """Request the node's device UI configuration and wait for the response.
+
+        Parameters
+        ----------
+        response_timeout_seconds : float, optional
+            Seconds to wait for the correlated admin RESPONSE packet after
+            the request is sent. No ACK/NAK wait is performed. ``None`` is
+            returned if the wait expires before the device reports back.
+            Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
+
+        Returns
+        -------
+        device_ui_pb2.DeviceUIConfig | None
+            The reported UI configuration, or `None` when no response arrived.
+        """
+        message = admin_pb2.AdminMessage()
+        message.get_ui_config_request = True
+        logger.info("Requesting device UI configuration")
+        return self._request_admin_response(
+            message,
+            "get_ui_config_response",
+            device_ui_pb2.DeviceUIConfig,
+            response_timeout_seconds=response_timeout_seconds,
+        )
+
+    def storeUiConfig(
+        self, config: device_ui_pb2.DeviceUIConfig
+    ) -> mesh_pb2.MeshPacket | None:
+        """Store a device UI configuration onto the node.
+
+        Parameters
+        ----------
+        config : device_ui_pb2.DeviceUIConfig
+            Complete UI configuration to persist.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
+        """
+        message = admin_pb2.AdminMessage()
+        message.store_ui_config.CopyFrom(config)
+        logger.info("Storing device UI configuration")
+        return self._send_admin_op(message)
 
     def setFixedPosition(
         self, lat: int | float | None, lon: int | float | None, alt: int | None

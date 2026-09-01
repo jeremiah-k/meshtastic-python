@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from meshtastic import key_verification
 from meshtastic.cli import device_actions
 from meshtastic.cli.context import ActionOutcome, CliContext, CliExit
 from meshtastic.mesh_interface import MeshInterface
@@ -46,6 +47,8 @@ def _hooks(**overrides: Any) -> device_actions.DeviceActionHooks:
         "read_lockdown_passphrase_file": MagicMock(return_value=b"secret"),
         "send_lockdown_auth": MagicMock(return_value=None),
         "validate_lockdown_passphrase": MagicMock(return_value=b"secret"),
+        "build_key_verification_admin": MagicMock(),
+        "send_key_verification": MagicMock(),
     }
     values.update(overrides)
     return device_actions.DeviceActionHooks(**values)
@@ -133,6 +136,31 @@ def _run_ota(interface: _DummyTCPInterface) -> None:
         cli_print=MagicMock(),
         is_local_destination=lambda *_args: True,
     )
+
+
+@pytest.mark.unit
+def test_device_action_hooks_preserve_legacy_keyword_constructor() -> None:
+    """Key-verification seams default without breaking pre-2.8 hook construction."""
+    values = {
+        "cli_exit": MagicMock(),
+        "cli_print": MagicMock(),
+        "set_pref": MagicMock(),
+        "is_local_destination": MagicMock(),
+        "send_local_factory_reset_and_wait": MagicMock(),
+        "post_factory_reset_ready_probe": MagicMock(),
+        "handle_ota_update": MagicMock(),
+        "build_lockdown_auth": MagicMock(),
+        "read_lockdown_passphrase_file": MagicMock(),
+        "send_lockdown_auth": MagicMock(),
+        "validate_lockdown_passphrase": MagicMock(),
+    }
+
+    hooks = device_actions.DeviceActionHooks(**values)
+
+    assert (
+        hooks.build_key_verification_admin is key_verification.buildKeyVerificationAdmin
+    )
+    assert hooks.send_key_verification is key_verification.sendKeyVerification
 
 
 @pytest.mark.unit

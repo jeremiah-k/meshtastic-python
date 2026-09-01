@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 import argparse
+import math
 import platform
 import sys
 from collections.abc import Sequence
 from typing import Protocol
 
 from meshtastic.cli.values import parse_modem_preset_name as _parse_modem_preset_name
+from meshtastic.key_verification import (
+    DEFAULT_KEY_VERIFICATION_TIMEOUT_SECONDS as _DEFAULT_KEY_VERIFY_WAIT,
+)
+from meshtastic.key_verification import (
+    KEY_VERIFICATION_STAGES as _KEY_VERIFICATION_STAGES,
+)
+from meshtastic.key_verification import (
+    SECURITY_NUMBER_MAX,
+    SECURITY_NUMBER_MIN,
+)
 
 
 class _ArgcompleteModule(Protocol):
@@ -16,6 +27,77 @@ class _ArgcompleteModule(Protocol):
 
     def autocomplete(self, parser: argparse.ArgumentParser) -> object:
         """Enable shell completion for ``parser``."""
+
+
+_UINT32_MAX: int = (1 << 32) - 1
+_UINT64_MAX: int = (1 << 64) - 1
+
+
+def _parse_uint32(value: str) -> int:
+    """Parse one CLI integer constrained to an unsigned protobuf 32-bit field."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not 0 <= parsed <= _UINT32_MAX:
+        raise argparse.ArgumentTypeError(
+            f"value must be between 0 and {_UINT32_MAX}, got {parsed}"
+        )
+    return parsed
+
+
+def _parse_uint64(value: str) -> int:
+    """Parse one CLI integer constrained to an unsigned protobuf 64-bit field."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not 0 <= parsed <= _UINT64_MAX:
+        raise argparse.ArgumentTypeError(
+            f"value must be between 0 and {_UINT64_MAX}, got {parsed}"
+        )
+    return parsed
+
+
+def _parse_key_verification_security_number(value: str) -> int:
+    """Parse the six-digit firmware key-verification security number."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not SECURITY_NUMBER_MIN <= parsed <= SECURITY_NUMBER_MAX:
+        raise argparse.ArgumentTypeError(
+            f"security number must be between {SECURITY_NUMBER_MIN} and "
+            f"{SECURITY_NUMBER_MAX}, got {parsed}"
+        )
+    return parsed
+
+
+def _parse_positive_finite_float(value: str) -> float:
+    """Parse one positive finite floating-point CLI value."""
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a number, got {value!r}") from exc
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be finite and greater than zero")
+    return parsed
+
+
+def _parse_firmware_keyboard_char(value: str) -> str:
+    """Validate one character representable by the firmware's 8-bit input field."""
+    if len(value) != 1 or ord(value) > 0xFF:
+        raise argparse.ArgumentTypeError(
+            "keyboard input must be exactly one character with code point <= 255"
+        )
+    return value
+
+
+def _parse_absolute_device_path(value: str) -> str:
+    """Validate a device-side file path before opening a transport session."""
+    if not value.startswith("/"):
+        raise argparse.ArgumentTypeError("device file path must be absolute")
+    return value
 
 
 _MODEM_PRESET_SHORTHANDS: tuple[tuple[tuple[str, ...], str, str, str], ...] = (
@@ -190,7 +272,7 @@ def addSelectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Register CLI options for importing a YAML configuration file and exporting device configuration as YAML.
+    """Register CLI options for importing and exporting device configuration.
 
     Parameters
     ----------
@@ -209,7 +291,10 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
 
     group.add_argument(
         "--configure",
-        help="Specify a path to a yaml(.yml) file containing the desired settings for the connected device.",
+        help=(
+            "Specify a YAML (.yaml/.yml) or binary DeviceProfile (.cfg/.bin) "
+            "file containing settings for the connected device."
+        ),
         action="append",
     )
     group.add_argument(
@@ -217,7 +302,13 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
         nargs="?",
         const="-",  # default to "-" if no value provided
         metavar="FILE",
-        help="Export device config as YAML (to stdout if no file given)",
+        help="Export device config (to stdout if no file given); format set by --export-format",
+    )
+    group.add_argument(
+        "--export-format",
+        choices=["auto", "yaml", "binary", "protobuf"],
+        default="auto",
+        help="Config export format; auto picks binary for .cfg/.bin files, else YAML",
     )
     return parser
 
@@ -622,6 +713,29 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
 
     group.add_argument(
+        "--key-verify",
+        choices=_KEY_VERIFICATION_STAGES,
+        help="Run one stage of the firmware 2.8 PKI key-verification handshake",
+    )
+    group.add_argument(
+        "--key-verify-nonce",
+        type=_parse_uint64,
+        default=0,
+        help="Handshake nonce from the device notification (stages after initiate)",
+    )
+    group.add_argument(
+        "--key-verify-security-number",
+        type=_parse_key_verification_security_number,
+        help="Six-digit security number shown on the remote node (provide stage)",
+    )
+    group.add_argument(
+        "--key-verify-wait",
+        type=_parse_positive_finite_float,
+        default=_DEFAULT_KEY_VERIFY_WAIT,
+        help="Seconds to wait for the device key-verification notification",
+    )
+
+    group.add_argument(
         "--show-region-presets",
         help="Show firmware-declared legal modem presets for each LoRa region",
         action="store_true",
@@ -838,6 +952,82 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         default=None,
         const=0,
         metavar="TIMESTAMP",
+    )
+
+    backup_group = outer.add_mutually_exclusive_group()
+    backup_group.add_argument(
+        "--backup-preferences",
+        nargs="?",
+        const="flash",
+        default=None,
+        choices=["flash", "sd"],
+        metavar="LOCATION",
+        help="Back up preferences (default: flash); current firmware does not implement SD backups",
+    )
+    backup_group.add_argument(
+        "--restore-preferences",
+        nargs="?",
+        const="flash",
+        default=None,
+        choices=["flash", "sd"],
+        metavar="LOCATION",
+        help="Restore preferences (default: flash); SD support depends on firmware",
+    )
+    backup_group.add_argument(
+        "--remove-backup-preferences",
+        nargs="?",
+        const="flash",
+        default=None,
+        choices=["flash", "sd"],
+        metavar="LOCATION",
+        help="Remove a preferences backup (default: flash); current firmware does not implement SD removal",
+    )
+    outer.add_argument(
+        "--toggle-muted-node",
+        metavar="!xxxxxxxx",
+        help="Toggle the muted flag for a node in the device's NodeDB",
+    )
+    outer.add_argument(
+        "--delete-file",
+        type=_parse_absolute_device_path,
+        metavar="PATH",
+        help="Delete a file from the node's filesystem (absolute path)",
+    )
+    outer.add_argument(
+        "--send-input-event",
+        type=_parse_uint32,
+        metavar="EVENT_CODE",
+        help="Send a physical input event code (button/keyboard/touch) to the node",
+    )
+    outer.add_argument(
+        "--input-kb-char",
+        type=_parse_firmware_keyboard_char,
+        help="Single keyboard character paired with --send-input-event",
+    )
+    outer.add_argument(
+        "--input-touch-x",
+        type=_parse_uint32,
+        help="Touch X coordinate paired with --send-input-event",
+    )
+    outer.add_argument(
+        "--input-touch-y",
+        type=_parse_uint32,
+        help="Touch Y coordinate paired with --send-input-event",
+    )
+    outer.add_argument(
+        "--request-connection-status",
+        action="store_true",
+        help="Report the node's WiFi, Ethernet, Bluetooth, and serial status",
+    )
+    outer.add_argument(
+        "--get-ui-config",
+        action="store_true",
+        help="Print the node's device UI configuration as YAML",
+    )
+    outer.add_argument(
+        "--store-ui-config",
+        metavar="FILE",
+        help="Store a device UI configuration from YAML (as printed by --get-ui-config)",
     )
 
     return parser

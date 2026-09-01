@@ -107,6 +107,10 @@ def _validate_and_normalize_args(
         _terminate_cli(
             hooks, f"Error: OTA firmware file not found: {args.ota_update}", 1
         )
+    if args.ota_update is not None:
+        # Always skip node loading for OTA. The OTA path resolves LOCAL_ADDR
+        # directly to local_node and does not need the node database.
+        args.no_nodes = True
 
     if args.ch_index is not None:
         hooks.set_channel_index(int(args.ch_index))

@@ -15,7 +15,7 @@ from pubsub import pub
 from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, DECODE_ERROR_KEY
 from meshtastic._protocol_runtime import protocols
 from meshtastic._publishing import publishing_thread as publishingThread
-from meshtastic._topics import LOCKDOWN_STATUS_TOPIC
+from meshtastic._topics import CLIENT_NOTIFICATION_TOPIC, LOCKDOWN_STATUS_TOPIC
 from meshtastic.protobuf import (
     channel_pb2,
     config_pb2,
@@ -421,7 +421,7 @@ class ReceivePipeline:
         """Build publication intent for client notifications."""
         return [
             self._publication_intent(
-                "meshtastic.clientNotification",
+                CLIENT_NOTIFICATION_TOPIC,
                 notification=context.message.clientNotification,
             ),
         ]

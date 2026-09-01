@@ -7,24 +7,42 @@ verification, and configure-file dispatch; preference parsing is injected explic
 from __future__ import annotations
 
 import contextvars
-import enum
 import logging
-import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
-import yaml
-
 import meshtastic.util
+from meshtastic.cli import config_io as _config_io
 from meshtastic.cli import configure_values
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
+
+# COMPAT_STABLE_SHIM: verification helpers moved to meshtastic.configure_verify.
+# Historical module patch seams in tests and the meshtastic.__main__ compat
+# wrappers address them through this module, so rebind them explicitly.
+# pylint: disable=unused-import,useless-import-alias
 from meshtastic.configure_verify import (
+    ConfigureReconnectResult,
+)
+from meshtastic.configure_verify import (
+    _channel_url_matches_current_device_state as _channel_url_matches_current_device_state,
+)
+from meshtastic.configure_verify import _device_lora_config as _device_lora_config
+from meshtastic.configure_verify import _flatten_leaf_paths as _flatten_leaf_paths
+from meshtastic.configure_verify import (
+    _refresh_no_disconnect_verify_state,
     _verify_channel_url_against_state,
-    _verify_requested_fields,
+)
+from meshtastic.configure_verify import (
+    _verify_config_sections as _verify_config_sections,
+)
+from meshtastic.configure_verify import (
+    _verify_post_reconnect_config,
 )
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.node import ADMIN_RESPONSE_WAIT_SECONDS
+from meshtastic.protobuf import admin_pb2, mesh_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +58,6 @@ SETURL_STABILITY_MAX_ATTEMPTS = 3
 SETURL_STABILITY_WINDOW_SECONDS = 1.5
 SETURL_RECONNECT_WAIT_SECONDS = 10.0
 SETURL_STABILITY_POLL_SECONDS = 0.1
-PRIVATE_CONFIG_FILE_MODE: int = 0o600
 CONFIGURE_DIRECT_SETTINGS_HEADER = (
     "Applying direct configuration values "
     "(channel URL updates may trigger reconnect/reboot)..."
@@ -50,6 +67,8 @@ ALLOWED_CONFIGURE_KEYS = frozenset(
         "owner",
         "owner_short",
         "ownerShort",
+        "is_unmessagable",
+        "is_licensed",
         "channel_url",
         "channelUrl",
         "canned_messages",
@@ -59,15 +78,6 @@ ALLOWED_CONFIGURE_KEYS = frozenset(
         "module_config",
     }
 )
-
-
-class ConfigureReconnectResult(enum.Enum):
-    """Outcome of local reconnect/config reload verification after configure."""
-
-    RECONNECT_FAILED = "reconnect_failed"
-    CONFIG_RELOAD_FAILED = "config_reload_failed"
-    VERIFICATION_INCOMPLETE = "verification_incomplete"
-    VERIFIED = "verified"
 
 
 CONFIGURE_RECONNECT_MESSAGES: dict[ConfigureReconnectResult, str] = {
@@ -236,6 +246,7 @@ class ConfigureActionHooks:
     cli_exit: CliExit
     cli_print: Callable[[str], None]
     is_local_destination: Callable[[Any, str], bool]
+    export_profile: Callable[[MeshInterface], bytes] = _config_io._export_profile
 
 
 def _post_configure_reconnect_and_verify(
@@ -613,243 +624,6 @@ def _preflight_configure_sections(
         hooks.preflight_mode.reset(token)
 
 
-def _refresh_no_disconnect_verify_state(
-    target_node: Any,
-    *,
-    verify_channel_url: str | None,
-    verify_config_fields: dict[str, dict[str, Any]] | None,
-    verify_module_config_fields: dict[str, dict[str, Any]] | None,
-) -> None:
-    """Invalidate touched cached state before post-reconnect verification."""
-    request_config = getattr(target_node, "requestConfig", None)
-
-    for section_name in verify_config_fields or {}:
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        field_desc = target_node.localConfig.DESCRIPTOR.fields_by_name.get(
-            section_snake
-        )
-        if field_desc is None:
-            logger.warning(
-                "Skipping config refresh for unknown section %r.",
-                section_name,
-            )
-            continue
-        target_node.localConfig.ClearField(section_snake)
-        if callable(request_config):
-            request_config(field_desc)
-
-    for section_name in verify_module_config_fields or {}:
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        field_desc = target_node.moduleConfig.DESCRIPTOR.fields_by_name.get(
-            section_snake
-        )
-        if field_desc is None:
-            logger.warning(
-                "Skipping module_config refresh for unknown section %r.",
-                section_name,
-            )
-            continue
-        target_node.moduleConfig.ClearField(section_snake)
-        if callable(request_config):
-            request_config(field_desc)
-
-    if verify_channel_url:
-        invalidate_channel_cache = getattr(
-            target_node, "_invalidate_channel_cache", None
-        )
-        if callable(invalidate_channel_cache):
-            invalidate_channel_cache()  # noqa: SLF001 - Node cache owner API
-        request_channels = getattr(target_node, "requestChannels", None)
-        if callable(request_channels):
-            request_channels(0)
-
-
-def _device_lora_config(target_node: Any) -> Any | None:
-    """Return the loaded device LoRa config, or ``None`` when unavailable.
-
-    Parameters
-    ----------
-    target_node : Any
-        Node whose loaded local configuration is inspected.
-
-    Returns
-    -------
-    Any | None
-        Loaded LoRa protobuf message when present, otherwise ``None``.
-    """
-    local_config = getattr(target_node, "localConfig", None)
-    has_field = getattr(local_config, "HasField", None)
-    if local_config is None or not callable(has_field) or not has_field("lora"):
-        return None
-    return local_config.lora
-
-
-def _channel_url_matches_current_device_state(
-    target_node: Any,
-    requested_channel_url: str,
-    *,
-    verify_channel_url_against_state: Callable[..., bool] = (
-        _verify_channel_url_against_state
-    ),
-) -> bool:
-    """Return True when requested channel URL already matches loaded device state."""
-    device_lora_config = _device_lora_config(target_node)
-    if device_lora_config is None:
-        return False
-    return verify_channel_url_against_state(
-        requested_channel_url,
-        device_channels=getattr(target_node, "channels", None),
-        device_lora_config=device_lora_config,
-        emit_warnings=False,
-    )
-
-
-def _flatten_leaf_paths(prefix: str, mapping: dict[str, Any]) -> list[str]:
-    """Recursively flatten a nested mapping into dotted leaf paths."""
-    paths: list[str] = []
-    for key, value in mapping.items():
-        dotted = f"{prefix}.{key}"
-        if isinstance(value, dict) and value:
-            paths.extend(_flatten_leaf_paths(dotted, value))
-        else:
-            paths.append(dotted)
-    return paths
-
-
-def _verify_config_sections(
-    config_fields: dict[str, dict[str, Any]],
-    proto_config: Any,
-    label: str,
-    verified_fields: list[str] | None = None,
-) -> bool:
-    """Verify requested configuration sections against a reloaded protobuf.
-
-    Parameters
-    ----------
-    config_fields : dict[str, dict[str, Any]]
-        Requested section/value mappings from the configure document.
-    proto_config : Any
-        Reloaded protobuf configuration root.
-    label : str
-        Human-readable label used in diagnostics.
-    verified_fields : list[str] | None
-        Optional list mutated in place with verified dotted leaf paths.
-
-    Returns
-    -------
-    bool
-        ``True`` only when every requested section and field matches.
-    """
-    for section_name, yaml_values in config_fields.items():
-        section_snake = meshtastic.util.camel_to_snake(section_name)
-        if not proto_config.HasField(section_snake):
-            logger.warning(
-                "%s section %r not present after reload.",
-                label,
-                section_name,
-            )
-            return False
-        proto_section = getattr(proto_config, section_snake)
-        mismatches = _verify_requested_fields(yaml_values, proto_section, section_name)
-        if mismatches:
-            logger.warning(
-                "%s section %r field mismatches: %s",
-                label,
-                section_name,
-                ", ".join(mismatches),
-            )
-            return False
-        if verified_fields is not None:
-            verified_fields.extend(_flatten_leaf_paths(section_snake, yaml_values))
-        logger.debug(
-            "%s section %r verified (all requested field values match).",
-            label,
-            section_name,
-        )
-    return True
-
-
-def _verify_post_reconnect_config(
-    interface: MeshInterface,
-    node_dest: str,
-    *,
-    verify_channel_url: str | None = None,
-    verify_config_fields: dict[str, dict[str, Any]] | None = None,
-    verify_module_config_fields: dict[str, dict[str, Any]] | None = None,
-    verify_channel_url_against_state: Callable[..., bool] = (
-        _verify_channel_url_against_state
-    ),
-) -> ConfigureReconnectResult:
-    """Verify requested values after reconnect/config reload.
-
-    Parameters
-    ----------
-    interface : MeshInterface
-        Reconnected interface containing refreshed device state.
-    node_dest : str
-        Destination whose configuration is verified.
-    verify_channel_url : str | None
-        Normalized channel URL expected after reload.
-    verify_config_fields : dict[str, dict[str, Any]] | None
-        Requested local-config sections/fields to compare.
-    verify_module_config_fields : dict[str, dict[str, Any]] | None
-        Requested module-config sections/fields to compare.
-    verify_channel_url_against_state : Callable[..., bool]
-        Channel-state comparison seam.
-
-    Returns
-    -------
-    ConfigureReconnectResult
-        ``VERIFIED`` on a complete match, otherwise ``VERIFICATION_INCOMPLETE``.
-    """
-    if not interface.isConnected.is_set():
-        logger.warning("Post-reconnect verification skipped: transport disconnected.")
-        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    target_node = interface.getNode(node_dest)
-    verified_fields: list[str] = []
-
-    if verify_channel_url:
-        device_lora_config = _device_lora_config(target_node)
-        if not verify_channel_url_against_state(
-            verify_channel_url,
-            device_channels=getattr(target_node, "channels", None),
-            device_lora_config=device_lora_config,
-        ):
-            logger.warning(
-                "Channel URL verification: device state does not match requested URL."
-            )
-            return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-        verified_fields.append("channel_url")
-
-    if verify_config_fields and not _verify_config_sections(
-        verify_config_fields,
-        target_node.localConfig,
-        "Config",
-        verified_fields=verified_fields,
-    ):
-        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if verify_module_config_fields and not _verify_config_sections(
-        verify_module_config_fields,
-        target_node.moduleConfig,
-        "Module config",
-        verified_fields=verified_fields,
-    ):
-        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if not interface.isConnected.is_set():
-        logger.warning(
-            "Post-reconnect verification did not complete: transport disconnected."
-        )
-        return ConfigureReconnectResult.VERIFICATION_INCOMPLETE
-
-    if verified_fields:
-        logger.info("Verified: %s", ", ".join(verified_fields))
-
-    return ConfigureReconnectResult.VERIFIED
-
-
 def _pace_configure_write(
     remaining_writes: int,
     *,
@@ -942,6 +716,15 @@ def _close_failed_settings_transaction(
         )
 
 
+def _decode_configure_document(
+    hooks: ConfigureHooks, raw_bytes: bytes | str, path: str
+) -> dict[str, Any] | None:
+    """Decode one configure document through the configuration I/O runtime."""
+    return _config_io._decode_configure_document(  # noqa: SLF001
+        raw_bytes, path, cli_exit=hooks.cli_exit
+    )
+
+
 def _load_and_validate_configure_document(
     hooks: ConfigureHooks,
     path: str,
@@ -961,18 +744,15 @@ def _load_and_validate_configure_document(
         Validated top-level mapping, normalized direct-write values, and narrowed
         config/module-config section mappings.
     """
+
     try:
-        with open(path, encoding="utf8") as file:
-            raw_text = file.read()
-        configuration = yaml.safe_load(raw_text)
+        with open(path, "rb") as file:
+            raw_bytes = file.read()
     except OSError as exc:
         _terminate_cli(
             hooks.cli_exit, f"ERROR: Failed to read configuration file: {exc}"
         )
-    except (yaml.YAMLError, UnicodeDecodeError) as exc:
-        _terminate_cli(
-            hooks.cli_exit, f"ERROR: Failed to parse YAML configuration: {exc}"
-        )
+    configuration = _decode_configure_document(hooks, raw_bytes, path)
 
     if configuration is None:
         _terminate_cli(hooks.cli_exit, "ERROR: YAML configuration file is empty")
@@ -1049,6 +829,208 @@ def _load_and_validate_configure_document(
     )
 
 
+def _local_owner_via_admin(target_node: Any) -> mesh_pb2.User | None:
+    """Read the local node's owner record from the device's own admin getter.
+
+    A nodeless connection (``--no-nodes``) can leave the client node database
+    without the local entry that ``getMyUser()`` reads, so fall back to the
+    admin ``get_owner`` getter — the same channel the owner write itself uses.
+    The device's answer is authoritative and does not depend on ``nodesByNum``.
+
+    Parameters
+    ----------
+    target_node : Any
+        Local node whose owner record is read.
+
+    Returns
+    -------
+    mesh_pb2.User | None
+        The current owner record, or ``None`` when the node does not support
+        the admin owner-getter seam, does not answer in time, or the
+        transport rejects the request.
+    """
+    request_admin_response = getattr(target_node, "_request_admin_response", None)
+    if not callable(request_admin_response):
+        return None
+    message = admin_pb2.AdminMessage()
+    message.get_owner_request = True
+    try:
+        return request_admin_response(
+            message,
+            "get_owner_response",
+            mesh_pb2.User,
+            response_timeout_seconds=ADMIN_RESPONSE_WAIT_SECONDS,
+        )
+    except Exception:  # pylint: disable=broad-except
+        logger.debug("Local owner state request failed.", exc_info=True)
+        return None
+
+
+class _CurrentOwnerState(NamedTuple):
+    """Current owner state resolved from the client cache or device."""
+
+    user: dict[str, Any] | None
+    owner: mesh_pb2.User | None
+
+
+def _current_owner_state(
+    hooks: ConfigureHooks, target_node: Any, *, purpose: str
+) -> _CurrentOwnerState:
+    """Resolve owner state from the client snapshot, then the device.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and termination seams.
+    target_node : Any
+        Target node whose owner state is read.
+    purpose : str
+        Description of the owner field being preserved for error messages.
+
+    Returns
+    -------
+    _CurrentOwnerState
+        Client-side user mapping or the local device's owner protobuf.
+
+    Raises
+    ------
+    SystemExit
+        Via the CLI exit seam when target identity/state cannot be resolved.
+    """
+    node_num = getattr(target_node, "nodeNum", None)
+    interface = getattr(target_node, "iface", None)
+    node_db_lock = getattr(interface, "_node_db_lock", None)
+    my_node_num = getattr(getattr(interface, "myInfo", None), "my_node_num", None)
+    if (
+        not isinstance(node_num, int)
+        or isinstance(node_num, bool)
+        or node_db_lock is None
+    ):
+        _terminate_cli(
+            hooks.cli_exit,
+            f"Unable to preserve the current {purpose}: target owner state is unavailable.",
+        )
+
+    user: dict[str, Any] | None = None
+    is_local_target = my_node_num is not None and node_num == my_node_num
+    with node_db_lock:
+        if is_local_target:
+            get_my_user = getattr(interface, "getMyUser", None)
+            stored_user = get_my_user() if callable(get_my_user) else None
+            user = dict(stored_user) if isinstance(stored_user, dict) else None
+
+    if user is None and is_local_target:
+        # A nodeless connection (--no-nodes) can leave the client node
+        # database empty. Query the device outside the node DB lock because
+        # the admin getter blocks on a bounded response wait.
+        owner = _local_owner_via_admin(target_node)
+        if owner is not None:
+            return _CurrentOwnerState(None, owner)
+
+    if user is None:
+        with node_db_lock:
+            nodes_by_num = getattr(interface, "nodesByNum", None)
+            node_data = (
+                nodes_by_num.get(node_num) if isinstance(nodes_by_num, dict) else None
+            )
+            stored_user = node_data.get("user") if isinstance(node_data, dict) else None
+            user = dict(stored_user) if isinstance(stored_user, dict) else None
+
+    if user is None:
+        _terminate_cli(
+            hooks.cli_exit,
+            f"Unable to preserve the current {purpose}: target owner state is unavailable.",
+        )
+    return _CurrentOwnerState(user, None)
+
+
+def _licensed_from_state(
+    hooks: ConfigureHooks, state: _CurrentOwnerState | None
+) -> bool:
+    """Derive the target's current licensed flag from resolved owner state.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and termination seams.
+    state : _CurrentOwnerState | None
+        Owner state resolved by :func:`_current_owner_state`, or ``None``
+        when it was never resolved.
+
+    Returns
+    -------
+    bool
+        Current ``isLicensed`` value. Protobuf JSON omits scalar ``False``
+        values, so a missing ``isLicensed`` key means ``False``.
+
+    Raises
+    ------
+    SystemExit
+        Via the CLI exit seam when owner state is unavailable or invalid.
+    """
+    if state is None:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current licensed flag: "
+            "target owner state is unavailable.",
+        )
+    if state.owner is not None:
+        return bool(state.owner.is_licensed)
+    assert state.user is not None
+    current = state.user.get("isLicensed", False)
+    if not isinstance(current, bool):
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current licensed flag: "
+            "target owner state is invalid.",
+        )
+    return current
+
+
+def _long_name_from_state(
+    hooks: ConfigureHooks, state: _CurrentOwnerState | None
+) -> str:
+    """Derive the target's current long owner name from resolved owner state.
+
+    Parameters
+    ----------
+    hooks : ConfigureHooks
+        CLI reporting and termination seams.
+    state : _CurrentOwnerState | None
+        Owner state resolved by :func:`_current_owner_state`, or ``None``
+        when it was never resolved.
+
+    Returns
+    -------
+    str
+        The current long owner name with surrounding whitespace stripped.
+
+    Raises
+    ------
+    SystemExit
+        Via the CLI exit seam when the current long name is unavailable or
+        blank.
+    """
+    if state is None:
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current owner name: "
+            "target owner state is unavailable.",
+        )
+    if state.owner is not None:
+        long_name: object = state.owner.long_name
+    else:
+        assert state.user is not None
+        long_name = state.user.get("longName")
+    if not isinstance(long_name, str) or not long_name.strip():
+        _terminate_cli(
+            hooks.cli_exit,
+            "Unable to preserve the current owner name: "
+            "target owner state is unavailable.",
+        )
+    return long_name.strip()
+
+
 def _apply_direct_configuration(
     hooks: ConfigureHooks,
     target_node: Any,
@@ -1080,17 +1062,62 @@ def _apply_direct_configuration(
             hooks.cli_print(CONFIGURE_DIRECT_SETTINGS_HEADER)
             direct_writes_started = True
 
-    if values.owner is not None:
+    owner_flags_requested = (
+        values.is_licensed is not None or values.is_unmessagable is not None
+    )
+    if owner_flags_requested:
         _begin_direct_writes()
-        hooks.cli_print(f"Setting device owner to {values.owner}")
-        target_node.setOwner(long_name=values.owner)
+        if values.owner is not None:
+            hooks.cli_print(f"Setting device owner to {values.owner}")
+        if values.owner_short is not None:
+            hooks.cli_print(f"Setting device owner short to {values.owner_short}")
+        if values.is_licensed is not None:
+            hooks.cli_print(f"Setting licensed mode to {values.is_licensed}")
+        if values.is_unmessagable is not None:
+            hooks.cli_print(
+                f"Setting owner unmessagable flag to {values.is_unmessagable}"
+            )
+        needs_current_state = values.is_licensed is None or values.owner is None
+        current_state = (
+            _current_owner_state(hooks, target_node, purpose="owner profile")
+            if needs_current_state
+            else None
+        )
+        is_licensed = (
+            values.is_licensed
+            if values.is_licensed is not None
+            else _licensed_from_state(hooks, current_state)
+        )
+        # ``Node.setOwner`` applies the owner-profile flags only alongside a
+        # long name, so a flag-only write must restate the current name; a
+        # flag-only document whose owner name cannot be read is refused
+        # before the write instead of silently not applying the flags.
+        long_name = (
+            values.owner
+            if values.owner is not None
+            else _long_name_from_state(hooks, current_state)
+        )
+        target_node.setOwner(
+            long_name=long_name,
+            short_name=values.owner_short,
+            is_licensed=is_licensed,
+            is_unmessagable=values.is_unmessagable,
+        )
         time.sleep(CONFIG_APPLY_DELAY_SECONDS)
-
-    if values.owner_short is not None:
-        _begin_direct_writes()
-        hooks.cli_print(f"Setting device owner short to {values.owner_short}")
-        target_node.setOwner(long_name=None, short_name=values.owner_short)
-        time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+    else:
+        # Preserve the historical configure write shape for the long/short-name-only
+        # path. Besides compatibility with observable call ordering, this avoids
+        # changing firmware pacing for existing configure documents.
+        if values.owner is not None:
+            _begin_direct_writes()
+            hooks.cli_print(f"Setting device owner to {values.owner}")
+            target_node.setOwner(long_name=values.owner)
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
+        if values.owner_short is not None:
+            _begin_direct_writes()
+            hooks.cli_print(f"Setting device owner short to {values.owner_short}")
+            target_node.setOwner(long_name=None, short_name=values.owner_short)
+            time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
     if values.location is not None:
         _begin_direct_writes()
@@ -1488,30 +1515,24 @@ def _handle_configure_actions(
         outcome.stop_processing = True
         return
 
+    export_format = _config_io._resolve_export_format(  # noqa: SLF001
+        getattr(args, "export_format", "auto"), args.export_config
+    )
+    if export_format == "binary":
+        _config_io._write_binary_profile(  # noqa: SLF001
+            args.export_config,
+            lambda: hooks.export_profile(context.interface),
+            hooks.cli_exit,
+            hooks.cli_print,
+        )
+        return
+
     config_text = hooks.export_config(context.interface)
     if args.export_config == "-":
         print(config_text)
         return
 
-    try:
-        descriptor = os.open(
-            args.export_config,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            PRIVATE_CONFIG_FILE_MODE,
-        )
-        try:
-            # ``os.open(..., mode=...)`` does not alter an existing file's mode.
-            # Tighten it before writing because exports may contain private and
-            # administrative keys.
-            fchmod = getattr(os, "fchmod", None)
-            if callable(fchmod):
-                fchmod(descriptor, PRIVATE_CONFIG_FILE_MODE)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as output_file:
-                descriptor = -1
-                output_file.write(config_text)
-        finally:
-            if descriptor >= 0:
-                os.close(descriptor)
-    except OSError as exc:
-        _terminate_cli(hooks.cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
+    _config_io._write_export_file(  # noqa: SLF001
+        args.export_config, config_text, hooks.cli_exit
+    )
     hooks.cli_print(f"Exported configuration to {args.export_config}")

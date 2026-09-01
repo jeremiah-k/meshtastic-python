@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import Any, NoReturn, Protocol
 
 import yaml
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
-from google.protobuf.message import Message
+from google.protobuf.message import DecodeError, Message
 
 import meshtastic.util
+from meshtastic.cli.context import CliExit, _terminate_cli
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.protobuf import localonly_pb2
+from meshtastic.protobuf import clientonly_pb2, localonly_pb2
 
 
 class DescriptorLike(Protocol):
@@ -35,6 +38,47 @@ CONFIG_TRUE_DEFAULTS: set[tuple[str, ...]] = {
 MODULE_TRUE_DEFAULTS: set[tuple[str, ...]] = {
     ("mqtt", "encryptionEnabled"),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _LocalConfigurationSnapshot:
+    """Values shared by YAML and binary local-configuration exports."""
+
+    owner: str | None
+    owner_short: str | None
+    channel_url: str | None
+    canned_messages: str | None
+    ringtone: str | None
+    latitude: float | None
+    longitude: float | None
+    altitude: int | None
+    is_unmessagable: bool | None
+    is_licensed: bool | None
+
+
+def _collect_local_configuration(
+    interface: MeshInterface,
+) -> _LocalConfigurationSnapshot:
+    """Collect the local values represented by both export formats."""
+    my_info = interface.getMyNodeInfo()
+    position = my_info.get("position") if my_info else None
+    user = interface.getMyUser() or {}
+    is_unmessagable = user.get("isUnmessagable")
+    is_licensed = user.get("isLicensed")
+    return _LocalConfigurationSnapshot(
+        owner=interface.getLongName(),
+        owner_short=interface.getShortName(),
+        channel_url=interface.localNode.getURL(),
+        canned_messages=interface.getCannedMessage(),
+        ringtone=interface.getRingtone(),
+        latitude=position.get("latitude") if position else None,
+        longitude=position.get("longitude") if position else None,
+        altitude=position.get("altitude") if position else None,
+        is_unmessagable=(
+            is_unmessagable if isinstance(is_unmessagable, bool) else None
+        ),
+        is_licensed=is_licensed if isinstance(is_licensed, bool) else None,
+    )
 
 
 def print_config(config: Any, *, camel_case: bool) -> None:
@@ -313,34 +357,29 @@ def export_config(
 
     config_obj: dict[str, Any] = {}
 
-    owner = interface.getLongName()
-    owner_short = interface.getShortName()
-    channel_url = interface.localNode.getURL()
-    my_info = interface.getMyNodeInfo()
-    canned_messages = interface.getCannedMessage()
-    ringtone = interface.getRingtone()
-    position = my_info.get("position") if my_info else None
-    latitude = position.get("latitude") if position else None
-    longitude = position.get("longitude") if position else None
-    altitude = position.get("altitude") if position else None
+    snapshot = _collect_local_configuration(interface)
 
-    if owner:
-        config_obj["owner"] = owner
-    if owner_short:
-        config_obj["owner_short"] = owner_short
-    if channel_url:
-        config_obj["channelUrl" if camel_case else "channel_url"] = channel_url
-    if canned_messages:
-        config_obj["canned_messages"] = canned_messages
-    if ringtone:
-        config_obj["ringtone"] = ringtone
-    if latitude is not None or longitude is not None:
+    if snapshot.owner:
+        config_obj["owner"] = snapshot.owner
+    if snapshot.owner_short:
+        config_obj["owner_short"] = snapshot.owner_short
+    if snapshot.channel_url:
+        config_obj["channelUrl" if camel_case else "channel_url"] = snapshot.channel_url
+    if snapshot.canned_messages:
+        config_obj["canned_messages"] = snapshot.canned_messages
+    if snapshot.ringtone:
+        config_obj["ringtone"] = snapshot.ringtone
+    if snapshot.is_unmessagable is not None:
+        config_obj["is_unmessagable"] = snapshot.is_unmessagable
+    if snapshot.is_licensed is not None:
+        config_obj["is_licensed"] = snapshot.is_licensed
+    if snapshot.latitude is not None or snapshot.longitude is not None:
         config_obj["location"] = {
-            "lat": latitude if latitude is not None else 0.0,
-            "lon": longitude if longitude is not None else 0.0,
+            "lat": snapshot.latitude if snapshot.latitude is not None else 0.0,
+            "lon": snapshot.longitude if snapshot.longitude is not None else 0.0,
         }
-        if altitude is not None:
-            config_obj["location"]["alt"] = altitude
+        if snapshot.altitude is not None:
+            config_obj["location"]["alt"] = snapshot.altitude
 
     config = message_to_dict(interface.localNode.localConfig)
     prefix_base64_bytes_fields_fn(interface.localNode.localConfig, config)
@@ -357,3 +396,383 @@ def export_config(
         )
 
     return "# start of Meshtastic configure yaml\n" + yaml.dump(config_obj)
+
+
+def _export_profile(
+    interface: MeshInterface,
+) -> bytes:
+    """Export local node configuration as a binary DeviceProfile (.cfg).
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        Connected interface whose local node state should be exported.
+
+    Returns
+    -------
+    bytes
+        Serialized ``clientonly_pb2.DeviceProfile`` suitable for ``--configure``.
+
+    Notes
+    -----
+    Mirrors :func:`export_config` data collection. Canned messages, ringtone,
+    and fixed position are included only when populated; local and module
+    configurations are always copied so firmware defaults round-trip.
+    """
+    profile = clientonly_pb2.DeviceProfile()
+    snapshot = _collect_local_configuration(interface)
+
+    if snapshot.owner:
+        profile.long_name = snapshot.owner
+    if snapshot.owner_short:
+        profile.short_name = snapshot.owner_short
+    if snapshot.channel_url:
+        profile.channel_url = snapshot.channel_url
+    if snapshot.canned_messages:
+        profile.canned_messages = snapshot.canned_messages
+    if snapshot.ringtone:
+        profile.ringtone = snapshot.ringtone
+    if snapshot.is_unmessagable is not None:
+        profile.is_unmessagable = snapshot.is_unmessagable
+    if snapshot.is_licensed is not None:
+        profile.is_licensed = snapshot.is_licensed
+    if snapshot.latitude is not None or snapshot.longitude is not None:
+        profile.fixed_position.latitude_i = int(round((snapshot.latitude or 0.0) * 1e7))
+        profile.fixed_position.longitude_i = int(
+            round((snapshot.longitude or 0.0) * 1e7)
+        )
+        profile.fixed_position.altitude = int(snapshot.altitude or 0)
+    profile.config.CopyFrom(interface.localNode.localConfig)
+    profile.module_config.CopyFrom(interface.localNode.moduleConfig)
+    return profile.SerializeToString()
+
+
+def _parse_profile_bytes(raw: bytes) -> clientonly_pb2.DeviceProfile:
+    """Parse raw bytes as a DeviceProfile protobuf.
+
+    Parameters
+    ----------
+    raw : bytes
+        Candidate serialized DeviceProfile payload.
+
+    Returns
+    -------
+    clientonly_pb2.DeviceProfile
+        Parsed profile.
+
+    Raises
+    ------
+    ValueError
+        If the payload is not a parsable DeviceProfile.
+    """
+    profile = clientonly_pb2.DeviceProfile()
+    try:
+        profile.ParseFromString(raw)
+    except DecodeError as exc:
+        raise ValueError(f"invalid DeviceProfile payload: {exc}") from exc
+    if not profile.ListFields():
+        raise ValueError("invalid DeviceProfile payload: no recognized fields")
+    return profile
+
+
+_YAML_ALLOWED_CONTROL_CHARS = frozenset("\t\n\r")
+
+
+def _has_yaml_forbidden_control_chars(text: str) -> bool:
+    """Detect control characters that YAML forbids inside decoded bytes.
+
+    Parameters
+    ----------
+    text : str
+        Decoded textual candidate for a YAML configuration document.
+
+    Returns
+    -------
+    bool
+        True when the text contains C0 control characters YAML rejects,
+        indicating binary content rather than a YAML document.
+    """
+    return any(
+        (ord(char) < 32 and char not in _YAML_ALLOWED_CONTROL_CHARS) or ord(char) == 127
+        for char in text
+    )
+
+
+def _true_defaults_in_present_sections(
+    config_dict: Mapping[str, Any], true_defaults: set[tuple[str, ...]]
+) -> set[tuple[str, ...]]:
+    """Filter firmware-true default paths to those whose sections exist.
+
+    Materializing a flag inside a section the source document never carried
+    would invent whole sections during partial-profile imports and then write
+    them to the device, so restrict default materialization to sections the
+    profile actually contains.
+
+    Parameters
+    ----------
+    config_dict : Mapping[str, Any]
+        Source configuration mapping to inspect.
+    true_defaults : set[tuple[str, ...]]
+        Key paths whose missing final key would be created with ``False``.
+
+    Returns
+    -------
+    set[tuple[str, ...]]
+        The subset of paths whose ancestor sections are present.
+    """
+    present: set[tuple[str, ...]] = set()
+    for path in true_defaults:
+        current: Mapping[str, Any] | None = config_dict
+        for key in path[:-1]:
+            if current is None:
+                break
+            nested = current.get(key)
+            current = nested if isinstance(nested, Mapping) else None
+        if current is not None:
+            present.add(path)
+    return present
+
+
+def _profile_to_configuration(
+    profile: clientonly_pb2.DeviceProfile,
+) -> dict[str, Any]:
+    """Convert a DeviceProfile into the equivalent YAML configure document.
+
+    Parameters
+    ----------
+    profile : clientonly_pb2.DeviceProfile
+        Profile to adapt, typically parsed from a binary ``.cfg`` file.
+
+    Returns
+    -------
+    dict[str, Any]
+        Mapping using the same keys as YAML exports, so binary profiles flow
+        through the standard configure pipeline unchanged.
+    """
+    configuration: dict[str, Any] = {}
+    if profile.HasField("long_name"):
+        configuration["owner"] = profile.long_name
+    if profile.HasField("short_name"):
+        configuration["owner_short"] = profile.short_name
+    if profile.HasField("channel_url"):
+        configuration["channel_url"] = profile.channel_url
+    if profile.HasField("canned_messages"):
+        configuration["canned_messages"] = profile.canned_messages
+    if profile.HasField("ringtone"):
+        configuration["ringtone"] = profile.ringtone
+    if profile.HasField("is_unmessagable"):
+        configuration["is_unmessagable"] = profile.is_unmessagable
+    if profile.HasField("is_licensed"):
+        configuration["is_licensed"] = profile.is_licensed
+    if profile.HasField("fixed_position"):
+        fixed = profile.fixed_position
+        configuration["location"] = {
+            "lat": fixed.latitude_i / 1e7,
+            "lon": fixed.longitude_i / 1e7,
+            "alt": fixed.altitude,
+        }
+    if profile.HasField("config"):
+        config = MessageToDict(profile.config)
+        prefix_base64_bytes_fields(profile.config, config)
+        set_missing_flags_false(
+            config, _true_defaults_in_present_sections(config, CONFIG_TRUE_DEFAULTS)
+        )
+        if config:
+            configuration["config"] = _converted_section_keys(config, camel_case=False)
+    if profile.HasField("module_config"):
+        module_config = MessageToDict(profile.module_config)
+        prefix_base64_bytes_fields(profile.module_config, module_config)
+        set_missing_flags_false(
+            module_config,
+            _true_defaults_in_present_sections(module_config, MODULE_TRUE_DEFAULTS),
+        )
+        if module_config:
+            configuration["module_config"] = _converted_section_keys(
+                module_config, camel_case=False
+            )
+    return configuration
+
+
+EXPORT_FILE_MODE: int = 0o600
+
+# Module-owned filesystem seams keep fault-injection tests from monkeypatching
+# process-wide ``os`` functions while preserving the real file-descriptor path.
+_os_fdopen = os.fdopen
+_os_close = os.close
+
+
+def _write_export_file(
+    export_path: str, payload: bytes | str, cli_exit: CliExit
+) -> None:
+    """Write one export payload with owner-only file permissions.
+
+    ``os.open(..., mode=...)`` does not alter an existing file's mode, so the
+    descriptor is tightened with ``fchmod`` before writing: exports may carry
+    private and administrative keys.
+    """
+    data = payload.encode("utf-8") if isinstance(payload, str) else payload
+    try:
+        descriptor = os.open(
+            export_path,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            EXPORT_FILE_MODE,
+        )
+        try:
+            fchmod = getattr(os, "fchmod", None)
+            if callable(fchmod):
+                fchmod(descriptor, EXPORT_FILE_MODE)
+            with _os_fdopen(descriptor, "wb") as output_file:
+                descriptor = -1
+                output_file.write(data)
+        finally:
+            if descriptor >= 0:
+                _os_close(descriptor)
+    except OSError as exc:
+        _terminate_cli(cli_exit, f"ERROR: Failed to write config file: {exc}", 1)
+
+
+def _decode_configure_document(
+    raw_bytes: bytes | str, path: str, *, cli_exit: CliExit
+) -> dict[str, Any] | None:
+    """Decode one configure document, auto-detecting YAML or binary profiles.
+
+    Parameters
+    ----------
+    raw_bytes : bytes | str
+        Raw file contents. Strings remain accepted for historical mocked and
+        text-mode file seams.
+    path : str
+        Source path used for format preference and error reporting.
+    cli_exit : CliExit
+        CLI termination callback used for stable user-facing parse failures.
+
+    Returns
+    -------
+    dict[str, Any] | None
+        Parsed configuration mapping, or ``None`` for an empty YAML document.
+    """
+    raw = raw_bytes.encode("utf8") if isinstance(raw_bytes, str) else raw_bytes
+
+    def _decode_profile() -> dict[str, Any]:
+        return _profile_to_configuration(_parse_profile_bytes(raw))
+
+    def _fail_invalid_profile(exc: ValueError) -> NoReturn:
+        _terminate_cli(
+            cli_exit,
+            f"ERROR: {path} is not a valid YAML config or DeviceProfile "
+            f"(.cfg) file: {exc}",
+            1,
+        )
+
+    preferred_profile_error: ValueError | None = None
+    if path.lower().endswith((".cfg", ".bin")):
+        try:
+            return _decode_profile()
+        except ValueError as exc:
+            # Extension-based detection is only a preference. Explicit
+            # ``--export-format yaml`` is allowed with any destination name,
+            # so a textual ``.cfg``/``.bin`` file must still round-trip.
+            preferred_profile_error = exc
+
+    try:
+        text = raw.decode("utf8")
+    except UnicodeDecodeError:
+        text = None
+    if text is not None and _has_yaml_forbidden_control_chars(text):
+        # Protobuf wire payloads are dense in C0 control bytes that YAML
+        # forbids; route such payloads to the DeviceProfile parser instead.
+        text = None
+    if text is None:
+        if preferred_profile_error is not None:
+            _fail_invalid_profile(preferred_profile_error)
+        try:
+            return _decode_profile()
+        except ValueError as exc:
+            _fail_invalid_profile(exc)
+
+    try:
+        configuration = yaml.safe_load(text)
+    except yaml.YAMLError as yaml_error:
+        # A valid protobuf can occasionally contain only YAML-permitted UTF-8
+        # bytes. Accept it only when it has recognized DeviceProfile fields;
+        # otherwise preserve the historical malformed-YAML diagnostic.
+        try:
+            return _decode_profile()
+        except ValueError:
+            _terminate_cli(
+                cli_exit,
+                f"ERROR: Failed to parse YAML configuration: {yaml_error}",
+                1,
+            )
+    if isinstance(configuration, dict) or configuration is None:
+        return configuration
+    try:
+        return _decode_profile()
+    except ValueError:
+        _terminate_cli(
+            cli_exit,
+            "ERROR: YAML configuration must be a mapping/dictionary, got "
+            f"{type(configuration).__name__}",
+            1,
+        )
+
+
+def _resolve_export_format(fmt: str, destination: str) -> str:
+    """Resolve the effective export format for a destination.
+
+    Parameters
+    ----------
+    fmt : str
+        Requested format: ``auto``, ``yaml``, ``binary``, or ``protobuf``.
+    destination : str
+        Export destination path or ``-`` for stdout.
+
+    Returns
+    -------
+    str
+        Either ``yaml`` or ``binary``.
+    """
+    if fmt in ("binary", "protobuf"):
+        return "binary"
+    if fmt == "yaml":
+        return "yaml"
+    lowered = destination.lower()
+    if lowered.endswith((".cfg", ".bin")):
+        return "binary"
+    return "yaml"
+
+
+def _write_binary_profile(
+    export_path: str,
+    get_payload: Callable[[], bytes],
+    cli_exit: CliExit,
+    cli_print: Callable[[str], None],
+) -> None:
+    """Write a binary DeviceProfile payload to *export_path*.
+
+    Parameters
+    ----------
+    export_path : str
+        Destination path, or ``-`` to indicate stdout (which binary payloads
+        cannot target — that case terminates the CLI with a clear error).
+    get_payload : Callable[[], bytes]
+        Zero-argument callable that returns the serialized DeviceProfile
+        bytes; invoked lazily so termination happens before the device
+        round-trip when stdout is requested.
+    cli_exit : CliExit
+        Entrypoint-owned exit seam invoked for unrecoverable errors.
+    cli_print : Callable[[str], None]
+        Entrypoint-owned print seam for the final success status line.
+    """
+    if export_path == "-":
+        # Binary payloads are meaningless on a text console; refuse rather
+        # than spew protobuf bytes into a terminal or capture file.
+        _terminate_cli(
+            cli_exit,
+            "ERROR: Binary export requires a file path; use --export-format yaml "
+            "for stdout.",
+            1,
+        )
+    payload = get_payload()
+    _write_export_file(export_path, payload, cli_exit)
+    cli_print(f"Exported configuration to {export_path}")

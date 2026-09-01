@@ -17,18 +17,35 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, cast
 
+import yaml
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pubsub import pub
 
 import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic._core_constants import LOCAL_ADDR
+from meshtastic._core_constants import BROADCAST_ADDR, BROADCAST_NUM, LOCAL_ADDR
 from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
+from meshtastic.key_verification import STAGE_INITIATE as _KV_STAGE_INITIATE
+from meshtastic.key_verification import STAGE_NO_VERIFY as _KV_STAGE_NO_VERIFY
+from meshtastic.key_verification import STAGE_VERIFY as _KV_STAGE_VERIFY
+from meshtastic.key_verification import (
+    buildKeyVerificationAdmin as _default_build_key_verification_admin,
+)
+from meshtastic.key_verification import (
+    sendKeyVerification as _default_send_key_verification,
+)
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.protobuf import admin_pb2, mesh_pb2
+from meshtastic.protobuf import (
+    admin_pb2,
+    connection_status_pb2,
+    device_ui_pb2,
+    mesh_pb2,
+)
 
 logger = logging.getLogger(__name__)
+
 
 FACTORY_RESET_READY_PROBE_TIMEOUT_SECONDS = 20.0
 FACTORY_RESET_ACCEPTANCE_TIMEOUT_SECONDS = 20.0
@@ -60,6 +77,8 @@ class DeviceActionHooks:
         Best-effort serial readiness probe used after a full local reset.
     handle_ota_update : Callable[[MeshInterface, Any, dict[str, Any]], None]
         Wi-Fi OTA execution helper.
+    build_key_verification_admin, send_key_verification : Callable[..., Any]
+        Key-verification handshake seams retained by the entrypoint.
     build_lockdown_auth, read_lockdown_passphrase_file, send_lockdown_auth,
     validate_lockdown_passphrase : Callable[..., Any]
         Lockdown compatibility seams retained by the entrypoint.
@@ -76,6 +95,10 @@ class DeviceActionHooks:
     read_lockdown_passphrase_file: Callable[[str], bytes]
     send_lockdown_auth: Callable[..., Any]
     validate_lockdown_passphrase: Callable[[bytes], bytes]
+    build_key_verification_admin: Callable[..., Any] = (
+        _default_build_key_verification_admin
+    )
+    send_key_verification: Callable[..., Any] = _default_send_key_verification
 
 
 def _send_local_factory_reset_and_wait(  # pylint: disable=inconsistent-return-statements
@@ -518,6 +541,7 @@ def _handle_device_actions(context: CliContext, hooks: DeviceActionHooks) -> Non
     if outcome.stop_processing:
         return
     _handle_node_database_actions(context)
+    _handle_admin_utility_actions(context, hooks)
 
 
 def _parse_coordinate(
@@ -800,6 +824,7 @@ def _handle_node_database_actions(context: CliContext) -> None:
         (args.remove_favorite_node, "removeFavorite"),
         (args.set_ignored_node, "setIgnored"),
         (args.remove_ignored_node, "removeIgnored"),
+        (getattr(args, "toggle_muted_node", None), "toggleMutedNode"),
     )
     for value, method_name in actions:
         if value:
@@ -986,3 +1011,347 @@ def _read_lockdown_passphrase(
         if entered != confirmed:
             _terminate_cli(hooks.cli_exit, "Lockdown passphrases do not match.", 1)
     return hooks.validate_lockdown_passphrase(entered.encode("utf-8"))
+
+
+def _handle_key_verification_action(
+    context: CliContext, hooks: DeviceActionHooks
+) -> None:
+    """Execute one stage of the firmware key-verification handshake, if requested.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. The action enables ``close_now`` and
+        ``stop_processing`` so the one-shot CLI exits after the handshake stage
+        completes instead of continuing into information or long-running actions.
+    hooks : DeviceActionHooks
+        Entrypoint-owned key-verification and reporting dependencies.
+    """
+    args = context.args
+    stage = getattr(args, "key_verify", None)
+    if stage is None:
+        return
+
+    context.outcome.close_now = True
+    context.outcome.stop_processing = True
+    remote_nodenum = 0
+    if stage == _KV_STAGE_INITIATE:
+        remote_nodenum = _resolve_key_verification_peer(context, hooks)
+
+    try:
+        request = hooks.build_key_verification_admin(
+            stage,
+            remote_nodenum=remote_nodenum,
+            nonce=args.key_verify_nonce,
+            security_number=args.key_verify_security_number,
+        )
+    except ValueError as exc:
+        _terminate_cli(hooks.cli_exit, f"Invalid key-verification options: {exc}", 1)
+
+    try:
+        notification = hooks.send_key_verification(
+            context.interface, request, timeout=args.key_verify_wait
+        )
+    except (TimeoutError, RuntimeError, ValueError) as exc:
+        _terminate_cli(hooks.cli_exit, f"Key verification failed: {exc}", 1)
+
+    _report_key_verification_notification(notification, stage, hooks)
+
+
+def _resolve_key_verification_peer(
+    context: CliContext, hooks: DeviceActionHooks
+) -> int:
+    """Resolve and validate the remote peer named by ``--dest``.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state carrying the parsed destination.
+    hooks : DeviceActionHooks
+        CLI-exit seam used to report unusable destinations.
+
+    Returns
+    -------
+    int
+        Node number of the remote peer to verify.
+    """
+    dest = getattr(context.args, "dest", None)
+    if not dest or dest in (BROADCAST_ADDR, LOCAL_ADDR):
+        _terminate_cli(
+            hooks.cli_exit,
+            "key-verification initiation requires --dest naming the remote peer.",
+            1,
+        )
+    try:
+        nodenum = meshtastic.util.toNodeNum(dest)
+    except ValueError:
+        _terminate_cli(
+            hooks.cli_exit, f"Could not parse --dest {dest!r} as a node id.", 1
+        )
+    if nodenum == BROADCAST_NUM:
+        _terminate_cli(
+            hooks.cli_exit,
+            "key verification cannot target the broadcast address.",
+            1,
+        )
+    my_info = getattr(context.interface, "myInfo", None)
+    if my_info is not None and nodenum == my_info.my_node_num:
+        _terminate_cli(
+            hooks.cli_exit,
+            "key verification verifies a remote peer, not the local node.",
+            1,
+        )
+    return nodenum
+
+
+def _render_key_verification_notification(
+    notification: mesh_pb2.ClientNotification | None,
+    stage: str,
+    cli_print: Callable[[str], None],
+) -> None:
+    """Render one key-verification notification through a CLI print function."""
+    if notification is None:
+        decision = "accepted" if stage == _KV_STAGE_VERIFY else "rejected"
+        if stage in (_KV_STAGE_VERIFY, _KV_STAGE_NO_VERIFY):
+            cli_print(f"Key-verification decision sent: {decision}.")
+        else:
+            cli_print(
+                "Key-verification stage sent; the device reported no notification."
+            )
+        return
+    if notification.HasField("key_verification_number_inform"):
+        inform = notification.key_verification_number_inform
+        cli_print(
+            f"Security number for {inform.remote_longname}: "
+            f"{inform.security_number:06d}"
+        )
+        cli_print(
+            "Share this number out of band with the remote operator, then wait for "
+            "the final verification-character confirmation before accepting or rejecting."
+        )
+    elif notification.HasField("key_verification_number_request"):
+        request = notification.key_verification_number_request
+        cli_print(
+            f"{request.remote_longname} requests the security number shown on "
+            "that node; reply with --key-verify provide "
+            f"--key-verify-nonce {request.nonce} "
+            "--key-verify-security-number NNNNNN."
+        )
+    elif notification.HasField("key_verification_final"):
+        final = notification.key_verification_final
+        cli_print(
+            f"Final key-verification confirmation with {final.remote_longname} is ready."
+        )
+        if final.verification_characters:
+            cli_print(f"Verification characters: {final.verification_characters}")
+        cli_print(
+            "Compare the final confirmation on both nodes, then accept with "
+            f"--key-verify verify --key-verify-nonce {final.nonce} (or reject with "
+            f"--key-verify no-verify --key-verify-nonce {final.nonce})."
+        )
+    else:
+        cli_print(f"Key-verification notification: {notification.message}")
+
+
+def _report_key_verification_notification(
+    notification: mesh_pb2.ClientNotification | None,
+    stage: str,
+    hooks: DeviceActionHooks,
+) -> None:
+    """Print the device's key-verification progress notification, if any."""
+    _render_key_verification_notification(notification, stage, hooks.cli_print)
+
+
+def _handle_admin_utility_actions(
+    context: CliContext, hooks: DeviceActionHooks
+) -> None:
+    """Run preference backups, file deletion, input events, and status reads.
+
+    Parameters
+    ----------
+    context : CliContext
+        Connected invocation state. Each requested action enables ``close_now``
+        plus ACK/NAK finalization for shared lifecycle handling.
+    hooks : DeviceActionHooks
+        CLI reporting and exit seams.
+    """
+    args = context.args
+    interface = context.interface
+    kwargs = context.get_node_kwargs
+    outcome = context.outcome
+
+    backup_actions = (
+        (getattr(args, "backup_preferences", None), "backupPreferences", "Backing up"),
+        (getattr(args, "restore_preferences", None), "restorePreferences", "Restoring"),
+        (
+            getattr(args, "remove_backup_preferences", None),
+            "removeBackupPreferences",
+            "Removing",
+        ),
+    )
+    for location, method_name, verb in backup_actions:
+        if location is None:
+            continue
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        hooks.cli_print(f"{verb} preferences ({location})")
+        getattr(interface.getNode(args.dest, False, **kwargs), method_name)(location)
+
+    delete_file = getattr(args, "delete_file", None)
+    if delete_file:
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        hooks.cli_print(f"Deleting file {delete_file}")
+        interface.getNode(args.dest, False, **kwargs).deleteFile(delete_file)
+
+    input_event = getattr(args, "send_input_event", None)
+    if input_event is not None:
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        kb_char = getattr(args, "input_kb_char", None)
+        char_code = 0
+        if kb_char is not None:
+            if len(kb_char) != 1:
+                _terminate_cli(
+                    hooks.cli_exit,
+                    "ERROR: --input-kb-char accepts exactly one character.",
+                    1,
+                )
+            char_code = ord(kb_char)
+            if char_code > 0xFF:
+                _terminate_cli(
+                    hooks.cli_exit,
+                    "ERROR: --input-kb-char must fit the firmware 8-bit keyboard field.",
+                    1,
+                )
+        interface.getNode(args.dest, False, **kwargs).sendInputEvent(
+            input_event,
+            kb_char=char_code,
+            touch_x=getattr(args, "input_touch_x", 0) or 0,
+            touch_y=getattr(args, "input_touch_y", 0) or 0,
+        )
+
+    if getattr(args, "request_connection_status", False):
+        outcome.close_now = True
+        status = interface.getNode(
+            args.dest, False, **kwargs
+        ).requestDeviceConnectionStatus()
+        if status is None:
+            _terminate_cli(
+                hooks.cli_exit,
+                "No device connection status response received; "
+                "firmware must support device connection-status queries.",
+                1,
+            )
+        _print_device_connection_status(status, hooks)
+
+    if getattr(args, "get_ui_config", False):
+        outcome.close_now = True
+        ui_config = interface.getNode(args.dest, False, **kwargs).requestUiConfig()
+        if ui_config is None:
+            _terminate_cli(
+                hooks.cli_exit,
+                "No device UI configuration response received; "
+                "firmware must support device UI configuration.",
+                1,
+            )
+        hooks.cli_print(_yaml_dump_ui_config(ui_config))
+
+    store_ui = getattr(args, "store_ui_config", None)
+    if store_ui:
+        outcome.close_now = True
+        outcome.wait_for_ack_nak = True
+        config = _load_ui_config_document(store_ui, hooks)
+        interface.getNode(args.dest, False, **kwargs).storeUiConfig(config)
+
+
+def _print_device_connection_status(
+    status: connection_status_pb2.DeviceConnectionStatus, hooks: DeviceActionHooks
+) -> None:
+    """Print each transport's connection state reported by the device.
+
+    Parameters
+    ----------
+    status : connection_status_pb2.DeviceConnectionStatus
+        Aggregated per-transport status from the node.
+    hooks : DeviceActionHooks
+        Quiet-aware CLI reporter.
+    """
+    for section in ("wifi", "ethernet"):
+        if not status.HasField(section):
+            continue
+        sub = getattr(status, section)
+        state = "unknown"
+        extras: list[str] = []
+        if sub.HasField("status"):
+            network = sub.status
+            state = "connected" if network.is_connected else "disconnected"
+            if network.ip_address:
+                extras.append(_ip4_to_str(network.ip_address))
+            if network.is_mqtt_connected:
+                extras.append("mqtt")
+            if network.is_syslog_connected:
+                extras.append("syslog")
+        if section == "wifi":
+            if sub.ssid:
+                extras.append(f"ssid {sub.ssid}")
+            if sub.rssi:
+                extras.append(f"rssi {sub.rssi}")
+        detail = f" ({', '.join(extras)})" if extras else ""
+        hooks.cli_print(f"{section}: {state}{detail}")
+    if status.HasField("bluetooth"):
+        bluetooth = status.bluetooth
+        state = "connected" if bluetooth.is_connected else "disconnected"
+        extras = [f"rssi {bluetooth.rssi}"] if bluetooth.rssi else []
+        detail = f" ({', '.join(extras)})" if extras else ""
+        hooks.cli_print(f"bluetooth: {state}{detail}")
+    if status.HasField("serial"):
+        serial = status.serial
+        state = "connected" if serial.is_connected else "disconnected"
+        hooks.cli_print(f"serial: {state} (baud {serial.baud})")
+
+
+def _ip4_to_str(address: int) -> str:
+    """Format a packed 32-bit IPv4 address as dotted quad text."""
+    return ".".join(str((address >> shift) & 0xFF) for shift in (0, 8, 16, 24))
+
+
+def _yaml_dump_ui_config(config: device_ui_pb2.DeviceUIConfig) -> str:
+    """Render a DeviceUIConfig as YAML for display and later re-import."""
+    return yaml.safe_dump(MessageToDict(config), sort_keys=False)
+
+
+def _load_ui_config_document(
+    path: str, hooks: DeviceActionHooks
+) -> device_ui_pb2.DeviceUIConfig:
+    """Load a DeviceUIConfig from a YAML document.
+
+    Parameters
+    ----------
+    path : str
+        YAML file produced by ``--get-ui-config``.
+    hooks : DeviceActionHooks
+        CLI exit seam used to report unreadable or invalid documents.
+
+    Returns
+    -------
+    device_ui_pb2.DeviceUIConfig
+        Parsed configuration ready to store.
+    """
+    try:
+        with open(path, encoding="utf8") as file:
+            document = yaml.safe_load(file.read())
+    except (OSError, yaml.YAMLError, UnicodeDecodeError) as exc:
+        _terminate_cli(hooks.cli_exit, f"ERROR: Failed to read UI config: {exc}", 1)
+    if not isinstance(document, dict):
+        _terminate_cli(
+            hooks.cli_exit, "ERROR: UI config YAML must be a mapping/dictionary.", 1
+        )
+    config = device_ui_pb2.DeviceUIConfig()
+    try:
+        ParseDict(document, config, ignore_unknown_fields=False)
+    except (ParseError, TypeError) as exc:
+        _terminate_cli(
+            hooks.cli_exit, f"ERROR: Invalid device UI configuration: {exc}", 1
+        )
+    return config

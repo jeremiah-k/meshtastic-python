@@ -9,11 +9,14 @@ from __future__ import annotations
 import binascii
 import contextlib
 import contextvars
+import json
 import logging
 from collections.abc import Callable, Iterator
 from typing import Any
 
 from google.protobuf.descriptor import FieldDescriptor
+from google.protobuf.json_format import ParseDict, ParseError
+from google.protobuf.message_factory import GetMessageClass
 
 import meshtastic.util
 from meshtastic.cli.values import parse_bitfield_value
@@ -72,7 +75,7 @@ BITFIELD_ENUMS = {
 
 
 class PreferenceValueError(ValueError):
-    """Raised when fatal CLI preference assignment rejects a scalar value."""
+    """Raised when fatal CLI preference assignment rejects a value."""
 
 
 @contextlib.contextmanager
@@ -190,6 +193,16 @@ def protobuf_field_type_label(field: FieldDescriptor) -> str:
     }.get(field.type, "compatible value")
 
 
+def _reject_pref_validation_message(
+    message: str, *, cli_print: Callable[..., None]
+) -> bool:
+    """Apply the shared fatal-or-report policy for one invalid preference value."""
+    if SET_PREF_VALUE_ERRORS_FATAL.get():
+        raise PreferenceValueError(message)
+    report_pref_validation(message, cli_print=cli_print)
+    return False
+
+
 def reject_pref_value(
     field: FieldDescriptor,
     *,
@@ -203,10 +216,7 @@ def reject_pref_value(
         f"Invalid value {display_value} for {field_path}; "
         f"expected {protobuf_field_type_label(field)}."
     )
-    if SET_PREF_VALUE_ERRORS_FATAL.get():
-        raise PreferenceValueError(message)
-    report_pref_validation(message, cli_print=cli_print)
-    return False
+    return _reject_pref_validation_message(message, cli_print=cli_print)
 
 
 def assign_scalar_pref_value(
@@ -312,6 +322,199 @@ def _resolve_enum_value(
     return False, value
 
 
+def _resolve_repeated_enum_tokens(
+    pref: FieldDescriptor,
+    value: str,
+    *,
+    field_path: str,
+    name: list[str],
+    display_name: str,
+    cli_print: Callable[..., None],
+) -> tuple[bool, list[int]]:
+    """Resolve comma-separated enum names for one repeated enum field.
+
+    Parameters
+    ----------
+    pref : FieldDescriptor
+        Descriptor of the repeated enum field being assigned.
+    value : str
+        Raw comma-separated enum name list, e.g. ``"ENUM_A,ENUM_B"``.
+    field_path : str
+        Fully qualified preference path used in validation messages.
+    name : list[str]
+        Compound preference name segments used in enum diagnostics.
+    display_name : str
+        Display name of the field used in enum diagnostics.
+    cli_print : Callable[..., None]
+        CLI diagnostic reporter.
+
+    Returns
+    -------
+    tuple[bool, list[int]]
+        ``(True, resolved_numbers)`` when every token names an enum member;
+        ``(False, [])`` after reporting the standard enum diagnostics or the
+        standard rejection for a separator-only value.
+    """
+    tokens = [part.strip() for part in value.split(",") if part.strip()]
+    if not tokens:
+        return (
+            reject_pref_value(
+                pref,
+                field_path=field_path,
+                raw_value=value,
+                cli_print=cli_print,
+            ),
+            [],
+        )
+    resolved: list[int] = []
+    for token in tokens:
+        token_ok, number = _resolve_enum_value(
+            pref,
+            token,
+            name=name,
+            display_name=display_name,
+            cli_print=cli_print,
+        )
+        if not token_ok:
+            return False, []
+        resolved.append(number)
+    return True, resolved
+
+
+def _parse_repeated_message_value(
+    pref: FieldDescriptor,
+    raw_value: Any,
+    *,
+    field_path: str,
+    cli_print: Callable[..., None],
+) -> tuple[bool, list[Any]] | None:
+    """Parse a raw CLI value for a repeated-message field.
+
+    Parameters
+    ----------
+    pref : FieldDescriptor
+        Descriptor for the repeated-message field.
+    raw_value : Any
+        Candidate JSON-array string or array of mappings from CLI/configure input.
+    field_path : str
+        Fully qualified preference path used in validation messages.
+    cli_print : Callable[..., None]
+        CLI diagnostic reporter.
+
+    Returns
+    -------
+    tuple[bool, list[Any]] | None
+        ``None`` when the input is not an array candidate, ``(False, [])`` after
+        reporting malformed input, or ``(True, parsed_list)`` on success.
+    """
+
+    if pref.message_type is None:
+        return None
+
+    rendered_value: str
+    if isinstance(raw_value, (list, tuple)):
+        parsed = list(raw_value)
+        rendered_value = repr(raw_value)
+    elif isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not (text.startswith("[") and text.endswith("]")):
+            return None
+        rendered_value = text
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            message = (
+                f"Invalid JSON value for {field_path}: {exc.msg} "
+                f"(line {exc.lineno}, column {exc.colno})."
+            )
+            _reject_pref_validation_message(message, cli_print=cli_print)
+            return False, []
+    else:
+        return None
+
+    for index, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            message = (
+                f"Invalid value {redact_pref_value(field_path, rendered_value)} "
+                f"for {field_path}; element {index} is not an object/mapping."
+            )
+            _reject_pref_validation_message(message, cli_print=cli_print)
+            return False, []
+    return True, parsed
+
+
+def _assign_repeated_message_pref_value(
+    target: Any,
+    pref: FieldDescriptor,
+    raw_value: Any,
+    *,
+    field_path: str,
+    cli_print: Callable[..., None],
+) -> tuple[bool, bool]:
+    """Apply one repeated-message-field update transactionally.
+
+    Parameters
+    ----------
+    target : Any
+        Protobuf message containing the repeated field.
+    pref : FieldDescriptor
+        Descriptor for the repeated-message field.
+    raw_value : Any
+        Candidate JSON-array string or array of mappings.
+    field_path : str
+        Fully qualified preference path used in validation messages.
+    cli_print : Callable[..., None]
+        CLI diagnostic reporter.
+
+    Returns
+    -------
+    tuple[bool, bool]
+        Assignment success and whether the caller should print its generic
+        assignment message. Each object is parsed strictly on a message copy,
+        and an empty array clears the field.
+    """
+    parsed = _parse_repeated_message_value(
+        pref, raw_value, field_path=field_path, cli_print=cli_print
+    )
+    if parsed is None:
+        # Caller routed here in error; treat the raw payload as invalid.
+        return (
+            reject_pref_value(
+                pref, field_path=field_path, raw_value=raw_value, cli_print=cli_print
+            ),
+            True,
+        )
+    ok, elements = parsed
+    if not ok:
+        return False, True
+
+    candidate = type(target)()
+    candidate.CopyFrom(target)
+    field_container = getattr(candidate, pref.name)
+    del field_container[:]
+    submsg_class = GetMessageClass(pref.message_type)
+    for index, element in enumerate(elements):
+        submsg = submsg_class()
+        try:
+            ParseDict(element, submsg)
+        except ParseError as exc:
+            message = f"Invalid value for {field_path}; element {index}: {exc}."
+            _reject_pref_validation_message(message, cli_print=cli_print)
+            return False, True
+        field_container.append(submsg)
+
+    target.CopyFrom(candidate)
+    if not CONFIGURE_PREFLIGHT_MODE.get():
+        if elements:
+            cli_print(
+                f"Set {pref.name} to {len(elements)} entr"
+                f"{'y' if len(elements) == 1 else 'ies'} from array input"
+            )
+        else:
+            cli_print(f"Clearing {pref.name} list")
+    return True, False
+
+
 def _assign_repeated_pref_value(
     target: Any,
     pref: FieldDescriptor,
@@ -334,6 +537,20 @@ def _assign_repeated_pref_value(
             candidate_values[:] = new_values
         elif value == 0:
             del candidate_values[:]
+        elif isinstance(value, str) and "," in value:
+            parts = [part.strip() for part in value.split(",") if part.strip()]
+            if not parts:
+                return (
+                    reject_pref_value(
+                        pref,
+                        field_path=field_path,
+                        raw_value=raw_value,
+                        cli_print=cli_print,
+                    ),
+                    True,
+                )
+            new_values = [meshtastic.util.fromStr(part) for part in parts]
+            candidate_values[:] = new_values
         else:
             current_values = [x for x in candidate_values if x not in [0, "", b""]]
             if value not in current_values:
@@ -352,6 +569,8 @@ def _assign_repeated_pref_value(
 
     target.CopyFrom(candidate)
     if isinstance(value, list):
+        return True, True
+    if isinstance(value, str) and "," in value:
         return True, True
     if not CONFIGURE_PREFLIGHT_MODE.get():
         if value == 0:
@@ -403,6 +622,23 @@ def set_pref(
         )
         return False
 
+    if (
+        is_repeated_field(pref)
+        and pref.enum_type is not None
+        and isinstance(value, str)
+        and "," in value
+    ):
+        tokens_ok, value = _resolve_repeated_enum_tokens(
+            pref,
+            value,
+            field_path=normalized,
+            name=name,
+            display_name=display_name,
+            cli_print=cli_print,
+        )
+        if not tokens_ok:
+            return False
+
     enum_ok, value = _resolve_enum_value(
         pref,
         value,
@@ -419,7 +655,15 @@ def set_pref(
         else config_part
     )
     print_assignment = True
-    if is_repeated_field(pref):
+    if is_repeated_field(pref) and pref.message_type is not None:
+        assignment_ok, print_assignment = _assign_repeated_message_pref_value(
+            target,
+            pref,
+            raw_value,
+            field_path=normalized,
+            cli_print=cli_print,
+        )
+    elif is_repeated_field(pref):
         assignment_ok, print_assignment = _assign_repeated_pref_value(
             target,
             pref,
@@ -445,6 +689,7 @@ def set_pref(
         display_value = redact_pref_value(normalized, meshtastic.util.toStr(raw_value))
         if not CONFIGURE_PREFLIGHT_MODE.get():
             cli_print(f"Set {prefix}{display_name} to {display_value}")
+
     return assignment_ok
 
 

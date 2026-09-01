@@ -34,7 +34,7 @@ import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic import mt_config, remote_hardware
+from meshtastic import _topics, mt_config, remote_hardware
 from meshtastic._branding import (
     PRIMARY_CLI_NAME,
     PROJECT_ISSUE_URL,
@@ -77,6 +77,10 @@ from meshtastic.configure_verify import (  # noqa: F401 - legacy __main__ compat
 )
 from meshtastic.host_port import parseHostAndPort
 from meshtastic.interfaces.ble.interface import BLEInterface
+from meshtastic.key_verification import (
+    buildKeyVerificationAdmin,
+    sendKeyVerification,
+)
 from meshtastic.lockdown import (
     build_lockdown_auth,
     read_lockdown_passphrase_file,
@@ -606,6 +610,47 @@ def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
 
     except Exception as ex:
         logger.warning("Error processing received packet: %s", ex)
+
+
+def onClientNotification(
+    notification: mesh_pb2.ClientNotification, interface: MeshInterface
+) -> None:
+    """Render spontaneous key-verification notifications for long-lived CLI sessions.
+
+    Parameters
+    ----------
+    notification : mesh_pb2.ClientNotification
+        Notification packet decoded from the ``meshtastic.clientNotification``
+        pubsub topic. Only key-verification variants are rendered; all other
+        notification types are intentionally ignored.
+
+    interface : MeshInterface
+        Interface that received the notification. Unused by this handler and
+        retained for the shared pubsub subscriber signature.
+
+    Returns
+    -------
+    None
+        The active ``--key-verify`` action owns its own subscription and renders its
+        response after the bounded wait, so this generic subscriber is suppressed
+        during that action to avoid duplicate output.
+    """
+    _ = interface
+    args = _current_invocation_args()
+    if args is not None and getattr(args, "key_verify", None):
+        return
+    if notification.WhichOneof("payload_variant") not in {
+        "key_verification_number_inform",
+        "key_verification_number_request",
+        "key_verification_final",
+    }:
+        return
+    try:
+        cli_device_actions._render_key_verification_notification(  # noqa: SLF001
+            notification, "", _cli_print
+        )
+    except Exception as ex:
+        logger.warning("Error rendering client notification: %s", ex)
 
 
 def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
@@ -1243,6 +1288,8 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
         read_lockdown_passphrase_file=read_lockdown_passphrase_file,
         send_lockdown_auth=send_lockdown_auth,
         validate_lockdown_passphrase=validate_lockdown_passphrase,
+        build_key_verification_admin=buildKeyVerificationAdmin,
+        send_key_verification=sendKeyVerification,
     )
     channel_contact_hooks = cli_channel_contact_actions.ChannelContactHooks(
         cli_exit=_cli_exit,
@@ -1260,6 +1307,7 @@ def _build_connected_dispatch_hooks() -> cli_dispatch.DispatchHooks:
     )
     configure_hooks = cli_configure_actions.ConfigureActionHooks(
         handle_set_command=_handle_set_command,
+        export_profile=exportProfile,
         handle_configure_command=_handle_configure_command,
         export_config=exportConfig,
         cli_exit=_cli_exit,
@@ -1348,6 +1396,7 @@ def subscribe() -> None:
     commented out.
     """
     pub.subscribe(onReceive, "meshtastic.receive")
+    pub.subscribe(onClientNotification, _topics.CLIENT_NOTIFICATION_TOPIC)
     # pub.subscribe(onConnection, "meshtastic.connection")
 
     # We now call onConnected from main
@@ -1380,6 +1429,23 @@ def exportConfig(interface: MeshInterface) -> str:
 
 # COMPAT_STABLE_SHIM: snake_case alias for exportConfig
 export_config = exportConfig
+
+
+def exportProfile(interface: MeshInterface) -> bytes:
+    """Export the local node configuration as a binary DeviceProfile.
+
+    Parameters
+    ----------
+    interface : MeshInterface
+        Connected interface whose local node configuration is exported.
+
+    Returns
+    -------
+    bytes
+        Serialized ``clientonly_pb2.DeviceProfile`` payload suitable for a
+        ``.cfg`` destination or later ``--configure`` import.
+    """
+    return cli_config_io._export_profile(interface)  # noqa: SLF001
 
 
 def _close_power_meter_quietly(candidate: Any) -> None:
@@ -1562,6 +1628,7 @@ def _unsubscribe_cli_receive() -> None:
     """Best-effort removal of the invocation-level receive subscription."""
     try:
         pub.unsubscribe(onReceive, "meshtastic.receive")
+        pub.unsubscribe(onClientNotification, _topics.CLIENT_NOTIFICATION_TOPIC)
     except Exception:
         logger.debug("Unable to remove CLI receive subscription", exc_info=True)
 
