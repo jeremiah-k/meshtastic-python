@@ -115,6 +115,94 @@ def test_verify_fields_bool_coercion() -> None:
 
 
 @pytest.mark.unit
+def test_verify_fields_neighbor_info_zero_requested_matches_default_device() -> None:
+    proto = localonly_pb2.LocalModuleConfig()
+    proto.neighbor_info.update_interval = 21600
+    assert (
+        _verify_requested_fields(
+            {"update_interval": 0}, proto.neighbor_info, "neighbor_info"
+        )
+        == []
+    )
+
+
+@pytest.mark.unit
+def test_verify_fields_neighbor_info_default_requested_matches_zero_device() -> None:
+    proto = localonly_pb2.LocalModuleConfig()
+    assert (
+        _verify_requested_fields(
+            {"update_interval": 21600}, proto.neighbor_info, "neighbor_info"
+        )
+        == []
+    )
+
+
+@pytest.mark.unit
+def test_verify_fields_neighbor_info_camel_case_section_equivalence() -> None:
+    proto = localonly_pb2.LocalModuleConfig()
+    proto.neighbor_info.update_interval = 21600
+    assert (
+        _verify_requested_fields(
+            {"updateInterval": 0}, proto.neighbor_info, "neighborInfo"
+        )
+        == []
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("requested", "actual"),
+    [
+        (0, 3600),
+        (7200, 0),
+        (21600, 43200),
+        (43200, 21600),
+    ],
+)
+def test_verify_fields_neighbor_info_non_equivalent_values_rejected(
+    requested: int, actual: int
+) -> None:
+    proto = localonly_pb2.LocalModuleConfig()
+    proto.neighbor_info.update_interval = actual
+    assert _verify_requested_fields(
+        {"update_interval": requested}, proto.neighbor_info, "neighbor_info"
+    ) == ["neighbor_info.update_interval"]
+
+
+@pytest.mark.unit
+def test_verify_fields_neighbor_info_other_fields_still_compared() -> None:
+    proto = localonly_pb2.LocalModuleConfig()
+    proto.neighbor_info.update_interval = 21600
+    proto.neighbor_info.transmit_over_lora = True
+    result = _verify_requested_fields(
+        {"update_interval": 0, "transmit_over_lora": False},
+        proto.neighbor_info,
+        "neighbor_info",
+    )
+    assert result == ["neighbor_info.transmit_over_lora"]
+
+
+@pytest.mark.unit
+def test_verify_fields_neighbor_info_bool_zero_not_equivalent() -> None:
+    proto = localonly_pb2.LocalModuleConfig()
+    proto.neighbor_info.update_interval = 21600
+    result = _verify_requested_fields(
+        {"update_interval": False}, proto.neighbor_info, "neighbor_info"
+    )
+    assert result == ["neighbor_info.update_interval"]
+
+
+@pytest.mark.unit
+def test_verify_fields_other_update_intervals_strict() -> None:
+    proto = localonly_pb2.LocalModuleConfig()
+    proto.telemetry.device_update_interval = 900
+    result = _verify_requested_fields(
+        {"device_update_interval": 0}, proto.telemetry, "telemetry"
+    )
+    assert result == ["telemetry.device_update_interval"]
+
+
+@pytest.mark.unit
 def test_channel_url_matching_urls() -> None:
     s = channel_pb2.ChannelSettings()
     s.name = "test"
