@@ -211,7 +211,7 @@ class _PortNumEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_PortNum.Value
     LORAWAN_BRIDGE: _PortNum.ValueType  # 75
     """
     LoraWAN Payload Transport
-    ENCODING: compact binary LoRaWAN uplink (10-byte RF metadata + PHY payload) - see LoRaWANBridgeModule
+    ENCODING: LoRaWANBridge protobuf, see lorawan_bridge.proto
     """
     RETICULUM_TUNNEL_APP: _PortNum.ValueType  # 76
     """
@@ -462,7 +462,7 @@ PowerStress based monitoring support (for automated power consumption testing)
 LORAWAN_BRIDGE: PortNum.ValueType  # 75
 """
 LoraWAN Payload Transport
-ENCODING: compact binary LoRaWAN uplink (10-byte RF metadata + PHY payload) - see LoRaWANBridgeModule
+ENCODING: LoRaWANBridge protobuf, see lorawan_bridge.proto
 """
 RETICULUM_TUNNEL_APP: PortNum.ValueType  # 76
 """
