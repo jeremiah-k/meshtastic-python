@@ -142,6 +142,14 @@ class _PortNumEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_PortNum.Value
     Periodically broadcast by nodes in beacon mode; received by nodes with MeshBeaconConfig.FLAG_LISTEN_ENABLED.
     Carries a text message plus optional channel/preset offers for client apps.
     """
+    PAGING_APP: _PortNum.ValueType  # 38
+    """
+    Acknowledged paging: alerts a person is expected to physically acknowledge, and the
+    acknowledgements themselves.
+    ENCODING: protobuf PagingPacket
+    Distinct from ALERT_APP, which is a text message the recipient never confirms, and from a
+    routing or delivery ACK, which says the packet arrived rather than that someone saw it.
+    """
     SERIAL_APP: _PortNum.ValueType  # 64
     """
     Provides a hardware serial interface to send and receive from the Meshtastic network.
@@ -392,6 +400,14 @@ Beacon module broadcast packets.
 ENCODING: protobuf
 Periodically broadcast by nodes in beacon mode; received by nodes with MeshBeaconConfig.FLAG_LISTEN_ENABLED.
 Carries a text message plus optional channel/preset offers for client apps.
+"""
+PAGING_APP: PortNum.ValueType  # 38
+"""
+Acknowledged paging: alerts a person is expected to physically acknowledge, and the
+acknowledgements themselves.
+ENCODING: protobuf PagingPacket
+Distinct from ALERT_APP, which is a text message the recipient never confirms, and from a
+routing or delivery ACK, which says the packet arrived rather than that someone saw it.
 """
 SERIAL_APP: PortNum.ValueType  # 64
 """
