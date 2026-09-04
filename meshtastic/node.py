@@ -61,9 +61,7 @@ from meshtastic.node_runtime.shared import MAX_CHANNELS as _MAX_CHANNELS
 from meshtastic.node_runtime.shared import MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN
 from meshtastic.node_runtime.shared import MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH
 from meshtastic.node_runtime.shared import MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN
-from meshtastic.node_runtime.shared import (
-    METADATA_STDOUT_COMPAT_WAIT_SECONDS,
-)
+from meshtastic.node_runtime.shared import METADATA_STDOUT_COMPAT_WAIT_SECONDS
 from meshtastic.node_runtime.transport_runtime import (
     _NodeAckNakRuntime,
     _NodeAdminSessionRuntime,

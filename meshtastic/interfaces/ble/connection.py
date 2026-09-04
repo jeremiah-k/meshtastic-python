@@ -44,9 +44,7 @@ from meshtastic.interfaces.ble.errors import (
 from meshtastic.interfaces.ble.errors import (
     BLEDeviceNotFoundError as MeshtasticBLEDeviceNotFoundError,
 )
-from meshtastic.interfaces.ble.errors import (
-    BLEErrorHandler,
-)
+from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.lifecycle_primitives import _client_is_connected_compat
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import (

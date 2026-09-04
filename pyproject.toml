@@ -2,7 +2,7 @@
 [tool.poetry]
 # Keep this static install-time identity synchronized with meshtastic/_branding.py.
 name = "mtjk"
-version = "2.7.11.post5"
+version = "2.7.11.post6"
 description = "Python API & client shell for talking to Meshtastic devices"
 authors = ["Meshtastic Developers (upstream project authors)"]
 maintainers = ["Jeremiah K. <jeremiahk@gmx.com>"]
@@ -99,6 +99,12 @@ mesh-analysis = "meshtastic.analysis.__main__:main [analysis]"
 [tool.poe.tasks]
 code = "code ."
 juypter = "poetry run jupyter lab"
+
+[tool.isort]
+# Trunk runs bare `isort` (no CLI flags); without this profile isort 9+ uses
+# grid-style wrapping that black reverts, causing autofix loops. Keep in sync
+# with black: single style, no disagreement.
+profile = "black"
 
 [build-system]
 requires = ["poetry-core"]

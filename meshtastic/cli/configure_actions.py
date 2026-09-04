@@ -23,22 +23,24 @@ from meshtastic.cli.context import CliContext, CliExit, _terminate_cli
 # wrappers address them through this module, so rebind them explicitly.
 # pylint: disable=unused-import,useless-import-alias
 from meshtastic.configure_verify import (  # noqa: F401 - compatibility re-export
-    ConfigureReconnectResult,
+    ConfigureReconnectResult as ConfigureReconnectResult,
 )
 from meshtastic.configure_verify import (
     _channel_url_matches_current_device_state as _channel_url_matches_current_device_state,
 )
 from meshtastic.configure_verify import _device_lora_config as _device_lora_config
 from meshtastic.configure_verify import _flatten_leaf_paths as _flatten_leaf_paths
-from meshtastic.configure_verify import (  # noqa: F401 - compatibility re-export
-    _refresh_no_disconnect_verify_state,
-    _verify_channel_url_against_state,
+from meshtastic.configure_verify import (
+    _refresh_no_disconnect_verify_state as _refresh_no_disconnect_verify_state,
+)
+from meshtastic.configure_verify import (
+    _verify_channel_url_against_state as _verify_channel_url_against_state,
 )
 from meshtastic.configure_verify import (
     _verify_config_sections as _verify_config_sections,
 )
-from meshtastic.configure_verify import (  # noqa: F401 - compatibility re-export
-    _verify_post_reconnect_config,
+from meshtastic.configure_verify import (
+    _verify_post_reconnect_config as _verify_post_reconnect_config,
 )
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.node import ADMIN_RESPONSE_WAIT_SECONDS

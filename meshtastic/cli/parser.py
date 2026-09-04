@@ -16,10 +16,7 @@ from meshtastic.key_verification import (
 from meshtastic.key_verification import (
     KEY_VERIFICATION_STAGES as _KEY_VERIFICATION_STAGES,
 )
-from meshtastic.key_verification import (
-    SECURITY_NUMBER_MAX,
-    SECURITY_NUMBER_MIN,
-)
+from meshtastic.key_verification import SECURITY_NUMBER_MAX, SECURITY_NUMBER_MIN
 
 
 class _ArgcompleteModule(Protocol):

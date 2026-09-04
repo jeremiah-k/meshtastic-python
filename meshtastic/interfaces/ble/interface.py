@@ -124,9 +124,7 @@ from meshtastic.interfaces.ble.lifecycle_service import BLELifecycleController
 from meshtastic.interfaces.ble.management_service import (
     BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS as _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS,
 )
-from meshtastic.interfaces.ble.management_service import (
-    BLEManagementCommandHandler,
-)
+from meshtastic.interfaces.ble.management_service import BLEManagementCommandHandler
 from meshtastic.interfaces.ble.management_state import (
     BLEManagementState,
     _ManagementConditionPort,
