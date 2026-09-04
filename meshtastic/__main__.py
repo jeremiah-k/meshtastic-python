@@ -66,12 +66,20 @@ from meshtastic.cli.values import is_local_destination as _is_local_destination
 from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
     looks_like_integer_literal as _looks_like_integer_literal,
 )
-from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
-    parse_integer_literal as _parse_integer_literal,
+
+# black and isort disagree on these two statements: isort's line-length math
+# excludes the noqa comment (so it collapses the statement to one line) while
+# black includes it (so it must stay exploded). They are frozen compat
+# re-exports, so skip them with an isort directive rather than fight it.
+# isort: off
+from meshtastic.cli.values import (
+    parse_integer_literal as _parse_integer_literal,  # noqa: F401,W0611 - legacy __main__ compatibility export
 )
-from meshtastic.cli.values import (  # noqa: F401,W0611 - legacy __main__ compatibility export
-    parse_modem_preset_name as _parse_modem_preset_name,
+from meshtastic.cli.values import (
+    parse_modem_preset_name as _parse_modem_preset_name,  # noqa: F401,W0611 - legacy __main__ compatibility export
 )
+
+# isort: on
 from meshtastic.configure_verify import (  # noqa: F401 - legacy __main__ compatibility export
     _verify_channel_url_against_state,
 )

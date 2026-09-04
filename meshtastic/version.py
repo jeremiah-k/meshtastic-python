@@ -6,9 +6,7 @@ from meshtastic._branding import (
     DISTRIBUTION_NAME,
 )
 from meshtastic._branding import PROJECT_DISPLAY_NAME as _PROJECT_DISPLAY_NAME
-from meshtastic._branding import (
-    UPSTREAM_PRODUCT_NAME,
-)
+from meshtastic._branding import UPSTREAM_PRODUCT_NAME
 
 # COMPAT_STABLE_SHIM: historical constants retained for callers importing them.
 PACKAGE_NAME: str = DISTRIBUTION_NAME

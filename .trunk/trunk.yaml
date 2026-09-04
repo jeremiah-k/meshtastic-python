@@ -102,13 +102,7 @@ lint:
     - checkov@3.3.16
     - git-diff-check
     - gitleaks@8.30.1
-    # Hold isort at 8.x: 9.x collapses duplicate import statements and drops
-    # "# noqa: F401 - compatibility re-export" imports (e.g.
-    # meshtastic/cli/configure_actions.py lost the
-    # _refresh_no_disconnect_verify_state re-export, breaking callers), and it
-    # disagrees with black on meshtastic/__main__.py, aborting trunk autofix
-    # loops. Re-test both behaviors before bumping.
-    - isort@8.0.1
+    - isort@9.0.1
     - markdownlint@0.49.1
     - osv-scanner@2.5.1
     - prettier@3.9.6

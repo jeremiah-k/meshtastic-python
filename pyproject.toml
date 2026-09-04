@@ -100,6 +100,12 @@ mesh-analysis = "meshtastic.analysis.__main__:main [analysis]"
 code = "code ."
 juypter = "poetry run jupyter lab"
 
+[tool.isort]
+# Trunk runs bare `isort` (no CLI flags); without this profile isort 9+ uses
+# grid-style wrapping that black reverts, causing autofix loops. Keep in sync
+# with black: single style, no disagreement.
+profile = "black"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
