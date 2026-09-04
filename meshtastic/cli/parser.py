@@ -26,21 +26,7 @@ class _ArgcompleteModule(Protocol):
         """Enable shell completion for ``parser``."""
 
 
-_UINT32_MAX: int = (1 << 32) - 1
 _UINT64_MAX: int = (1 << 64) - 1
-
-
-def _parse_uint32(value: str) -> int:
-    """Parse one CLI integer constrained to an unsigned protobuf 32-bit field."""
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
-    if not 0 <= parsed <= _UINT32_MAX:
-        raise argparse.ArgumentTypeError(
-            f"value must be between 0 and {_UINT32_MAX}, got {parsed}"
-        )
-    return parsed
 
 
 def _parse_uint64(value: str) -> int:
@@ -88,6 +74,29 @@ def _parse_firmware_keyboard_char(value: str) -> str:
             "keyboard input must be exactly one character with code point <= 255"
         )
     return value
+
+
+def _parse_input_event_uint8(value: str) -> int:
+    """Parse an input-event field constrained to the firmware's unsigned byte range."""
+    return _parse_bounded_uint(value, 0xFF, "--send-input-event")
+
+
+def _parse_input_touch_uint16(value: str) -> int:
+    """Parse a touch coordinate constrained to the firmware's unsigned 16-bit range."""
+    return _parse_bounded_uint(value, 0xFFFF, "input-touch coordinate")
+
+
+def _parse_bounded_uint(value: str, upper: int, label: str) -> int:
+    """Parse one CLI integer constrained to ``[0, upper]`` for a named field."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not 0 <= parsed <= upper:
+        raise argparse.ArgumentTypeError(
+            f"{label} must be between 0 and {upper}, got {parsed}"
+        )
+    return parsed
 
 
 def _parse_absolute_device_path(value: str) -> str:
@@ -992,9 +1001,9 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
     outer.add_argument(
         "--send-input-event",
-        type=_parse_uint32,
+        type=_parse_input_event_uint8,
         metavar="EVENT_CODE",
-        help="Send a physical input event code (button/keyboard/touch) to the node",
+        help="Send a physical input event code (0-255) to the node",
     )
     outer.add_argument(
         "--input-kb-char",
@@ -1003,13 +1012,13 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
     outer.add_argument(
         "--input-touch-x",
-        type=_parse_uint32,
-        help="Touch X coordinate paired with --send-input-event",
+        type=_parse_input_touch_uint16,
+        help="Touch X coordinate (0-65535) paired with --send-input-event",
     )
     outer.add_argument(
         "--input-touch-y",
-        type=_parse_uint32,
-        help="Touch Y coordinate paired with --send-input-event",
+        type=_parse_input_touch_uint16,
+        help="Touch Y coordinate (0-65535) paired with --send-input-event",
     )
     outer.add_argument(
         "--request-connection-status",

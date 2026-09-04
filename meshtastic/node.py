@@ -58,6 +58,10 @@ from meshtastic.node_runtime.shared import (
     MAX_CANNED_MESSAGE_LENGTH as _MAX_CANNED_MESSAGE_LENGTH,
 )
 from meshtastic.node_runtime.shared import MAX_CHANNELS as _MAX_CHANNELS
+from meshtastic.node_runtime.shared import MAX_INPUT_EVENT_CODE as _MAX_INPUT_EVENT_CODE
+from meshtastic.node_runtime.shared import MAX_INPUT_KB_CHAR as _MAX_INPUT_KB_CHAR
+from meshtastic.node_runtime.shared import MAX_INPUT_TOUCH_X as _MAX_INPUT_TOUCH_X
+from meshtastic.node_runtime.shared import MAX_INPUT_TOUCH_Y as _MAX_INPUT_TOUCH_Y
 from meshtastic.node_runtime.shared import MAX_LONG_NAME_LEN as _MAX_LONG_NAME_LEN
 from meshtastic.node_runtime.shared import MAX_RINGTONE_LENGTH as _MAX_RINGTONE_LENGTH
 from meshtastic.node_runtime.shared import MAX_SHORT_NAME_LEN as _MAX_SHORT_NAME_LEN
@@ -112,6 +116,10 @@ MAX_CHANNELS = _MAX_CHANNELS
 MAX_LONG_NAME_LEN = _MAX_LONG_NAME_LEN
 MAX_RINGTONE_LENGTH = _MAX_RINGTONE_LENGTH
 MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
+MAX_INPUT_EVENT_CODE = _MAX_INPUT_EVENT_CODE
+MAX_INPUT_KB_CHAR = _MAX_INPUT_KB_CHAR
+MAX_INPUT_TOUCH_X = _MAX_INPUT_TOUCH_X
+MAX_INPUT_TOUCH_Y = _MAX_INPUT_TOUCH_Y
 
 
 def _backup_location_value(
@@ -1715,6 +1723,22 @@ class Node:  # pylint: disable=too-many-instance-attributes
         mesh_pb2.MeshPacket | None
             The AdminMessage packet sent, or `None` if no packet was sent.
         """
+        if not 0 <= event_code <= _MAX_INPUT_EVENT_CODE:
+            self._raise_interface_error(
+                f"event_code must be between 0 and {_MAX_INPUT_EVENT_CODE}, got {event_code}"
+            )
+        if not 0 <= kb_char <= _MAX_INPUT_KB_CHAR:
+            self._raise_interface_error(
+                f"kb_char must be between 0 and {_MAX_INPUT_KB_CHAR}, got {kb_char}"
+            )
+        if not 0 <= touch_x <= _MAX_INPUT_TOUCH_X:
+            self._raise_interface_error(
+                f"touch_x must be between 0 and {_MAX_INPUT_TOUCH_X}, got {touch_x}"
+            )
+        if not 0 <= touch_y <= _MAX_INPUT_TOUCH_Y:
+            self._raise_interface_error(
+                f"touch_y must be between 0 and {_MAX_INPUT_TOUCH_Y}, got {touch_y}"
+            )
         message = admin_pb2.AdminMessage()
         message.send_input_event.event_code = event_code
         message.send_input_event.kb_char = kb_char

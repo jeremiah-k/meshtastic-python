@@ -364,3 +364,55 @@ def test_node_delete_file_keeps_library_level_absolute_path_guard() -> None:
     )
     with pytest.raises(MeshInterfaceError, match="bad path"):
         node.deleteFile("prefs/config.proto")
+
+
+@pytest.mark.unit
+def test_node_send_input_event_accepts_firmware_maxima() -> None:
+    """Direct callers can use the exact firmware byte/short maxima."""
+    node = object.__new__(Node)
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=1))
+    node._send_admin_op = sender  # type: ignore[method-assign]
+
+    node.sendInputEvent(255, kb_char=255, touch_x=65535, touch_y=65535)
+
+    event = sender.call_args.args[0].send_input_event
+    assert (event.event_code, event.kb_char, event.touch_x, event.touch_y) == (
+        255,
+        255,
+        65535,
+        65535,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("event_code", -1),
+        ("event_code", 256),
+        ("kb_char", -1),
+        ("kb_char", 256),
+        ("touch_x", -1),
+        ("touch_x", 65536),
+        ("touch_y", -1),
+        ("touch_y", 65536),
+    ],
+)
+def test_node_send_input_event_rejects_out_of_range_field(
+    field: str, value: int
+) -> None:
+    """Direct callers get an interface error before any protobuf assignment."""
+    node = object.__new__(Node)
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=1))
+    node._send_admin_op = sender  # type: ignore[method-assign]
+    node._raise_interface_error = MagicMock(  # type: ignore[method-assign]
+        side_effect=MeshInterfaceError(f"{field} out of range: {value}")
+    )
+
+    kwargs = {"event_code": 0, "kb_char": 0, "touch_x": 0, "touch_y": 0}
+    kwargs[field] = value
+
+    with pytest.raises(MeshInterfaceError, match=f"{field} out of range"):
+        node.sendInputEvent(**kwargs)
+
+    sender.assert_not_called()

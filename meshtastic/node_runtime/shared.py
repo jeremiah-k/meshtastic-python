@@ -17,6 +17,14 @@ MAX_RINGTONE_LENGTH: int = 230
 MAX_CANNED_MESSAGE_LENGTH: int = 200
 # Maximum number of channels a node can hold.
 MAX_CHANNELS: int = 8
+# Firmware nanopb limits for the AdminMessage.InputEvent fields. ``event_code``
+# and ``kb_char`` are unsigned 8-bit; ``touch_x`` and ``touch_y`` are unsigned
+# 16-bit. Out-of-range values must be rejected before protobuf assignment so
+# firmware truncation cannot silently change the value sent to the device.
+MAX_INPUT_EVENT_CODE: int = 0xFF
+MAX_INPUT_KB_CHAR: int = 0xFF
+MAX_INPUT_TOUCH_X: int = 0xFFFF
+MAX_INPUT_TOUCH_Y: int = 0xFFFF
 # Protobuf factory-reset fields are integer-typed; use the explicit sentinel
 # value instead of boolean assignment to avoid firmware-side coercion issues.
 FACTORY_RESET_REQUEST_VALUE: int = 1

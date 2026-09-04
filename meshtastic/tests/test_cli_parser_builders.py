@@ -65,15 +65,20 @@ def test_local_action_builder_keeps_lockdown_actions_mutually_exclusive() -> Non
     ("option", "value"),
     [
         ("--send-input-event", "-1"),
+        ("--send-input-event", "256"),
         ("--send-input-event", str(1 << 32)),
         ("--input-touch-x", "-1"),
+        ("--input-touch-x", "65536"),
+        ("--input-touch-x", str(1 << 32)),
+        ("--input-touch-y", "-1"),
+        ("--input-touch-y", "65536"),
         ("--input-touch-y", str(1 << 32)),
     ],
 )
 def test_remote_admin_builder_rejects_out_of_range_input_fields(
     option: str, value: str
 ) -> None:
-    """Input-event uint32 fields fail in argparse instead of protobuf assignment."""
+    """Input-event fields fail in argparse when they exceed firmware nanopb bounds."""
     parser = addRemoteAdminArgs(_parser())
 
     with pytest.raises(SystemExit):
@@ -90,21 +95,21 @@ def test_remote_admin_builder_rejects_relative_delete_path() -> None:
 
 
 @pytest.mark.unit
-def test_remote_admin_builder_accepts_uint32_input_boundaries() -> None:
-    """Input-event fields accept the full protobuf uint32 range."""
+def test_remote_admin_builder_accepts_input_event_firmware_boundaries() -> None:
+    """Input-event fields accept the firmware-mandated maxima (uint8/uint16)."""
     args = addRemoteAdminArgs(_parser()).parse_args(
         [
             "--send-input-event",
-            "0",
+            "255",
             "--input-touch-x",
-            str((1 << 32) - 1),
+            "65535",
             "--input-touch-y",
             "0",
         ]
     )
 
-    assert args.send_input_event == 0
-    assert args.input_touch_x == (1 << 32) - 1
+    assert args.send_input_event == 255
+    assert args.input_touch_x == 65535
     assert args.input_touch_y == 0
 
 
@@ -143,7 +148,7 @@ def test_entrypoint_reexports_parser_symbol(symbol_name: str) -> None:
 
 @pytest.mark.unit
 def test_remote_admin_builder_rejects_non_integer_input_event() -> None:
-    """Non-numeric uint32 input fails through argparse's stable type-error surface."""
+    """Non-numeric input fails through argparse's stable type-error surface."""
     parser = addRemoteAdminArgs(_parser())
     with pytest.raises(SystemExit):
         parser.parse_args(["--send-input-event", "button"])
