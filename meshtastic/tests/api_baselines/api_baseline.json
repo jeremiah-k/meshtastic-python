@@ -89,6 +89,7 @@
     "requestChannels": "(self, startingIndex:int=0)",
     "requestConfig": "(self, configType:int | FieldDescriptor, adminIndex:int | None=None)",
     "requestDeviceConnectionStatus": "(self, *, response_timeout_seconds:float=ADMIN_RESPONSE_WAIT_SECONDS)",
+    "requestNodeRemoteHardwarePins": "(self, *, response_timeout_seconds:float=ADMIN_RESPONSE_WAIT_SECONDS)",
     "requestUiConfig": "(self, *, response_timeout_seconds:float=ADMIN_RESPONSE_WAIT_SECONDS)",
     "resetNodeDb": "(self)",
     "restorePreferences": "(self, location:str='flash')",

@@ -356,6 +356,26 @@ def test_connection_status_action_prints_successful_response() -> None:
 
 
 @pytest.mark.unit
+def test_request_node_remote_hardware_pins_delegates_to_shared_response_helper() -> (
+    None
+):
+    """The remote-hardware-pins getter requests its named response
+    with the supplied timeout."""
+    node = object.__new__(Node)
+    expected = admin_pb2.NodeRemoteHardwarePinsResponse()
+    requester = MagicMock(return_value=expected)
+    node._request_admin_response = requester  # type: ignore[method-assign]
+
+    assert node.requestNodeRemoteHardwarePins(response_timeout_seconds=3.5) is expected
+
+    message, field_name, response_type = requester.call_args.args
+    assert message.get_node_remote_hardware_pins_request is True
+    assert field_name == "get_node_remote_hardware_pins_response"
+    assert response_type is admin_pb2.NodeRemoteHardwarePinsResponse
+    assert requester.call_args.kwargs == {"response_timeout_seconds": 3.5}
+
+
+@pytest.mark.unit
 def test_node_delete_file_keeps_library_level_absolute_path_guard() -> None:
     """Direct library callers still get the Node-level absolute-path validation."""
     node = object.__new__(Node)
