@@ -290,7 +290,6 @@ jobs:
   validate:
     name: Validate install (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.python-version == '3.14' }}
     env:
       PYTHON_VERSION: ${{ matrix.python-version }}
       # Validate base package installs without extras.
