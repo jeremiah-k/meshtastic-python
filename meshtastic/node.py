@@ -49,6 +49,9 @@ from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlParser,
     _SetUrlTransactionCoordinator,
 )
+from meshtastic.node_runtime.shared import (
+    DELETE_FILE_PATH_TOO_LONG_MSG as _DELETE_FILE_PATH_TOO_LONG_MSG,
+)
 from meshtastic.node_runtime.shared import EMPTY_LONG_NAME_MSG as _EMPTY_LONG_NAME_MSG
 from meshtastic.node_runtime.shared import EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG
 from meshtastic.node_runtime.shared import (
@@ -58,6 +61,9 @@ from meshtastic.node_runtime.shared import (
     MAX_CANNED_MESSAGE_LENGTH as _MAX_CANNED_MESSAGE_LENGTH,
 )
 from meshtastic.node_runtime.shared import MAX_CHANNELS as _MAX_CHANNELS
+from meshtastic.node_runtime.shared import (
+    MAX_DELETE_FILE_PATH_BYTES as _MAX_DELETE_FILE_PATH_BYTES,
+)
 from meshtastic.node_runtime.shared import MAX_INPUT_EVENT_CODE as _MAX_INPUT_EVENT_CODE
 from meshtastic.node_runtime.shared import MAX_INPUT_KB_CHAR as _MAX_INPUT_KB_CHAR
 from meshtastic.node_runtime.shared import MAX_INPUT_TOUCH_X as _MAX_INPUT_TOUCH_X
@@ -113,6 +119,7 @@ EMPTY_SHORT_NAME_MSG = _EMPTY_SHORT_NAME_MSG
 MAX_CANNED_MESSAGE_LENGTH = _MAX_CANNED_MESSAGE_LENGTH
 FACTORY_RESET_REQUEST_VALUE = _FACTORY_RESET_REQUEST_VALUE
 MAX_CHANNELS = _MAX_CHANNELS
+MAX_DELETE_FILE_PATH_BYTES = _MAX_DELETE_FILE_PATH_BYTES
 MAX_LONG_NAME_LEN = _MAX_LONG_NAME_LEN
 MAX_RINGTONE_LENGTH = _MAX_RINGTONE_LENGTH
 MAX_SHORT_NAME_LEN = _MAX_SHORT_NAME_LEN
@@ -1693,6 +1700,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
         """
         if not path.startswith("/"):
             self._raise_interface_error("File path must be absolute (start with '/').")
+        encoded = path.encode("utf-8")
+        if len(encoded) > _MAX_DELETE_FILE_PATH_BYTES:
+            self._raise_interface_error(_DELETE_FILE_PATH_TOO_LONG_MSG)
         message = admin_pb2.AdminMessage()
         message.delete_file_request = path
         logger.info("Requesting deletion of %s", path)

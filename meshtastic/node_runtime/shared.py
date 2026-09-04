@@ -13,6 +13,14 @@ MAX_LONG_NAME_LEN: int = 40
 MAX_SHORT_NAME_LEN: int = 4
 # Maximum text length for ringtone messages.
 MAX_RINGTONE_LENGTH: int = 230
+# Maximum UTF-8 byte length for an absolute delete-file path payload.
+# The firmware protobuf field ``AdminMessage.delete_file_request`` carries
+# nanopb ``max_size:201`` (201 = 200 user bytes + 1 NUL terminator).
+MAX_DELETE_FILE_PATH_BYTES: int = 200
+DELETE_FILE_PATH_TOO_LONG_MSG: str = (
+    "Delete file path exceeds the firmware 200-byte UTF-8 limit "
+    "(nanopb max_size:201 includes the NUL terminator)."
+)
 # Maximum text length for canned-message payloads.
 MAX_CANNED_MESSAGE_LENGTH: int = 200
 # Maximum number of channels a node can hold.

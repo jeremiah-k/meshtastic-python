@@ -227,3 +227,33 @@ def test_remote_admin_builder_accepts_latin1_keyboard_boundary() -> None:
     """The firmware keyboard field accepts a single code point through 255."""
     args = addRemoteAdminArgs(_parser()).parse_args(["--input-kb-char", "ÿ"])
     assert args.input_kb_char == "ÿ"
+
+
+@pytest.mark.unit
+def test_remote_admin_builder_accepts_maximum_utf8_delete_path() -> None:
+    """--delete-file accepts an absolute path filling the firmware 200-byte UTF-8 budget."""
+    parser = addRemoteAdminArgs(_parser())
+    body = "a" * 199
+    args = parser.parse_args(["--delete-file", "/" + body])
+    assert args.delete_file == "/" + body
+
+
+@pytest.mark.unit
+def test_remote_admin_builder_rejects_oversize_utf8_delete_path() -> None:
+    """--delete-file rejects paths whose UTF-8 byte length exceeds the firmware bound."""
+    parser = addRemoteAdminArgs(_parser())
+    body = "a" * 200
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--delete-file", "/" + body])
+
+
+@pytest.mark.unit
+def test_remote_admin_builder_rejects_multibyte_delete_path_above_byte_budget() -> None:
+    """UTF-8 byte length, not character count, governs the firmware --delete-file bound."""
+    parser = addRemoteAdminArgs(_parser())
+    # 60 ASCII characters + 60 multibyte characters = 120 characters but
+    # 60 + 60 * 3 = 240 UTF-8 bytes, exceeding the 200-byte firmware limit.
+    multibyte_segment = "€" * 60
+    value = "/" + "a" * 60 + multibyte_segment
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--delete-file", value])

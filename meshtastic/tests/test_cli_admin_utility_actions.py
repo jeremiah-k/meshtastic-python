@@ -436,3 +436,56 @@ def test_node_send_input_event_rejects_out_of_range_field(
         node.sendInputEvent(**kwargs)
 
     sender.assert_not_called()
+
+
+@pytest.mark.unit
+def test_node_delete_file_accepts_maximum_utf8_path_payload() -> None:
+    """Node.deleteFile accepts an absolute path that fills the firmware byte budget."""
+    node = object.__new__(Node)
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=9))
+    node._send_admin_op = sender  # type: ignore[method-assign]
+    # MAX_DELETE_FILE_PATH_BYTES = 200 user bytes UTF-8. Build a path whose
+    # UTF-8 byte length is exactly 200 by using 199 ASCII characters after the
+    # leading slash (1 byte each).
+    body = "a" * 199
+    path_value = "/" + body
+    assert len(path_value.encode("utf-8")) == 200
+
+    node.deleteFile(path_value)
+
+    assert sender.call_args.args[0].delete_file_request == path_value
+
+
+@pytest.mark.unit
+def test_node_delete_file_rejects_oversize_utf8_path_payload() -> None:
+    """Node.deleteFile raises before send when the path overflows the firmware bound."""
+    node = object.__new__(Node)
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=9))
+    node._send_admin_op = sender  # type: ignore[method-assign]
+    body = "a" * 200
+    path_value = "/" + body
+    assert len(path_value.encode("utf-8")) == 201
+
+    with pytest.raises(MeshInterfaceError, match="200-byte UTF-8 limit"):
+        node.deleteFile(path_value)
+
+    sender.assert_not_called()
+
+
+@pytest.mark.unit
+def test_node_delete_file_rejects_multibyte_path_above_byte_budget() -> None:
+    """UTF-8 byte length, not character count, governs the firmware path bound."""
+    node = object.__new__(Node)
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=9))
+    node._send_admin_op = sender  # type: ignore[method-assign]
+    # 60 ASCII characters + 60 € characters = 120 characters but
+    # 60 + 60 * 3 = 240 UTF-8 bytes, exceeding the 200-byte firmware limit.
+    multibyte_segment = "€" * 60
+    path_value = "/" + "a" * 60 + multibyte_segment
+    assert len(path_value) < 200
+    assert len(path_value.encode("utf-8")) > 200
+
+    with pytest.raises(MeshInterfaceError, match="200-byte UTF-8 limit"):
+        node.deleteFile(path_value)
+
+    sender.assert_not_called()

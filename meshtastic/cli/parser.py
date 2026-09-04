@@ -18,6 +18,8 @@ from meshtastic.key_verification import (
 )
 from meshtastic.key_verification import SECURITY_NUMBER_MAX, SECURITY_NUMBER_MIN
 from meshtastic.node_runtime.shared import (
+    DELETE_FILE_PATH_TOO_LONG_MSG as _DELETE_FILE_PATH_TOO_LONG_MSG,
+    MAX_DELETE_FILE_PATH_BYTES as _MAX_DELETE_FILE_PATH_BYTES,
     MAX_INPUT_EVENT_CODE as _MAX_INPUT_EVENT_CODE,
     MAX_INPUT_KB_CHAR as _MAX_INPUT_KB_CHAR,
     MAX_INPUT_TOUCH_X as _MAX_INPUT_TOUCH_X,
@@ -112,9 +114,16 @@ def _parse_bounded_uint(value: str, upper: int, label: str) -> int:
 
 
 def _parse_absolute_device_path(value: str) -> str:
-    """Validate a device-side file path before opening a transport session."""
+    """Validate a device-side file path before opening a transport session.
+
+    Reuses the Node-side MAX_DELETE_FILE_PATH_BYTES bound and the shared
+    over-length message so CLI and library callers report identical failure
+    text and agree on the firmware UTF-8 byte budget.
+    """
     if not value.startswith("/"):
         raise argparse.ArgumentTypeError("device file path must be absolute")
+    if len(value.encode("utf-8")) > _MAX_DELETE_FILE_PATH_BYTES:
+        raise argparse.ArgumentTypeError(_DELETE_FILE_PATH_TOO_LONG_MSG)
     return value
 
 

@@ -7,11 +7,13 @@ in ``meshtastic/_runtime_compatibility.json`` and documented in
 """
 
 from .shared import (
+    DELETE_FILE_PATH_TOO_LONG_MSG,
     EMPTY_LONG_NAME_MSG,
     EMPTY_SHORT_NAME_MSG,
     FACTORY_RESET_REQUEST_VALUE,
     MAX_CANNED_MESSAGE_LENGTH,
     MAX_CHANNELS,
+    MAX_DELETE_FILE_PATH_BYTES,
     MAX_INPUT_EVENT_CODE,
     MAX_INPUT_KB_CHAR,
     MAX_INPUT_TOUCH_X,
@@ -24,11 +26,13 @@ from .shared import (
 )
 
 __all__ = [
+    "DELETE_FILE_PATH_TOO_LONG_MSG",
     "EMPTY_LONG_NAME_MSG",
     "EMPTY_SHORT_NAME_MSG",
     "FACTORY_RESET_REQUEST_VALUE",
     "MAX_CANNED_MESSAGE_LENGTH",
     "MAX_CHANNELS",
+    "MAX_DELETE_FILE_PATH_BYTES",
     "MAX_INPUT_EVENT_CODE",
     "MAX_INPUT_KB_CHAR",
     "MAX_INPUT_TOUCH_X",
