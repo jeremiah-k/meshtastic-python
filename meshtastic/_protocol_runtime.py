@@ -333,8 +333,8 @@ def _on_telemetry_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
 
     Merges metrics from the packet's `decoded.telemetry` into one of the node's telemetry
     sections: `deviceMetrics`, `environmentMetrics`, `airQualityMetrics`, `powerMetrics`,
-    or `localStats`. If the packet lacks a `from` field or none of these sections are
-    present, no change is made.
+    `localStats`, `healthMetrics`, `hostMetrics`, or `trafficManagementStats`. If the packet
+    lacks a `from` field or none of these sections are present, no change is made.
 
     Parameters
     ----------
@@ -377,6 +377,12 @@ def _on_telemetry_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
         to_update = "powerMetrics"
     elif "localStats" in telemetry:
         to_update = "localStats"
+    elif "healthMetrics" in telemetry:
+        to_update = "healthMetrics"
+    elif "hostMetrics" in telemetry:
+        to_update = "hostMetrics"
+    elif "trafficManagementStats" in telemetry:
+        to_update = "trafficManagementStats"
     else:
         return
 
