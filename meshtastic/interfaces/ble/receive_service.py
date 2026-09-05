@@ -1094,7 +1094,10 @@ class BLEReceiveRecoveryController:
             )
             _sleep(iface._retry_policy_get_delay(transient_policy, attempt_index))
             return
-        raise iface.BLEError(ERROR_READING_BLE) from error
+        raise iface.BLEError(
+            ERROR_READING_BLE,
+            iface.BLEError.READ_ERROR,
+        ) from error
 
     def log_empty_read_warning(self) -> None:
         """Emit empty-read warning for the bound interface."""

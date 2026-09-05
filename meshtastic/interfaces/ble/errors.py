@@ -42,11 +42,25 @@ T = TypeVar("T")
 
 
 class MeshtasticBLEError(_MeshInterfaceError):
-    """Base exception for structured Meshtastic BLE failures."""
+    """Base exception for structured Meshtastic BLE failures.
+
+    The historical ``BLEInterface.BLEError`` API exposed string ``kind``
+    constants and accepted ``kind`` as its second positional argument.  Keep
+    that contract on the structured base class so existing callers can keep
+    classifying failures while newer code uses typed subclasses and context
+    attributes.
+    """
+
+    DEVICE_NOT_FOUND = "device_not_found"
+    MULTIPLE_DEVICES = "multiple_devices"
+    READ_ERROR = "read_error"
+    WRITE_ERROR = "write_error"
+    UNKNOWN = "unknown"
 
     def __init__(  # pylint: disable=super-init-not-called,non-parent-init-called
         self,
         message: str,
+        kind: str = UNKNOWN,
         *,
         address: str | None = None,
         requested_identifier: str | None = None,
@@ -60,6 +74,7 @@ class MeshtasticBLEError(_MeshInterfaceError):
         # constructor signatures.
         self.message = message
         Exception.__init__(self, message)
+        self.kind = kind
         self.address = address
         self.requested_identifier = requested_identifier
         self.timeout = timeout
@@ -173,6 +188,7 @@ class BLEDBusTransportError(MeshtasticBLEError, BleakDBusError):
         # Mirror MeshtasticBLEError structured context fields while preserving
         # BleakDBusError args-backed properties for dbus_error/details.
         self.message = message
+        self.kind = self.UNKNOWN
         self.address = address
         self.requested_identifier = requested_identifier
         self.timeout = None
