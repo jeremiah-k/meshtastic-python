@@ -12,6 +12,7 @@ import pytest
 from meshtastic import DECODE_ERROR_KEY
 from meshtastic._protocol_runtime import (
     _on_node_status_receive,
+    _on_telemetry_receive,
     _on_text_receive,
     protocols,
 )
@@ -1652,3 +1653,145 @@ class TestAlertReceivePipeline:
         # no "text" key is expected during the decode-only phase tested here.
         decoded = intents[0].payload["packet"]["decoded"]
         assert "text" not in decoded
+
+
+class TestTelemetrySubviewRetention:
+    """Behavioral coverage for the additional telemetry oneof variants.
+
+    These tests target the `healthMetrics`, `hostMetrics`, and
+    `trafficManagementStats` variants added to the telemetry handler so the
+    sender node retains each decoded subview alongside the existing variants.
+    """
+
+    @staticmethod
+    def _build_telemetry_packet(variant: str, payload: dict) -> dict:
+        """Build a packet dict containing a decoded telemetry payload for `variant`."""
+        return {
+            "from": 4808675309,
+            "decoded": {"telemetry": {variant: payload}},
+        }
+
+    @pytest.mark.unit
+    def test_health_metrics_update_only_health_subview(
+        self, iface_with_nodes: MeshInterface
+    ) -> None:
+        """`healthMetrics` payloads must merge into node["healthMetrics"] only."""
+        iface = iface_with_nodes
+        packet = self._build_telemetry_packet(
+            "healthMetrics", {"heartBpm": 72, "spO2": 98}
+        )
+
+        _on_telemetry_receive(iface, packet)
+
+        node = iface._get_or_create_by_num(4808675309)
+        assert node["healthMetrics"] == {"heartBpm": 72, "spO2": 98}
+        # No other telemetry subview should be populated by a healthMetrics packet.
+        for sibling in (
+            "deviceMetrics",
+            "environmentMetrics",
+            "airQualityMetrics",
+            "powerMetrics",
+            "localStats",
+            "hostMetrics",
+            "trafficManagementStats",
+        ):
+            assert sibling not in node, sibling
+
+    @pytest.mark.unit
+    def test_host_metrics_update_only_host_subview(
+        self, iface_with_nodes: MeshInterface
+    ) -> None:
+        """`hostMetrics` payloads must merge into node["hostMetrics"] only."""
+        iface = iface_with_nodes
+        packet = self._build_telemetry_packet(
+            "hostMetrics", {"uptimeSeconds": 12345, "freeMemory": 67890}
+        )
+
+        _on_telemetry_receive(iface, packet)
+
+        node = iface._get_or_create_by_num(4808675309)
+        assert node["hostMetrics"] == {"uptimeSeconds": 12345, "freeMemory": 67890}
+        for sibling in (
+            "deviceMetrics",
+            "environmentMetrics",
+            "airQualityMetrics",
+            "powerMetrics",
+            "localStats",
+            "healthMetrics",
+            "trafficManagementStats",
+        ):
+            assert sibling not in node, sibling
+
+    @pytest.mark.unit
+    def test_traffic_management_stats_update_only_traffic_subview(
+        self, iface_with_nodes: MeshInterface
+    ) -> None:
+        """`trafficManagementStats` payloads must merge into node["trafficManagementStats"] only."""
+        iface = iface_with_nodes
+        packet = self._build_telemetry_packet(
+            "trafficManagementStats", {"queueLen": 4, "dropped": 1}
+        )
+
+        _on_telemetry_receive(iface, packet)
+
+        node = iface._get_or_create_by_num(4808675309)
+        assert node["trafficManagementStats"] == {"queueLen": 4, "dropped": 1}
+        for sibling in (
+            "deviceMetrics",
+            "environmentMetrics",
+            "airQualityMetrics",
+            "powerMetrics",
+            "localStats",
+            "healthMetrics",
+            "hostMetrics",
+        ):
+            assert sibling not in node, sibling
+
+    @pytest.mark.unit
+    def test_new_telemetry_variants_merge_with_existing_values(
+        self, iface_with_nodes: MeshInterface
+    ) -> None:
+        """Updates for the new variants must merge into existing dict values."""
+        iface = iface_with_nodes
+        node = iface._get_or_create_by_num(4808675309)
+        with iface._node_db_lock:
+            node["healthMetrics"] = {"heartBpm": 70}
+            node["hostMetrics"] = {"uptimeSeconds": 1000}
+            node["trafficManagementStats"] = {"queueLen": 2}
+
+        _on_telemetry_receive(
+            iface, self._build_telemetry_packet("healthMetrics", {"spO2": 99})
+        )
+        _on_telemetry_receive(
+            iface, self._build_telemetry_packet("hostMetrics", {"freeMemory": 512})
+        )
+        _on_telemetry_receive(
+            iface,
+            self._build_telemetry_packet("trafficManagementStats", {"dropped": 7}),
+        )
+
+        # Existing keys preserved and new keys merged in.
+        assert node["healthMetrics"] == {"heartBpm": 70, "spO2": 99}
+        assert node["hostMetrics"] == {"uptimeSeconds": 1000, "freeMemory": 512}
+        assert node["trafficManagementStats"] == {"queueLen": 2, "dropped": 7}
+
+    @pytest.mark.unit
+    def test_new_telemetry_variants_preserve_other_subviews(
+        self, iface_with_nodes: MeshInterface
+    ) -> None:
+        """A new-variant packet must not delete values cached for other subviews."""
+        iface = iface_with_nodes
+        node = iface._get_or_create_by_num(4808675309)
+        with iface._node_db_lock:
+            node["deviceMetrics"] = {"batteryLevel": 80}
+            node["environmentMetrics"] = {"temperature": 21.5}
+
+        _on_telemetry_receive(
+            iface, self._build_telemetry_packet("healthMetrics", {"heartBpm": 80})
+        )
+
+        # Other subviews remain intact.
+        assert node["deviceMetrics"] == {"batteryLevel": 80}
+        assert node["environmentMetrics"] == {"temperature": 21.5}
+        # New subview is populated.
+        assert node["healthMetrics"] == {"heartBpm": 80}
