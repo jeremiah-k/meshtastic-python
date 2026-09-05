@@ -56,6 +56,7 @@ PACKAGE_ROOT_COMPAT_EXPORTS = __all__ + (
     "_on_text_receive",
     "_on_position_receive",
     "_on_node_info_receive",
+    "_on_node_status_receive",
     "_on_telemetry_receive",
     "_receive_info_update",
     "_on_admin_receive",
@@ -424,6 +425,56 @@ def _receive_info_update(iface: _Any, as_dict: dict[str, _Any]) -> None:
         node["hopLimit"] = as_dict.get("hopLimit")
 
 
+def _on_node_status_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
+    """Retain the latest status string on the sender node from a NODE_STATUS_APP packet.
+
+    When `as_dict` contains a decoded `"nodestatus"` payload and a `"from"` sender,
+    store the decoded status text on the sender node under `node["status"]`.
+    Decode-error or malformed payloads must not overwrite the cached status;
+    packets with a decoded node-status payload still update receive metadata.
+
+    Parameters
+    ----------
+    iface : _Any
+        Interface instance managing the node database.
+    as_dict : dict[str, _Any]
+        Received packet dictionary; expected to contain
+        `"decoded" -> "nodestatus"` and `"from"`.
+    """
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("in _on_node_status_receive() %s", _packet_debug_summary(as_dict))
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
+        return
+    sender, decoded = packet_guard
+    if "nodestatus" in decoded:
+        _receive_info_update(iface, as_dict)
+        p = decoded["nodestatus"]
+        if not isinstance(p, dict):
+            logger.debug(
+                "Skipping node status update from=%s: unexpected payload type %s",
+                sender,
+                type(p).__name__,
+            )
+            return
+        if DECODE_ERROR_KEY in p:
+            logger.debug(
+                "Skipping node status state update from=%s due to decode error payload",
+                sender,
+            )
+            return
+        status_text = p.get("status")
+        if not isinstance(status_text, str):
+            logger.debug(
+                "Skipping node status update from=%s: missing or invalid status string",
+                sender,
+            )
+            return
+        n = iface._get_or_create_by_num(sender)
+        with iface._node_db_lock:
+            n["status"] = status_text
+
+
 def _on_admin_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
     """Store the admin session passkey from an admin packet on the sending node.
 
@@ -529,7 +580,7 @@ protocols = {
     # Firmware 2.8 status broadcasts carry a single status string per node
     # (StatusMessageModule); clients surface it alongside node metadata.
     portnums_pb2.PortNum.NODE_STATUS_APP: KnownProtocol(
-        "nodestatus", mesh_pb2.StatusMessage
+        "nodestatus", mesh_pb2.StatusMessage, _on_node_status_receive
     ),
     # Firmware 2.8 PKI key-verification handshakes (KeyVerificationModule):
     # nonce plus hash1/hash2 challenge-response pairs.

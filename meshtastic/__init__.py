@@ -197,6 +197,7 @@ _sanitize_last_received = _protocol_runtime._sanitize_last_received
 _on_text_receive = _protocol_runtime._on_text_receive
 _on_position_receive = _protocol_runtime._on_position_receive
 _on_node_info_receive = _protocol_runtime._on_node_info_receive
+_on_node_status_receive = _protocol_runtime._on_node_status_receive
 _on_telemetry_receive = _protocol_runtime._on_telemetry_receive
 _receive_info_update = _protocol_runtime._receive_info_update
 _on_admin_receive = _protocol_runtime._on_admin_receive
