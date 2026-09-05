@@ -17,6 +17,12 @@ from meshtastic.key_verification import (
     KEY_VERIFICATION_STAGES as _KEY_VERIFICATION_STAGES,
 )
 from meshtastic.key_verification import SECURITY_NUMBER_MAX, SECURITY_NUMBER_MIN
+from meshtastic.node_runtime.shared import (
+    MAX_INPUT_EVENT_CODE as _MAX_INPUT_EVENT_CODE,
+    MAX_INPUT_KB_CHAR as _MAX_INPUT_KB_CHAR,
+    MAX_INPUT_TOUCH_X as _MAX_INPUT_TOUCH_X,
+    MAX_INPUT_TOUCH_Y as _MAX_INPUT_TOUCH_Y,
+)
 
 
 class _ArgcompleteModule(Protocol):
@@ -26,21 +32,7 @@ class _ArgcompleteModule(Protocol):
         """Enable shell completion for ``parser``."""
 
 
-_UINT32_MAX: int = (1 << 32) - 1
 _UINT64_MAX: int = (1 << 64) - 1
-
-
-def _parse_uint32(value: str) -> int:
-    """Parse one CLI integer constrained to an unsigned protobuf 32-bit field."""
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
-    if not 0 <= parsed <= _UINT32_MAX:
-        raise argparse.ArgumentTypeError(
-            f"value must be between 0 and {_UINT32_MAX}, got {parsed}"
-        )
-    return parsed
 
 
 def _parse_uint64(value: str) -> int:
@@ -83,11 +75,40 @@ def _parse_positive_finite_float(value: str) -> float:
 
 def _parse_firmware_keyboard_char(value: str) -> str:
     """Validate one character representable by the firmware's 8-bit input field."""
-    if len(value) != 1 or ord(value) > 0xFF:
+    if len(value) != 1 or ord(value) > _MAX_INPUT_KB_CHAR:
         raise argparse.ArgumentTypeError(
-            "keyboard input must be exactly one character with code point <= 255"
+            "keyboard input must be exactly one character with code point "
+            f"<= {_MAX_INPUT_KB_CHAR}"
         )
     return value
+
+
+def _parse_input_event_uint8(value: str) -> int:
+    """Parse an input-event field constrained to the firmware's unsigned byte range."""
+    return _parse_bounded_uint(value, _MAX_INPUT_EVENT_CODE, "--send-input-event")
+
+
+def _parse_input_touch_x(value: str) -> int:
+    """Parse the touch X coordinate using the firmware field width."""
+    return _parse_bounded_uint(value, _MAX_INPUT_TOUCH_X, "--input-touch-x")
+
+
+def _parse_input_touch_y(value: str) -> int:
+    """Parse the touch Y coordinate using the firmware field width."""
+    return _parse_bounded_uint(value, _MAX_INPUT_TOUCH_Y, "--input-touch-y")
+
+
+def _parse_bounded_uint(value: str, upper: int, label: str) -> int:
+    """Parse one CLI integer constrained to ``[0, upper]`` for a named field."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if not 0 <= parsed <= upper:
+        raise argparse.ArgumentTypeError(
+            f"{label} must be between 0 and {upper}, got {parsed}"
+        )
+    return parsed
 
 
 def _parse_absolute_device_path(value: str) -> str:
@@ -992,9 +1013,9 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
     outer.add_argument(
         "--send-input-event",
-        type=_parse_uint32,
+        type=_parse_input_event_uint8,
         metavar="EVENT_CODE",
-        help="Send a physical input event code (button/keyboard/touch) to the node",
+        help=f"Send a physical input event code (0-{_MAX_INPUT_EVENT_CODE}) to the node",
     )
     outer.add_argument(
         "--input-kb-char",
@@ -1003,13 +1024,13 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
     outer.add_argument(
         "--input-touch-x",
-        type=_parse_uint32,
-        help="Touch X coordinate paired with --send-input-event",
+        type=_parse_input_touch_x,
+        help=f"Touch X coordinate (0-{_MAX_INPUT_TOUCH_X}) paired with --send-input-event",
     )
     outer.add_argument(
         "--input-touch-y",
-        type=_parse_uint32,
-        help="Touch Y coordinate paired with --send-input-event",
+        type=_parse_input_touch_y,
+        help=f"Touch Y coordinate (0-{_MAX_INPUT_TOUCH_Y}) paired with --send-input-event",
     )
     outer.add_argument(
         "--request-connection-status",
