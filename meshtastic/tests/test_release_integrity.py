@@ -487,14 +487,13 @@ def test_standalone_smoke_contract_rejects_missing_required_surface(
 
 
 @pytest.mark.unit
-def test_release_workflows_share_provenance_and_artifact_contracts() -> None:
-    """Publishing workflows must consume the verifier outputs they trust."""
+def test_release_workflows_preserve_minimal_pypi_and_verified_assets() -> None:
+    """Keep PyPI simple while standalone/container releases retain provenance checks."""
     pypi_path = _REPO_ROOT / ".github" / "workflows" / "pypi-publish.yml"
     assets_path = _REPO_ROOT / ".github" / "workflows" / "release-assets.yml"
     container_path = _REPO_ROOT / ".github" / "workflows" / "container-build.yaml"
-    workflows = [pypi_path, assets_path, container_path]
 
-    for workflow in workflows:
+    for workflow in (assets_path, container_path):
         text = workflow.read_text(encoding="utf-8")
         assert "ref: develop" in text
         assert "fetch-depth: 0" in text
@@ -507,16 +506,28 @@ def test_release_workflows_share_provenance_and_artifact_contracts() -> None:
         assert 'git checkout --detach "${RELEASE_COMMIT}"' in text
 
     pypi = pypi_path.read_text(encoding="utf-8")
-    assert "tag: ${{ steps.release_source.outputs.tag }}" in pypi
-    assert "version: ${{ steps.release_source.outputs.version }}" in pypi
-    assert (
-        "name: pypi-dist-${{ steps.release_source.outputs.tag }}-"
-        "${{ steps.release_source.outputs.version }}"
-    ) in pypi
-    assert (
-        "name: pypi-dist-${{ needs.build.outputs.tag }}-"
-        "${{ needs.build.outputs.version }}"
-    ) in pypi
+    assert "types: [published]" in pypi
+    assert "id-token: write" in pypi
+    assert "environment: pypi-release" in pypi
+    assert "ref: ${{ github.event.release.tag_name }}" in pypi
+    assert "persist-credentials: false" in pypi
+    assert 'python-version: "3.14"' in pypi
+    assert "package_version=" in pypi
+    assert "tomllib.load(open(" in pypi
+    assert 'test "${RELEASE_TAG#v}" = "${package_version}"' in pypi
+    assert "python -m pip install build" in pypi
+    assert "run: python -m build\n" in pypi
+    assert "pypa/gh-action-pypi-publish@" in pypi
+    for obsolete in (
+        "astral-sh/setup-uv@",
+        "uv build",
+        "uv publish",
+        "twine",
+        "bin/verify_release_source.py",
+        "actions/upload-artifact@",
+        "actions/download-artifact@",
+    ):
+        assert obsolete not in pypi
 
     build_bin = (_REPO_ROOT / "bin" / "build-bin.sh").read_text(encoding="utf-8")
     assert "from meshtastic._branding import DISTRIBUTION_NAME" in build_bin
