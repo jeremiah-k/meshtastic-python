@@ -5,7 +5,7 @@ existing `meshtastic` Python import namespace while publishing under a separate
 package name so the work maintained here can be installed independently.
 
 The fork began as an exploration of BLE connection reliability for
-[meshtastic-matrix-relay](https://github.com/jeremiah-k/meshtastic-matrix-relay).
+[MMRelay](https://github.com/jeremiah-k/meshtastic-matrix-relay).
 What initially looked like a transport-specific problem turned out to touch
 lifecycle ownership, concurrency, typing, dependency management, testability,
 and several large implementation boundaries. The work expanded incrementally
