@@ -1722,6 +1722,7 @@ class ConnectionOrchestrator:
         except BleakDeviceNotFoundError as error:
             raise MeshtasticBLEDeviceNotFoundError(
                 "No Meshtastic BLE device matched the requested identifier.",
+                MeshtasticBLEDeviceNotFoundError.DEVICE_NOT_FOUND,
                 requested_identifier=target_address,
                 cause=error,
             ) from error

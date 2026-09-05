@@ -935,6 +935,7 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
                 if not _looks_like_ble_address(target):
                     raise BLEDeviceNotFoundError(
                         ERROR_NO_PERIPHERALS_FOUND,
+                        self.BLEError.DEVICE_NOT_FOUND,
                         requested_identifier=target,
                     )
                 logger.warning(
@@ -957,7 +958,10 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
                 # Use the backend-usable raw address as the BLEDevice identity.
                 # `sanitized` remains for registry/discovery key normalization.
                 return BLEDevice(target, target, {})
-            raise BLEDiscoveryError(ERROR_NO_PERIPHERALS_FOUND)
+            raise BLEDiscoveryError(
+                ERROR_NO_PERIPHERALS_FOUND,
+                self.BLEError.DEVICE_NOT_FOUND,
+            )
         if len(addressed_devices) == 1:
             return addressed_devices[0]
 
@@ -969,12 +973,14 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
             device_list = _format_device_list(addressed_devices)
             raise BLEDiscoveryError(
                 ERROR_MULTIPLE_DEVICES.format(target, device_list),
+                self.BLEError.MULTIPLE_DEVICES,
                 requested_identifier=target,
             )
         if len(addressed_devices) > 1:
             device_list = _format_device_list(addressed_devices)
             raise BLEDiscoveryError(
-                ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list)
+                ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list),
+                self.BLEError.MULTIPLE_DEVICES,
             )
         raise AssertionError(UNREACHABLE_ADDRESSED_DEVICES_MSG)
 
@@ -3134,7 +3140,10 @@ class BLEInterface(  # pylint: disable=too-many-instance-attributes
                 type(e).__name__,
                 exc_info=True,
             )
-            raise self.BLEError(ERROR_WRITING_BLE) from e
+            raise self.BLEError(
+                ERROR_WRITING_BLE,
+                self.BLEError.WRITE_ERROR,
+            ) from e
 
         if write_successful:
             # Brief delay to allow write to propagate before triggering read

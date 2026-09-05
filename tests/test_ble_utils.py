@@ -124,6 +124,39 @@ def test_typed_ble_exceptions_exported_from_public_and_compat_surfaces() -> None
 
 
 @pytest.mark.unit
+def test_ble_error_keeps_historical_kind_contract() -> None:
+    """BLEInterface.BLEError keeps legacy constants and positional kind input."""
+    from meshtastic.interfaces.ble import BLEInterface
+
+    err = BLEInterface.BLEError(
+        "read failed",
+        BLEInterface.BLEError.READ_ERROR,
+    )
+
+    assert err.kind == "read_error"
+    assert BLEInterface.BLEError.DEVICE_NOT_FOUND == "device_not_found"
+    assert BLEInterface.BLEError.MULTIPLE_DEVICES == "multiple_devices"
+    assert BLEInterface.BLEError.READ_ERROR == "read_error"
+    assert BLEInterface.BLEError.WRITE_ERROR == "write_error"
+    assert BLEInterface.BLEError.UNKNOWN == "unknown"
+
+
+@pytest.mark.unit
+def test_typed_ble_error_can_carry_historical_kind() -> None:
+    """Structured BLE errors remain compatible with callers inspecting ``kind``."""
+    from meshtastic.interfaces.ble import BLEInterface
+
+    err = PublicBLEDeviceNotFoundError(
+        "not found",
+        BLEInterface.BLEError.DEVICE_NOT_FOUND,
+        requested_identifier="mesh-node",
+    )
+
+    assert err.kind == BLEInterface.BLEError.DEVICE_NOT_FOUND
+    assert err.requested_identifier == "mesh-node"
+
+
+@pytest.mark.unit
 def test_ble_device_not_found_error_identifier_property() -> None:
     """BLEDeviceNotFoundError should expose .identifier for BleakDeviceNotFoundError compat."""
     err = PublicBLEDeviceNotFoundError(

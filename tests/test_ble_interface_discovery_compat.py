@@ -68,6 +68,7 @@ def test_find_device_multiple_matches_raises() -> None:
         BLEInterface.findDevice(iface, "aa bb cc dd ee ff")
 
     assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
+    assert excinfo.value.kind == BLEInterface.BLEError.MULTIPLE_DEVICES
 
 
 def test_find_device_direct_connect_preserves_raw_address() -> None:
