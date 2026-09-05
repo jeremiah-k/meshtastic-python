@@ -10,7 +10,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic import DECODE_ERROR_KEY
-from meshtastic._protocol_runtime import _on_text_receive, protocols
+from meshtastic._protocol_runtime import (
+    _on_node_status_receive,
+    _on_text_receive,
+    protocols,
+)
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.mesh_interface_runtime.ports import _ReceivePipelinePort
 from meshtastic.mesh_interface_runtime.receive_pipeline import (
@@ -1395,6 +1399,7 @@ class TestNodeStatusProtocolRegistry:
 
         assert protocol.name == "nodestatus"
         assert protocol.protobufFactory is mesh_pb2.StatusMessage
+        assert protocol.onReceive is _on_node_status_receive
 
 
 class TestNodeStatusReceivePipeline:
@@ -1443,6 +1448,60 @@ class TestNodeStatusReceivePipeline:
         decoded = intents[0].payload["packet"]["decoded"]["nodestatus"]
         assert decoded[DECODE_ERROR_KEY].startswith("decode-failed: ")
         assert "raw" not in decoded
+
+
+class TestNodeStatusRetentionHandler:
+    """Behavioral coverage for the node-status retention receive handler."""
+
+    @pytest.mark.unit
+    def test_node_status_updates_sender_node_status_field(
+        self, iface_with_nodes: MeshInterface
+    ) -> None:
+        """Successful decode should set node["status"] to the decoded status string."""
+        iface = iface_with_nodes
+        packet: dict = {
+            "from": 4808675309,
+            "decoded": {"nodestatus": {"status": "Bravo: solar powered"}},
+        }
+
+        _on_node_status_receive(iface, packet)
+
+        node = iface._get_or_create_by_num(4808675309)
+        assert node["status"] == "Bravo: solar powered"
+        assert node["lastReceived"]["decoded"]["nodestatus"]["status"] == (
+            "Bravo: solar powered"
+        )
+
+    @pytest.mark.unit
+    def test_node_status_decode_error_preserves_cached_status(
+        self, iface_with_nodes: MeshInterface
+    ) -> None:
+        """Decode-error payload must not overwrite cached node["status"]."""
+        iface = iface_with_nodes
+        node = iface._get_or_create_by_num(4808675309)
+        with iface._node_db_lock:
+            node["status"] = "Alpha: baseline status"
+        packet: dict = {
+            "from": 4808675309,
+            "decoded": {"nodestatus": {DECODE_ERROR_KEY: "decode-failed: malformed"}},
+        }
+
+        _on_node_status_receive(iface, packet)
+
+        assert node["status"] == "Alpha: baseline status"
+        assert node["lastReceived"]["decoded"]["nodestatus"][
+            DECODE_ERROR_KEY
+        ].startswith("decode-failed:")
+
+    @pytest.mark.unit
+    def test_node_status_returns_early_when_sender_missing(self) -> None:
+        """Handler should return without touching the node DB when sender is absent."""
+        iface = MagicMock()
+        packet = {"decoded": {"nodestatus": {"status": "Bravo: solar powered"}}}
+
+        _on_node_status_receive(iface, packet)
+
+        iface._get_or_create_by_num.assert_not_called()
 
 
 class TestKeyVerificationProtocolRegistry:
