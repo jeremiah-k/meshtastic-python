@@ -173,11 +173,11 @@ The maintained project documentation is intentionally small:
   intentional behavioral differences;
 - [CONTRIBUTING.md](CONTRIBUTING.md) — local maintenance workflow and CI checks;
 - [BLE.md](BLE.md) — detailed BLE architecture and integration guidance;
-- [meshtastic/ADMIN_RESPONSE_CONTRACTS.md](meshtastic/ADMIN_RESPONSE_CONTRACTS.md)
+- [ADMIN_RESPONSE_CONTRACTS.md](ADMIN_RESPONSE_CONTRACTS.md)
   — admin request/response invariants;
-- [meshtastic/LOCKDOWN.md](meshtastic/LOCKDOWN.md) — lockdown/authentication
+- [LOCKDOWN.md](LOCKDOWN.md) — lockdown/authentication
   behavior;
-- [meshtastic/REGION_PRESETS.md](meshtastic/REGION_PRESETS.md) — region-preset
+- [REGION_PRESETS.md](REGION_PRESETS.md) — region-preset
   API behavior.
 
 Older refactor plans, dependency campaign notes, and device-specific manual test

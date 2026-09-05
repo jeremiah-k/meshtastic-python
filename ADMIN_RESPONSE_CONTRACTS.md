@@ -231,7 +231,7 @@ At the same time, the compatibility boundary is preserved where practical:
 - unknown/unmapped admin requests fall back to ordinary request-ID correlation rather
   than becoming unusable.
 
-See the repository-level [COMPATIBILITY.md](../COMPATIBILITY.md) for the broader
+See the repository-level [COMPATIBILITY.md](COMPATIBILITY.md) for the broader
 compatibility policy.
 
 ## Primary tests
