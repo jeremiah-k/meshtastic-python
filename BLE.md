@@ -1,7 +1,8 @@
 # BLE Integration Guide
 
-This document covers the current BLE implementation, common field pitfalls, and
-recommended patterns for code that embeds `meshtastic-python`.
+This document is the BLE-specific companion to [ARCHITECTURE.md](ARCHITECTURE.md).
+It covers the current BLE implementation, common field pitfalls, and recommended
+patterns for code that embeds `mtjk` through the `meshtastic` package namespace.
 
 ---
 
@@ -203,6 +204,12 @@ ok = handler.safe_cleanup(lambda: resource.close(), "resource close")
 `safe_execute` swallows `BleakError`, `DecodeError`, and
 `concurrent.futures.TimeoutError`; other exceptions are also caught unless
 `reraise=True`. `SystemExit` and `KeyboardInterrupt` always propagate.
+
+Public BLE failures remain catchable as `BLEInterface.BLEError`. The structured
+exception hierarchy also preserves the historical `BLEError.kind` contract and
+its `DEVICE_NOT_FOUND`, `MULTIPLE_DEVICES`, `READ_ERROR`, `WRITE_ERROR`, and
+`UNKNOWN` constants for callers that classify failures that way. New code may
+prefer the typed subclasses when it needs richer context.
 
 Compatibility note: underscore methods (`_safe_execute`, `_safe_cleanup`) are
 still available for legacy/internal call sites.

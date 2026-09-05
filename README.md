@@ -1,191 +1,185 @@
 # mtjk
 
-`mtjk` is a separately published distribution of the Meshtastic Python
-library, maintained while changes are validated and selectively upstreamed.
+`mtjk` is a maintained fork of the Meshtastic Python library. It keeps the
+existing `meshtastic` Python import namespace while publishing under a separate
+package name so the work maintained here can be installed independently.
 
-Work began in September 2025 to stabilize connection interfaces and message
-delivery for [mmrelay](https://github.com/jeremiah-k/meshtastic-matrix-relay).
-The modernization work keeps existing Meshtastic Python usage compatible:
+The fork began as an exploration of BLE connection reliability for
+[meshtastic-matrix-relay](https://github.com/jeremiah-k/meshtastic-matrix-relay).
+What initially looked like a transport-specific problem turned out to touch
+lifecycle ownership, concurrency, typing, dependency management, testability,
+and several large implementation boundaries. The work expanded incrementally
+and was repeatedly cleaned up and tested rather than carried as one very large
+upstream patch. Over time that working branch became the maintained fork that
+exists today.
 
-- package import namespace remains `meshtastic`
-- preferred CLI command is `mtjk`
-- historical `meshtastic` CLI command remains available as a compatibility
-  entry point
-- existing API compatibility is intentionally preserved
+The upstream project remains the primary Meshtastic Python project. The goal of
+this fork is narrower: maintain the changes developed here, keep them coherent
+and well-tested, preserve familiar Meshtastic Python usage where practical, and
+make isolated improvements available for upstreaming when they can be separated
+cleanly.
 
-It is intended to be a drop-in, backward-compatible replacement for upstream.
+## Project goals
 
-## Project Status
+The main priorities are:
 
-This is a **temporary fork** of
-[meshtastic/python](https://github.com/meshtastic/python). It exists to ship
-fixes and improvements while they are validated and upstreamed selectively.
+- preserve the established Meshtastic Python API and import namespace where
+  practical;
+- improve connection and lifecycle reliability, especially for long-running
+  integrations;
+- keep concurrency, resource ownership, and failure handling explicit;
+- maintain strong typing, linting, tests, and dependency hygiene;
+- track current firmware behavior, including Meshtastic 2.8 protocol and CLI
+  features;
+- keep internal architecture maintainable without forcing downstream callers to
+  follow those internal changes.
 
-**This repository does not accept pull requests.** Community development efforts should be directed to the [upstream project](https://github.com/meshtastic/python). If you find a fix or improvement here that you would like to carry upstream, please do so.
+The repository does not currently accept external pull requests. General Meshtastic
+community development should continue to go to
+[meshtastic/python](https://github.com/meshtastic/python). Issues that are
+specific to `mtjk` can be reported in this repository.
 
-## Notable Changes
+## Compatibility
 
-- major BLE and interface internals were refactored for maintainability while keeping compatibility shims in place
-- concurrency and lifecycle paths were tightened to reduce race-condition and shutdown edge cases
-- CI and release workflows were modernized, including Trusted Publisher-based PyPI release flow
+`mtjk` is designed to be usable as a replacement dependency for applications
+that already use Meshtastic Python, but it does not claim perfect behavioral
+identity with every upstream release.
 
-For technical details, see:
+Compatibility that is intentionally maintained includes:
 
-- [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md): rationale and early change log for the major refactor work maintained here.
-- [COMPATIBILITY.md](COMPATIBILITY.md): canonical inventory of compatibility shims, deprecations, and migration mapping.
-- [CONTRIBUTING.md](CONTRIBUTING.md): local setup, CI-equivalent checks, and contributor workflow conventions.
+- `import meshtastic` remains the Python package namespace;
+- `mtjk` is the preferred CLI command, while the historical `meshtastic` command
+  remains installed as a silent compatibility entry point;
+- established `Node`, `MeshInterface`, BLE, utility, and configuration entry
+  points are guarded by API and behavioral compatibility tests;
+- historical camelCase and documented legacy aliases remain callable where the
+  compatibility policy says they do;
+- newer structured BLE exceptions remain catchable as
+  `BLEInterface.BLEError`, including the historical `.kind` classification
+  contract.
 
-## Install the CLI (recommended: pipx)
+There are also deliberate behavioral differences where retaining the old
+behavior would make the library harder or less safe to embed. The most important
+example is error handling: library code generally raises exceptions instead of
+terminating the host process with `sys.exit()`. Safer defaults and internal
+logging behavior may also differ from older upstream releases.
 
-`pipx` is recommended for CLI tools so each app gets an isolated environment.
+See [COMPATIBILITY.md](COMPATIBILITY.md) for the maintained compatibility
+contract and known behavioral differences.
 
-### 1) Remove prior installs first (recommended)
+## Notable work maintained here
 
-If you previously installed upstream `meshtastic`, remove it before installing `mtjk`.
+The exact change set evolves with the upstream project, but the larger areas of
+work include:
+
+- BLE connection, reconnect, shutdown, ownership, and notification lifecycle
+  hardening;
+- request/response correlation and concurrency fixes for long-running clients;
+- decomposition of large `MeshInterface`, `Node`, CLI, and BLE implementation
+  paths behind compatibility facades;
+- stronger typing, linting, static analysis, API baselines, and regression
+  coverage;
+- dependency and CI cleanup;
+- current firmware protocol support and validation, including Meshtastic 2.8
+  features;
+- simplified Trusted Publisher-based PyPI releases.
+
+For current design details, see [ARCHITECTURE.md](ARCHITECTURE.md). BLE-specific
+implementation and integration notes live in [BLE.md](BLE.md).
+
+## Installation
+
+### CLI installation with pipx
+
+`pipx` is recommended for command-line use so the package runs in an isolated
+environment.
+
+If upstream `meshtastic` is already installed in that environment, remove it
+first. The two distributions intentionally share the `meshtastic` Python
+namespace and historical CLI command, so they are not designed to coexist in one
+environment.
 
 ```bash
-# If installed with pipx:
 pipx uninstall meshtastic || true
-
-# If installed with pip in a Python environment:
-python3 -m pip uninstall -y meshtastic
-```
-
-### 2) Install `mtjk`
-
-```bash
 pipx install mtjk
 ```
 
-### 3) Verify
+Verify the installation:
 
 ```bash
 mtjk --version
-# mtjk 2.7.11.post5   # example output; version varies by release
 ```
 
-The package installs both `mtjk` and `meshtastic`. New shell usage should prefer
-`mtjk`; the `meshtastic` command is retained as a silent compatibility entry point
-for existing workflows. No shell alias is required because both commands are
-installed.
+The package installs both `mtjk` and `meshtastic` console commands. New shell
+usage should prefer `mtjk`; existing automation that invokes `meshtastic`
+continues to use the same implementation.
 
-Do not install the upstream `meshtastic` distribution alongside `mtjk` in the
-same environment: the two distributions share both the `meshtastic` Python
-namespace and the historical CLI name and are not designed to coexist. Keep
-them in separate virtual/pipx environments and invoke `mtjk` explicitly.
-
-### Install latest from Git (`develop`)
-
-To install the latest unreleased version from this repository (clean install):
+### Install the latest `develop`
 
 ```bash
-# If you previously installed upstream via pipx, remove it first:
-pipx uninstall meshtastic || true
-
 pipx uninstall mtjk || true
 pipx install "git+https://github.com/jeremiah-k/mtjk.git@develop"
 ```
 
-## Upgrade / Uninstall
+### Upgrade or uninstall
 
 ```bash
 pipx upgrade mtjk
 pipx uninstall mtjk
 ```
 
-## Developer Usage (existing Meshtastic API)
+## Using mtjk as a Python dependency
 
-Dependency name is `mtjk`, but import namespace remains `meshtastic`.
+The **distribution name** is `mtjk`, but the **import namespace** remains
+`meshtastic`.
 
-Important:
-
-- If your dependency spec says `meshtastic`, you will install upstream.
-- Use `mtjk` in dependency specs for this package.
-- The package does not provide `import mtjk`.
-
-### requirements.txt
+Use `mtjk` in dependency declarations:
 
 ```text
 mtjk
 ```
 
-Unreleased from Git:
+or, for the unreleased `develop` branch:
 
 ```text
 mtjk @ git+https://github.com/jeremiah-k/mtjk.git@develop
 ```
 
-If you need optional CLI extras in a dependency spec:
+The optional CLI extras can be requested in the usual way:
 
 ```text
 mtjk[cli]
-mtjk[cli] @ git+https://github.com/jeremiah-k/mtjk.git@develop
 ```
 
-### pyproject.toml (PEP 621)
-
-```toml
-[project]
-dependencies = [
-  "mtjk",
-]
-```
-
-Unreleased from Git:
-
-```toml
-[project]
-dependencies = [
-  "mtjk @ git+https://github.com/jeremiah-k/mtjk.git@develop",
-]
-```
-
-### setup.cfg
-
-```ini
-[options]
-install_requires =
-    mtjk
-```
-
-Unreleased from Git:
-
-```ini
-[options]
-install_requires =
-    mtjk @ git+https://github.com/jeremiah-k/mtjk.git@develop
-```
-
-### Python import (unchanged)
+Python code continues to use the familiar imports:
 
 ```python
 import meshtastic
 import meshtastic.serial_interface
 
-interface = meshtastic.serial_interface.SerialInterface()
-interface.sendText("hello mesh")
-interface.close()
+with meshtastic.serial_interface.SerialInterface() as interface:
+    interface.sendText("hello mesh")
 ```
 
-### Structured traceroute results
+There is intentionally no `import mtjk` package.
 
-Library callers can request a traceroute without parsing CLI-oriented log output:
+## Documentation
 
-```python
-from meshtastic.serial_interface import SerialInterface
+The maintained project documentation is intentionally small:
 
-with SerialInterface() as interface:
-    result = interface.requestTraceRoute("!ba4bf9d0", hopLimit=5)
+- [ARCHITECTURE.md](ARCHITECTURE.md) — current architecture and design
+  boundaries;
+- [COMPATIBILITY.md](COMPATIBILITY.md) — compatibility policy, aliases, and
+  intentional behavioral differences;
+- [CONTRIBUTING.md](CONTRIBUTING.md) — local maintenance workflow and CI checks;
+- [BLE.md](BLE.md) — detailed BLE architecture and integration guidance;
+- `meshtastic/ADMIN_RESPONSE_CONTRACTS.md` — admin request/response invariants;
+- `meshtastic/LOCKDOWN.md` — lockdown/authentication behavior;
+- `meshtastic/REGION_PRESETS.md` — region-preset API behavior.
 
-for hop in result.route_towards:
-    print(hop.node_id, hop.snr_db)
-```
-
-Each route contains the source and destination plus any intermediate hops.
-`snr_db` describes the link into a hop and is `None` when firmware omits a
-complete SNR sequence. `route_back` is `None` unless firmware reports a reverse
-route; incomplete reverse SNR data preserves the route with unknown link values.
-The historical `sendTraceRoute()` API and its logging behavior remain unchanged.
+Older refactor plans, dependency campaign notes, and device-specific manual test
+logs are intentionally not maintained as active documentation; Git history is
+the source for that development history.
 
 ## Support
 
@@ -195,11 +189,14 @@ Report `mtjk`-specific issues here:
 
 Please do not file `mtjk`-specific issues with upstream maintainers.
 
-## Release Notes (Maintainers)
+## Release notes for maintainers
 
-- Versions match upstream releases with a `.postN` suffix (e.g., `2.7.8.post1` is the first `mtjk` release based on upstream `2.7.8`).
-- Publish a GitHub release with tag `vX.Y.Z[.postN]`. This triggers the PyPI workflow.
-- The workflow checks the release tag against `pyproject.toml`, builds the standard source and wheel distributions with `python -m build`, and publishes them directly with PyPI Trusted Publishing.
-- Supported tag formats are `vX.Y.Z...` or `X.Y.Z...`; the optional leading `v` is ignored for the package-version check.
-- PyPI Trusted Publisher must match this repo/workflow/environment tuple:
+- Versions follow the upstream version with a `.postN` suffix, for example
+  `2.7.11.post6`.
+- Publish a GitHub release with tag `vX.Y.Z[.postN]` (or the same version without
+  the leading `v`).
+- The PyPI workflow verifies that the release tag matches `pyproject.toml`, runs
+  the standard `python -m build`, and publishes the generated source and wheel
+  distributions with PyPI Trusted Publishing.
+- The PyPI Trusted Publisher is configured for
   `jeremiah-k/mtjk` + `.github/workflows/pypi-publish.yml` + `pypi-release`.
