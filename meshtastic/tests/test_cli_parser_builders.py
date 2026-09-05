@@ -257,3 +257,11 @@ def test_remote_admin_builder_rejects_multibyte_delete_path_above_byte_budget() 
     value = "/" + "a" * 60 + multibyte_segment
     with pytest.raises(SystemExit):
         parser.parse_args(["--delete-file", value])
+
+
+@pytest.mark.unit
+def test_remote_admin_builder_rejects_non_utf8_delete_path() -> None:
+    """--delete-file rejects strings that cannot be encoded as UTF-8."""
+    parser = addRemoteAdminArgs(_parser())
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--delete-file", "/bad\udcff"])

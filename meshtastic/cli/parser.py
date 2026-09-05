@@ -18,12 +18,11 @@ from meshtastic.key_verification import (
 )
 from meshtastic.key_verification import SECURITY_NUMBER_MAX, SECURITY_NUMBER_MIN
 from meshtastic.node_runtime.shared import (
-    DELETE_FILE_PATH_TOO_LONG_MSG as _DELETE_FILE_PATH_TOO_LONG_MSG,
-    MAX_DELETE_FILE_PATH_BYTES as _MAX_DELETE_FILE_PATH_BYTES,
     MAX_INPUT_EVENT_CODE as _MAX_INPUT_EVENT_CODE,
     MAX_INPUT_KB_CHAR as _MAX_INPUT_KB_CHAR,
     MAX_INPUT_TOUCH_X as _MAX_INPUT_TOUCH_X,
     MAX_INPUT_TOUCH_Y as _MAX_INPUT_TOUCH_Y,
+    _delete_file_path_error,
 )
 
 
@@ -122,8 +121,9 @@ def _parse_absolute_device_path(value: str) -> str:
     """
     if not value.startswith("/"):
         raise argparse.ArgumentTypeError("device file path must be absolute")
-    if len(value.encode("utf-8")) > _MAX_DELETE_FILE_PATH_BYTES:
-        raise argparse.ArgumentTypeError(_DELETE_FILE_PATH_TOO_LONG_MSG)
+    validation_error = _delete_file_path_error(value)
+    if validation_error is not None:
+        raise argparse.ArgumentTypeError(validation_error)
     return value
 
 

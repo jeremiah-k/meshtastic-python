@@ -49,9 +49,7 @@ from meshtastic.node_runtime.seturl_runtime import (
     _SetUrlParser,
     _SetUrlTransactionCoordinator,
 )
-from meshtastic.node_runtime.shared import (
-    DELETE_FILE_PATH_TOO_LONG_MSG as _DELETE_FILE_PATH_TOO_LONG_MSG,
-)
+from meshtastic.node_runtime.shared import _delete_file_path_error
 from meshtastic.node_runtime.shared import EMPTY_LONG_NAME_MSG as _EMPTY_LONG_NAME_MSG
 from meshtastic.node_runtime.shared import EMPTY_SHORT_NAME_MSG as _EMPTY_SHORT_NAME_MSG
 from meshtastic.node_runtime.shared import (
@@ -1700,9 +1698,9 @@ class Node:  # pylint: disable=too-many-instance-attributes
         """
         if not path.startswith("/"):
             self._raise_interface_error("File path must be absolute (start with '/').")
-        encoded = path.encode("utf-8")
-        if len(encoded) > _MAX_DELETE_FILE_PATH_BYTES:
-            self._raise_interface_error(_DELETE_FILE_PATH_TOO_LONG_MSG)
+        validation_error = _delete_file_path_error(path)
+        if validation_error is not None:
+            self._raise_interface_error(validation_error)
         message = admin_pb2.AdminMessage()
         message.delete_file_request = path
         logger.info("Requesting deletion of %s", path)

@@ -489,3 +489,17 @@ def test_node_delete_file_rejects_multibyte_path_above_byte_budget() -> None:
         node.deleteFile(path_value)
 
     sender.assert_not_called()
+
+
+@pytest.mark.unit
+def test_node_delete_file_rejects_non_utf8_path_payload() -> None:
+    """Direct callers get an interface error before encoding an invalid Unicode path."""
+    node = object.__new__(Node)
+    sender = MagicMock(return_value=mesh_pb2.MeshPacket(id=9))
+    node._send_admin_op = sender  # type: ignore[method-assign]
+    path_value = "/bad\udcff"
+
+    with pytest.raises(MeshInterfaceError, match="valid UTF-8"):
+        node.deleteFile(path_value)
+
+    sender.assert_not_called()

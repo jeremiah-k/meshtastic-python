@@ -21,6 +21,7 @@ DELETE_FILE_PATH_TOO_LONG_MSG: str = (
     "Delete file path exceeds the firmware 200-byte UTF-8 limit "
     "(nanopb max_size:201 includes the NUL terminator)."
 )
+DELETE_FILE_PATH_INVALID_UTF8_MSG: str = "Delete file path must be valid UTF-8."
 # Maximum text length for canned-message payloads.
 MAX_CANNED_MESSAGE_LENGTH: int = 200
 # Maximum number of channels a node can hold.
@@ -56,3 +57,14 @@ def _ordered_admin_indexes(*indexes: int | None) -> list[int]:
             continue
         ordered.append(index)
     return ordered
+
+
+def _delete_file_path_error(path: str) -> str | None:
+    """Return a stable validation error for a delete-file path byte payload."""
+    try:
+        encoded = path.encode("utf-8")
+    except UnicodeEncodeError:
+        return DELETE_FILE_PATH_INVALID_UTF8_MSG
+    if len(encoded) > MAX_DELETE_FILE_PATH_BYTES:
+        return DELETE_FILE_PATH_TOO_LONG_MSG
+    return None
