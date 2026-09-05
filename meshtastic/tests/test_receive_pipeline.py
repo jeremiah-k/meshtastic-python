@@ -1494,6 +1494,35 @@ class TestNodeStatusRetentionHandler:
         ].startswith("decode-failed:")
 
     @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "not-a-mapping",
+            {},
+            {"status": 123},
+        ],
+    )
+    def test_node_status_malformed_payload_preserves_cached_status_and_metadata(
+        self, iface_with_nodes: MeshInterface, payload: object
+    ) -> None:
+        """Malformed decoded status must not replace cached state or drop receive metadata."""
+        iface = iface_with_nodes
+        node = iface._get_or_create_by_num(4808675309)
+        with iface._node_db_lock:
+            node["status"] = "Alpha: baseline status"
+        packet = {
+            "from": 4808675309,
+            "rxTime": 1700000000,
+            "decoded": {"nodestatus": payload},
+        }
+
+        _on_node_status_receive(iface, packet)
+
+        assert node["status"] == "Alpha: baseline status"
+        assert node["lastReceived"]["decoded"]["nodestatus"] == payload
+        assert node["lastHeard"] == 1700000000
+
+    @pytest.mark.unit
     def test_node_status_returns_early_when_sender_missing(self) -> None:
         """Handler should return without touching the node DB when sender is absent."""
         iface = MagicMock()

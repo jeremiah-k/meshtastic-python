@@ -429,10 +429,9 @@ def _on_node_status_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
     """Retain the latest status string on the sender node from a NODE_STATUS_APP packet.
 
     When `as_dict` contains a decoded `"nodestatus"` payload and a `"from"` sender,
-    store the decoded status text on the sender node under `node["status"]`,
-    ensuring the `iface.nodes` mapping by node id (when present) references the
-    same record. Decode-error payloads must not overwrite the cached status;
-    they still update receive metadata.
+    store the decoded status text on the sender node under `node["status"]`.
+    Decode-error or malformed payloads must not overwrite the cached status;
+    packets with a decoded node-status payload still update receive metadata.
 
     Parameters
     ----------
