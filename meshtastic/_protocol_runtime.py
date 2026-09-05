@@ -29,6 +29,17 @@ from meshtastic.protobuf import (
 # Keep handler records in the historical ``meshtastic`` logger hierarchy.
 logger = logging.getLogger("meshtastic")
 
+_TELEMETRY_SUBVIEWS: tuple[str, ...] = (
+    "deviceMetrics",
+    "environmentMetrics",
+    "airQualityMetrics",
+    "powerMetrics",
+    "localStats",
+    "healthMetrics",
+    "hostMetrics",
+    "trafficManagementStats",
+)
+
 REDACTED_TEXT = "<redacted>"
 REDACTED_BYTES = b"<redacted>"
 
@@ -352,7 +363,6 @@ def _on_telemetry_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
     sender, decoded = packet_guard
     _receive_info_update(iface, as_dict)
 
-    to_update = None
     telemetry = decoded.get("telemetry") or {}
     if not isinstance(telemetry, dict):
         logger.debug(
@@ -367,23 +377,10 @@ def _on_telemetry_receive(iface: _Any, as_dict: dict[str, _Any]) -> None:
             sender,
         )
         return
-    if "deviceMetrics" in telemetry:
-        to_update = "deviceMetrics"
-    elif "environmentMetrics" in telemetry:
-        to_update = "environmentMetrics"
-    elif "airQualityMetrics" in telemetry:
-        to_update = "airQualityMetrics"
-    elif "powerMetrics" in telemetry:
-        to_update = "powerMetrics"
-    elif "localStats" in telemetry:
-        to_update = "localStats"
-    elif "healthMetrics" in telemetry:
-        to_update = "healthMetrics"
-    elif "hostMetrics" in telemetry:
-        to_update = "hostMetrics"
-    elif "trafficManagementStats" in telemetry:
-        to_update = "trafficManagementStats"
-    else:
+    to_update = next(
+        (subview for subview in _TELEMETRY_SUBVIEWS if subview in telemetry), None
+    )
+    if to_update is None:
         return
 
     update_obj = telemetry.get(to_update)
