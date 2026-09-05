@@ -526,7 +526,6 @@ def test_release_workflows_preserve_minimal_pypi_and_verified_assets() -> None:
         "bin/verify_release_source.py",
         "actions/upload-artifact@",
         "actions/download-artifact@",
-        "*.whl",
     ):
         assert obsolete not in pypi
 

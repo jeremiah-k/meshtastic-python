@@ -199,7 +199,7 @@ Please do not file `mtjk`-specific issues with upstream maintainers.
 
 - Versions match upstream releases with a `.postN` suffix (e.g., `2.7.8.post1` is the first `mtjk` release based on upstream `2.7.8`).
 - Publish a GitHub release with tag `vX.Y.Z[.postN]`. This triggers the PyPI workflow.
-- The workflow checks the release tag against `pyproject.toml`, builds one source distribution with `python -m build --sdist`, and publishes it directly with PyPI Trusted Publishing.
+- The workflow checks the release tag against `pyproject.toml`, builds the standard source and wheel distributions with `python -m build`, and publishes them directly with PyPI Trusted Publishing.
 - Supported tag formats are `vX.Y.Z...` or `X.Y.Z...`; the optional leading `v` is ignored for the package-version check.
 - PyPI Trusted Publisher must match this repo/workflow/environment tuple:
   `jeremiah-k/mtjk` + `.github/workflows/pypi-publish.yml` + `pypi-release`.
