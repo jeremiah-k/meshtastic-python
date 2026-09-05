@@ -1856,6 +1856,35 @@ class Node:  # pylint: disable=too-many-instance-attributes
             response_timeout_seconds=response_timeout_seconds,
         )
 
+    def requestNodeRemoteHardwarePins(
+        self, *, response_timeout_seconds: float = ADMIN_RESPONSE_WAIT_SECONDS
+    ) -> admin_pb2.NodeRemoteHardwarePinsResponse | None:
+        """Request the mesh's nodes with their available GPIO pins for RemoteHardware use.
+
+        Parameters
+        ----------
+        response_timeout_seconds : float, optional
+            Seconds to wait for the correlated admin RESPONSE packet after
+            the request is sent. No ACK/NAK wait is performed. ``None`` is
+            returned if the wait expires before the device reports back.
+            Defaults to ``ADMIN_RESPONSE_WAIT_SECONDS``.
+
+        Returns
+        -------
+        admin_pb2.NodeRemoteHardwarePinsResponse | None
+            The reported remote-hardware pin inventory, or ``None`` when no
+            response arrived.
+        """
+        message = admin_pb2.AdminMessage()
+        message.get_node_remote_hardware_pins_request = True
+        logger.info("Requesting node remote hardware pins")
+        return self._request_admin_response(
+            message,
+            "get_node_remote_hardware_pins_response",
+            admin_pb2.NodeRemoteHardwarePinsResponse,
+            response_timeout_seconds=response_timeout_seconds,
+        )
+
     def storeUiConfig(
         self, config: device_ui_pb2.DeviceUIConfig
     ) -> mesh_pb2.MeshPacket | None:
