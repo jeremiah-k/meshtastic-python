@@ -1,22 +1,81 @@
-# Compatibility Inventory and Deprecation Matrix
+# Compatibility Policy and Inventory
 
-This document is the canonical human-readable policy for compatibility aliases,
-deprecations, and legacy compatibility behaviors in this repository. Runtime
-import guarantees are additionally defined by the machine-readable
-`meshtastic/_runtime_compatibility.json` manifest consumed by API-baseline tooling.
+`mtjk` is intended to remain familiar to developers who already use Meshtastic
+Python. This document defines the compatibility surface that is deliberately
+maintained while the implementation evolves.
 
-If a compatibility symbol is not listed here, or a runtime import guarantee is
-not present in that manifest, do not add or keep it by default.
+The goal is **replacement compatibility**, not byte-for-byte or behavior-for-
+behavior identity with every upstream release. Public names, common calling
+patterns, import paths, callbacks, and documented aliases are preserved where
+practical. Internal implementation details remain free to change unless they
+are explicitly promoted here or in the machine-readable
+`meshtastic/_runtime_compatibility.json` manifest consumed by API-baseline
+tooling.
+
+If a compatibility alias is not listed here, or a runtime import guarantee is
+not present in that manifest, it should not be treated as a new stability
+commitment by default.
 
 ## Scope and Policy
 
 - Runtime baseline is Python 3.10+.
-- Public API names prefer `camelCase`.
+- Existing public API names and established calling patterns take priority over
+  naming cleanup.
+- New public API names generally follow the project's historical `camelCase`
+  convention unless an existing protocol/library convention makes another name
+  more appropriate.
 - Historical compatibility shims remain callable where documented below.
 - Internal helpers prefer underscore-prefixed `snake_case`.
 - Naming-only compatibility aliases are silent unless explicitly marked deprecated.
 - Naming-only deprecations must be warn-once.
 - Semantic deprecations may warn on every invalid usage.
+- Compatibility changes should be backed by API-shape or behavioral regression
+  tests, not only by documentation.
+- Incidental implementation imports are not public API merely because an imported
+  module happens to be reachable as an attribute of `meshtastic`.
+
+## Intentional Behavioral Differences
+
+Some older Meshtastic Python behavior is intentionally not reproduced when doing
+so would make the library unsafe or difficult to embed.
+
+### Library failures raise instead of exiting
+
+Older library paths sometimes called `sys.exit()` through `our_exit()` when a
+configuration, transport, or validation operation failed. In `mtjk`, reusable
+library code generally raises `MeshInterface.MeshInterfaceError`,
+`BLEInterface.BLEError`, or a more specific exception instead. CLI code remains
+responsible for translating failures into user-facing output and process exit
+codes.
+
+This is a deliberate semantic difference. Applications that previously relied
+on a library call terminating the whole process should catch exceptions instead.
+The historical `meshtastic.util.our_exit()` helper itself remains available for
+CLI-style callers that explicitly want exit behavior.
+
+### Structured BLE exceptions preserve the historical catch surface
+
+`BLEInterface.BLEError` remains the compatibility base for BLE failures. Typed
+subclasses add structured context without requiring downstream code to adopt
+new exception classes. The historical string classification API is also
+preserved:
+
+- `BLEInterface.BLEError.DEVICE_NOT_FOUND`
+- `BLEInterface.BLEError.MULTIPLE_DEVICES`
+- `BLEInterface.BLEError.READ_ERROR`
+- `BLEInterface.BLEError.WRITE_ERROR`
+- `BLEInterface.BLEError.UNKNOWN`
+- `error.kind`
+
+The base exception continues to accept the historical second positional
+`kind` argument.
+
+### Safer defaults may differ
+
+A small number of defaults were intentionally made safer for embedding. For
+example, the analysis web application binds to loopback by default rather than
+all network interfaces. Such differences should be documented when they are
+observable to callers.
 
 ## CLI Compatibility
 

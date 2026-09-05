@@ -1,23 +1,37 @@
 # mtjk Development Guide
 
-> **This repository does not accept pull requests.** `mtjk` is maintained
-> separately on a temporary basis. Community contributions should be directed to
-> the upstream project at
-> [meshtastic/python](https://github.com/meshtastic/python).
->
-> This document is retained as **developer documentation** for anyone who needs
-> to understand or maintain this repository: codebase structure, local checks,
-> and CI flow.
+> **This repository does not currently accept external pull requests.** General community
+> development should be directed to
+> [meshtastic/python](https://github.com/meshtastic/python). This document is the
+> maintenance guide for the `mtjk` tree itself: local setup, compatibility rules,
+> generated code, and CI-equivalent checks.
 
-## Development resources
+## Maintained documentation
 
-- `mtjk` repository: <https://github.com/jeremiah-k/mtjk>
-- `mtjk` issue tracker: <https://github.com/jeremiah-k/mtjk/issues>
-- Upstream technical docs (still useful reference):
-  - [API Documentation](https://python.meshtastic.org/)
-  - [Meshtastic Python Development](https://meshtastic.org/docs/development/python/)
-  - [Building Meshtastic Python](https://meshtastic.org/docs/development/python/building/)
-  - [Using the Meshtastic Python Library](https://meshtastic.org/docs/development/python/library/)
+Keep documentation changes focused on the small set of files that describe the
+current project rather than creating new refactor journals or one-off checklists:
+
+- `README.md` — project purpose, installation, status, and user-facing overview;
+- `ARCHITECTURE.md` — current internal boundaries and ownership model;
+- `COMPATIBILITY.md` — public compatibility policy and alias inventory;
+- `CONTRIBUTING.md` — maintenance workflow and validation commands;
+- `BLE.md` — detailed BLE architecture and integration contracts;
+- subsystem contract documents under `meshtastic/` where the contract belongs
+  next to the implementation.
+
+Git history is the record for completed refactor plans, dependency campaigns,
+and temporary investigation notes. Do not keep those files as active policy once
+the work has landed.
+
+## Repository resources
+
+- repository: <https://github.com/jeremiah-k/mtjk>
+- issue tracker: <https://github.com/jeremiah-k/mtjk/issues>
+- upstream project: <https://github.com/meshtastic/python>
+
+For architecture and compatibility decisions, use the local documents above;
+upstream documentation remains useful for Meshtastic concepts but is not the
+source of truth for `mtjk` maintenance policy.
 
 ## Python and typing baseline
 
@@ -85,10 +99,14 @@ Use this pinned baseline for BLE compatibility decisions:
 Historical required BLE wrappers and warning policy are tracked in
 `COMPATIBILITY.md` under **BLE Historical Baseline (2.7.7)**.
 
-## How to check your code (pytest/pylint/ruff/mypy) before a PR
+## Local setup and validation
 
-- [Pre-requisites](https://meshtastic.org/docs/development/python/building/#pre-requisites)
-- also execute `poetry install --all-extras --with dev,powermon` for all optional dependencies
+Install the repository environment with Poetry. For the broadest local check,
+include the optional CLI/analysis/tunnel extras and power-monitor group:
+
+```bash
+poetry install --all-extras --with dev,powermon
+```
 
 ### Updating protobufs
 
@@ -214,8 +232,9 @@ To run the destructive lane (reboot/factory reset/config mutation checks):
 make smoke1-destructive
 ```
 
-See [smoke1 firmware compatibility matrix](SMOKE1_FIRMWARE_COMPATIBILITY_MATRIX.md)
-for current firmware/CLI expectations and known behavior differences.
+Hardware smoke expectations belong in the tests themselves. When firmware
+behavior changes intentionally, update the affected smoke assertions and any
+user-visible compatibility notes in the same change.
 
 For stricter type checking (optional, not required by CI):
 
