@@ -71,13 +71,17 @@ Mode `0600` is the normal expected form. A file such as `0640` is rejected with
 On Windows the POSIX mode check is not applied because those mode bits do not express
 the platform's ACL semantics reliably.
 
-The helper reads raw bytes and strips at most one conventional final line ending:
+The helper reads raw bytes and treats at most one conventional final line ending as
+file framing:
 
 - one trailing `\r\n`; or
 - one trailing `\n`.
 
-It does **not** repeatedly strip trailing CR/LF bytes because a passphrase is arbitrary
-byte data and may intentionally end with one of those bytes.
+That terminal sequence is removed before passphrase validation. The file-input path
+therefore cannot represent a passphrase whose exact final bytes are a single `\n` or
+`\r\n`; use another input path if those bytes are part of the passphrase. Additional
+trailing CR/LF bytes are not repeatedly stripped, so a file ending in two newlines
+retains one newline as passphrase data.
 
 ## Building `LockdownAuth`
 
@@ -152,8 +156,8 @@ The four lockdown actions are mutually exclusive.
 `--lockdown-provision` provisions or unlocks a hardened local device.
 
 When the passphrase is entered interactively, the CLI asks for it twice and rejects a
-mismatch. Provision is considered destructive/sensitive and requires typed `yes`
-confirmation unless `--lockdown-yes` is supplied.
+mismatch. Provision is considered destructive/sensitive and requires the user to type
+`yes` for confirmation unless `--lockdown-yes` is supplied.
 
 ### Unlock
 
@@ -165,16 +169,17 @@ It requires a passphrase but does not require the destructive-action confirmatio
 `--lockdown-lock-now` asks the device to revoke current lockdown sessions and reboot
 into the locked state. No passphrase is read for this action.
 
-It requires typed confirmation unless `--lockdown-yes` is supplied. The CLI permits
-the device to reboot before a structured status arrives and reports that the command
-may already be taking effect when no final status is available.
+It requires the user to type `yes` for confirmation unless `--lockdown-yes` is
+supplied. The CLI permits the device to reboot before a structured status arrives and
+reports that the command may already be taking effect when no final status is available.
 
 ### Disable
 
 `--lockdown-disable` requests disabling lockdown and reverting the firmware-managed
 storage state according to the device's lockdown implementation.
 
-It requires a passphrase and typed confirmation unless `--lockdown-yes` is supplied.
+It requires a passphrase and requires the user to type `yes` for confirmation unless
+`--lockdown-yes` is supplied.
 
 ## CLI passphrase input
 
@@ -199,16 +204,16 @@ argv passphrase.
 
 ## Additional CLI limits
 
-The CLI forwards the following request limits after validation by
-`build_lockdown_auth()`:
+The CLI passes these request fields through `build_lockdown_auth()`, which applies the
+client-side bounds described above:
 
 - `--lockdown-boots`;
-- `--lockdown-valid-until`;
-- `--lockdown-max-session-seconds`; and
-- `--lockdown-wait`.
+- `--lockdown-valid-until`; and
+- `--lockdown-max-session-seconds`.
 
-`--lockdown-wait` controls how many seconds the client waits for a structured
-`LockdownStatus` and must ultimately be positive.
+`--lockdown-wait` is separate from `LockdownAuth`. It controls how many seconds
+`send_lockdown_auth()` waits for a structured `LockdownStatus`; that helper rejects a
+non-positive timeout before sending.
 
 The CLI refuses lockdown actions when `--dest` identifies a remote node, even before
 the USB-only helper performs its transport check.
