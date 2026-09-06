@@ -3501,6 +3501,7 @@ class NodeInfo(_message.Message):
     IS_KEY_MANUALLY_VERIFIED_FIELD_NUMBER: _builtins.int
     IS_MUTED_FIELD_NUMBER: _builtins.int
     HAS_XEDDSA_SIGNED_FIELD_NUMBER: _builtins.int
+    HEARD_ON_CURRENT_LORA_FIELD_NUMBER: _builtins.int
     num: _builtins.int
     """
     The node number
@@ -3559,6 +3560,17 @@ class NodeInfo(_message.Message):
     Persists between NodeDB internal clean ups
     LSB 1 of the bitfield
     """
+    heard_on_current_lora: _builtins.bool
+    """
+    True if we have heard this node over RF since our current LoRa
+    configuration took effect. Cleared for every node whenever the region,
+    modem preset (or the custom bandwidth/spread factor/coding rate when
+    use_preset is false), override_frequency, channel_num or the primary
+    channel name changes - the frequency slot is derived from that name.
+    Not set for nodes heard over MQTT, which reach us over the internet
+    rather than over our own radio - see via_mqtt.
+    LSB 11 of the bitfield
+    """
     @_builtins.property
     def user(self) -> Global___User:
         """
@@ -3595,10 +3607,11 @@ class NodeInfo(_message.Message):
         is_key_manually_verified: _builtins.bool = ...,
         is_muted: _builtins.bool = ...,
         has_xeddsa_signed: _builtins.bool = ...,
+        heard_on_current_lora: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["_hops_away", b"_hops_away", "device_metrics", b"device_metrics", "hops_away", b"hops_away", "position", b"position", "user", b"user"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_hops_away", b"_hops_away", "channel", b"channel", "device_metrics", b"device_metrics", "has_xeddsa_signed", b"has_xeddsa_signed", "hops_away", b"hops_away", "is_favorite", b"is_favorite", "is_ignored", b"is_ignored", "is_key_manually_verified", b"is_key_manually_verified", "is_muted", b"is_muted", "last_heard", b"last_heard", "num", b"num", "position", b"position", "snr", b"snr", "user", b"user", "via_mqtt", b"via_mqtt"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_hops_away", b"_hops_away", "channel", b"channel", "device_metrics", b"device_metrics", "has_xeddsa_signed", b"has_xeddsa_signed", "heard_on_current_lora", b"heard_on_current_lora", "hops_away", b"hops_away", "is_favorite", b"is_favorite", "is_ignored", b"is_ignored", "is_key_manually_verified", b"is_key_manually_verified", "is_muted", b"is_muted", "last_heard", b"last_heard", "num", b"num", "position", b"position", "snr", b"snr", "user", b"user", "via_mqtt", b"via_mqtt"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType__hops_away: _TypeAlias = _typing.Literal["hops_away"]  # noqa: Y015
     _WhichOneofArgType__hops_away: _TypeAlias = _typing.Literal["_hops_away", b"_hops_away"]  # noqa: Y015
