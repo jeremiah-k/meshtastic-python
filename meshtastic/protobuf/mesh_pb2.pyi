@@ -639,6 +639,10 @@ class _HardwareModelEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Hardwar
     """
     Seeed Studio MeshPager X2
     """
+    T_CONNECT_PRO: _HardwareModel.ValueType  # 147
+    """
+    Lilygo T-CONNECT PRO
+    """
     PRIVATE_HW: _HardwareModel.ValueType  # 255
     """
     ------------------------------------------------------------------------------------------------------------------------------------------
@@ -1255,6 +1259,10 @@ Meshnology W12
 MESHPAGER_X2: HardwareModel.ValueType  # 146
 """
 Seeed Studio MeshPager X2
+"""
+T_CONNECT_PRO: HardwareModel.ValueType  # 147
+"""
+Lilygo T-CONNECT PRO
 """
 PRIVATE_HW: HardwareModel.ValueType  # 255
 """
