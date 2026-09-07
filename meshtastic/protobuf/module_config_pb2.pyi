@@ -424,8 +424,24 @@ class ModuleConfig(_message.Message):
             CODEC2_1400: ModuleConfig.AudioConfig._Audio_Baud.ValueType  # 4
             CODEC2_1300: ModuleConfig.AudioConfig._Audio_Baud.ValueType  # 5
             CODEC2_1200: ModuleConfig.AudioConfig._Audio_Baud.ValueType  # 6
-            CODEC2_700: ModuleConfig.AudioConfig._Audio_Baud.ValueType  # 7
-            CODEC2_700B: ModuleConfig.AudioConfig._Audio_Baud.ValueType  # 8
+            @_builtins.property
+            @_deprecated("""This enum value has been marked as deprecated using proto enum value options.""")
+            def CODEC2_700(self) -> ModuleConfig.AudioConfig._Audio_Baud.ValueType:   # 7
+                """
+                Removed from libcodec2 upstream. A device configured to one of these
+                falls back to CODEC2_700C.
+                """
+            @_builtins.property
+            @_deprecated("""This enum value has been marked as deprecated using proto enum value options.""")
+            def CODEC2_700B(self) -> ModuleConfig.AudioConfig._Audio_Baud.ValueType: ...  # 8
+            CODEC2_700C: ModuleConfig.AudioConfig._Audio_Baud.ValueType  # 9
+            """
+            Replaces CODEC2_700. Default for new configurations.
+            """
+            CODEC2_450: ModuleConfig.AudioConfig._Audio_Baud.ValueType  # 10
+            """
+            Lowest rate, and the only one usable on slower modem presets.
+            """
 
         class Audio_Baud(_Audio_Baud, metaclass=_Audio_BaudEnumTypeWrapper):
             """
@@ -440,7 +456,19 @@ class ModuleConfig(_message.Message):
         CODEC2_1300: ModuleConfig.AudioConfig.Audio_Baud.ValueType  # 5
         CODEC2_1200: ModuleConfig.AudioConfig.Audio_Baud.ValueType  # 6
         CODEC2_700: ModuleConfig.AudioConfig.Audio_Baud.ValueType  # 7
+        """
+        Removed from libcodec2 upstream. A device configured to one of these
+        falls back to CODEC2_700C.
+        """
         CODEC2_700B: ModuleConfig.AudioConfig.Audio_Baud.ValueType  # 8
+        CODEC2_700C: ModuleConfig.AudioConfig.Audio_Baud.ValueType  # 9
+        """
+        Replaces CODEC2_700. Default for new configurations.
+        """
+        CODEC2_450: ModuleConfig.AudioConfig.Audio_Baud.ValueType  # 10
+        """
+        Lowest rate, and the only one usable on slower modem presets.
+        """
 
         CODEC2_ENABLED_FIELD_NUMBER: _builtins.int
         PTT_PIN_FIELD_NUMBER: _builtins.int
@@ -459,7 +487,7 @@ class ModuleConfig(_message.Message):
         """
         bitrate: Global___ModuleConfig.AudioConfig.Audio_Baud.ValueType
         """
-        The audio sample rate to use for codec2
+        The codec2 bitrate to encode at. Sample rate is always 8 kHz.
         """
         i2s_ws: _builtins.int
         """
